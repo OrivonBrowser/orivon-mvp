@@ -8,7 +8,8 @@ address before any of it is used.
 A site is a Mantaray manifest over a chunk tree; a feed is a topic and an owner whose signed
 updates name the content's newest root. [`ADR-0077`](../../../docs/decisions/ADR-0077-swarm-content-is-verified-chunk-by-chunk-from-a-local-node.md)
 is the design; [`ADR-0099`](../../../docs/decisions/ADR-0099-a-swarm-files-leaves-are-read-together-and-checked-one-by-one.md)
-adds the leaves read together.
+adds the leaves read together, and [`ADR-0102`](../../../docs/decisions/ADR-0102-verified-swarm-chunks-are-kept-on-disk-per-site-in-the-verifier-host.md)
+keeps verified chunks on disk, in the host that runs this code.
 
 **Not tied to Electron.** Durable. It runs over an injected `fetch`.
 
@@ -49,6 +50,18 @@ so a node that cannot answer in bulk costs time, never a byte. A failed bulk rea
 against the node, and each leaf is shared with any other read of it, as a chunk is. [`joiner.ts`](joiner.ts) keeps `AHEAD` leaves in flight across the whole file,
 not one intermediate chunk at a time, and asks for each intermediate chunk's first child as soon
 as it arrives, since the others' sizes wait on it.
+
+**The gatherer keeps verified chunks through an option, and never touches a disk.** `SwarmGathererOptions.memory` is the
+`BlockMemory` ([`../gateways/cache.ts`](../gateways/cache.ts)) a gatherer keeps chunks in between mounts; unset, it is an in-memory
+`BlockCache`. The verifier host passes one that also keeps them on disk
+([`../verifier-host/swarm-chunk-database.ts`](../verifier-host/swarm-chunk-database.ts), which says where, keyed how and cleared how):
+only content-addressed chunks (the ones `ChunkSource.get` and `ChunkSource.leaves` remember), never a single-owner chunk or a feed
+update, which are asked for because they may have changed. A chunk read back is hashed against its address again by the store, so
+nothing here trusts the disk. The disk is the optional `BlockMemory.recallKept`, a slower store behind the cache that answers on a turn
+of the event loop of its own: `ChunkSource.get` asks it after the cache, and `ChunkSource.leaves` asks it for every leaf of a file
+before the rest go to the node in one `/bytes` request, so a file read from disk never holds the process, and this directory still
+imports nothing from `node:`. A mount with no partition keeps nothing in either place. The mount's log line, and a large file's,
+say how many chunks `recallKept` took from disk for that mount or that read alone, whatever else was running.
 
 **A reference is spelled as a CID.** 64 hex characters cannot be one host label, so the canonical
 spelling is a CIDv1 of codec swarm-manifest over keccak-256 ([`reference.ts`](reference.ts)), 61

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { BlockCache } from '../../gateways/cache.js'
+import type { BlockMemory } from '../../gateways/cache.js'
 import { GatewayPool } from '../../gateways/gateways.js'
 import type { Fetch } from '../../gateways/gateways.js'
 import { allowlisted } from '../../verifier-host/egress.js'
@@ -221,6 +222,134 @@ describe('ChunkSource.leaves', () => {
     const source = new ChunkSource({ fetch: cut, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS })
     expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
     expect(swarm.requests).toEqual([`${A}/bytes/${parent}`, ...leaves.slice(2).map((leaf) => `${A}/chunks/${leaf.address}`)])
+  })
+})
+
+/**
+ * A memory with a slower store behind its cache, as the verifier host's is: `kept` is what the store holds, and
+ * `recallKept` answers a macrotask after it is asked, as the host's does. `asked` is every key looked up there.
+ */
+function withStore (kept: ReadonlyMap<string, Uint8Array>, held?: { readonly key: string, readonly until: Promise<void> }) {
+  const cache = new BlockCache()
+  const asked: string[] = []
+  const remembered: string[] = []
+  const memory: BlockMemory = {
+    remember: (partition, key, block) => { remembered.push(key); cache.remember(partition, key, block) },
+    recall: (partition, key) => cache.recall(partition, key),
+    share: (partition, key, start) => cache.share(partition, key, start),
+    recallKept: async (_partition, key) => {
+      asked.push(key)
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      if (held?.key === key) await held.until
+      return kept.get(key)
+    }
+  }
+  return { memory, asked, remembered }
+}
+
+describe('ChunkSource over a memory with a store behind its cache', () => {
+  function sourceOver (memory: BlockMemory, swarm: ReturnType<typeof subtree>['swarm']) {
+    return new ChunkSource({ fetch: swarm.fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }, memory, 'https://one.example')
+  }
+
+  it('takes a chunk the store keeps without asking an endpoint, and one it does not from the endpoint', async () => {
+    const { store, leaves, swarm } = subtree(3)
+    const kept = new Map([[leaves[0]!.address, store.get(leaves[0]!.address)!]])
+    const { memory } = withStore(kept)
+    const source = sourceOver(memory, swarm)
+    expect(await source.get(leaves[0]!.address, signal, () => {})).toEqual(store.get(leaves[0]!.address))
+    expect(swarm.requests).toEqual([])
+    expect(await source.get(leaves[1]!.address, signal, () => {})).toEqual(store.get(leaves[1]!.address))
+    expect(swarm.requests).toEqual([`${A}/chunks/${leaves[1]!.address}`])
+  })
+
+  it('does not look in the store for a read already abandoned', async () => {
+    const { leaves, swarm } = subtree(2)
+    const { memory, asked } = withStore(new Map())
+    const gone = new AbortController()
+    gone.abort()
+    await expect(sourceOver(memory, swarm).get(leaves[0]!.address, gone.signal, () => {})).rejects.toBeDefined()
+    expect(asked).toEqual([])
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('gives every leaf the store keeps, with the event loop turning between them and no request to an endpoint', async () => {
+    const { store, parent, leaves, swarm } = subtree(10, 100)
+    const { memory, asked } = withStore(new Map(leaves.map((leaf) => [leaf.address, store.get(leaf.address)!])))
+    const order: string[] = []
+    setImmediate(() => { order.push('another turn of the loop') })
+    const chunks = await Promise.all(sourceOver(memory, swarm).leaves(parent, leaves, signal, () => {}))
+    order.push('leaves done')
+    expect(chunks).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(order).toEqual(['another turn of the loop', 'leaves done'])
+    expect(asked).toEqual(leaves.map((leaf) => leaf.address))
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('hands over a leaf the store has as soon as it is read, without waiting for the lookup of the others', async () => {
+    const { store, parent, leaves, swarm } = subtree(4)
+    let open!: () => void
+    const until = new Promise<void>((resolve) => { open = resolve })
+    const { memory } = withStore(new Map(leaves.map((leaf) => [leaf.address, store.get(leaf.address)!])), { key: leaves[3]!.address, until })
+    const answers = sourceOver(memory, swarm).leaves(parent, leaves, signal, () => {})
+    expect(await answers[0]).toEqual(store.get(leaves[0]!.address))
+    expect(await Promise.race([answers[3], Promise.resolve('still looking')])).toBe('still looking')
+    open()
+    expect(await answers[3]).toEqual(store.get(leaves[3]!.address))
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('reads one /bytes request for the leaves the store lacks, and uses the store for the others', async () => {
+    const { store, parent, leaves, swarm } = subtree(8)
+    const keptLeaves = [leaves[0]!, leaves[1]!, leaves[4]!]
+    const { memory, remembered } = withStore(new Map(keptLeaves.map((leaf) => [leaf.address, store.get(leaf.address)!])))
+    const chunks = await Promise.all(sourceOver(memory, swarm).leaves(parent, leaves, signal, () => {}))
+    expect(chunks).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`])
+    expect(remembered.sort()).toEqual(leaves.filter((leaf) => !keptLeaves.includes(leaf)).map((leaf) => leaf.address).sort())
+  })
+
+  it('sends no /bytes request for a single leaf the store lacks, as it sends none without a store', async () => {
+    const { store, parent, leaves, swarm } = subtree(4)
+    const { memory } = withStore(new Map(leaves.slice(1).map((leaf) => [leaf.address, store.get(leaf.address)!])))
+    const chunks = await Promise.all(sourceOver(memory, swarm).leaves(parent, leaves, signal, () => {}))
+    expect(chunks).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/chunks/${leaves[0]!.address}`])
+  })
+
+  it('fetches every leaf when the store holds none, in the one /bytes request', async () => {
+    const { store, parent, leaves, swarm } = subtree(5)
+    const { memory } = withStore(new Map())
+    const chunks = await Promise.all(sourceOver(memory, swarm).leaves(parent, leaves, signal, () => {}))
+    expect(chunks).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`])
+  })
+
+  it('asks nothing of the store or an endpoint for a read abandoned before it started, and none of an endpoint for one abandoned while the store was asked', async () => {
+    const { store, parent, leaves, swarm } = subtree(4)
+    const { memory, asked } = withStore(new Map([[leaves[0]!.address, store.get(leaves[0]!.address)!]]))
+    const source = sourceOver(memory, swarm)
+    const before = new AbortController()
+    before.abort()
+    for (const answer of source.leaves(parent, leaves, before.signal, () => {})) await expect(answer).rejects.toBeDefined()
+    expect(asked).toEqual([])
+
+    const during = new AbortController()
+    const answers = source.leaves(parent, leaves, during.signal, () => {})
+    during.abort()
+    const settled = await Promise.allSettled(answers)
+    expect(settled.map((result) => result.status)).toEqual(['fulfilled', 'rejected', 'rejected', 'rejected'])
+    expect(swarm.requests).toEqual([])
+  })
+
+  it('refuses a leaf that is not a chunk address as it does without a store, and serves the rest', async () => {
+    const { store, parent, leaves, swarm } = subtree(3)
+    const { memory } = withStore(new Map())
+    const odd = [leaves[0]!, { ...leaves[1]!, address: 'not an address' }, leaves[2]!]
+    const settled = await Promise.allSettled(sourceOver(memory, swarm).leaves(parent, odd, signal, () => {}))
+    expect(settled.map((result) => result.status)).toEqual(['fulfilled', 'rejected', 'fulfilled'])
+    expect(settled[0]).toEqual({ status: 'fulfilled', value: store.get(leaves[0]!.address) })
+    expect(settled[2]).toEqual({ status: 'fulfilled', value: store.get(leaves[2]!.address) })
   })
 })
 
