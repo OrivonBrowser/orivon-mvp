@@ -44,7 +44,7 @@ const featuredGrid = document.querySelector<HTMLDivElement>('#featured-grid')
 const showHiddenButton = document.querySelector<HTMLButtonElement>('#featured-show-hidden')
 const reportBugButton = document.querySelector<HTMLButtonElement>('#report-bug')
 
-/** The page the "Report a bug" button opens in this tab. */
+/** The page the "Report a bug" button opens: main shows it in a tab of its own, or brings the one already open to the front. */
 const REPORT_URL = 'orivon://report/'
 
 /** Set on the root element, and announced as an event on the document, once every row has been drawn. Main reads both by these literal names. */

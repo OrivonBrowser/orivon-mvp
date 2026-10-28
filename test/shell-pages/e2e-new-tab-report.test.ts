@@ -1,5 +1,5 @@
 // The new tab's "Report a bug" button: a small pill with a bug icon in the window's bottom right, which opens
-// orivon://report/ in the tab that shows the dashboard.
+// orivon://report/ in a tab of its own.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { closeElectronApp } from '../support/e2e-helpers.js'
@@ -16,7 +16,7 @@ const dashboards = (app: ElectronApplication): Page[] => app.windows().filter((w
 const reportPages = (app: ElectronApplication): Page[] => app.windows().filter((w) => w.url().startsWith('orivon://report') && !w.isClosed())
 const tabCount = async (chrome: Page): Promise<number> => await chrome.locator('.tab').count()
 
-it('shows a small "Report a bug" button with a bug icon at the bottom right, and opens the bug report in this tab', async () => {
+it('shows a small "Report a bug" button with a bug icon at the bottom right, and opens the bug report in a tab of its own', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
@@ -46,9 +46,9 @@ it('shows a small "Report a bug" button with a bug icon at the bottom right, and
     await button.click()
     expect(await waitFor(() => reportPages(app).length === 1)).toBe(true)
     await (reportPages(app)[0] as Page).waitForSelector('#report-what')
-    // This tab went to the report page: no second tab opened, and the dashboard is no longer on screen.
-    expect(await tabCount(chrome)).toBe(before)
-    expect(await waitFor(() => dashboards(app).length === 0)).toBe(true)
+    // The report is a tab of its own, as every internal page is, and the dashboard stays in the tab it was in.
+    expect(await tabCount(chrome)).toBe(before + 1)
+    expect(dashboards(app).length).toBe(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectronApp(app)
