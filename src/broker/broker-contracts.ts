@@ -216,7 +216,7 @@ export interface CreateBrokerOptions extends RouteBrokerOptions {
 export interface SocketUsage {
   /** TCP sockets, listeners, UDP sockets and accepted connections: what the allowance counts. */
   readonly open: number
-  /** Calls running or waiting for a slot, among them every dial that has not answered yet. */
+  /** Calls running now, among them every dial that has not answered yet; a call waiting for a slot is not counted. */
   readonly inFlight: number
   readonly allowance: number
 }

@@ -36,3 +36,38 @@ describe('an outbound dial past the socket allowance never reaches the remote ho
     await first.close()
   })
 })
+
+describe('the socket usage an origin reports', () => {
+  it('counts the sockets it holds and the dial still running, against the allowance its manifest declares', async () => {
+    let answer: (() => void) | undefined
+    let dials = 0
+    const broker = createBroker(baseDeps({
+      dial: async () => {
+        dials++
+        if (dials === 1) return okSocket()
+        return await new Promise((resolve) => { answer = () => { resolve(okSocket()) } })
+      }
+    }))
+    await broker.registerApp(APP, manifestWith({ net: { tcp: { connect: ['93.184.216.34:443'] }, concurrentSockets: 4 } }))
+    await broker.grant(APP, 'tcp.connect', ['93.184.216.34:443'])
+    expect(broker.app.socketUsageSync(APP)).toEqual({ open: 0, inFlight: 0, allowance: 4 })
+
+    const held = await broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
+    const pending = broker.net.connect(APP, { host: '93.184.216.34', port: 443 })
+    while (answer === undefined) await new Promise((resolve) => setTimeout(resolve, 1))
+    expect(broker.app.socketUsageSync(APP)).toEqual({ open: 1, inFlight: 1, allowance: 4 })
+
+    answer()
+    const second = await pending
+    expect(broker.app.socketUsageSync(APP)).toEqual({ open: 2, inFlight: 0, allowance: 4 })
+    await held.close()
+    await second.close()
+    expect(broker.app.socketUsageSync(APP)).toEqual({ open: 0, inFlight: 0, allowance: 4 })
+  })
+
+  it('answers zero for an origin it has never seen or cannot read, and keeps no table for it', async () => {
+    const broker = createBroker(baseDeps({}))
+    expect(broker.app.socketUsageSync('not an origin')).toMatchObject({ open: 0, inFlight: 0 })
+    expect(broker.app.socketUsageSync('https://nobody.example')).toMatchObject({ open: 0, inFlight: 0 })
+  })
+})

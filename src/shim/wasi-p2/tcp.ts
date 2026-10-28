@@ -44,6 +44,9 @@ function streamsOf (socket: OrivonTcpSocket): { input: InputStream, output: Outp
 /** How long a dropped socket that wrote waits for its peer to end before the program's read side is released anyway. */
 export const DROP_GRACE_MS = 5_000
 
+/** The least a dropped socket that wrote waits after its writer's close before its handle is closed, whatever its peer has done. */
+const WRITE_FENCE_MS = 250
+
 export interface TcpContext {
   readonly net: SocketNet
   readonly names: ResolvedNames
@@ -290,8 +293,8 @@ export class TcpSocket {
    * already-"flushed" write had actually landed there, silently dropping it. The Worker's writer cannot see a
    * write land (a transferred stream settles when a chunk is posted), so time is the only fence it has: closing
    * through the writer keeps this socket's own FIN strictly behind every write already queued on it, and the
-   * peer's end or the grace period keeps the handle's close behind that. The grace also bounds a writer whose
-   * close() never settles because the peer stopped reading.
+   * fence of a few hundred milliseconds, and the peer's end or the grace period beyond it, keep the handle's close
+   * behind that. The grace also bounds a writer whose close() never settles because the peer stopped reading.
    *
    * A socket the program never wrote to (an unaccepted, queued connection dropped along with its listener, say)
    * has nothing to lose this way, so its handle is closed at once.
@@ -308,11 +311,12 @@ export class TcpSocket {
       void socket?.close().catch(() => {})
     }
     if (streams?.wrote() === true) {
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const peerEnded = streams.writer.close().catch(() => {}).then(async () => { await streams.reader.closed.catch(() => {}) })
-      const grace = new Promise<void>((resolve) => { timer = setTimeout(resolve, this.#context.dropGraceMs) })
-      void Promise.race([peerEnded, grace]).then(() => {
-        clearTimeout(timer)
+      const timers: Array<ReturnType<typeof setTimeout>> = []
+      const after = async (ms: number): Promise<void> => { await new Promise<void>((resolve) => { timers.push(setTimeout(resolve, ms)) }) }
+      // The fence runs even when the peer ended long ago: the writer's close settles when it is posted, not when the writes land.
+      const behind = streams.writer.close().catch(() => {}).then(async () => { await Promise.all([streams.reader.closed.catch(() => {}), after(Math.min(WRITE_FENCE_MS, this.#context.dropGraceMs))]) })
+      void Promise.race([behind, after(this.#context.dropGraceMs)]).then(() => {
+        for (const timer of timers) clearTimeout(timer)
         release()
       })
     } else {

@@ -276,7 +276,11 @@ export function serveOrivon (port: MessagePort, orivon: object, runSpawnSync?: R
       }
       // dispose() ran while this call was still pending: no Worker is left to receive what it returned, so a handle
       // is closed here rather than kept open in the broker for nobody.
-      if (disposed) { release(value); return }
+      if (disposed) {
+        release(value)
+        if (!sync) return
+        throw new Error('the Worker that asked has gone')
+      }
       if (sync && !crossesSynchronously(value)) {
         release(value)
         throw notSynchronous()

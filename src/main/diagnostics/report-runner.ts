@@ -37,6 +37,16 @@ function base (): string {
   return ingestBaseUrl(IS_TEST_BUILD, testOverrides().url, modeInputsFromEnv(process.env, devModeEnabled(), false).development)
 }
 
+/** Every origin's connection counts, or none: a report that cannot read them is still a report. */
+function readAppSockets (broker: SubsystemContext['broker']): ReturnType<typeof appSocketReadings> {
+  if (broker === undefined) return []
+  try {
+    return appSocketReadings(broker.app.registeredOriginsSync().map((origin) => broker.app.socketUsageSync(origin)))
+  } catch {
+    return []
+  }
+}
+
 async function readFacts (services: ShellServices, ctx: SubsystemContext): Promise<DiagnosticsFacts> {
   const gpuInfo = await app.getGPUInfo('basic').catch(() => undefined)
   const windows = services.windows.all().filter((window) => !window.window.isDestroyed())
@@ -70,7 +80,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       tabs: windows.reduce((sum, window) => sum + window.tabs.getState().tabs.length, 0),
       privateSession: services.isPrivate,
       extensions: (ctx.extensions?.list() ?? []).map(({ id, name, version, enabled }) => ({ id, name, version, enabled })),
-      appSockets: appSocketReadings(broker === undefined ? [] : broker.app.registeredOriginsSync().map((origin) => broker.app.socketUsageSync(origin))),
+      appSockets: readAppSockets(broker),
       settings: reportedSettings((key) => services.settings.get(key))
     },
     crashes: diagnostics()?.crashes() ?? []

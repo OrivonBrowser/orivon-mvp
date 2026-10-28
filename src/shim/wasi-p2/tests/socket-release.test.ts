@@ -91,7 +91,7 @@ describe('a program that drops sockets leaves the origin holding nothing', () =>
     await until(() => broker.app.socketUsageSync(APP).open === 0, 'the dropped sockets to leave the census')
   })
 
-  it('releases a socket the program never wrote to, one whose connect failed, and one it dropped before finishing the connect', async () => {
+  it('still releases a socket the program never wrote to, one whose connect failed, and one it dropped before finishing the connect', async () => {
     let calls = 0
     const broker = await brokerWithConnectGrant({
       dial: async () => {
