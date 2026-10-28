@@ -10,6 +10,37 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ## [Unreleased]
 
+### Changed for apps
+
+What an app that runs on Orivon must now do differently. One line per behaviour, naming its id from
+[`test/app-behaviours/catalogue.md`](test/app-behaviours/catalogue.md), what changed, what apps must
+now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
+public surface of `src/contracts/` (named `contracts/<file>`).
+
+## [0.0.12] - 2026-10-28
+
+Pre-release, published 2026-10-28. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.12).
+
+### Changed for apps
+
+- **`swarm-url-opens`**: a Swarm file's leaves are now read over the node's `/bytes` route, each checked against its parent, and fetched over `/chunks` alone only when that answer fails. Apps need no change; a Bee-API endpoint used for testing should serve `/bytes`, or each file is read a chunk at a time. Recheck: nothing.
+- **`permission-query-reads-prompt-when-a-request-would-ask`**: new row. `navigator.permissions.query({ name: 'camera' })` (and microphone, geolocation, clipboard-read, midi, idle-detection, window-management) now reads `prompt` for a permission the person has not decided, where it read `denied`, so an app that waited for anything but `denied` before asking can ask. An app that held back a request because it read `denied` needs no change; it can now ask. Recheck: any port that reads a permission before it asks for the camera or microphone.
+- **`page-drag-region-never-swallows-a-press`**: new row. A page's `-webkit-app-region: drag` no longer takes a press from the controls inside it, and the page's own regions are no longer reported to the window, so an app that draws its own title bar must not expect to drag Orivon's window by it. Recheck: Fluux Messenger, and any port that sets the property.
+
+### Added
+
+- **Settings > Web3 can ask your own Ethereum servers**: choose Your own servers and name up to four Ethereum RPC addresses and a beacon server; a node on this computer or your home network works. They replace Orivon's, which are never asked in their place, and a key in an address is hidden in the log, on screen and in a bug report.
+
+### Changed
+
+- **Swarm sites open about eight times sooner**: a file's leaves come from Orivon's Swarm node in one request per 512 KB, each still checked against the address its parent lists, up to 4 MB ahead, from a node that keeps 250 peers; a feed with no new update is found in one round. The WebTorrent app's page loaded in 15 to 18 s where it took 141 s, and a first start finds its peers about 10 s sooner.
+- **A newer Orivon release is announced inside the browser**: the update check no longer raises an operating-system notification. Once per version, in the window you are using, a question under the address bar offers "Download from GitHub" (the release page, in a new Orivon tab), "Download from latest.orivonstack.eth" (the start page of that name, which downloads the package for your system, in a new Orivon tab) or "Not now", and waits while the window is minimised, full screen or covered by another question. Settings > About shows a release the background check found, and the report log says why a check failed.
+- **The newest-release start page asks search engines not to index it**: the `index.html` that `latest.orivonstack.eth` opens now carries `<meta name="robots" content="noindex">`, as its `latest.orivonstack.com` twin does. A visitor sees the same page; the folder's CID changes on the next `sync`, the releases' do not.
+- **Orivon's IPFS node is built from public source**: the node now comes from the public `orivon-ipfs-node` repository (MIT or Apache-2.0), built by its workflow and published as one pinned IPFS folder that the app checks by size and sha256. It resolves peers' `/dns` and `/dnsaddr` names over TCP to `1.1.1.1` and `1.0.0.1`, so it sends no datagrams, and its default bootstrap list gains the one peer reached by address alone.
+- **Orivon's IPFS node can fetch from a provider behind a relay**: a provider whose only address goes through a circuit relay is now ranked after the direct ones and reached through that relay, so an `ipfs://` address whose only provider sits behind a home router and a relay can open. The relay is the one the provider's record names; it sees the two IP addresses, never the content, which is encrypted end to end.
+- **A provider behind a relay has longer to answer**: when the IPFS node asks a peer it fetched from a moment ago and every address of that peer goes through a circuit relay, it waits 8 seconds for the answer instead of 2, since a provider whose idle connection closed needs about 2.5 seconds to be reached again; the next file of a shared folder no longer fails because that provider was passed over.
+- **A fresh share's provider is found in seconds**: the IPFS node now keeps the addresses a provider's record carries, so a provider that is reachable only through a circuit relay can be dialled, and its walk through the network asks 10 peers at a time, holds up to 64 connections and ends 250 ms after the first provider it can reach. A share announced a moment ago opened in 4 to 9 minutes on Linux; on GitHub's Linux, macOS and Windows runners its provider was found in 2 to 7 seconds, 20 of 20 times each.
+
 ### Fixed
 
 - **A program in WebAssembly that drops sockets no longer runs its app out of them**: a socket it dropped while still connecting kept its dial running and its place in the app's in-flight calls, one it wrote to and dropped stayed counted for as long as its peer kept quiet, and a dial that answered after the program had ended was never closed. Orivon's IPFS node, which drops most sockets it opens, lost its connections and its HTTP API after about half an hour on macOS. A report's technical details now list, for the eight apps holding the most connections, how many each holds and may hold.
@@ -21,9 +52,8 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 - **An extension no longer takes a `.eth` page elsewhere when its load fails**: a name-resolution extension (MetaMask's address-bar resolution, for one) answers the error of a top-level `.eth` load by sending the tab to a gateway. Orivon now keeps the error of a load it makes itself from every extension, so a failed or interrupted `.eth` load stays in Orivon; the load's other events and the errors of other sites still reach extensions.
 - **A click on a password in the sign-in list fills it**: pressing a saved login, or "Use a strong password", in the list that opens under a password box closed the list and filled nothing, because the press moved the keyboard and the page reported the box as left. The press is now a choice, and the list stays open under its box until one is made.
 - **Buttons inside a page's own title bar can be clicked**: a page that marks a header `-webkit-app-region: drag` (Fluux Messenger's "+" buttons, for one) no longer has real mouse presses on the controls inside it taken for a window drag. On a page that re-lays-out every frame this costs about 1.7 ms of main-thread time per frame at 3,000 nodes.
-- **`.eth` names load on a fresh install again**: the bundled light-client checkpoint is now the first block of a finalized epoch that the beacon server bootstraps from, and a checkpoint that server answers 404 to is replaced in the same run.
 
-### Changed
+## [0.0.11] - 2026-10-24
 
 - **A Swarm site seen before opens from disk**: the chunks a site's pages read are kept on this computer (up to 256 MB of chunks in all, which take a little over 300 MB of disk; kept apart for each site, each chunk checked against its address again when read back), so a revisit, after a restart too, asks the node for none of them; clearing cached data or all history forgets them.
 - **Swarm sites open about eight times sooner**: a file's leaves come from Orivon's Swarm node in one request per 512 KB, each still checked against the address its parent lists, up to 4 MB ahead, from a node that keeps 250 peers; a feed with no new update is found in one round. The WebTorrent app's page loaded in 15 to 18 s where it took 141 s, and a first start finds its peers about 10 s sooner.
@@ -44,18 +74,26 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 - **Node shim: SQLite user-defined functions and backup**: `better-sqlite3`'s `db.function(name, [options], fn)` and `db.backup(destination)`, and `node:sqlite`'s `DatabaseSync#function`, now work (they threw "not built"); `aggregate`, `table`, `serialize` and `loadExtension` still refuse by name, and a backup cannot start inside a transaction.
 - **Node shim: a SQLite database from bytes, and `serialize`**: `better-sqlite3`'s `new Database(buffer)` opens the bytes of a database file as a database in the engine's memory (readable, writable, never written to a file; with `readonly` it refuses writes), and `db.serialize()` returns a database's bytes as a `Buffer`; `aggregate`, `table` and `loadExtension` still refuse by name.
+Pre-release, published 2026-10-24. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.11).
 
 ### Changed for apps
 
-What an app that runs on Orivon must now do differently. One line per behaviour, naming its id from
-[`test/app-behaviours/catalogue.md`](test/app-behaviours/catalogue.md), what changed, what apps must
-now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
-public surface of `src/contracts/` (named `contracts/<file>`).
-
-- **`swarm-url-opens`**: a Swarm file's leaves are now read over the node's `/bytes` route, each checked against its parent, and fetched over `/chunks` alone only when that answer fails. Apps need no change; a Bee-API endpoint used for testing should serve `/bytes`, or each file is read a chunk at a time. Recheck: nothing.
-- **`permission-query-reads-prompt-when-a-request-would-ask`**: new row. `navigator.permissions.query({ name: 'camera' })` (and microphone, geolocation, clipboard-read, midi, idle-detection, window-management) now reads `prompt` for a permission the person has not decided, where it read `denied`, so an app that waited for anything but `denied` before asking can ask. An app that held back a request because it read `denied` needs no change; it can now ask. Recheck: any port that reads a permission before it asks for the camera or microphone.
-- **`page-drag-region-never-swallows-a-press`**: new row. A page's `-webkit-app-region: drag` no longer takes a press from the controls inside it, and the page's own regions are no longer reported to the window, so an app that draws its own title bar must not expect to drag Orivon's window by it. Recheck: Fluux Messenger, and any port that sets the property.
 - **`sqlite-database-from-bytes`**: new row. An app that opens a database from a `Buffer` (`new Database(buffer)`) or reads one with `db.serialize()` no longer needs a change to run. Recheck: any port that caught the refusal, or that went through a temporary file.
+
+### Added
+
+- **Node shim: a SQLite database from bytes, and `serialize`**: `better-sqlite3`'s `new Database(buffer)` opens the bytes of a database file as a database in the engine's memory (readable, writable, never written to a file; with `readonly` it refuses writes), and `db.serialize()` returns a database's bytes as a `Buffer`; `aggregate`, `table` and `loadExtension` still refuse by name.
+
+### Fixed
+
+- **`.eth` names load on a fresh install again**: the bundled light-client checkpoint is now the first block of a finalized epoch that the beacon server bootstraps from, and a checkpoint that server answers 404 to is replaced in the same run.
+
+## [0.0.10] - 2026-10-23
+
+Pre-release, published 2026-10-23. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.10).
+
+### Changed for apps
+
 - **`sqlite-user-functions`** and **`sqlite-backup-to-app-files`**: new rows. An app that registers SQL functions on its database, or copies it with `db.backup`, no longer needs a change to run; `backup` cannot run inside a transaction. Recheck: any port that caught the refusal.
 - **`node-fs-ancestors-of-the-files-root-exist`**: new row. `fs.stat`, `existsSync` and `mkdir` on `/` and `/orivon` now answer as for directories that exist, and `readdir` lists the one entry toward the app's files; they failed `EACCES` before. Writes on them and any path beside the files still fail `EACCES`. Recheck: any port that walks a folder's ancestors.
 - **`file-handle-streams`**: new row. A page's `FileHandle`, from `orivon.fs.open`, a pick or a folder, now has the `readable()` and `writable()` its contract names; they were missing, so calling one threw. Each chunk is an ordinary positional `read` or `write`, counted and refused as one. Recheck: TorSocks.
@@ -64,8 +102,15 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **`routed-fetch-sends-no-origin-by-default`**, **`routed-fetch-delivers-body-in-pieces`**, **`routed-xhr-puts-binary-body-without-cors`**, **`routed-fetch-loopback-grant-covers-both-spellings`**, **`routed-websocket-wss-carries-origin-and-subprotocol`**, **`routed-websocket-reaches-granted-loopback-port`**, **`web-lock-if-available-follows-the-holder`**, **`user-agent-redefinable-by-head-script`** and **`cache-api-stores-and-reads-back`**: new rows that pin behaviour already documented, each with an end-to-end spec. A routed `fetch` adds no `Origin` or `Referer`, and delivers a chunked body as it arrives; a routed `WebSocket` sends the page's origin and the subprotocol it offered. Recheck: nothing.
 - **`routed-fetch-sends-formdata`** and **`routed-fetch-follows-redirects`**: now proven by an end-to-end spec. The first row's sentence also names the multipart body, the file's name and bytes, and a `File` body's type; the second names the bound (forty hops fail). Recheck: Element.
 
+### Added
+
+- **Node shim: `/` and `/orivon` exist as directories**: a program that makes a folder by walking from `/` (`stat` each ancestor, `mkdir` the missing ones) now reaches the app's files. They list one entry, the next segment toward the files, and every write, removal, rename and open on them, and any path beside the files, still fails `EACCES`.
+- **Node shim: `crypto.randomInt`, `fs.mkdtemp`, `fs.cp` and `fs.copyFile`**: `randomInt` draws by rejection sampling over the platform's random values, in both forms; `copyFile`, `cp` (with `recursive`, `force`, `errorOnExist` and `filter`) and `mkdtemp` work on the app's own files and on a folder the person picked, in the callback and promise forms, with Node's errors.
+- **Node shim: SQLite user-defined functions and backup**: `better-sqlite3`'s `db.function(name, [options], fn)` and `db.backup(destination)`, and `node:sqlite`'s `DatabaseSync#function`, now work (they threw "not built"); `aggregate`, `table`, `serialize` and `loadExtension` still refuse by name, and a backup cannot start inside a transaction.
+
 ### Changed
 
+- **`.eth.limo` addresses inside a page load as `.eth`**: an image, script, stylesheet, font, media file or request a page loads from a `<name>.eth.limo` or `.eth.link` address now comes from the `.eth` name, checked on this computer, and a request from another origin can still read it. Frames keep loading through the gateway, since a `.eth` site refuses to be framed by another site; Settings > Web3 turns it off.
 - **Releases carry the plain downloads only**: the installer and AppImage copies named for an app are no longer attached to a release or its IPFS folder. A copy renamed for an app still opens it on first run.
 
 ### Fixed
