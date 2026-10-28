@@ -81,6 +81,41 @@ describe('the tunnel button look on a new tab', () => {
   })
 })
 
+describe('the tunnel button look when the page is not on the tunnel its tab chose', () => {
+  it('does not say the choice is the tab\'s for a page on a tunnel of its own in a direct tab, which a direct choice leaves it', () => {
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, 'on', 'socks5').label).toBe('Tunnels. This page goes through your proxy')
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, 'down', 'nym').label).toBe('Tunnels. Nym is not answering, so this page\'s traffic is stopped')
+  })
+
+  it('does not say it for a page on the other tunnel than the tab\'s, as a page an app opened is', () => {
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'socks5').label).toBe('Tunnels. This page goes through your proxy')
+  })
+
+  it('says it only when the page is on the tunnel the tab chose', () => {
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'socks5' }, 'on', 'socks5').label).toBe(`Tunnels. This page goes through your proxy. ${TAB_CHOICE_NOTE}`)
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'nym').label).toBe(`Tunnels. This page goes through Nym. ${TAB_CHOICE_NOTE}`)
+  })
+})
+
+describe('the tunnel button on a blank page that is no new tab', () => {
+  const popup = { url: 'about:blank', isNewTab: true, isInternal: false, blankInSession: true } as TabState
+
+  it('is absent: the page is in a session of its own, which the new tab\'s words would not describe', () => {
+    expect(tunnelButtonLook(popup, 'on', 'nym').hidden).toBe(true)
+    expect(tunnelButtonLook({ ...popup, tunnelChoice: 'nym' }, null).hidden).toBe(true)
+  })
+
+  it('opens nothing when pressed', () => {
+    const { shell, listeners } = mount(popup)
+    listeners.get('click')?.({ button: 0 })
+    expect(shell.openSiteInfo).not.toHaveBeenCalled()
+  })
+
+  it('is still there on a new tab', () => {
+    expect(tunnelButtonLook(newTab, null).hidden).toBe(false)
+  })
+})
+
 describe('the tunnel button module', () => {
   it('is one of the chrome modules', () => {
     expect(CHROME_MODULES.map((module) => module.name)).toContain('tunnel-button')

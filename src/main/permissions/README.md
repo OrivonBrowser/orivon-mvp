@@ -19,7 +19,7 @@ reports the update a moved name offers the installed app and takes the person's 
 off, or the app was never let in), and an app never let in carries `SiteInfo.notLetIn` and has `reviewPermissions`
 (`ADR-0085`); what it asks of the first visit (`AppEntry`) is injected by `../shell/window-panels.ts`.
 
-The tunnels page also opens for a tab rather than a site: `site-info-tab.ts` (pure) words the tunnel rows of "This tab" for the tab's own choice, and the controller's
+The tunnels page also opens for a tab rather than a site: `site-info-tab.ts` (pure) words the tunnel rows of "This tab" for the tab's own choice (and, while the tunnel settings cannot be read, for the one tunnel every website takes then), and the controller's
 `tabInfoFor` and `setTabTunnel` read and move that choice through the tab manager (`../shell/tab-tunnel-choice.ts`). The popup opened this way is bound to the tab, not to an origin,
 and answers only the tunnel commands (`../ipc/site-info-tab-ipc.ts`).
 

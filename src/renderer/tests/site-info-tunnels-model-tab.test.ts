@@ -49,6 +49,23 @@ describe('the tunnels page of a tab', () => {
     expect(directTabNote(false)).toBe('Direct for this tab: the sites you open here do not use a tunnel.')
   })
 
+  it('says that a site with a tunnel of its own keeps it in a direct tab, which a direct choice leaves it', () => {
+    const list = notes(tab({ via: null, following: false, tabChoice: 'direct' }, { everywhere: true }))
+    expect(TAB_DIRECT_PROFILE_NOTE).toContain('A site that has a tunnel of its own keeps it.')
+    expect(list).toContain(TAB_DIRECT_PROFILE_NOTE)
+  })
+
+  it('does not say direct for a direct tab while the settings cannot be read: its sites go through the one tunnel all sites take', () => {
+    const info = tab({ via: 'socks5', following: false, tabChoice: 'direct', unreadable: true }, { route: 'ok' })
+    const model = tunnelListModel(info, noView)
+    expect(row(model, 'socks5')).toMatchObject({ on: true, disabled: true })
+    const text = model.notes.map((note) => note.text)
+    expect(text.join(' ')).not.toContain('Direct for this tab')
+    expect(text.join(' ')).not.toContain('direct profile')
+    expect(text.join(' ')).toContain('could not read your tunnel settings')
+    expect(tabNotes({ ...tunnel, tabChoice: 'direct', unreadable: true }, false, true)).toEqual([])
+  })
+
   it('names the choice, so a tab opened on a website still says what is set for every site in it', () => {
     expect(notes(tab({ via: 'nym', following: false, tabChoice: 'nym' }))).toEqual(['Every site you open in this tab goes through Nym, until the tab is closed.', TAB_TUNNEL_PROFILE_NOTE])
     expect(notes(tab({ via: 'socks5', following: false, tabChoice: 'socks5' }))).toContain('Every site you open in this tab goes through your tunnel, until the tab is closed.')

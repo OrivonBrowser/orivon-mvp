@@ -24,6 +24,8 @@ describe('createSiteInfoController -- the tunnel of a tab', () => {
     everywhere?: boolean
     defaultKind?: 'nym' | 'socks5'
     unreadable?: boolean
+    /** The profile every website is in while the settings cannot be read. */
+    unreadableProfile?: 'nym' | 'socks5'
     nymOff?: boolean
     noProxy?: boolean
     routeState?: string
@@ -32,7 +34,12 @@ describe('createSiteInfoController -- the tunnel of a tab', () => {
   function routesFor (options: Options = {}): SubsystemContext['routes'] {
     asked.length = 0
     return {
-      hub: { state: (origin: string) => { asked.push(origin); return options.routeState ?? 'ok' }, unreadable: () => options.unreadable === true, isEverywhere: () => options.everywhere === true },
+      hub: {
+        state: (origin: string) => { asked.push(origin); return options.routeState ?? 'ok' },
+        unreadable: () => options.unreadable === true,
+        profileFor: () => options.unreadable === true ? options.unreadableProfile ?? 'nym' : undefined,
+        isEverywhere: () => options.everywhere === true
+      },
       store: { entries: () => [] },
       defaultKind: () => options.defaultKind ?? 'nym',
       targetOf: (kind: 'nym' | 'socks5') => kind === 'socks5' && options.noProxy === true ? undefined : { host: '127.0.0.1', port: 9050 },
@@ -88,6 +95,33 @@ describe('createSiteInfoController -- the tunnel of a tab', () => {
     expect(controllerFor(routesFor({ nymOff: true }), tabs(undefined)).tabInfoFor('t1')?.tunnel?.blocked).toEqual({ nym: 'nym-off' })
     expect(controllerFor(routesFor({ unreadable: true }), tabs(undefined)).tabInfoFor('t1')?.tunnel?.unreadable).toBe(true)
     expect(controllerFor(routesFor(), tabs(undefined), 'nym').tabInfoFor('t1')?.tunnelHeld).toBe('nym')
+  })
+
+  describe('while the tunnel settings cannot be read', () => {
+    it('lights the tunnel every website takes for a tab with no choice, even with the whole browser off a tunnel, and reads that tunnel\'s profile', () => {
+      const info = controllerFor(routesFor({ unreadable: true, unreadableProfile: 'nym', routeState: 'down' }), tabs(undefined)).tabInfoFor('t1')
+      expect(info).toMatchObject({ tunnelKind: 'nym', route: 'down', nym: { state: 'ready' }, tunnel: { via: 'nym', following: true, unreadable: true } })
+      expect(asked).toEqual(['orivon-tunnel-profile'])
+    })
+
+    it('takes the default tunnel\'s profile when it has an address, which is the proxy', () => {
+      const info = controllerFor(routesFor({ unreadable: true, unreadableProfile: 'socks5', defaultKind: 'socks5' }), tabs(undefined)).tabInfoFor('t1')
+      expect(info).toMatchObject({ tunnelKind: 'socks5', route: 'ok', tunnel: { via: 'socks5' } })
+      expect(info?.nym).toBeUndefined()
+      expect(asked).toEqual(['orivon-proxy-profile'])
+    })
+
+    it('does not say direct for a tab restored with a direct choice: its websites go where every website does', () => {
+      const info = controllerFor(routesFor({ unreadable: true, unreadableProfile: 'socks5', defaultKind: 'socks5' }), tabs('direct')).tabInfoFor('t1')
+      expect(info).toMatchObject({ tunnelKind: 'socks5', route: 'ok', tunnel: { via: 'socks5', tabChoice: 'direct', unreadable: true } })
+      expect(asked).toEqual(['orivon-proxy-profile'])
+    })
+
+    it('keeps a tunnel the tab chose', () => {
+      const info = controllerFor(routesFor({ unreadable: true, unreadableProfile: 'nym' }), tabs('socks5')).tabInfoFor('t1')
+      expect(info).toMatchObject({ tunnelKind: 'socks5', tunnel: { via: 'socks5', tabChoice: 'socks5' } })
+      expect(asked).toEqual(['orivon-proxy-profile'])
+    })
   })
 
   it('gives the tab the tunnel asked for, and says whether it kept it', () => {

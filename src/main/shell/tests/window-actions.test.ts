@@ -75,10 +75,10 @@ describe('shellActions press', () => {
 
 describe('shellActions openSiteInfo for the tunnel button', () => {
   const anchor = { x: 900, y: 40, width: 30, height: 30 }
-  function partsWith (tabs: unknown[], activeTabId: string | null): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn> } {
+  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn> } {
     const sitePanel = { close: vi.fn(), toggle: vi.fn(), toggleTab: vi.fn() }
     const parts = makeParts({})
-    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => ({ tabs, activeTabId }) }
+    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => ({ tabs, activeTabId }), partitionOf: () => partition }
     ;(parts.panels as unknown as { siteInfo: unknown }).siteInfo = sitePanel
     return { actions: shellActions(parts), sitePanel, closeOverlays: parts.closeOverlays as unknown as ReturnType<typeof vi.fn> }
   }
@@ -92,13 +92,32 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
   })
 
   it('opens it for the tab when the page shown is a website of a tab with a choice, and for the website when the tab has none', () => {
-    const withChoice = partsWith([{ id: 't1', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1')
+    const withChoice = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1')
     withChoice.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
     expect(withChoice.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
     const plain = partsWith([{ id: 't1', isNewTab: false, isInternal: false }], 't1')
     plain.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
     expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
     expect(plain.sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+  })
+
+  it('opens it for the website when the page is in a session an app or a temporary route made, which keeps its tunnel whatever the tab chose', () => {
+    for (const partition of ['persist:app-3f9c', 'orivon-route-tab-3f9c0a']) {
+      const { actions, sitePanel } = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1', partition)
+      actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
+      expect(sitePanel.toggleTab, partition).not.toHaveBeenCalled()
+      expect(sitePanel.toggle, partition).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+    }
+    const inProfile = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1', 'persist:tunnel-profile')
+    inProfile.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
+    expect(inProfile.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+  })
+
+  it('opens it for a blank page that is no new tab as for a page with no origin: nothing', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: 'about:blank', isNewTab: true, isInternal: false, blankInSession: true }], 't1', 'persist:tunnel-profile')
+    actions.openSiteInfo(anchor, 'tunnels')
+    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(sitePanel.toggle).not.toHaveBeenCalled()
   })
 
   it('never opens the tab\'s popover for the shield or the key, which are about the page', () => {

@@ -42,15 +42,24 @@ export interface TunnelButtonLook {
   readonly label: string
 }
 
-/** Whether the tab in front has the button: the new tab and every website have it, the shell's own pages do not. */
+/** Whether the tab in front has the button: the new tab and every website have it; the shell's own pages and a blank page that is not a new tab (a popup opened with no address) do not. */
 function hasButton (tab: TabState | undefined): tab is TabState {
-  return tab !== undefined && !tab.isInternal
+  return tab !== undefined && !tab.isInternal && tab.blankInSession !== true
+}
+
+/**
+ * The words after the page's own, when the tunnel it goes through is the one its tab was told: the person knows the button sets more
+ * than this page. A direct tab, or a page that goes through a tunnel the tab did not choose (a website's own entry, which a direct
+ * choice leaves it, or an app's), says nothing: the button does not set that tunnel.
+ */
+function choiceSuffix (tab: TabState, via: ShellState['tunnelVia']): string {
+  return tab.tunnelChoice !== undefined && tab.tunnelChoice !== 'direct' && via === tab.tunnelChoice ? `. ${TAB_CHOICE_NOTE}` : ''
 }
 
 /**
  * The button for the tab in front: absent on the shell's own pages, grey on a direct page, purple on a tunnelled one. On a new tab
  * it is about the tab, whose sites go where the tab's choice (else the browser's) sends them; on a website in a tab with a choice
- * it still colours the page, and says the choice is the tab's.
+ * it still colours the page, and says the choice is the tab's when the page is on the tunnel the choice named.
  */
 export function tunnelButtonLook (active: TabState | undefined, tunnel: ShellState['tunnel'], via: ShellState['tunnelVia'] = null): TunnelButtonLook {
   if (!hasButton(active)) return { hidden: true, state: null, label: TUNNEL_BUTTON_LABEL }
@@ -60,7 +69,7 @@ export function tunnelButtonLook (active: TabState | undefined, tunnel: ShellSta
     return { hidden: false, state, label: note === undefined ? TUNNEL_BUTTON_LABEL : `${TUNNEL_BUTTON_LABEL}. ${note}` }
   }
   if (state === null) return { hidden: false, state, label: active.tunnelChoice === 'direct' ? `${TUNNEL_BUTTON_LABEL}. ${TAB_TUNNEL_NOTES.direct}` : TUNNEL_BUTTON_LABEL }
-  return { hidden: false, state, label: `${TUNNEL_BUTTON_LABEL}. ${tunnelNote(state, via)}${active.tunnelChoice === undefined ? '' : `. ${TAB_CHOICE_NOTE}`}` }
+  return { hidden: false, state, label: `${TUNNEL_BUTTON_LABEL}. ${tunnelNote(state, via)}${choiceSuffix(active, via)}` }
 }
 
 /** The tunnel button in the address pill: it opens the tunnels page of the site-info popup, anchored to itself. Its colour is the page's

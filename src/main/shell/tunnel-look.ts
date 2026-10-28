@@ -1,11 +1,11 @@
 // What the address bar's tunnel button says: about the page a tab shows, and about a new tab that shows none yet. A tab that
 // carries a tunnel choice sends the websites it opens by the choice (ADR-0101), so the page's tunnel is the choice's, whatever
 // its own origin would have been on. Electron-free: the session a page runs in arrives as an opaque object.
-import { canTunnel, kindOfProfile } from '../route/site-partition.js'
-import { profileOrigin, SHARED_ORIGIN } from '../route/route-hub.js'
+import { canTunnel } from '../route/site-partition.js'
+import { profileOrigin, SHARED_ORIGIN, unreadableTunnel } from '../route/route-hub.js'
 import type { RouteHub } from '../route/route-hub.js'
 import type { RouteController } from '../route/route-controller.js'
-import { tunnelForTab } from '../route/tab-tunnel.js'
+import { tabWebsitesTunnel, tunnelForTab } from '../route/tab-tunnel.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import type { TunnelKind } from '../route/route-state.js'
 import { tunnelLookFor, tunnelMarkFor } from '../route/tunnel-mark.js'
@@ -38,14 +38,13 @@ export function pageTunnelLook (routes: LookRoutes, page: PageFacts): TunnelLook
   return tunnelLookFor({ state, temporary: page.temporary, own, session: routes.controller.tunnelOf(page.holder) })
 }
 
-/** The tunnel a new tab's first address will leave by: the tab's choice, else where a website with no entry of its own goes. */
+/**
+ * The tunnel a new tab's first address will leave by: the tab's choice when it is a tunnel, else where a website with no entry of
+ * its own goes. With the tunnel settings unreadable that is one tunnel for every website, direct choice included, though the shared
+ * identity (Orivon's own requests) does not change with it.
+ */
 function newTabKind (hub: LookRoutes['hub'], choice: TabTunnelChoice | undefined): TunnelKind | undefined {
-  if (choice === 'direct') return undefined
-  if (choice !== undefined) return choice
-  if (!hub.unreadable()) return hub.kindOf(SHARED_ORIGIN)
-  // With the tunnel settings unreadable every website takes one tunnel's profile, though Orivon's own requests do not change.
-  const profile = hub.profileFor(SHARED_ORIGIN)
-  return profile === undefined ? undefined : kindOfProfile(profile)
+  return tabWebsitesTunnel(choice, hub.kindOf(SHARED_ORIGIN), unreadableTunnel(hub))
 }
 
 /**

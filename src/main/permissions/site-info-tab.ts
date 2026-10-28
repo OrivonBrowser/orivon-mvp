@@ -2,6 +2,7 @@
 // carries (`../route/tab-tunnel.ts`, ADR-0101). Pure: the controller reads the routes and the tabs, this builds what the
 // popover shows from what it read.
 
+import { tabWebsitesTunnel } from '../route/tab-tunnel.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import type { SiteTunnel, SiteTunnelKind } from './site-info.js'
 
@@ -24,21 +25,25 @@ export interface TabTunnelFacts {
   readonly everywhere: boolean
   readonly defaultKind: SiteTunnelKind
   readonly unreadable: boolean
+  /** The tunnel every website takes while the settings cannot be read (`unreadableTunnel`); undefined while they can be. */
+  readonly unreadableKind?: SiteTunnelKind
   readonly blocked: SiteTunnel['blocked']
   readonly proxy: SiteTunnel['proxy']
 }
 
-/** The tunnel a tab's websites go through now: its choice, else the default tunnel while the whole browser is on one, else none. */
-export function tabVia (choice: TabTunnelChoice | undefined, everywhere: boolean, defaultKind: SiteTunnelKind): SiteTunnelKind | null {
-  if (choice === 'direct') return null
-  if (choice !== undefined) return choice
-  return everywhere ? defaultKind : null
+/**
+ * The tunnel a tab's websites go through now: its choice when it is a tunnel, else the tunnel every website takes while the settings
+ * cannot be read (which a direct choice yields to), else none for a direct choice, else the default tunnel while the whole browser
+ * is on one, else none (`tabWebsitesTunnel`).
+ */
+export function tabVia (choice: TabTunnelChoice | undefined, everywhere: boolean, defaultKind: SiteTunnelKind, unreadableKind?: SiteTunnelKind): SiteTunnelKind | null {
+  return tabWebsitesTunnel(choice, everywhere ? defaultKind : undefined, unreadableKind) ?? null
 }
 
 /** The tunnel switches of a tab. A tab's choice moves no website's own storage for the first time the way a website's entry does, so it asks no notice first. */
 export function tabTunnel (facts: TabTunnelFacts): SiteTunnel {
   return {
-    via: tabVia(facts.choice, facts.everywhere, facts.defaultKind),
+    via: tabVia(facts.choice, facts.everywhere, facts.defaultKind, facts.unreadableKind),
     following: facts.choice === undefined,
     subject: 'tab',
     blocked: facts.blocked,

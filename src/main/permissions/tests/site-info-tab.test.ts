@@ -24,6 +24,23 @@ describe('the tunnel a tab\'s websites go through', () => {
   })
 })
 
+describe('the tunnel a tab\'s websites go through while the tunnel settings cannot be read', () => {
+  it('is the tunnel every website takes, for a tab with no choice and for a direct one, even with the whole browser off a tunnel', () => {
+    expect(tabVia(undefined, false, 'socks5', 'nym')).toBe('nym')
+    expect(tabVia('direct', false, 'socks5', 'nym')).toBe('nym')
+    expect(tabVia('direct', true, 'nym', 'socks5')).toBe('socks5')
+  })
+
+  it('is still the tab\'s own tunnel when it chose one', () => {
+    expect(tabVia('socks5', false, 'nym', 'nym')).toBe('socks5')
+  })
+
+  it('is carried by the switches of the tab', () => {
+    expect(tabTunnel(facts({ unreadable: true, unreadableKind: 'nym' }))).toMatchObject({ via: 'nym', following: true, unreadable: true })
+    expect(tabTunnel(facts({ choice: 'direct', unreadable: true, unreadableKind: 'socks5' }))).toMatchObject({ via: 'socks5', tabChoice: 'direct', unreadable: true })
+  })
+})
+
 describe('the tunnel switches of a tab', () => {
   it('are about a tab, follow the browser while the tab has no choice and carry no choice then', () => {
     const tunnel = tabTunnel(facts({ everywhere: true }))

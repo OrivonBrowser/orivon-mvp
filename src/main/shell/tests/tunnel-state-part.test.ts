@@ -44,6 +44,15 @@ describe('the tunnel part of the chrome state', () => {
     expect(newTabLookOf).toHaveBeenCalledWith(undefined)
   })
 
+  it('has no look of a new tab for a blank page in a session of its own, which no new tab is: it is asked about as a page, which has none', () => {
+    const lookOf = vi.fn(() => ({ mark: null, via: null }))
+    const newTabLookOf = vi.fn((_choice: string | undefined) => ({ mark: 'on', via: 'nym' }))
+    const tabs = { tabs: [{ id: 't1', isNewTab: true, blankInSession: true }], activeTabId: 't1' } as never
+    expect(tunnelStatePart.read(ctx(lookOf, { url: 'about:blank', partition: 'persist:direct-profile' }, newTabLookOf), tabs)).toEqual({ tunnel: null, tunnelVia: null })
+    expect(newTabLookOf).not.toHaveBeenCalled()
+    expect(lookOf).toHaveBeenCalledWith('about:blank', 'persist:direct-profile', undefined)
+  })
+
   it('follows the routes changing', () => {
     const context = ctx(() => ({ mark: null, via: null }), null)
     const push = vi.fn()

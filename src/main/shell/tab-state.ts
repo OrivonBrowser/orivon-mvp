@@ -36,6 +36,7 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     muted: record?.muted ?? false,
     audible: false,
     crashed: record?.crashed ?? null,
+    ...(url === BLANK_URL && record?.partition !== undefined ? { blankInSession: true } : {}),
     ...(record?.tunnelChoice === undefined ? {} : { tunnelChoice: record.tunnelChoice }),
     ...(record === undefined ? {} : signalState(record, wc))
   }

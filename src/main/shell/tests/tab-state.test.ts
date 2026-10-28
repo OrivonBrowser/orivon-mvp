@@ -60,6 +60,7 @@ const { TabManager } = await import('../tabs.js')
 const { provideVerifierAccess } = await import('../../verifier/verifier-access.js')
 const { setPinned } = await import('../tab-pin.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
+const { buildTabState } = await import('../tab-state.js')
 const { closeOthers, closeToRight, duplicateTab, newTabToRight, othersToClose, rightToClose, tabMenuFlags, toggleMute, togglePin } = await import('../tab-commands.js')
 
 beforeEach(() => { createdViews.length = 0 })
@@ -564,5 +565,29 @@ describe('a tab with a tunnel choice', () => {
     expect(manager.record(a)).not.toHaveProperty('tunnelChoice')
     expect(() => { manager.setTunnelChoice('missing', 'nym') }).not.toThrow()
     expect(manager.activeTunnelChoice()).toBeUndefined()
+  })
+})
+
+describe('a blank page that is no new tab', () => {
+  const env = { dashboardUrl: 'http://localhost:5999/newtab/', partnerOf: () => null }
+  const stateOf = (url: string, record: Record<string, unknown>) => {
+    const wc = { ...makeFakeWebContents(), getURL: () => url }
+    return buildTabState('t1', { isDashboardTab: false, ...record } as never, wc as never, env)
+  }
+
+  it('is flagged when a blank page is in a session of its own: a popup a page opened with no address, or a tab whose address was refused', () => {
+    for (const partition of ['persist:tunnel-profile', 'persist:app-3f9c', 'orivon-route-tab-1']) {
+      expect(stateOf('about:blank', { partition }), partition).toMatchObject({ isNewTab: true, blankInSession: true })
+    }
+  })
+
+  it('is not flagged on a new tab: the dashboard, or a blank page in the shared session', () => {
+    expect(stateOf('about:blank', {})).toMatchObject({ isNewTab: true })
+    expect(stateOf('about:blank', {})).not.toHaveProperty('blankInSession')
+    expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).not.toHaveProperty('blankInSession')
+  })
+
+  it('is not flagged on a page that shows something', () => {
+    expect(stateOf('https://news.example/', { partition: 'persist:tunnel-profile' })).not.toHaveProperty('blankInSession')
   })
 })

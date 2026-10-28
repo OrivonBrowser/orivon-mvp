@@ -19,7 +19,7 @@ import { assertNoElectronSurvivors, closeElectron } from '../support/launch-elec
 import { shoot } from '../support/auth-support.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
-import { activeTabInfo, delay, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const NAME = 'plain.nym.test'
 
@@ -27,7 +27,7 @@ interface Hosted { port: number, hits: () => number, close: () => Promise<void> 
 
 async function host (title: string): Promise<Hosted> {
   let hits = 0
-  const server: Server = createServer((_request, response) => { hits += 1; response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(`<!doctype html><title>${title}</title><body>${title}</body>`) })
+  const server: Server = createServer((_request, response) => { hits += 1; response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(`<!doctype html><title>${title}</title><body>${title}<button id="blank" onclick="window.open('about:blank')">blank</button></body>`) })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   return { port: (server.address() as AddressInfo).port, hits: () => hits, close: async () => { await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections() }) } }
 }
@@ -202,6 +202,33 @@ it('[app:tab-tunnel-button-direct-for-this-tab-under-a-tunnelled-browser] with t
     expect((await waitForTab(chrome, { address: url(), title: 'direct' }, 60_000)).ok).toBe(true)
     expect(decoy.hits() - decoyBefore, 'a direct tab reaches the website outside the tunnel').toBeGreaterThan(0)
     expect(askedOfNym() - before, 'and Nym was not asked for it').toBe(0)
+  } finally {
+    await closeElectron(app)
+  }
+}, 6 * QA_TEST_TIMEOUT_MS)
+
+it('[app:tab-tunnel-button-blank-popup-of-a-tunnelled-tab-has-no-button] a blank popup a page opens in a tab given a tunnel is in that tunnel\'s session and is no new tab: its tunnel button is gone, and the page\'s comes back with the page', async () => {
+  const { app, chrome } = await start()
+  try {
+    const popover = await openList(app, chrome)
+    await popover.click('#tunnel-switch-nym')
+    expect(await waitFor(async () => await attribute(chrome, 'data-tunnel') === 'on')).toBe(true)
+    await closeList(app, chrome)
+    await clickAddressBarRetrying(chrome, url())
+    expect((await waitForTab(chrome, { address: url(), title: 'tunnelled' }, 60_000)).ok).toBe(true)
+    expect(await waitFor(() => findViewShowing(app, chrome, url()) !== undefined)).toBe(true)
+    const first = await activeId(chrome)
+
+    // The popup holds no address yet and lives in the session of the page that opened it, so a new tab's words about its first address would describe it wrongly.
+    await (findViewShowing(app, chrome, url()) as Page).click('#blank')
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) !== first)).toBe(true)
+    expect(await waitFor(async () => !(await chrome.locator('#tunnel-btn').isVisible())), 'the blank popup has no tunnel button').toBe(true)
+
+    const popup = await activeId(chrome)
+    await chrome.evaluate((tab) => { (window as unknown as { orivonShell: { closeTab: (id: string) => void } }).orivonShell.closeTab(tab) }, popup)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 1 && await activeId(chrome) === first)).toBe(true)
+    expect(await waitFor(async () => await chrome.locator('#tunnel-btn').isVisible() && await attribute(chrome, 'data-tunnel') === 'on'), 'the page\'s button is back').toBe(true)
+    expect(await attribute(chrome, 'aria-label')).toBe('Tunnels. This page goes through Nym. Set for this tab')
   } finally {
     await closeElectron(app)
   }

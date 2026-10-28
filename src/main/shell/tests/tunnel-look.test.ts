@@ -96,4 +96,11 @@ describe('the look of a new tab', () => {
     expect(r.asked).toEqual(['orivon-tunnel-profile'])
     expect(newTabTunnelLook(routes({ unreadable: true }), undefined)).toEqual({ mark: null, via: null })
   })
+
+  it('goes through that tunnel for a direct tab too, which yields to it as to a website\'s own tunnel, but keeps a tunnel the tab chose', () => {
+    const r = routes({ unreadable: true, profileFor: () => 'nym' })
+    expect(newTabTunnelLook(r, 'direct')).toEqual({ mark: 'on', via: 'nym' })
+    expect(r.asked).toEqual(['orivon-tunnel-profile'])
+    expect(newTabTunnelLook(routes({ unreadable: true, profileFor: () => 'nym' }), 'socks5')).toEqual({ mark: 'on', via: 'socks5' })
+  })
 })

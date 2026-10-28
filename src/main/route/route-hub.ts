@@ -13,7 +13,7 @@ import type { RouteFront } from './front.js'
 import type { RouteStore } from './route-store.js'
 import { tunnelStateOf } from './route-state.js'
 import type { TunnelKind } from './route-state.js'
-import { profileOf } from './site-partition.js'
+import { kindOfProfile, profileOf } from './site-partition.js'
 import type { Profile } from './site-partition.js'
 
 /** `switch`: the origin's routing changed (its own entry, or the default it follows), `proxy`: the tunnel changed. */
@@ -37,6 +37,16 @@ const PROFILE_ORIGINS: Readonly<Record<Profile, string>> = { nym: NYM_PROFILE_OR
 /** The identity a profile's session is prepared under. */
 export function profileOrigin (profile: Profile): string {
   return PROFILE_ORIGINS[profile]
+}
+
+/**
+ * The tunnel every website takes while the tunnel settings cannot be read: the one whose profile the hub gives any website then,
+ * which no entry can change. Undefined while the settings can be read.
+ */
+export function unreadableTunnel (hub: Pick<RouteHub, 'unreadable' | 'profileFor'>): TunnelKind | undefined {
+  if (!hub.unreadable()) return undefined
+  const profile = hub.profileFor(SHARED_ORIGIN)
+  return profile === undefined ? undefined : kindOfProfile(profile)
 }
 
 /** What the Settings page and the popover say about an app's route: `idle` is a route nothing has used yet. */

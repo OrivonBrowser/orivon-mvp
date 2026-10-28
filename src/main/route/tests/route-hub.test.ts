@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteProvider } from '../../../broker/route/provider.js'
 import type { RouteTarget } from '../../../broker/route/table.js'
-import { createRouteHub, DIRECT_PROFILE_ORIGIN, NYM_PROFILE_ORIGIN, PROXY_PROFILE_ORIGIN, profileOrigin, SHARED_ORIGIN } from '../route-hub.js'
+import { createRouteHub, DIRECT_PROFILE_ORIGIN, NYM_PROFILE_ORIGIN, PROXY_PROFILE_ORIGIN, profileOrigin, SHARED_ORIGIN, unreadableTunnel } from '../route-hub.js'
 import type { TunnelKind } from '../route-state.js'
 import type { RouteHub } from '../route-hub.js'
 import { RouteStore } from '../route-store.js'
@@ -276,6 +276,14 @@ describe('a list of routed apps that cannot be read', () => {
     expect(hub.profileFor('https://a-website.example')).toBe('socks5')
     setProxy(undefined)
     expect(hub.kindOf(APP)).toBe('nym')
+  })
+
+  it('names the tunnel every website takes: the default one while it has an address, else Nym, and none while the list can be read', () => {
+    const { hub, setProxy } = unreadable()
+    expect(unreadableTunnel(hub)).toBe('socks5')
+    setProxy(undefined)
+    expect(unreadableTunnel(hub)).toBe('nym')
+    expect(unreadableTunnel(setup().hub)).toBeUndefined()
   })
 
   it('starts a front for any app', async () => {

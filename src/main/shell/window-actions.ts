@@ -105,7 +105,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     openSiteInfo: (anchor, page, url) => {
       const pressedAt = presses.take(page)
       // The tunnel button of a new tab, and of a tab that carries a tunnel choice, is about the tab: no website has an origin to be about.
-      const tabId = page === 'tunnels' ? tabForTunnelPopover(tabs.getState(), url, isOriginServedFromCacheSync) : undefined
+      const tabId = page === 'tunnels' ? tabForTunnelPopover(tabs.getState(), (id) => tabs.partitionOf(id), isOriginServedFromCacheSync) : undefined
       if (tabId !== undefined) {
         panels.networks.close()
         closeOverlays()

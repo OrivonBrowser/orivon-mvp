@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { choiceForSwitch, choiceUnderHold, isTabTunnelChoice, profileForTab, setTabTunnelSource, tabChoiceOfContents, tabKindShowing, tunnelForTab, tunnelOfChoice } from '../tab-tunnel.js'
+import { choiceForSwitch, choiceUnderHold, isTabTunnelChoice, profileForTab, setTabTunnelSource, tabChoiceOfContents, tabKindShowing, tabWebsitesTunnel, tunnelForTab, tunnelOfChoice } from '../tab-tunnel.js'
 import type { TabTunnelChoice } from '../tab-tunnel.js'
 import type { Profile } from '../site-partition.js'
 
@@ -118,5 +118,34 @@ describe('the choice a tab takes when the tunnel switch is moved', () => {
 
   it('is direct when the lit switch is turned off while the whole browser is on a tunnel, because having no choice would follow it', () => {
     expect(choiceForSwitch(null, true)).toBe('direct')
+  })
+})
+
+describe('the tunnel the websites of a tab go through when none has an entry of its own', () => {
+  it('is the choice\'s tunnel for a tunnel choice, whatever the browser or an unreadable list says', () => {
+    for (const browser of [undefined, 'socks5'] as const) {
+      for (const unreadable of [undefined, 'socks5'] as const) expect(tabWebsitesTunnel('nym', browser, unreadable)).toBe('nym')
+    }
+  })
+
+  it('is none for a direct choice, even under a browser on a tunnel', () => {
+    expect(tabWebsitesTunnel('direct', 'nym', undefined)).toBeUndefined()
+  })
+
+  it('is the browser\'s tunnel for a tab with no choice, else none', () => {
+    expect(tabWebsitesTunnel(undefined, 'socks5', undefined)).toBe('socks5')
+    expect(tabWebsitesTunnel(undefined, undefined, undefined)).toBeUndefined()
+  })
+
+  it('is the tunnel every website takes while the list cannot be read, for a tab with no choice and for a direct one, which yields to it as to a website\'s own tunnel', () => {
+    expect(tabWebsitesTunnel(undefined, undefined, 'nym')).toBe('nym')
+    expect(tabWebsitesTunnel('direct', undefined, 'nym')).toBe('nym')
+    expect(tabWebsitesTunnel('direct', 'socks5', 'nym')).toBe('nym')
+  })
+
+  it('is what a page leaves by in the tab while the list cannot be read: every website is then in the unreadable tunnel\'s profile', () => {
+    for (const choice of [undefined, 'direct', 'nym', 'socks5'] as const) {
+      for (const unreadable of ['nym', 'socks5'] as const) expect(tabWebsitesTunnel(choice, undefined, unreadable), `${String(choice)} over ${unreadable}`).toBe(tunnelForTab(choice, SITE, unreadable))
+    }
   })
 })

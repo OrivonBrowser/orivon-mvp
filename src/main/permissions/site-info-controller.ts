@@ -6,7 +6,7 @@
 // popover (code-guidelines.md Rule 2).
 
 import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
-import { profileOrigin, SHARED_ORIGIN } from '../route/route-hub.js'
+import { profileOrigin, SHARED_ORIGIN, unreadableTunnel } from '../route/route-hub.js'
 import { choiceForSwitch } from '../route/tab-tunnel.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
@@ -211,10 +211,12 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     if (routes === undefined || tab === undefined) return undefined
     const everywhere = routes.hub.isEverywhere()
     const defaultKind = routes.defaultKind()
-    const via = tabVia(tab.choice, everywhere, defaultKind)
-    // The route the tab's websites share: their tunnel's profile when the tab chose one, the shared one while it follows the browser.
-    const route = via === null ? 'off' : routes.hub.state(tab.choice === undefined ? SHARED_ORIGIN : profileOrigin(via))
-    const tunnel = tabTunnel({ choice: tab.choice, everywhere, defaultKind, unreadable: routes.hub.unreadable(), blocked: tabBlocked(routes), proxy: { address: proxySetup.address(), users: proxyUsers(routes) } })
+    // While the settings cannot be read every website is in one tunnel's profile, whatever the tab was told but a tunnel of its own.
+    const unreadableKind = unreadableTunnel(routes.hub)
+    const via = tabVia(tab.choice, everywhere, defaultKind, unreadableKind)
+    // The route the tab's websites share: their tunnel's profile when the tab chose one or the settings cannot be read, the shared one while it follows the browser.
+    const route = via === null ? 'off' : routes.hub.state(tab.choice === undefined && unreadableKind === undefined ? SHARED_ORIGIN : profileOrigin(via))
+    const tunnel = tabTunnel({ choice: tab.choice, everywhere, defaultKind, unreadable: routes.hub.unreadable(), ...(unreadableKind === undefined ? {} : { unreadableKind }), blocked: tabBlocked(routes), proxy: { address: proxySetup.address(), users: proxyUsers(routes) } })
     return {
       ...EMPTY_SITE_INFO('', []),
       displayOrigin: THIS_TAB,
