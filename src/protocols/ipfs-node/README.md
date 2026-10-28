@@ -82,7 +82,8 @@ process only after the last has exited.
 holds. The node keeps its blocks, hot cache and in-flight fetches by (partition, CID), so its database holds no
 origin in plain text, and one site's reads are never another's hits. A read with no header is served from the
 network and kept nowhere. Clearing cached data or all history stops the node, deletes `blocks.db`, its journal,
-`-wal` and `-shm`, and replaces the salt.
+`-wal` and `-shm`, and replaces the salt. The verifier host keys the Swarm chunks it keeps on disk by the same salt
+([`../verifier-host/swarm-chunk-database.ts`](../verifier-host/swarm-chunk-database.ts)), so replacing it forgets those too.
 
 **Residual.** The API is a loopback HTTP server, but main cancels every request from any page to its port
 ([`../../main/sessions/local-node-port-gate.ts`](../../main/sessions/local-node-port-gate.ts)), so no page can time

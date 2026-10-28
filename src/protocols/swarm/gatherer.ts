@@ -7,6 +7,7 @@ import type { NameRecord, PointerStep } from '../resolution/records.js'
 import type { DataGatherer, DdocReport, GatherRange, GatheredFile, MountedSite, Refusal } from '../resolution/providers.js'
 import { pathSegments } from '../resolution/path-segments.js'
 import { BlockCache, NO_BLOCK_MEMORY } from '../gateways/cache.js'
+import type { BlockMemory } from '../gateways/cache.js'
 import { GatewayPool } from '../gateways/gateways.js'
 import type { Fetch } from '../gateways/gateways.js'
 import { ChunkSource } from './chunk-fetch.js'
@@ -31,8 +32,10 @@ export interface SwarmGathererOptions {
   readonly limits?: Partial<SwarmLimits>
   /** The route these requests travel, which stretches every wait the limits were written for. Direct when unset. */
   readonly route?: RoutePace
-  /** A line for the report log: how long a mount and a large file took, and a bulk read that fell back. No line names a site or an address. */
+  /** A line for the report log: how long a mount and a large file took, how many chunks came from disk, and a bulk read that fell back. No line names a site or an address. */
   readonly log?: (line: string) => void
+  /** Where verified chunks are kept between mounts. The host gives one that also keeps them on disk; unset, they are kept in memory for the life of this gatherer. */
+  readonly memory?: BlockMemory & { readonly recalledFromDisk?: () => number }
 }
 
 const DEFAULT_INDEX_DOCUMENT = 'index.html'
@@ -43,6 +46,11 @@ const HAS_EXTENSION = /\.[^./]+$/
 const NODES_KEPT = 64
 /** A file at least this large has its read time logged. */
 const LOGGED_FILE_BYTES = 256 * 1024
+
+/** ", N chunks from disk" for a log line, and nothing when none came from disk. */
+function diskNote (chunks: number): string {
+  return chunks > 0 ? `, ${String(chunks)} chunks from disk` : ''
+}
 
 function swarmRecord (records: readonly NameRecord[]): NameRecord | undefined {
   return records.find((r) => r.pointer.kind === 'swarm')
@@ -66,7 +74,9 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
   const deps: ChunkDeps | undefined = options.endpoints.length === 0
     ? undefined
     : { fetch: options.fetch, pool: new GatewayPool(options.endpoints, limits.perEndpointConcurrency, Date.now, options.route === undefined ? {} : { route: options.route }), limits, ...(options.log !== undefined && { log: options.log }) }
-  const memory = new BlockCache()
+  const memory = options.memory ?? new BlockCache()
+  /** Chunks the memory has taken from disk so far: a mount's share is the difference between two looks. */
+  const fromDisk = (): number => options.memory?.recalledFromDisk?.() ?? 0
 
   return {
     id: 'swarm',
@@ -76,6 +86,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
       if (record === undefined) throw new ResolutionError('unsupported', `no record of ${name} names Swarm content`)
       if (deps === undefined) throw new ResolutionError('unavailable', 'this build has no Swarm node to load from yet, so Swarm content cannot be opened')
       const startedAt = Date.now()
+      const diskAtStart = fromDisk()
       await options.beforeMount?.(signal)
       const nodeReadyAt = Date.now()
       const source = partition === undefined ? new ChunkSource(deps, NO_BLOCK_MEMORY) : new ChunkSource(deps, memory, partition)
@@ -108,7 +119,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
         pointers.push(resolved.step)
         root = resolved.root
       }
-      options.log?.(`swarm: a site mounted in ${String(Date.now() - startedAt)} ms (the node ready after ${String(nodeReadyAt - startedAt)} ms, ${String(pointers.length - 1)} feeds followed)`)
+      options.log?.(`swarm: a site mounted in ${String(Date.now() - startedAt)} ms (the node ready after ${String(nodeReadyAt - startedAt)} ms, ${String(pointers.length - 1)} feeds followed${diskNote(fromDisk() - diskAtStart)})`)
       let failedResource: string | undefined
 
       /** Only a lie or a broken limit fails DDOC; nobody answering, or a missing path, does not. */
@@ -155,6 +166,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
           }
           const body = file.body
           const openedAt = Date.now()
+          const diskAtOpen = fromDisk()
           return {
             ...file,
             body: (async function * () {
@@ -164,7 +176,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
                   read += part.length
                   yield part
                 }
-                if (read >= LOGGED_FILE_BYTES) options.log?.(`swarm: a file read, ${String(read)} bytes in ${String(Date.now() - openedAt)} ms`)
+                if (read >= LOGGED_FILE_BYTES) options.log?.(`swarm: a file read, ${String(read)} bytes in ${String(Date.now() - openedAt)} ms${diskNote(fromDisk() - diskAtOpen)}`)
               } catch (error) {
                 noteFailure(error, path)
               }

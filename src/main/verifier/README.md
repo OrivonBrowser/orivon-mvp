@@ -180,8 +180,10 @@ the person accepts for one load, and the page then says which served it; Setting
 `ipfsNode` view and the site-info popover's "Loaded from" row repeat it. With the person's standing choice of gateways, no node
 is built at all. The lookup service does not restart the
 host: the running host is sent `ipfs-lookup` and asks a name service for an IPNS record only while it is allowed.
-`forgetIpfsNodeData` (clearing cached data or all history) stops the node, deletes its database once the process has
-exited, and replaces the partition salt (`verifier-store.ts`).
+`forgetNodeData` (clearing cached data or all history) stops the node, deletes its database once the process has
+exited, replaces the partition salt (`verifier-store.ts`), puts the verifier host to sleep and, once its process has exited (ten
+seconds at most), deletes the Swarm chunk files the host keeps (`forget-swarm-chunks.ts`) except those of the new salt, which a host
+started meanwhile may hold open.
 
 **The light client, the Swarm node and the process facts apply at once or are read live.** `lightClientSettingChanged` puts the
 verifier host to sleep when `web3.lightClient` changes, so its next start builds the config from the new choice; the person's

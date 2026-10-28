@@ -19,6 +19,9 @@ as arguments, so everything else runs under plain vitest.
 map and the redirect rule, and from [`../../broker/policy/`](../../broker/policy/) the address
 classifier, all reused rather than copied; `@a16z/helios`.
 
+**What it also depends on, for the chunk store.** `node:sqlite`, `node:fs`, `node:path` and `node:crypto`: [`swarm-chunk-database.ts`](swarm-chunk-database.ts)
+is the one file here that writes the profile, and only its own `swarm-chunks-*` files.
+
 **What it must never import.** [`src/main/`](../../main/) beyond type-only imports: main starts it
 and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
 [`../../main/verifier/`](../../main/verifier/) is its other side.
@@ -49,6 +52,22 @@ carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-p
 **Owner stream.** `ens-ipfs`.
 
 ## Design notes
+
+**Verified Swarm chunks are kept on disk here, per site, and nowhere else.** [`swarm-chunk-database.ts`](swarm-chunk-database.ts) is one
+SQLite database (`node:sqlite`, no native module) at `<profile>/verifier/swarm-chunks-<id>.db`, where `<id>` is the first 16 hex
+characters of sha256 of the profile's partition salt; main hands the host the directory and the salt as `HostConfig.swarmChunks`, even
+when the IPFS node is off. Rows are keyed by `partitionStoreKey(salt, partition)` (`partition-key.ts`, the key the IPFS node's store
+uses) and the chunk address, so the file holds no origin in plain text and one site's chunks are never another's hits. Only
+content-addressed chunks are kept, never a single-owner chunk or a feed update. A row read back is hashed against its address again;
+a row that fails is deleted and the chunk fetched anew. At most 256 MB of chunk bytes are kept, least recently used first (a row's
+`used` is the minute of its last read or write, written at most once a minute). Writes wait for 64 chunks or 250 ms and go in one
+transaction (WAL, `synchronous = NORMAL`, 32 KB pages, since a chunk row is a little over 4 KB). The file is opened at the first Swarm
+mount with a partition ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts) puts the in-memory cache in front of it); one that is not
+a database is deleted and made again once, and one that cannot be opened at all is logged once and the run keeps chunks in memory. The
+host's log says `swarm: the chunk store opened with N bytes kept`, and how many chunks a mount read from disk. Clearing cached data or all
+history replaces the salt, puts the host to sleep and deletes the files once its process has exited (`main/verifier/forget-swarm-chunks.ts`);
+a host that opens its database also deletes every `swarm-chunks-*` file ([`swarm-chunk-files.ts`](swarm-chunk-files.ts)) whose id is
+not its own salt's, so a file main could not delete (Windows keeps an open file) goes at the next start.
 
 **Every request leaves through [`egress.ts`](egress.ts), over Electron's `net`, except a CCIP-Read
 request when no proxy is configured, and the DNS-tamper fallback below.** A configured proxy

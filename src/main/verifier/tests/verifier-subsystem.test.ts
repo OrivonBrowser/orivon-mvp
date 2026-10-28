@@ -1,10 +1,11 @@
 import { EventEmitter } from 'node:events'
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDLE_STOP_MS, REFRESH_DELAY_MS, REFRESH_WHEN_OLDER_THAN_SECONDS } from '../host-lifecycle.js'
 import shippedCheckpoint from '../mainnet-checkpoint.json'
+import { swarmChunkFile } from '../../../protocols/verifier-host/swarm-chunk-files.js'
 import { MAINNET_GENESIS_SECONDS, MAX_CHECKPOINT_AGE_SECONDS, SECONDS_PER_SLOT } from '../checkpoint.js'
 
 const SHIPPED_AT_MS = (MAINNET_GENESIS_SECONDS + shippedCheckpoint.slot * SECONDS_PER_SLOT) * 1000
@@ -162,7 +163,7 @@ describe('the verifier subsystem', () => {
   })
 
   describe('where IPFS is read from', () => {
-    type StartMessage = { type: string, config?: { ipfsNode?: { endpoint: string, partitionSalt: string, lookupService: boolean }, gateways: string[] } }
+    type StartMessage = { type: string, config?: { ipfsNode?: { endpoint: string, partitionSalt: string, lookupService: boolean }, swarmChunks?: { dir: string, salt: string }, gateways: string[] } }
     const started = (index: number): StartMessage | undefined => (forks()[index]?.sent as StartMessage[]).find((message) => message.type === 'start')
 
     async function launchWith (source: () => 'node' | 'gateways') {
@@ -234,20 +235,87 @@ describe('the verifier subsystem', () => {
       expect(started(1)?.config?.ipfsNode?.partitionSalt).toBe(salt)
     })
 
-    it('replaces the salt and puts the host to sleep when the node\'s data is forgotten, so the next start keys its reads anew', async () => {
-      const { request, forgetIpfsNodeData } = await launchWith(() => 'node')
+    it('replaces the salt and puts the host to sleep when the nodes\' data is forgotten, so the next start keys its reads anew', async () => {
+      const { request, forgetNodeData } = await launchWith(() => 'node')
       void request()
       await vi.advanceTimersByTimeAsync(0)
       forks()[0]?.listens()
       const salt = started(0)?.config?.ipfsNode?.partitionSalt
-      await forgetIpfsNodeData()
-      expect(forks()[0]?.killed).toBe(true)
+      const forgotten = forgetNodeData()
+      await vi.waitFor(() => { expect(forks()[0]?.killed).toBe(true) })
       forks()[0]?.emit('exit', 0)
+      await forgotten
       void request()
       await vi.advanceTimersByTimeAsync(0)
       const next = started(1)?.config?.ipfsNode?.partitionSalt
       expect(next).toMatch(/^[0-9a-f]{64}$/)
       expect(next).not.toBe(salt)
+    })
+
+    it.each(['node', 'gateways'] as const)('hands the host the verifier\'s directory and the salt for the Swarm chunks it keeps, when IPFS is read from %s', async (source) => {
+      const { request } = await launchWith(() => source)
+      void request()
+      await vi.advanceTimersByTimeAsync(0)
+      const kept = started(0)?.config?.swarmChunks
+      expect(kept?.dir).toBe(join(electron.userData, 'verifier'))
+      expect(kept?.salt).toMatch(/^[0-9a-f]{64}$/)
+      if (source === 'node') expect(kept?.salt).toBe(started(0)?.config?.ipfsNode?.partitionSalt)
+    })
+
+    describe('when the nodes\' data is forgotten', () => {
+      const directory = (): string => join(electron.userData, 'verifier')
+      const keep = (name: string): void => {
+        mkdirSync(directory(), { recursive: true })
+        writeFileSync(join(directory(), name), 'x')
+      }
+      const swarmFiles = (): string[] => readdirSync(directory()).filter((name) => name.startsWith('swarm-chunks-'))
+
+      it('deletes every kept Swarm chunk file only after the host has exited, and no other file', async () => {
+        const { request, forgetNodeData } = await launchWith(() => 'node')
+        void request()
+        await vi.advanceTimersByTimeAsync(0)
+        forks()[0]?.listens()
+        const old = swarmChunkFile(started(0)?.config?.swarmChunks?.salt ?? '')
+        for (const name of [old, `${old}-wal`, `${old}-shm`, `${old}-journal`, swarmChunkFile('cd'.repeat(32)), 'checkpoint.json']) keep(name)
+
+        let done = false
+        const forgotten = forgetNodeData().then(() => { done = true })
+        await vi.waitFor(() => { expect(forks()[0]?.killed).toBe(true) })
+        expect(swarmFiles()).toHaveLength(5)
+        expect(done).toBe(false)
+        forks()[0]?.emit('exit', 0)
+        await forgotten
+        expect(swarmFiles()).toEqual([])
+        expect(existsSync(join(directory(), 'checkpoint.json'))).toBe(true)
+      })
+
+      it('does not wait for ever on a host that does not exit, and still deletes', async () => {
+        const { request, forgetNodeData } = await launchWith(() => 'node')
+        void request()
+        await vi.advanceTimersByTimeAsync(0)
+        forks()[0]?.listens()
+        keep(swarmChunkFile('ef'.repeat(32)))
+        const forgotten = forgetNodeData()
+        await vi.waitFor(() => { expect(forks()[0]?.killed).toBe(true) })
+        await vi.advanceTimersByTimeAsync(10_000)
+        await forgotten
+        expect(swarmFiles()).toEqual([])
+      })
+
+      it('leaves the file of the new salt, which a host started meanwhile may already hold open', async () => {
+        const { request, forgetNodeData } = await launchWith(() => 'node')
+        void request()
+        await vi.advanceTimersByTimeAsync(0)
+        forks()[0]?.listens()
+        keep(swarmChunkFile('12'.repeat(32)))
+        const forgotten = forgetNodeData()
+        await vi.waitFor(() => { expect(forks()[0]?.killed).toBe(true) })
+        const renewed = (JSON.parse(readFileSync(join(directory(), 'ipfs-node-partition-salt.json'), 'utf8')) as { salt: string }).salt
+        keep(swarmChunkFile(renewed))
+        forks()[0]?.emit('exit', 0)
+        await forgotten
+        expect(swarmFiles()).toEqual([swarmChunkFile(renewed)])
+      })
     })
 
     it('never forks the IPFS node for a host that asks for it while IPFS is read from public gateways, and says where to switch it on', async () => {

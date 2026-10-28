@@ -33,6 +33,8 @@ import { DIRECT_ROUTE } from '../route-pace.js'
 import type { RoutePace } from '../route-pace.js'
 import { GatewayConsent } from './gateway-consent.js'
 import { lightClientFetch } from './light-client/lane-fetch.js'
+import { SwarmChunkDatabase } from './swarm-chunk-database.js'
+import { KeptChunkMemory } from './swarm-chunk-memory.js'
 
 export interface RunningProtocols {
   /** In the order their providers are tried. */
@@ -49,6 +51,8 @@ export interface RunningProtocols {
 export interface SharedStores {
   readonly ipnsSequences: SequenceStore
   readonly swarmFeedIndexes: FeedIndexStore
+  /** The verified Swarm chunks kept on disk, opened at the first mount in a partition; absent when the profile gave no place for them. */
+  readonly swarmChunks?: SwarmChunkDatabase
 }
 
 export function sequenceStore (initial: Readonly<Record<string, string>>, post: HostDeps['post']): SequenceStore {
@@ -192,6 +196,7 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     route: config.swarmNode === true && node !== undefined ? nodeRouteOf(config, route) : route,
     feedIndexes: stores.swarmFeedIndexes,
     log: (line) => { console.error(`[verifier] ${line}`) },
+    ...(stores.swarmChunks !== undefined && { memory: new KeptChunkMemory(stores.swarmChunks) }),
     ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure })
   })
 }
@@ -232,7 +237,11 @@ export function startProtocols (config: HostConfig, deps: HostDeps, nodes?: Node
   const ens = startEns(config, deps, route)
   const ipfsNode = nodes?.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes?.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
-  const stores: SharedStores = { ipnsSequences: sequenceStore(config.ipnsSequences, deps.post), swarmFeedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post) }
+  const stores: SharedStores = {
+    ipnsSequences: sequenceStore(config.ipnsSequences, deps.post),
+    swarmFeedIndexes: feedIndexStore(config.swarmFeedIndexes, deps.post),
+    ...(config.swarmChunks !== undefined && { swarmChunks: new SwarmChunkDatabase({ ...config.swarmChunks, log: (line) => { console.error(`[verifier] ${line}`) } }) })
+  }
   return {
     protocols: [ens.protocol, startIpfs(config, deps, ipfsNode, controls, stores, route), startSwarm(config, deps, swarmNode, stores, route)],
     ens: ens.protocol,

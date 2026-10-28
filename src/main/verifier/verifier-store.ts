@@ -78,6 +78,11 @@ export class VerifierStore {
   private readonly feeds: FloorFile
   private readonly nameSchemes: FloorFile
 
+  /** The directory in the profile everything this keeps, and the verifier host's Swarm chunk files, are in. */
+  get directory (): string {
+    return this.dir
+  }
+
   constructor (dir: string) {
     this.checkpointPath = join(dir, 'checkpoint.json')
     this.saltPath = join(dir, 'ipfs-node-partition-salt.json')

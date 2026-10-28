@@ -23,7 +23,7 @@ import { routeDomain } from '../route/route-domain.js'
 import { forgetChoicesWhenGrantEnds } from '../scheme-routing/grant-watch.js'
 import { identityKeyStorage } from '../keyring/electron-keychain.js'
 import { forgetKeptProvenance } from '../verifier/kept-provenance.js'
-import { forgetIpfsNodeData, forgetNameSchemes, lightClientForcedOff, onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
+import { forgetNameSchemes, forgetNodeData, lightClientForcedOff, onVerifierChange, verifierView } from '../verifier/verifier-subsystem.js'
 import { web3Domain } from '../verifier/web3-domain.js'
 import { appDomain } from './app-domain.js'
 import { telemetryDomain } from './telemetry-domain.js'
@@ -206,7 +206,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
         .filter((app) => isOriginServedFromCacheSync(app.origin))
         .map((app) => session.fromPartition(partitionFor(app.origin))),
       forgetNameSchemes,
-      forgetNodeData: forgetIpfsNodeData,
+      forgetNodeData,
       forgetEarnedLevels: () => { forgetKeptProvenance(); services.scoreProvider.forget() },
       now: Date.now
     }),
