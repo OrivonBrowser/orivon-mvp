@@ -506,3 +506,18 @@ describe('fetchFaviconDataUrlCached -- a failed hop aborts its request', () => {
     expect(requests[0]?.abort).not.toHaveBeenCalled()
   })
 })
+
+describe('isSafeFaviconUrl: an onion address', () => {
+  it('is not an icon main fetches for a page that is not routed, and its name is not looked up', async () => {
+    const asked: string[] = []
+    const resolver: Resolver = async (host) => { asked.push(host); return ['93.184.216.34'] }
+    await expect(isSafeFaviconUrl('https://abc.onion/icon.png', PUBLIC_PAGE, resolver)).resolves.toBe(false)
+    await expect(isSafeFaviconUrl('https://ABC.onion./icon.png', PUBLIC_PAGE, resolver, { routed: false })).resolves.toBe(false)
+    expect(asked).toEqual([])
+  })
+
+  it('is left to the route when the page is routed, which sends the name on unresolved or refuses it', async () => {
+    await expect(isSafeFaviconUrl('https://abc.onion/icon.png', PUBLIC_PAGE, async () => { throw new Error('never asked') }, { routed: true })).resolves.toBe(true)
+  })
+})
+
