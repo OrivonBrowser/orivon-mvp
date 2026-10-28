@@ -73,7 +73,7 @@ node to connect anywhere it can name. The rules, each proved by a test in `tests
 | `udpBind` | An ephemeral port, loopback or every interface (a reply from a public resolver cannot reach a socket bound to loopback) | A fixed port is `denied` |
 | datagram send | A public unicast address, port 53 (the Swarm node asks a public resolver for its bootnodes' `/dnsaddr` records; the IPFS node resolves its peers' names over TCP instead), sent as the canonical address that was checked | Dropped and counted, as a refused send is for an app |
 | datagram received | One whose source is a public unicast address on port 53 | Dropped and counted in `droppedInbound` |
-| limits | 300 sockets open (TCP, UDP and accepted together), 4 listeners, 64 answers per lookup, 64 files | `limit` |
+| limits | 300 sockets the node opens (TCP and UDP), 128 connections accepted on its listeners (counted apart, so Orivon's reads of the API never take a peer's place), 4 listeners, 64 answers per lookup, 64 files | `limit`; a connection accepted past its limit is closed at once |
 
 **A name is resolved over DNS-over-HTTPS first.** A resolver that hijacks DNS answers a name with its own server, a
 public address `node-net.ts` allows, and the node's TLS to it then fails its certificate check, so a service only

@@ -12,7 +12,10 @@ import { bindUdp } from '../../broker/adapters/udp-adapter.js'
 import { fail } from '../../broker/errors.js'
 import { canonicalAddress, isPublicUnicast } from '../../broker/policy/address.js'
 
+/** Sockets the node opens: its peers' connections and its resolver's datagram sockets. */
 export const MAX_SOCKETS = 300
+/** Connections accepted on its loopback listeners, counted apart so that Orivon's reads of its API never take a peer's place. */
+export const MAX_ACCEPTED = 128
 export const MAX_LISTENERS = 4
 export const MAX_ANSWERS = 64
 /** The one port a datagram may be sent to: the Swarm node asks a public resolver for its bootnodes' records. */
@@ -160,6 +163,7 @@ export interface NodeNetHooks {
 
 export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL, hooks: NodeNetHooks = {}): SocketNet {
   const sockets = new Budget(MAX_SOCKETS, 'sockets')
+  const accepted = new Budget(MAX_ACCEPTED, 'accepted connections')
   const listeners = new Budget(MAX_LISTENERS, 'listeners')
 
   function serverHandle (listened: Awaited<ReturnType<Listen>>, release: () => void): TcpServer {
@@ -169,17 +173,17 @@ export function createNodeNet (apiPort: number, deps: NodeNetDeps = REAL, hooks:
     const connections = new ReadableStream<TcpSocket>({
       async pull (controller) {
         for (;;) {
-          const accepted = await listened.accept().catch((error: unknown) => { controller.error(error); finish(); return undefined })
-          if (accepted === undefined) return
-          if (accepted === null) { controller.close(); finish(); return }
+          const connection = await listened.accept().catch((error: unknown) => { controller.error(error); finish(); return undefined })
+          if (connection === undefined) return
+          if (connection === null) { controller.close(); finish(); return }
           let releaseSocket: () => void
           try {
-            releaseSocket = sockets.take()
+            releaseSocket = accepted.take()
           } catch {
-            await accepted.destroy('aborted')
+            await connection.destroy('aborted')
             continue
           }
-          controller.enqueue(socketHandle(accepted, releaseSocket))
+          controller.enqueue(socketHandle(connection, releaseSocket))
           return
         }
       }
