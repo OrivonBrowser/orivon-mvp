@@ -356,7 +356,8 @@ export interface TabRecord {
   /**
    * The tunnel the tab sends every website it opens through, or `direct` for none (`../route/tab-tunnel.ts`). It lasts until the
    * tab closes, goes to every tab the tab opens, comes back with a restored tab and is never written as a website's entry. Absent
-   * when the tab has none: its websites follow their own entries.
+   * when the tab has none: its websites follow their own entries. What a visit leaves on disk is only the origin, listed as storage
+   * kept apart in the profile it ran in (`tab-tunnel-facts.ts`'s `noteTabVisit`), so that Settings and Clear browsing data reach it.
    */
   tunnelChoice?: TabTunnelChoice
 }

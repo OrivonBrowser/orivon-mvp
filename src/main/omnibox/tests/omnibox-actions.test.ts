@@ -16,7 +16,8 @@ function fakeWindow (tabs: FakeTab[], activeTabId: string | null) {
     getState: () => ({ tabs, activeTabId }),
     ids: () => tabs.map((entry) => entry.id),
     navigate: vi.fn(), createTab: vi.fn(), openLocalFile: vi.fn(() => Promise.resolve('f1')), openInternal: vi.fn(), activateTab: vi.fn(), closeTab: vi.fn(),
-    activeWebContents: () => ({ focus: vi.fn() })
+    activeWebContents: () => ({ focus: vi.fn() }),
+    activeTunnelChoice: () => undefined
   }
   return {
     overlays, sent, manager,
