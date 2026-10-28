@@ -18,6 +18,8 @@ export interface LoadErrorDeps {
   readonly ask: typeof requestSlot
   /** Another sheet explains this failure (HTTPS-only upgraded the address and the upgrade failed), so this one stays out. */
   readonly claimed?: (contentsId: number, url: string, code: number) => boolean
+  /** The load was cancelled because its address is an onion address and the tab's session does not go through the person's own SOCKS5 tunnel, which the sheet then says. */
+  readonly onionRefused?: (contentsId: number, url: string) => boolean
   /** The tab is about to move to another session and load this address there, so the failure is not the page's last word. Asked with the partition the tab is in now. */
   readonly movesTab?: (partition: string | undefined, url: string, code: number) => boolean
 }
@@ -53,7 +55,7 @@ export function watchLoadErrors (contents: WebContents, deps: LoadErrorDeps): vo
       tabId: found.tabId,
       slot: 'center',
       overlay: LOAD_ERROR_OVERLAY,
-      payload: { code, name: isErrorName(name) ? name : '' },
+      payload: { code, name: isErrorName(name) ? name : '', ...(deps.onionRefused?.(contents.id, url) === true ? { onion: true } : {}) },
       closed: () => { pending = undefined }
     })
   })

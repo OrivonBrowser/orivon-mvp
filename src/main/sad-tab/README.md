@@ -11,11 +11,11 @@ is wrong with a tab's page off its record (a crash is on the record, a hang is r
 
 The sheet over a page that failed to load is the second surface here. `load-error-watch.ts` follows each tab's
 main-frame loads and asks for the sheet through the tab's slot queue ([`../overlays/tab-slots.ts`](../overlays/tab-slots.ts)),
-`load-error-text.ts` is its fixed table per network error, `load-error-overlay.ts` declares it and runs Try again,
+`load-error-text.ts` is its fixed table per network error (and the one sentence for a load cancelled for being an onion address, which `../route/onion-guard.ts` remembers), `load-error-overlay.ts` declares it and runs Try again,
 and `install-load-errors.ts` wires the watcher to every tab. Its page is
 [`../../renderer/overlay/load-error/`](../../renderer/overlay/load-error/).
 
-**What it depends on.** [`../diagnostics/`](../diagnostics/) (`crash-lookup.ts`, the record of the crash a Report opens); [`../overlays/`](../overlays/) (`overlay-types.ts`, `tab-slots.ts`); [`../auth/`](../auth/) (`isCertError`, so a certificate failure is left to its own sheet); [`../privacy/`](../privacy/) (`upgradeTracker`, the failures HTTPS-only explains); [`../local-files/partition.ts`](../local-files/partition.ts) (`partitionAfterFileBlock`, a blocked file the tab is about to move with, which gets no sheet); [`../shell/`](../shell/)
+**What it depends on.** [`../diagnostics/`](../diagnostics/) (`crash-lookup.ts`, the record of the crash a Report opens); [`../overlays/`](../overlays/) (`overlay-types.ts`, `tab-slots.ts`); [`../auth/`](../auth/) (`isCertError`, so a certificate failure is left to its own sheet); [`../privacy/`](../privacy/) (`upgradeTracker`, the failures HTTPS-only explains); [`../route/onion-guard.ts`](../route/onion-guard.ts) (which load was cancelled for being an onion address); [`../local-files/partition.ts`](../local-files/partition.ts) (`partitionAfterFileBlock`, a blocked file the tab is about to move with, which gets no sheet); [`../shell/`](../shell/)
 (`window-registry.ts`, `tab-lifecycle.ts`, `tab-types.ts` and `shell-installers.ts`, types only).
 
 **What it must never import.** The renderer, or a value from the rest of the shell: the shell lists this

@@ -63,6 +63,15 @@ describe('parseContentPath', () => {
   })
 })
 
+describe('resolveDnslink: an onion name', () => {
+  it('is refused before any resolver is asked for its record', async () => {
+    const asked: string[] = []
+    const txt = async (name: string): Promise<string[][]> => { asked.push(name); return [['dnslink=/ipfs/a']] }
+    await expect(resolveDnslink('abc.onion', txt, new AbortController().signal)).rejects.toMatchObject({ failure: 'invalid-name' })
+    expect(asked).toEqual([])
+  })
+})
+
 describe('resolveDnslink', () => {
   it('joins split strings, ignores other TXT records, and takes the first value in order', async () => {
     const txt = async (): Promise<string[][]> => [['v=spf1'], ['dnslink=/ipns/', 'b.example'], ['dnslink=/ipfs/a']]
