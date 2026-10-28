@@ -42,10 +42,11 @@ import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
 import { readableNow } from '../reader/reader-signal.js'
-import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTarget } from './tab-partition.js'
+import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTab } from './tab-partition.js'
+import { noteTabVisit } from './tab-tunnel-facts.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
-export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionForTarget } from './tab-partition.js'
+export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionForTab, partitionForTarget } from './tab-partition.js'
 export type { PartitionSwap } from './tab-partition.js'
 
 /** tabs.ts's own tab-count ceiling: an unbounded window.open() flood (an
@@ -192,6 +193,7 @@ export function wireView (id: string, record: TabRecord): void {
     if (record.view === view) settleOuterHistory(record, wc, navigatedUrl)
     if (!shown()) return
     record.host.paneCommitted(id)
+    noteTabVisit(record, navigatedUrl)
     // History's icon only while history is remembering: a private window reads nothing kept on disk.
     const history = record.host.services?.history
     faviconOnCommit(record, navigatedUrl, (address) => history?.remembering === true ? knownIcon(history, address) : null)
@@ -234,7 +236,7 @@ export function wireView (id: string, record: TabRecord): void {
       resetViewBackground(view)
     }
     if (!record.isDashboardTab) {
-      const swap = partitionChangedByPage(navigatedUrl, record.partition)
+      const swap = partitionChangedByPage(navigatedUrl, record.partition, record.tunnelChoice)
       const cutOpener = openerCutNeeded(wc, navigatedUrl, record.host.broker)
       if (swap !== undefined && (cutOpener || !keepsOpenerSession(wc, swap, record.partition, navigatedUrl))) {
         repartitionView(id, record, navigatedUrl, swap.to)
@@ -242,7 +244,7 @@ export function wireView (id: string, record: TabRecord): void {
       }
       // The partition can stay `undefined` on both sides while the opener still must be cut (README.md's Design notes, `openerCutNeeded`).
       if (swap === undefined && cutOpener) {
-        repartitionView(id, record, navigatedUrl, partitionForTarget(navigatedUrl))
+        repartitionView(id, record, navigatedUrl, partitionForTab(navigatedUrl, record.tunnelChoice))
         return
       }
       // No partition swap does not mean no rebuild is needed: the app-tab
@@ -354,13 +356,14 @@ export function wireView (id: string, record: TabRecord): void {
       window,
       ...(services?.kiosk === true ? { kiosk: true } : {}),
       // Beside the page being read, as a middle click opens a link.
-      openInNewTab: (url) => { record.host.openTab(url, false) },
+      openInNewTab: (url) => { record.host.openTab(url, false, undefined, record.tunnelChoice) },
       ...(localFileKey(wc.getURL()) !== null ? { openLocalFile: (url: string) => { void record.host.openLocalFile(url, false).catch((error: unknown) => { console.error('[shell] open local file failed:', error) }) } } : {}),
-      openInFront: (url) => { record.host.openTab(url) },
+      openInFront: (url) => { record.host.openTab(url, undefined, undefined, record.tunnelChoice) },
       openInSplit: (url) => { record.host.openInSplit(id, url) },
-      openInWindow: (url) => { record.host.openWindow(url) },
+      openInWindow: (url) => { record.host.openWindow(url, undefined, record.tunnelChoice) },
       // A private window has no way back to the profile: it offers no second private session.
-      ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
+      // A private session can be held to Nym or to no tunnel, so a link from a tab set to Nym opens in one held to Nym, and a tab set to the proxy offers none.
+      ...(services === undefined || services.isPrivate || record.tunnelChoice === 'socks5' ? {} : { openInPrivate: (url: string) => { if (record.tunnelChoice === 'nym') services.profiles.openPrivateNym(url); else services.profiles.openPrivate(url) } }),
       page: {
         bare: () => record.internalPage !== null || record.isDashboardTab,
         viewSource: () => canViewSource(record, wc.getURL()),
@@ -386,23 +389,23 @@ export function wireView (id: string, record: TabRecord): void {
   // -- never the opener's own session.
   wc.setWindowOpenHandler(windowOpenHandler({
     atCapacity: () => record.host.atCapacity(),
-    openTab: (url, active, loadOptions) => record.host.openTab(url, active, loadOptions),
+    openTab: (url, active, loadOptions) => record.host.openTab(url, active, loadOptions, record.tunnelChoice),
     adoptPopup: (view, partition, url, active) => {
       watchAppTab(view, appTabArgsFor(url, record.host.broker), url)
-      record.host.adoptPopup(view, partition, active)
+      record.host.adoptPopup(view, partition, active, record.tunnelChoice)
     },
-    openBlobTab: (url, partition, active, loadOptions) => record.host.openBlobTab(url, partition, active, loadOptions),
+    openBlobTab: (url, partition, active, loadOptions) => record.host.openBlobTab(url, partition, active, loadOptions, record.tunnelChoice),
     openLocalFile: (url, active) => record.host.openLocalFile(url, active),
-    openWindow: (url, loadOptions) => record.host.openWindow(url, loadOptions),
+    openWindow: (url, loadOptions) => record.host.openWindow(url, loadOptions, record.tunnelChoice),
     ...(record.host.adoptWindow === undefined
       ? {}
       : {
           adoptWindow: (view: WebContentsView, partition: string | undefined, url: string) => {
             watchAppTab(view, appTabArgsFor(url, record.host.broker), url)
-            record.host.adoptWindow?.(view, partition)
+            record.host.adoptWindow?.(view, partition, record.tunnelChoice)
           }
         }),
-    partitionFor: (url) => partitionForTarget(url),
+    partitionFor: (url) => partitionForTab(url, record.tunnelChoice),
     webPreferencesFor: (url) => tabWebPreferences(record.host.preloadPath, undefined, appTabArgsFor(url, record.host.broker)),
     isApp: (url) => popupTargetIsApp(url, record.host.broker),
     gatewayTarget,

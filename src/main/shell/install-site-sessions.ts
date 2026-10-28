@@ -5,7 +5,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellInstaller } from './shell-installers.js'
 import { tabMovesFor } from './site-session-move.js'
 import { repartitionView } from './tab-parking.js'
-import { partitionForTarget } from './tab-partition.js'
+import { partitionForTab } from './tab-partition.js'
 
 export const installSiteSessions: ShellInstaller = {
   name: 'site-sessions',
@@ -19,9 +19,9 @@ export const installSiteSessions: ShellInstaller = {
           const record = tabs.record(id)
           const contents = tabs.liveWebContents(id)
           if (record === undefined || contents === undefined) return []
-          return [{ id, url: contents.getURL(), partition: record.partition, showsPage: !record.isDashboardTab && record.internalPage === null && (record.sleeping ?? null) === null }]
+          return [{ id, url: contents.getURL(), partition: record.partition, showsPage: !record.isDashboardTab && record.internalPage === null && (record.sleeping ?? null) === null, ...(record.tunnelChoice === undefined ? {} : { tunnelChoice: record.tunnelChoice }) }]
         })
-        for (const { id, url, to } of tabMovesFor(origin, inWindow, partitionForTarget)) {
+        for (const { id, url, to } of tabMovesFor(origin, inWindow, partitionForTab)) {
           const record = tabs.record(id)
           if (record === undefined) continue
           try {

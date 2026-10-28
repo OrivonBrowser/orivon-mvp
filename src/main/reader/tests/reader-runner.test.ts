@@ -4,7 +4,7 @@ import { closeReader, placeBeside, readerTabId, toggleReader } from '../reader-r
 import type { ReaderDeps, ReaderTabs } from '../reader-runner.js'
 import { ReaderArticles } from '../reader-store.js'
 
-interface FakeTab { id: string, url: string, internal?: string, splitWith?: string | null, isNewTab?: boolean, reader?: { source: string } | null, groupId?: string | null }
+interface FakeTab { id: string, url: string, internal?: string, splitWith?: string | null, isNewTab?: boolean, reader?: { source: string } | null, groupId?: string | null, tunnelChoice?: 'nym' | 'socks5' | 'direct' }
 
 const ARTICLE: Article = { title: 'T', byline: '', site: '', url: 'https://example.com/a', lang: 'en', words: 3, blocks: [{ t: 'p', c: ['one two three'] }] }
 
@@ -13,7 +13,7 @@ function strip (initial: FakeTab[], active: string) {
   let activeId: string | null = active
   const events: string[] = []
   const contents = new Map<string, object>()
-  const records = new Map(tabs.map((tab) => [tab.id, { internalPage: tab.internal ?? null, reader: tab.reader ?? null, groupId: tab.groupId ?? null }]))
+  const records = new Map<string, { internalPage: string | null, reader: unknown, groupId: string | null, tunnelChoice?: string }>(tabs.map((tab) => [tab.id, { internalPage: tab.internal ?? null, reader: tab.reader ?? null, groupId: tab.groupId ?? null, ...(tab.tunnelChoice === undefined ? {} : { tunnelChoice: tab.tunnelChoice }) }]))
   const api = {
     getState: () => ({
       activeTabId: activeId,
@@ -86,6 +86,19 @@ describe('toggleReader', () => {
     const plain = strip([web('a'), web('b')], 'b')
     await toggleReader(plain.tabs, deps())
     expect(plain.records.get('reader')?.groupId).toBeNull()
+  })
+
+  it('gives the reader tab the tunnel choice of the article\'s tab, and takes it away again when the next article has none', async () => {
+    const s = strip([web('a', { tunnelChoice: 'nym' }), web('b')], 'a')
+    const d = deps()
+    await toggleReader(s.tabs, d)
+    expect(s.records.get('reader')?.tunnelChoice).toBe('nym')
+    s.tabs.activateTab('b')
+    await toggleReader(s.tabs, d)
+    expect(s.records.get('reader')).not.toHaveProperty('tunnelChoice')
+    const plain = strip([web('a')], 'a')
+    await toggleReader(plain.tabs, deps())
+    expect(plain.records.get('reader')).not.toHaveProperty('tunnelChoice')
   })
 
   it('closes the reader tab and goes back to the article on the next press', async () => {

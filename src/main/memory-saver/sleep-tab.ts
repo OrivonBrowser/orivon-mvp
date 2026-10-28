@@ -3,7 +3,7 @@
 import { showTitleUntilLoaded } from '../session-restore/restored-title.js'
 import { boundHistory, rememberOpenedFrom } from '../session-restore/tab-snapshot.js'
 import { closeParkedViews, repartitionView } from '../shell/tab-parking.js'
-import { partitionForTarget } from '../shell/tab-partition.js'
+import { partitionForTab } from '../shell/tab-partition.js'
 import type { SleepingTab } from '../shell/tab-extra-types.js'
 import type { TabRecord } from '../shell/tab-types.js'
 import { withoutShellPages } from '../shell/tab-history.js'
@@ -89,9 +89,9 @@ export function wakeTab (tabs: TabManager, id: string): void {
   showTitleUntilLoaded(record, kept.title)
   // The view has no address until its first commit, so the session file and the closed-tab stack read what the tab was.
   rememberOpenedFrom(record, { url: kept.url, title: kept.title, pinned: record.pinned === true, ...boundHistory(kept.entries.map(({ url, title }) => ({ url, title })), kept.index) })
-  // The blank view is in the shared session. A page whose session is another (a website turned onto the tunnel while the tab slept)
-  // is loaded in a view of that session, never here: a programmatic load is not announced to the pre-commit check.
-  const own = partitionForTarget(kept.url)
+  // The blank view is in the shared session. A page whose session is another (a website turned onto the tunnel while the tab slept,
+  // or any website of a tab with a tunnel choice) is loaded in a view of that session, never here: a programmatic load is not announced to the pre-commit check.
+  const own = partitionForTab(kept.url, record.tunnelChoice)
   if (own !== undefined) {
     repartitionView(id, record, kept.url, own)
     tabs.changed()

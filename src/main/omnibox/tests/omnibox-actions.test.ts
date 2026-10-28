@@ -1,9 +1,16 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CHROME_ACTIONS, runChromeAction } from '../../shell/chrome-actions.js'
 import { createOmniboxOverlay } from '../omnibox-overlay.js'
 import type { WindowContext } from '../../shell/window-context.js'
 import { SHELL_EVENT_CHANNEL } from '../../channels.js'
 import { provideVerifierAccess } from '../../verifier/verifier-access.js'
+import { suggestFetchFor } from '../suggest-net.js'
+import { profilePartitionFor } from '../../route/site-partition.js'
+import { setSiteRoutes } from '../../route/site-routes.js'
+
+vi.mock('../suggest-net.js', () => ({ suggestFetchFor: vi.fn(() => vi.fn()) }))
+
+afterEach(() => { setSiteRoutes(undefined) })
 
 interface FakeTab { id: string, url: string, displayUrl: string, title: string, favicon: null, isNewTab: boolean }
 
@@ -16,7 +23,9 @@ function fakeWindow (tabs: FakeTab[], activeTabId: string | null) {
     getState: () => ({ tabs, activeTabId }),
     ids: () => tabs.map((entry) => entry.id),
     navigate: vi.fn(), createTab: vi.fn(), openLocalFile: vi.fn(() => Promise.resolve('f1')), openInternal: vi.fn(), activateTab: vi.fn(), closeTab: vi.fn(),
-    activeWebContents: () => ({ focus: vi.fn() })
+    activeWebContents: () => ({ focus: vi.fn() }),
+    activeTunnelChoice: (): string | undefined => undefined,
+    openTrusted: vi.fn(() => ['v1', {}]), moveTab: vi.fn(), record: (): { tunnelChoice?: string } | undefined => undefined
   }
   return {
     overlays, sent, manager,
@@ -62,6 +71,15 @@ describe('the omnibox chrome actions', () => {
       run('omnibox.query', { text: 'exam', typing: false, anchor })
       expect(here.overlays.show).toHaveBeenCalledTimes(1)
       expect(here.overlays.send).toHaveBeenCalledWith('omnibox', expect.objectContaining({ type: 'rows', selected: 0 }))
+    })
+
+    it('asks for suggestions through the tunnel choice of the tab in front, and with none for a tab that has none', () => {
+      const { run, here, anchor } = setup()
+      run('omnibox.query', { text: 'exa', typing: true, anchor })
+      expect(suggestFetchFor).toHaveBeenLastCalledWith(undefined)
+      here.manager.activeTunnelChoice = () => 'nym'
+      run('omnibox.query', { text: 'exam', typing: true, anchor })
+      expect(suggestFetchFor).toHaveBeenLastCalledWith('nym')
     })
 
     it('starts the verifier host as soon as the text names a .eth host, and for no other text', () => {
@@ -158,6 +176,26 @@ describe('the omnibox chrome actions', () => {
       run('omnibox.pick', { index: 1, disposition: 'background' })
       expect(here.manager.createTab).toHaveBeenLastCalledWith('https://example.com/', false)
       expect(here.manager.navigate).not.toHaveBeenCalled()
+    })
+
+    it('opens a row in a new tab that keeps the tunnel choice of the tab in front, so its first request leaves by that tunnel', () => {
+      const { run, here, anchor } = setup({ history })
+      here.manager.activeTunnelChoice = () => 'nym'
+      run('omnibox.query', { text: 'exa', typing: false, anchor })
+      run('omnibox.pick', { index: 1, disposition: 'tab' })
+      expect(here.manager.createTab).toHaveBeenLastCalledWith('https://example.com/', true, undefined, 'nym')
+      run('omnibox.query', { text: 'exa', typing: false, anchor })
+      run('omnibox.pick', { index: 1, disposition: 'background' })
+      expect(here.manager.createTab).toHaveBeenLastCalledWith('https://example.com/', false, undefined, 'nym')
+    })
+
+    it('opens the source of a typed address in a new tab through the tunnel choice of the tab in front', () => {
+      setSiteRoutes({ profileFor: () => undefined })
+      const { run, here, anchor } = setup()
+      here.manager.record = () => ({ tunnelChoice: 'nym' })
+      run('omnibox.query', { text: 'view-source:https://example.com/', typing: false, anchor })
+      run('omnibox.pick', { index: 0, disposition: 'tab' })
+      expect(here.manager.openTrusted).toHaveBeenCalledWith('view-source:https://example.com/', profilePartitionFor('nym', 'https://example.com'), 'nym')
     })
 
     it('opens a typed path or file: address as a local file in a new tab, and drops the empty tab it was typed on', async () => {

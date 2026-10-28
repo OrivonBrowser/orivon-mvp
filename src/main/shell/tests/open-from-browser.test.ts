@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { navigateFromBrowser, openFromBrowser, openNowFromBrowser } from '../open-from-browser.js'
+import { navigateFromBrowser, openFromActiveTab, openFromBrowser, openNowFromBrowser } from '../open-from-browser.js'
 import type { BrowserTabs } from '../open-from-browser.js'
 
 const FILE = 'file:///home/u/notes/app.html'
@@ -28,10 +28,36 @@ describe('openFromBrowser', () => {
     expect(calls).toEqual(['create https://example.com/ true', `file ${FILE} false`])
   })
 
+  it('hands the tab the tunnel choice it is given, and leaves a local file without one', () => {
+    const { tabs } = fakeTabs()
+    openFromBrowser(tabs, 'https://example.com/', false, 'nym')
+    expect(tabs.createTab).toHaveBeenLastCalledWith('https://example.com/', false, undefined, 'nym')
+    openFromBrowser(tabs, FILE, true, 'nym')
+    expect(tabs.openLocalFile).toHaveBeenLastCalledWith(FILE, true)
+    openFromBrowser(tabs, 'https://example.com/')
+    expect(tabs.createTab).toHaveBeenLastCalledWith('https://example.com/', true)
+  })
+
   it('never hands a file address with a host to a tab', () => {
     const { tabs, calls } = fakeTabs()
     openFromBrowser(tabs, 'file://server/share/a.html')
     expect(calls).toEqual(['create file://server/share/a.html true'])
+  })
+})
+
+describe('openFromActiveTab', () => {
+  it('opens the address in a tab that keeps the tunnel choice of the tab in front, so its first request leaves by that tunnel', () => {
+    for (const choice of ['nym', 'socks5', 'direct'] as const) {
+      const createTab = vi.fn(() => 'new')
+      expect(openFromActiveTab({ createTab, activeTunnelChoice: () => choice }, 'https://home.example/')).toBe('new')
+      expect(createTab).toHaveBeenCalledWith('https://home.example/', true, undefined, choice)
+    }
+  })
+
+  it('opens it with no choice when the tab in front has none', () => {
+    const createTab = vi.fn(() => 'new')
+    openFromActiveTab({ createTab, activeTunnelChoice: () => undefined }, 'https://home.example/')
+    expect(createTab).toHaveBeenCalledWith('https://home.example/', true, undefined, undefined)
   })
 })
 

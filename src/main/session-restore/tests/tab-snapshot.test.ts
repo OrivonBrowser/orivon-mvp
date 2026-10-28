@@ -87,6 +87,42 @@ describe('snapshotOf', () => {
   })
 })
 
+describe('a tab\'s tunnel choice in a snapshot', () => {
+  it('is written down with the tab, so a restored or reopened tab loads its first address through it', () => {
+    expect(snapshotOf(recordOf({ tunnelChoice: 'nym' }), wcOf({ url: 'https://a.example/x', title: 'A page' }))).toEqual({ url: 'https://a.example/x', title: 'A page', pinned: false, tunnelChoice: 'nym' })
+    for (const choice of ['socks5', 'direct'] as const) expect(snapshotOf(recordOf({ tunnelChoice: choice }), wcOf({}))?.tunnelChoice).toBe(choice)
+  })
+
+  it('is written down for a tab asleep, one whose page has not committed, and one reading', () => {
+    const asleep = recordOf({ tunnelChoice: 'socks5', sleeping: { url: 'https://a.example/z', title: 'Z', entries: [], index: 0 } } as never)
+    expect(snapshotOf(asleep, wcOf({}))?.tunnelChoice).toBe('socks5')
+    const loading = recordOf({ tunnelChoice: 'nym' })
+    rememberOpenedFrom(loading, { url: 'https://slow.example/a', title: 'Saved title', pinned: false })
+    expect(snapshotOf(loading, wcOf({ url: '', title: '' }))).toEqual({ url: 'https://slow.example/a', title: 'Saved title', pinned: false, tunnelChoice: 'nym' })
+  })
+
+  it('is written down for a tab showing a page of the shell, which a person can type an address into', () => {
+    const history = recordOf({ internalPage: 'history', tunnelChoice: 'nym' })
+    expect(snapshotOf(history, wcOf({ url: 'orivon://history/', title: 'History' }))).toEqual({ url: 'orivon://history/', title: 'History', pinned: false, internal: { page: 'history', path: '/' }, tunnelChoice: 'nym' })
+    expect(snapshotOf(recordOf({ internalPage: 'history' }), wcOf({ url: 'orivon://history/' }))).not.toHaveProperty('tunnelChoice')
+  })
+
+  it('is absent for a tab with none', () => {
+    expect(snapshotOf(recordOf(), wcOf({}))).not.toHaveProperty('tunnelChoice')
+  })
+
+  it('is read back from a file as data: only the three choices survive, on a page with an address', () => {
+    for (const choice of ['nym', 'socks5', 'direct']) expect(sanitizeSnapshot({ url: 'https://a.example/', tunnelChoice: choice })?.tunnelChoice).toBe(choice)
+    for (const bad of ['off', '', 'NYM', 3, null, {}, ['nym']]) expect(sanitizeSnapshot({ url: 'https://a.example/', tunnelChoice: bad }), JSON.stringify(bad)).not.toHaveProperty('tunnelChoice')
+  })
+
+  it('is read back from a file for a page of the shell as well, and dropped there when it is not one of the three', () => {
+    const internal = { page: 'history', path: '/' }
+    for (const choice of ['nym', 'socks5', 'direct']) expect(sanitizeSnapshot({ url: 'x', internal, tunnelChoice: choice })?.tunnelChoice).toBe(choice)
+    for (const bad of ['off', '', 'NYM', 3, null, {}, ['nym']]) expect(sanitizeSnapshot({ url: 'x', internal, tunnelChoice: bad }), JSON.stringify(bad)).not.toHaveProperty('tunnelChoice')
+  })
+})
+
 describe('sanitizeSnapshot', () => {
   it('refuses what is not an object, or has no usable address', () => {
     for (const bad of [null, 'x', 4, [], {}, { url: 4 }, { url: 'javascript:alert(1)' }, { url: '' }]) expect(sanitizeSnapshot(bad), JSON.stringify(bad)).toBeNull()

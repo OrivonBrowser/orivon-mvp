@@ -46,6 +46,8 @@ vi.mock('electron', () => ({
 
 const { sessionAttributionSubsystem } = await import('../session-attribution.js')
 const { session } = await import('electron')
+const { setTabTunnelSource } = await import('../../route/tab-tunnel.js')
+const { setSiteRoutes } = await import('../../route/site-routes.js')
 
 const APP = 'https://app.example'
 const OTHER = 'https://other.example'
@@ -242,5 +244,42 @@ describe('senderAttributed -- a local file belongs in the session localPartition
     installLocalFileApps(undefined)
 
     expect(attributed(wc, FILE)).toBe(false)
+  })
+})
+
+describe('senderAttributed -- a tab with a tunnel choice puts every website in the choice\'s profile', () => {
+  const NYM = session.fromPartition('persist:tunnel-profile')
+
+  function tunnelTab (initialSession: unknown, id = 7): { wc: FakeWebContents & { id: number }, commit: (url: string) => void } {
+    const made = fakeWebContents(initialSession)
+    return { wc: Object.assign(made.wc, { id }), commit: made.commit }
+  }
+
+  afterEach(() => { setSiteRoutes(undefined); setTabTunnelSource(undefined) })
+
+  it('attributes a document in the profile the tab\'s choice calls for, and not one in the default session', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    setTabTunnelSource({ choiceOfContents: (id) => id === 7 ? 'nym' : undefined, kindShowing: () => undefined })
+    const { attributed } = attributionRig()
+    expect(attributed(tunnelTab(NYM).wc, OTHER)).toBe(true)
+    expect(attributed(tunnelTab(DEFAULT_SESSION).wc, OTHER)).toBe(false)
+  })
+
+  it('attributes a document of a tab with no choice in the default session as it always did', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    setTabTunnelSource({ choiceOfContents: () => undefined, kindShowing: () => undefined })
+    const { attributed } = attributionRig()
+    expect(attributed(tunnelTab(DEFAULT_SESSION).wc, OTHER)).toBe(true)
+    expect(attributed(tunnelTab(NYM).wc, OTHER)).toBe(false)
+  })
+
+  it('records the verdict at the commit with the choice the tab had then', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    setTabTunnelSource({ choiceOfContents: () => 'nym', kindShowing: () => undefined })
+    const { attributed, register } = attributionRig()
+    const { wc, commit } = tunnelTab(NYM)
+    register(wc)
+    commit(OTHER)
+    expect(attributed(wc, OTHER)).toBe(true)
   })
 })

@@ -17,7 +17,7 @@ vi.mock('../../os/share-commands.js', () => ({ copyLinkCommand: vi.fn(), copyWeb
 vi.mock('../../shell/open-file-command.js', () => ({ openFileCommand: vi.fn(async () => {}) }))
 vi.mock('../../os/share-runner.js', () => ({ realShareDeps: { realShare: true } }))
 
-interface Tab { id: string, url: string, displayUrl: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean }
+interface Tab { id: string, url: string, displayUrl: string, title: string, isNewTab: boolean, isInternal: boolean, splitWith: string | null, pinned: boolean, muted: boolean, tunnelChoice?: 'nym' }
 const tab = (id: string, extra: Partial<Tab> = {}): Tab => ({ id, url: `https://${id}.example/`, displayUrl: `https://${id}.example/`, title: id, isNewTab: false, isInternal: false, splitWith: null, pinned: false, muted: false, ...extra })
 
 function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: boolean, homeUrl?: string } = {}): { target: ShellWindow, zoom: Record<'step' | 'reset', ReturnType<typeof vi.fn>>, devtools: Record<'toggle' | 'openConsole', ReturnType<typeof vi.fn>>, profiles: Record<'openPrivate' | 'openPrivateNym', ReturnType<typeof vi.fn>>, calls: Record<string, ReturnType<typeof vi.fn>>, bookmarks: Record<string, ReturnType<typeof vi.fn>>, deps: CommandDeps & { openWindow: ReturnType<typeof vi.fn<() => void>>, quit: ReturnType<typeof vi.fn<() => void>> }, send: ReturnType<typeof vi.fn> } {
@@ -31,7 +31,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
       getState: () => ({ tabs, activeTabId }),
       tabCount: tabs.length,
       splits: { toggle: calls['toggle'], focusOther: calls['focusOther'], swap: calls['swap'], rotate: calls['rotate'], groups: { partnerOf: (id: string) => tabs.find((t) => t.id === id)?.splitWith ?? null, pairs: () => [] } },
-      record: (id: string) => ({ pinned: tabs.find((t) => t.id === id)?.pinned, muted: tabs.find((t) => t.id === id)?.muted, view: { webContents: { isDestroyed: () => false, setAudioMuted: calls['setAudioMuted'] } } }),
+      record: (id: string) => ({ pinned: tabs.find((t) => t.id === id)?.pinned, muted: tabs.find((t) => t.id === id)?.muted, tunnelChoice: tabs.find((t) => t.id === id)?.tunnelChoice, view: { webContents: { isDestroyed: () => false, setAudioMuted: calls['setAudioMuted'] } } }),
       ids: () => tabs.map((t) => t.id),
       hasRoom: () => true,
       liveWebContents: () => undefined,
@@ -81,11 +81,18 @@ describe('the tab-state commands', () => {
     const { target, calls, deps } = harness([tab('a'), tab('b')], 'a')
     calls['createTab']?.mockReturnValue('c')
     runCommand('tab.duplicate', target, deps)
-    expect(calls['createTab']).toHaveBeenCalledWith('https://a.example/')
+    expect(calls['createTab']).toHaveBeenCalledWith('https://a.example/', true, undefined, undefined)
     expect(calls['moveTab']).toHaveBeenCalledWith('c', 1)
     const blank = harness([tab('a', { isNewTab: true })], 'a')
     runCommand('tab.duplicate', blank.target, blank.deps)
     expect(blank.calls['createTab']).not.toHaveBeenCalled()
+  })
+
+  it('opens the copy of a tab with a tunnel choice on that choice', () => {
+    const { target, calls, deps } = harness([tab('a', { tunnelChoice: 'nym' })], 'a')
+    calls['createTab']?.mockReturnValue('c')
+    runCommand('tab.duplicate', target, deps)
+    expect(calls['createTab']).toHaveBeenCalledWith('https://a.example/', true, undefined, 'nym')
   })
 })
 

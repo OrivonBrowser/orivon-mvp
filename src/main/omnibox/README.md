@@ -10,7 +10,7 @@ chrome asks (`omnibox.query`, `select`, `pick`, `close`) and what a choice does 
 `omnibox-overlay.ts` declares the dropdown, drawn by
 [`../../renderer/overlay/omnibox/`](../../renderer/overlay/omnibox/) and driven by
 [`../../renderer/chrome/address-suggest.ts`](../../renderer/chrome/address-suggest.ts). `omnibox-names.ts` holds the
-two names they share. `suggest-net.ts` binds the request to `net.fetch`, and `suggest-test-seam.ts` lets a test build
+two names they share. `suggest-net.ts` binds the request to `net.fetch`, through the tunnel of the active tab's choice when it has one (and not at all when that tunnel cannot be had), and `suggest-test-seam.ts` lets a test build
 point it at a local fixture.
 
 **Tied to Electron only in** `omnibox-overlay.ts`, `omnibox-actions.ts` and `suggest-net.ts`, through the overlay host and the
@@ -58,3 +58,7 @@ after 150 ms without typing, and is cancelled by the next keystroke; the answer 
 strings of at most 200 characters with control and direction characters removed. Only a built-in engine has an
 address (`SEARCH_ENGINES` in [`../browsing/search-engines.ts`](../browsing/search-engines.ts)), so a person's own
 engine never gets one. The rows join after row 1 as late rows and never move the selected one.
+
+**A row opened in a new tab keeps the tunnel choice of the tab it was typed in.** The suggestions for a tab with a choice are asked
+through its tunnel, so what the person does with the text next must leave the same way: Alt+Enter, a middle click on a row and a typed
+`view-source:` open their tab with the choice of the tab in front, in the session that choice calls for, and never in the shared one.

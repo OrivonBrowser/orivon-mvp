@@ -7,6 +7,7 @@
 
 import { isOnionUrl, ONION_NEEDS_TOR } from '../../broker/route/onion.js'
 import type { RouteEndpoint } from '../../protocols/local-node/protocol.js'
+import type { TunnelKind } from './route-state.js'
 
 export type OwnFetch = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -35,6 +36,8 @@ export interface OwnRequests {
   readonly siteSession?: (origin: string) => Promise<object | undefined>
   /** `siteSession` as a `fetch`, for a caller that makes its request with one. */
   readonly through?: (origin: string) => Promise<OwnFetch | undefined>
+  /** A `fetch` made in the profile session of `kind`, which signs in to its front: for a request made on behalf of a tab with a tunnel choice that is about no origin. */
+  readonly profileFetch?: (kind: TunnelKind) => OwnFetch
   /**
    * Where a local node's traffic leaves while the whole browser is on the tunnel: the tunnel's SOCKS5 address and the sign-in for the
    * node named `key`, starting the tunnel if need be. Rejects, in words, when the tunnel cannot carry it. Absent before routes run.
@@ -158,5 +161,19 @@ export function ownFetch (ordinary: OwnFetch, origin?: string): OwnFetch {
     if (!current.everywhere()) return await refusingOnion(onion, async () => await ordinary(url, init))
     if (origin !== undefined && !current.isRouted(origin)) return await refusingOnion(onion, async () => await current.direct(url, init))
     return await carryingOnion(onion, current, origin, async () => await current.tunnel(url, init))
+  }
+}
+
+/**
+ * A `fetch` for a request made on behalf of a tab with a tunnel choice, with no page to ask about (the address bar's suggestions as
+ * the person types): it is made in that tunnel's profile session, whatever the browser-wide setting says, and it fails, it is
+ * never made directly, when that session cannot be had. A `direct` choice, or none, is `ownFetch`'s own.
+ */
+export function ownFetchForTab (ordinary: OwnFetch, choice: TunnelKind | undefined): OwnFetch {
+  if (choice === undefined) return ownFetch(ordinary)
+  return async (url, init) => {
+    if (source !== undefined) await sessionsFollowSetting(source)
+    if (source?.profileFetch === undefined) throw new Error('the tunnel is not available, so this is not asked')
+    return await source.profileFetch(choice)(url, init)
   }
 }
