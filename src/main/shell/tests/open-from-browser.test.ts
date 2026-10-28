@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { navigateFromBrowser, openFromBrowser, openNowFromBrowser } from '../open-from-browser.js'
+import { navigateFromBrowser, openFromActiveTab, openFromBrowser, openNowFromBrowser } from '../open-from-browser.js'
 import type { BrowserTabs } from '../open-from-browser.js'
 
 const FILE = 'file:///home/u/notes/app.html'
@@ -32,6 +32,22 @@ describe('openFromBrowser', () => {
     const { tabs, calls } = fakeTabs()
     openFromBrowser(tabs, 'file://server/share/a.html')
     expect(calls).toEqual(['create file://server/share/a.html true'])
+  })
+})
+
+describe('openFromActiveTab', () => {
+  it('opens the address in a tab that keeps the tunnel choice of the tab in front, so its first request leaves by that tunnel', () => {
+    for (const choice of ['nym', 'socks5', 'direct'] as const) {
+      const createTab = vi.fn(() => 'new')
+      expect(openFromActiveTab({ createTab, activeTunnelChoice: () => choice }, 'https://home.example/')).toBe('new')
+      expect(createTab).toHaveBeenCalledWith('https://home.example/', true, undefined, choice)
+    }
+  })
+
+  it('opens it with no choice when the tab in front has none', () => {
+    const createTab = vi.fn(() => 'new')
+    openFromActiveTab({ createTab, activeTunnelChoice: () => undefined }, 'https://home.example/')
+    expect(createTab).toHaveBeenCalledWith('https://home.example/', true, undefined, undefined)
   })
 })
 

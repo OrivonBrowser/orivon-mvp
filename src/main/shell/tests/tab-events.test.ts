@@ -550,7 +550,7 @@ describe('wireView -- context menu', () => {
     editFlags: { canCut: false, canCopy: false, canPaste: false, canSelectAll: true }
   }
   const services = (isPrivate: boolean): Record<string, unknown> => ({
-    isPrivate, profiles: { openPrivate: vi.fn() }, settings: { get: () => true, set: vi.fn() }
+    isPrivate, profiles: { openPrivate: vi.fn(), openPrivateNym: vi.fn() }, settings: { get: () => true, set: vi.fn() }
   })
   const menuItems = (): Array<{ label?: string, click?: () => void }> => (buildFromTemplate.mock.calls.at(-1)?.[0] ?? []) as Array<{ label?: string, click?: () => void }>
   const choose = (label: string): void => { menuItems().find((item) => item.label === label)?.click?.() }
@@ -581,6 +581,32 @@ describe('wireView -- context menu', () => {
 
     expect(host.openTab).toHaveBeenCalledWith('https://example.com/a', false, undefined, 'nym')
     expect(host.openWindow).toHaveBeenCalledWith('https://example.com/a', undefined, 'nym')
+  })
+
+  it('holds a private window opened from a Nym tab to Nym, and offers none from a tab set to the proxy, which a private session cannot be held to', () => {
+    const profiles = (shared: Record<string, unknown>): { openPrivate: ReturnType<typeof vi.fn>, openPrivateNym: ReturnType<typeof vi.fn> } => shared['profiles'] as never
+    const nymWc = fakeContents()
+    const nym = services(false)
+    wireView('tab-1', { ...record(nymWc, undefined, fakeHost({ services: nym as never })), tunnelChoice: 'nym' })
+    nymWc.emit('context-menu', {}, LINK_PARAMS)
+    choose('Open Link in Private Window')
+    expect(profiles(nym).openPrivateNym).toHaveBeenCalledWith('https://example.com/a')
+    expect(profiles(nym).openPrivate).not.toHaveBeenCalled()
+
+    const proxyWc = fakeContents()
+    const proxy = services(false)
+    wireView('tab-2', { ...record(proxyWc, undefined, fakeHost({ services: proxy as never })), tunnelChoice: 'socks5' })
+    proxyWc.emit('context-menu', {}, LINK_PARAMS)
+    expect(menuItems().map((item) => item.label)).not.toContain('Open Link in Private Window')
+    expect(menuItems().map((item) => item.label)).toContain('Open Link in New Window')
+
+    const directWc = fakeContents()
+    const direct = services(false)
+    wireView('tab-3', { ...record(directWc, undefined, fakeHost({ services: direct as never })), tunnelChoice: 'direct' })
+    directWc.emit('context-menu', {}, LINK_PARAMS)
+    choose('Open Link in Private Window')
+    expect(profiles(direct).openPrivate).toHaveBeenCalledWith('https://example.com/a')
+    expect(profiles(direct).openPrivateNym).not.toHaveBeenCalled()
   })
 
   it('offers no private window from inside a private one', () => {

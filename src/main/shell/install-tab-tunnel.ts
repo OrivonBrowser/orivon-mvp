@@ -2,7 +2,8 @@
 // tunnel a tab that shows a website sends it through), which `../route/` must not read off the tabs itself (ADR-0101).
 import { webContents } from 'electron'
 import type { ShellInstaller } from './shell-installers.js'
-import { kindShowing, tabsWithChoice } from './tab-tunnel-choice.js'
+import { kindShowing, tabsWithChoice } from './tab-tunnel-facts.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { exposeTabTunnelForTests } from './tab-tunnel-test-hook.js'
 import { setTabTunnelSource } from '../route/tab-tunnel.js'
 
@@ -16,7 +17,7 @@ export const installTabTunnel: ShellInstaller = {
         const found = services.windows.findTab(contents)
         return found?.window.tabs.record(found.tabId)?.tunnelChoice
       },
-      kindShowing: (origin) => kindShowing(tabsWithChoice(services.windows), origin)
+      kindShowing: (origin) => kindShowing(tabsWithChoice(services.windows), origin, isOriginServedFromCacheSync)
     })
     exposeTabTunnelForTests({
       set: (tabId, choice) => {

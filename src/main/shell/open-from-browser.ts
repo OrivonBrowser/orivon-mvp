@@ -16,6 +16,14 @@ export function openFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLoca
 }
 
 /**
+ * An address that a surface of the tab in front asks for (the pop-ups bubble, the site-info panel) opens in a tab that keeps the
+ * tunnel choice of the tab in front, so the new tab's first request leaves by the tunnel of the page it was asked from.
+ */
+export function openFromActiveTab (tabs: Pick<TabManager, 'createTab' | 'activeTunnelChoice'>, url: string): string {
+  return tabs.createTab(url, true, undefined, tabs.activeTunnelChoice())
+}
+
+/**
  * `openFromBrowser` for a caller that wants the tab's id (a restored tab gets its history and place, and keeps its tunnel
  * choice). A local file whose fuse answer is not in yet opens when the answer arrives and has no id here.
  */

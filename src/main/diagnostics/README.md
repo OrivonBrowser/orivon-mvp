@@ -16,7 +16,7 @@ session's copy is removed with its directory.
 is pure, or reads and writes plain files, and runs under plain vitest.
 
 **What it depends on.** `electron` (the runners); [`../pages/`](../pages/) (the internal-domain type, the page ids);
-[`../shell/`](../shell/) (the window registry and the shell scheme, types and one constant); [`../settings/`](../settings/)
+[`../shell/`](../shell/) (the window registry and the shell scheme, types and one constant, and `tab-tunnel-facts.ts`'s counts of the tabs' tunnel choices, which reach `../route/` for the choice names); [`../settings/`](../settings/)
 (the setting names, to pick which ones a report states); [`../../telemetry/mode.ts`](../../telemetry/mode.ts) (where
 reports go, and the test-build override); [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (the write that lands whole or not at all); [`../registry.ts`](../registry.ts) (the `Subsystem` type).
 

@@ -43,7 +43,7 @@ import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
 import { readableNow } from '../reader/reader-signal.js'
 import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTab } from './tab-partition.js'
-import { noteTabVisit } from './tab-tunnel-choice.js'
+import { noteTabVisit } from './tab-tunnel-facts.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
 export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionForTab, partitionForTarget } from './tab-partition.js'
@@ -362,7 +362,8 @@ export function wireView (id: string, record: TabRecord): void {
       openInSplit: (url) => { record.host.openInSplit(id, url) },
       openInWindow: (url) => { record.host.openWindow(url, undefined, record.tunnelChoice) },
       // A private window has no way back to the profile: it offers no second private session.
-      ...(services === undefined || services.isPrivate ? {} : { openInPrivate: (url: string) => { services.profiles.openPrivate(url) } }),
+      // A private session can be held to Nym or to no tunnel, so a link from a tab set to Nym opens in one held to Nym, and a tab set to the proxy offers none.
+      ...(services === undefined || services.isPrivate || record.tunnelChoice === 'socks5' ? {} : { openInPrivate: (url: string) => { if (record.tunnelChoice === 'nym') services.profiles.openPrivateNym(url); else services.profiles.openPrivate(url) } }),
       page: {
         bare: () => record.internalPage !== null || record.isDashboardTab,
         viewSource: () => canViewSource(record, wc.getURL()),

@@ -15,7 +15,7 @@ class FakeTab extends EventEmitter {
   getURL (): string { return this.url }
 }
 
-function rig (options: { blocked?: string[], defaultAllows?: boolean } = {}) {
+function rig (options: { blocked?: string[], defaultAllows?: boolean, choice?: 'nym' | 'socks5' | 'direct' } = {}) {
   const tab = new FakeTab()
   const other = new FakeTab('https://other.example/')
   let activeTabId: string | null = 't1'
@@ -24,6 +24,7 @@ function rig (options: { blocked?: string[], defaultAllows?: boolean } = {}) {
     tabs: {
       getState: () => ({ activeTabId }),
       liveWebContents: (id: string) => id === 't1' ? tab : id === 't2' ? other : undefined,
+      activeTunnelChoice: () => options.choice,
       createTab
     }
   } as unknown as ShellWindow
@@ -81,8 +82,15 @@ describe('the popups-blocked overlay', () => {
       const r = rig()
       r.handler.show?.(undefined)
       r.handler.request({ type: 'open', index: 1 })
-      expect(r.createTab).toHaveBeenCalledWith('https://ads.example/1')
+      expect(r.createTab).toHaveBeenCalledWith('https://ads.example/1', true, undefined, undefined)
       expect(r.close).toHaveBeenCalled()
+    })
+
+    it('opens it with the tunnel choice of the tab that blocked it, so the first request never leaves directly from a tunnel tab', () => {
+      const r = rig({ choice: 'nym' })
+      r.handler.show?.(undefined)
+      r.handler.request({ type: 'open', index: 0 })
+      expect(r.createTab).toHaveBeenCalledWith('https://ads.example/2', true, undefined, 'nym')
     })
 
     it('refuses a position past the list, a bad shape and an address the page supplies', () => {
