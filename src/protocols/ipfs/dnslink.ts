@@ -2,6 +2,7 @@
 // DNS is unauthenticated here, so whatever this returns is only ever a
 // pointer "via DNS", never a verified one.
 
+import { isOnionHost } from '../../broker/route/onion.js'
 import { ResolutionError } from '../resolution/records.js'
 
 /** Answers a TXT query: each record is the list of its strings. */
@@ -15,6 +16,8 @@ const PREFIX = 'dnslink='
  * resolver of the same answer picks the same one.
  */
 export async function resolveDnslink (domain: string, resolveTxt: ResolveTxt, signal: AbortSignal): Promise<string> {
+  // The query names the domain to a resolver, which would learn which hidden service an onion name is.
+  if (isOnionHost(domain)) throw new ResolutionError('invalid-name', `${domain} is an onion address, which has no DNSLink`)
   let records: string[][]
   try {
     records = await resolveTxt(`_dnslink.${domain}`, signal)

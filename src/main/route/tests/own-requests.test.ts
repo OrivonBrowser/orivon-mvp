@@ -176,3 +176,41 @@ describe('while the sessions are still following a change of the setting', () =>
     expect(tunnel).not.toHaveBeenCalled()
   })
 })
+
+describe('an onion address asked for by Orivon itself', () => {
+  const ONION = 'http://abc.onion/suggest?q=x'
+  const carries = (kind: boolean) => (): boolean => kind
+  const refusal = /onion address opens only through a Tor tunnel/
+
+  it('is refused whenever it would leave any way but the person\'s own SOCKS5 tunnel, and nothing is sent', async () => {
+    await expect(ownFetch(ordinary)(ONION)).rejects.toThrow(refusal)
+    world(false)
+    await expect(ownFetch(ordinary)(ONION)).rejects.toThrow(refusal)
+    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, carriesOnion: carries(false) })
+    await expect(ownFetch(ordinary)(ONION)).rejects.toThrow(refusal)
+    setOwnRequests({ everywhere: () => true, isRouted: (origin) => origin !== 'https://off.example', tunnel, direct, directSession: () => SESSION, carriesOnion: carries(true) })
+    await expect(ownFetch(ordinary, 'https://off.example')(ONION)).rejects.toThrow(refusal)
+    expect(ordinary).not.toHaveBeenCalled()
+    expect(tunnel).not.toHaveBeenCalled()
+    expect(direct).not.toHaveBeenCalled()
+  })
+
+  it('goes through the tunnel when that is the person\'s own SOCKS5 one', async () => {
+    setOwnRequests({ everywhere: () => true, isRouted: () => true, tunnel, direct, directSession: () => SESSION, carriesOnion: (origin) => origin === undefined })
+    expect(await (await ownFetch(ordinary)(ONION)).text()).toBe('tunnel')
+    await expect(ownFetch(ordinary, 'https://other.example')(ONION)).rejects.toThrow(refusal)
+  })
+
+  it('goes through the tunnel of a website that has one of its own, when that is the SOCKS5 one', async () => {
+    const profile = vi.fn(async () => new Response('through its route'))
+    setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel, direct, directSession: () => SESSION, through: async () => profile, carriesOnion: (origin) => origin === 'https://mine.example' })
+    expect(await (await ownFetch(ordinary, 'https://mine.example')(ONION)).text()).toBe('through its route')
+    await expect(ownFetch(ordinary, 'https://nym.example')(ONION)).rejects.toThrow(refusal)
+    expect(profile).toHaveBeenCalledTimes(1)
+  })
+
+  it('leaves every other address as it was', async () => {
+    world(false)
+    expect(await (await ownFetch(ordinary)('https://abc.onion.example/x')).text()).toBe('ordinary')
+  })
+})

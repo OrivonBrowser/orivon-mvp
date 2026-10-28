@@ -18,6 +18,16 @@ describe('what the load-error sheet says', () => {
     expect(loadErrorText(-999)).toEqual({ title: 'This page couldn\'t be loaded', body: 'Something went wrong while loading it. Trying again may help.' })
   })
 
+  it('says an onion address opens only through a Tor tunnel, and where to set one up, for a load cancelled for being one', () => {
+    const text = loadErrorText(-20, true)
+    expect(text.title).toBe('This site can\'t be reached')
+    expect(text.body).toContain('onion address')
+    expect(text.body).toContain('Tor')
+    expect(text.body).toContain('Settings, then Tunnels')
+    expect(text.body).not.toMatch(/extension|content filter/)
+    expect(loadErrorText(-20)).toEqual({ title: 'This page was blocked', body: 'An extension or a content filter stopped this page from loading.' })
+  })
+
   it('shows an error name only when it is one of Chromium\'s', () => {
     for (const name of ['ERR_NAME_NOT_RESOLVED', 'ERR_CONNECTION_REFUSED', 'ERR_HTTP2_PROTOCOL_ERROR']) expect(isErrorName(name), name).toBe(true)
     for (const name of ['', 'err_x', 'ERR_', 'ERR_<b>', 'Send money ERR_X', 42, undefined, `ERR_${'A'.repeat(61)}`]) expect(isErrorName(name), String(name)).toBe(false)
@@ -83,6 +93,18 @@ describe('the load-error watcher', () => {
     watchLoadErrors(stays.contents as unknown as WebContents, stays.deps)
     fail(stays, -20, 'file:///home/u/app/index.html', true, 'ERR_BLOCKED_BY_CLIENT')
     expect(stays.asks).toHaveLength(1)
+  })
+
+  it('marks a load that was cancelled for being an onion address, and only that one', () => {
+    const s = setup()
+    const refused = new Set<string>()
+    ;(s.deps as { onionRefused?: (id: number, url: string) => boolean }).onionRefused = (id, url) => refused.has(`${String(id)} ${url}`)
+    watchLoadErrors(s.contents as unknown as WebContents, s.deps)
+    refused.add('7 http://abc.onion/')
+    fail(s, -20, 'http://abc.onion/', true, 'ERR_BLOCKED_BY_CLIENT')
+    fail(s, -20, 'http://other.example/', true, 'ERR_BLOCKED_BY_CLIENT')
+    expect(s.asks[0]?.payload).toEqual({ code: -20, name: 'ERR_BLOCKED_BY_CLIENT', onion: true })
+    expect(s.asks[1]?.payload).toEqual({ code: -20, name: 'ERR_BLOCKED_BY_CLIENT' })
   })
 
   it('passes no error name that is not one of Chromium\'s', () => {
@@ -151,6 +173,12 @@ describe('the load-error overlay', () => {
       name: 'ERR_NAME_NOT_RESOLVED'
     })
     for (const bad of [undefined, null, {}, { code: 0, name: '' }, { code: 3, name: '' }, { code: -1.5, name: '' }, { code: '-105', name: '' }, { code: -105, name: 'nope' }]) expect(s.handler.show?.(bad), JSON.stringify(bad)).toBeUndefined()
+  })
+
+  it('draws the onion sentence when the watcher says the load was cancelled for being an onion address', () => {
+    const s = setup()
+    expect(s.handler.show?.({ code: -20, name: 'ERR_BLOCKED_BY_CLIENT', onion: true })).toEqual({ ...loadErrorText(-20, true), address: 'unresolvable.invalid', name: 'ERR_BLOCKED_BY_CLIENT' })
+    expect(s.handler.show?.({ code: -20, name: '', onion: 'yes' })).toMatchObject(loadErrorText(-20))
   })
 
   it('tries the tab again and closes', () => {

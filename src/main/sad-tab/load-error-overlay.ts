@@ -14,11 +14,11 @@ export interface LoadErrorView {
   readonly name: string
 }
 
-function asPayload (payload: unknown): { code: number, name: string } | undefined {
+function asPayload (payload: unknown): { code: number, name: string, onion: boolean } | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
-  const { code, name } = payload as { code?: unknown, name?: unknown }
+  const { code, name, onion } = payload as { code?: unknown, name?: unknown, onion?: unknown }
   if (typeof code !== 'number' || !Number.isInteger(code) || code >= 0 || (name !== '' && !isErrorName(name))) return undefined
-  return { code, name }
+  return { code, name, onion: onion === true }
 }
 
 export const loadErrorOverlay: OverlayDef = {
@@ -41,7 +41,7 @@ export const loadErrorOverlay: OverlayDef = {
         tabId = asked === undefined ? null : state.activeTabId
         if (asked === undefined) return undefined
         const address = state.tabs.find((tab) => tab.id === tabId)?.displayUrl ?? ''
-        return { ...loadErrorText(asked.code), address: address.slice(0, ADDRESS_LIMIT), name: asked.name }
+        return { ...loadErrorText(asked.code, asked.onion), address: address.slice(0, ADDRESS_LIMIT), name: asked.name }
       },
       request: (command) => {
         if (typeof command !== 'object' || command === null || (command as { type?: unknown }).type !== 'retry' || Object.keys(command).length !== 1) return undefined

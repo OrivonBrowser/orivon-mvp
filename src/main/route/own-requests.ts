@@ -5,6 +5,7 @@
 // instead, as that website does. Main supplies the pieces once; with the browser-wide setting off, or before they are
 // supplied, the caller's own `fetch` is used as it always was.
 
+import { isOnionUrl, ONION_NEEDS_TOR } from '../../broker/route/onion.js'
 import type { RouteEndpoint } from '../../protocols/local-node/protocol.js'
 import type { TunnelKind } from './route-state.js'
 
@@ -44,6 +45,11 @@ export interface OwnRequests {
   readonly nodeEndpoint?: (key: string) => Promise<RouteEndpoint>
   /** Called when an address `nodeEndpoint` handed out is no longer the tunnel's (its process restarted on another port, or stopped). Returns the unsubscribe. */
   readonly onNodeRouteMoved?: (listener: () => void) => () => void
+  /**
+   * Whether a request through the tunnel that carries a request about `origin` (the default tunnel for none) is carried by the
+   * person's own SOCKS5 address, the one tunnel that passes an onion name on unresolved. Absent, no tunnel is taken to be.
+   */
+  readonly carriesOnion?: (origin: string | undefined) => boolean
   /** Resolves when every session follows the browser-wide setting as it stands now. */
   readonly settled?: () => Promise<void>
   /** How long a request waits for that before it is refused; for a test. */
@@ -124,23 +130,37 @@ export async function ownSiteSession (origin: string): Promise<object | undefine
   return await source?.siteSession?.(origin)
 }
 
+/** Runs `send` unless the request is for an onion address, which no way out but the person's own SOCKS5 tunnel carries. */
+async function refusingOnion (onion: boolean, send: () => Promise<Response>): Promise<Response> {
+  if (onion) throw new Error(ONION_NEEDS_TOR)
+  return await send()
+}
+
+/** Runs `send` through a tunnel, which carries an onion address only when it is the person's own SOCKS5 one. */
+async function carryingOnion (onion: boolean, current: OwnRequests, origin: string | undefined, send: () => Promise<Response>): Promise<Response> {
+  if (onion && current.carriesOnion?.(origin) !== true) throw new Error(ONION_NEEDS_TOR)
+  return await send()
+}
+
 /**
  * `ordinary`, unless the whole browser is on the tunnel, when the request goes through it. `origin` is the website or app
  * the request is about, if any: one the person set to off is asked for directly, and a website with a tunnel of its own is asked
  * about through that tunnel's profile whatever the browser-wide setting says, since the request would otherwise show the
- * person's address (or another tunnel's exit) to a site they only open through that tunnel.
+ * person's address (or another tunnel's exit) to a site they only open through that tunnel. An onion address is refused unless
+ * the request leaves through the person's own SOCKS5 tunnel: no other way out passes the name on unresolved.
  */
 export function ownFetch (ordinary: OwnFetch, origin?: string): OwnFetch {
   return async (url, init) => {
+    const onion = isOnionUrl(url)
     if (source !== undefined) await sessionsFollowSetting(source)
     const current = source
-    if (current === undefined) return await ordinary(url, init)
+    if (current === undefined) return await refusingOnion(onion, async () => await ordinary(url, init))
     // A website with a tunnel of its own is asked about in that tunnel, whichever tunnel the browser-wide setting names.
     const routed = origin === undefined ? undefined : await current.through?.(origin)
-    if (routed !== undefined) return await routed(url, init)
-    if (!current.everywhere()) return await ordinary(url, init)
-    if (origin !== undefined && !current.isRouted(origin)) return await current.direct(url, init)
-    return await current.tunnel(url, init)
+    if (routed !== undefined) return await carryingOnion(onion, current, origin, async () => await routed(url, init))
+    if (!current.everywhere()) return await refusingOnion(onion, async () => await ordinary(url, init))
+    if (origin !== undefined && !current.isRouted(origin)) return await refusingOnion(onion, async () => await current.direct(url, init))
+    return await carryingOnion(onion, current, origin, async () => await current.tunnel(url, init))
   }
 }
 

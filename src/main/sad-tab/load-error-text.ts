@@ -41,9 +41,13 @@ const BY_CODE: ReadonlyMap<number, LoadErrorText> = new Map([
   [-324, { title: NOT_WORKING, body: 'The server sent no data.' }]
 ])
 
+const ONION_NEEDS_TOR: LoadErrorText = { title: UNREACHABLE, body: 'An onion address can be reached only through a Tor tunnel, so it was not looked up. To open it, set Tor\'s SOCKS5 address in Settings, then Tunnels, and send this site through it.' }
+
 const DEFAULT_TEXT: LoadErrorText = { title: 'This page couldn\'t be loaded', body: 'Something went wrong while loading it. Trying again may help.' }
 
-export function loadErrorText (code: number): LoadErrorText {
+/** `onion`: the load was cancelled because its address is an onion address and the tab's session does not go through the person's own SOCKS5 tunnel. */
+export function loadErrorText (code: number, onion = false): LoadErrorText {
+  if (onion) return ONION_NEEDS_TOR
   return BY_CODE.get(code) ?? DEFAULT_TEXT
 }
 

@@ -4,7 +4,7 @@
 
 import { join } from 'node:path'
 import { app, net, session, webContents } from 'electron'
-import type { Session } from 'electron'
+import type { Session, WebRequestFilter } from 'electron'
 import { beforeAppSessionServes } from '../../loader/electron/app-partitions.js'
 import { setReachRoute } from '../../loader/electron/reach-route.js'
 import { embedPartitionFor } from '../embed/embed-guard.js'
@@ -25,6 +25,8 @@ import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { prepareProfileSession, wakeProfileSession } from '../extensions/extensions-subsystem.js'
 import { servedOrigin } from './served-origin.js'
 import { ensureSiteSession, mustLeaveSession, setSiteRoutes, setMadeSiteSessions, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
+import { onionRefusals, onionRefused } from './onion-guard.js'
+import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
 import { kindOfProfile, profilePartition, profilePartitionFor } from './site-partition.js'
 import { tabChoiceOfContents, tabKindShowing } from './tab-tunnel.js'
@@ -42,6 +44,11 @@ import { RouteStore } from './route-store.js'
 import { profileIsolationSecret } from './isolation-secret.js'
 import { startDeadEnd } from './dead-end.js'
 import type { DeadEnd } from './dead-end.js'
+
+/** Where an onion guard runs among a session's `onBeforeRequest` handlers: after the main-frame guard (-2) and the hold on a session not yet pointed (-1). */
+const ONION_GUARD_ORDER = 0
+/** Every scheme a request for an onion host can use; the root-dot spelling is a host of its own to a match pattern. */
+const ONION_FILTER: WebRequestFilter = { urls: ['http://*.onion/*', 'https://*.onion/*', 'ws://*.onion/*', 'wss://*.onion/*', 'http://*.onion./*', 'https://*.onion./*', 'ws://*.onion./*', 'wss://*.onion./*'] }
 
 /** Sessions created before the controller exists, and after: each is adopted by the shared identity (`route-controller.ts`). */
 const created: object[] = []
@@ -112,6 +119,12 @@ export const routeSubsystem: Subsystem = {
       guarded.add(target)
       webRequestOwnerFor(target).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>
         details.resourceType === 'mainFrame' && mustLeaveSession(details.url, { shared: target === session.defaultSession, via: routes.controller.tunnelOf(target), temporary: isTemporary(target) }, isOriginServedFromCacheSync, routes.hub.kindOf, details.webContentsId === undefined ? undefined : tabChoiceOfContents(details.webContentsId)) ? { cancel: true } : current)
+      // After the hold on a profile session that is not yet pointed (order -1), so that a session coming up through the person's tunnel is judged by the tunnel it ends up on.
+      webRequestOwnerFor(target).onBeforeRequest(ONION_GUARD_ORDER, ONION_FILTER, isOnionUrl, (details, current) => {
+        if (!onionRefused(details.url, routes.controller.tunnelOf(target))) return current
+        if (details.resourceType === 'mainFrame') onionRefusals.note(details.webContentsId, details.url)
+        return { cancel: true }
+      })
     }
     adopt = (made) => { routes.controller.adopt(made); guardLoads(made) }
     for (const earlier of created.splice(0)) adopt(earlier as Session)
@@ -150,13 +163,15 @@ export const routeSubsystem: Subsystem = {
       const routed = await siteSession(origin)
       return routed === undefined ? undefined : createRequestFetch({ net, session: routed, answer: answerRouteChallenge })
     }
+    // The tunnel a lookup about `origin` leaves by: the one of a tab with a tunnel choice that shows it, else the website's own, else the browser's.
+    const lookupKind = (origin: string | undefined): TunnelKind | undefined => origin === undefined ? routes.defaultKind() : tabKindShowing(origin) ?? routes.hub.kindOf(origin) ?? routes.defaultKind()
     // A request made for a tab with a tunnel choice, with no page to ask about (the address bar's suggestions): in that tunnel's profile session, held on its route until it is pointed.
     const profileFetch = (kind: TunnelKind): typeof tunnelFetch => {
       const partition = profilePartition(kind, true)
       ensureSiteSession(partition, false)
       return createRequestFetch({ net, session: session.fromPartition(partition), answer: answerRouteChallenge })
     }
-    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteTunnelled, siteSession, through, profileFetch, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved })
+    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteTunnelled, siteSession, through, profileFetch, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved, carriesOnion: (origin) => lookupKind(origin) === 'socks5' })
 
     const siteSessions = createSiteSessions({
       controller: routes.controller,
