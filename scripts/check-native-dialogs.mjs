@@ -6,15 +6,12 @@
  *
  * Every question the browser puts to the person is drawn in a panel of the
  * tab's own window (src/main/shell/question/): a native box is a separate OS
- * window, unparented or parented to whichever window the OS picks, with no
- * tab to belong to, and a page cannot be told apart from the browser in one.
- * The exceptions are the question panel's own fallback for a question asked
- * before any window exists, and the start-up failure box, which has no window
- * to draw in. The OS file and folder pickers (`showOpenDialog`,
- * `showSaveDialog`) are not message boxes and are not matched. A
- * notification is the same break in another form (a message outside the
- * browser, with no tab to belong to), so it has no exceptions: what the
- * browser has to say it says in the window in use (`askQuestion`).
+ * window with no tab to belong to, and a page cannot be told apart from the
+ * browser in one. The exceptions are the question panel's own fallback for a
+ * question asked before any window exists, and the start-up failure box. The
+ * OS file and folder pickers are not message boxes and are not matched. A
+ * notification is the same break in another form, so it has no exceptions:
+ * what the browser has to say it says in the window in use (`askQuestion`).
  *
  * SCOPE: git-tracked source under src/, tests excluded. Regex over the code
  * with comments blanked, not an AST (scripts/README.md limits a guard to
@@ -22,9 +19,9 @@
  * `dialog['showMessageBox']`, a destructured `{ showMessageBox }` and an
  * aliased `const box = dialog.showMessageBox` are all caught; a computed
  * `dialog[expression]` is refused outright, since it can name any method. A
- * `Notification` is matched in the ways it can be taken from 'electron': a
- * named or type import (over several lines too), a destructure of `require`
- * or a dynamic `import()`, a member of the module, and `new Notification(`.
+ * `Notification` is matched as a named or type import (over several lines
+ * too), a destructure of `require` or `import()`, a member of the module, and
+ * `new Notification(`.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
