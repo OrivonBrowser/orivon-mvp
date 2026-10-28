@@ -171,7 +171,7 @@ function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView
         ? { state: 'syncing', summary: `Behind the chain: the newest block it has verified, ${s.block.toLocaleString('en-US')}, was produced ${ago(headAge)}.` }
         : { state: 'synced', summary: `Following the chain${through === undefined ? '' : ` through ${through}`}: block ${s.block.toLocaleString('en-US')}, produced ${ago(headAge)}.${s.clockLeadMs === undefined ? '' : ` This computer's clock is ${clockOff(s.clockLeadMs)}, and the light client allows for it. Setting the clock right, in the system's date and time settings, removes the need.`}` }
     }
-    case 'failed': return { state: 'failed', summary: `Failed: ${s.reason}.${s.retryAt === undefined ? '' : ` Trying again ${s.retryAt <= now ? 'now' : `in ${String(Math.ceil((s.retryAt - now) / 1000))} s`}.`}${through === undefined ? '' : OWN_FAILED}` }
+    case 'failed': return { state: 'failed', summary: `Failed: ${s.reason}.${s.retryAt === undefined ? '' : ` Trying again ${s.retryAt <= now ? 'now' : `in ${String(Math.ceil((s.retryAt - now) / 1000))} s`}.`}${through !== undefined && s.ownServersFailed === true ? OWN_FAILED : ''}` }
   }
 }
 

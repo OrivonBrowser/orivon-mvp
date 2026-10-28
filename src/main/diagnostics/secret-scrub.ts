@@ -8,7 +8,7 @@ import { MASK } from '../../protocols/verifier-host/light-client/endpoint-mask.j
 
 /** A shorter string is a word, not a key, and would blank ordinary text. */
 const MIN_SECRET_LENGTH = 4
-/** The most secrets held: a person changes a handful of addresses a session; the oldest go when a flood would otherwise grow this without bound. */
+/** The most secrets held: a person changes a handful of addresses a session; the one noted longest ago goes when a flood would otherwise grow this without bound. */
 const MAX_SECRETS = 256
 
 interface Note {
@@ -16,14 +16,15 @@ interface Note {
   readonly shown: string
 }
 
-/** In the order noted, so the oldest is the one dropped. */
+/** In the order last noted, so the one noted longest ago is the one dropped. */
 let byAge: Note[] = []
 /** The same, longest first, so an address is replaced whole before the key inside it is looked for. */
 let notes: Note[] = []
 
 export function noteSecret (secret: string, shown: string = MASK): void {
-  if (secret.length < MIN_SECRET_LENGTH || byAge.some((note) => note.secret === secret)) return
-  byAge = [...byAge, { secret, shown }].slice(-MAX_SECRETS)
+  if (secret.length < MIN_SECRET_LENGTH) return
+  // Noted again, a secret becomes the newest: one still in use is not the one dropped when a flood of others follows it.
+  byAge = [...byAge.filter((note) => note.secret !== secret), { secret, shown }].slice(-MAX_SECRETS)
   notes = [...byAge].sort((a, b) => b.secret.length - a.secret.length)
 }
 

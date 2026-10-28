@@ -45,6 +45,26 @@ describe('scrub', () => {
   })
 })
 
+describe('a secret noted again', () => {
+  it('counts as the newest, so a key still in use is not the one dropped when many others are noted after it', () => {
+    noteSecret('https://mainnet.infura.io/v3/FAKE-KEY-0123456789', 'https://mainnet.infura.io/••••')
+    noteSecret('FAKE-KEY-0123456789')
+    for (let i = 0; i < 300; i++) {
+      noteSecret(`other-secret-${String(i).padStart(4, '0')}`)
+      noteSecret('https://mainnet.infura.io/v3/FAKE-KEY-0123456789', 'https://mainnet.infura.io/••••')
+      noteSecret('FAKE-KEY-0123456789')
+    }
+    expect(scrub('GET https://mainnet.infura.io/v3/FAKE-KEY-0123456789 and FAKE-KEY-0123456789')).toBe('GET https://mainnet.infura.io/•••• and ••••')
+    expect(scrub('other-secret-0000')).toBe('other-secret-0000')
+  })
+
+  it('shows what the latest note says in its place', () => {
+    noteSecret('FAKE-KEY-0123456789')
+    noteSecret('FAKE-KEY-0123456789', 'a key')
+    expect(scrub('FAKE-KEY-0123456789')).toBe('a key')
+  })
+})
+
 describe('scrubDeep', () => {
   it('scrubs every string inside an object or an array, and nothing else', () => {
     noteSecret('FAKE-KEY-0123456789')

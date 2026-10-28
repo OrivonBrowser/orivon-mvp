@@ -57,8 +57,9 @@ servers for data. None of them is trusted to be right; each of them sees what it
   `name.web3.storage`, a DNS-over-HTTPS resolver (`cloudflare-dns.com`, `dns.google`) or a server
   the name's own resolver chooses learns the name. Settings > Web3 lists them all.
 - **Servers you name are told the names, and the file keeps their keys.** With Your own servers
-  chosen in Settings > Web3, only those servers are asked, and when they fail `.eth` names wait:
-  Orivon's servers are not asked in their place. A key in an address you typed is stored in your
+  chosen in Settings > Web3, only your servers are asked for what you fill in (a list or a
+  beacon server you leave empty keeps Orivon's server for it), and when they fail `.eth` names
+  wait: Orivon's servers are not asked in their place. A key in an address you typed is stored in your
   settings file as typed, since the file is not encrypted; Orivon hides it wherever it shows or
   records it, a private window held to Nym starts without your addresses, and an address on your
   home network over `http` sends its key in the clear on that network.

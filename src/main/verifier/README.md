@@ -216,5 +216,10 @@ cache or all history forgets them (`forgetKeptProvenance`).
 Orivon's for that field (`eth-servers.ts`'s `effectiveEthServers`). The checkpoint renewal still asks Orivon's two beacon
 servers for the finalized head and for each block root, so a block that only the person's server vouches for is never used;
 the person's beacon server is asked for the block root at the slot and for the bootstrap (`CheckpointRenewal`'s
-`consensusRpc`), and the roots recorded as unserved are forgotten when that server changes. The status page's words about a
-failure say "your Ethereum servers" and what to do (`status-view.ts`'s `OWN_FAILED`), never an address.
+`consensusRpc`), and the roots recorded as unserved are forgotten when that server changes. The status page says what to
+do about a failure (`status-view.ts`'s `OWN_FAILED`, never an address) only when the host puts the failure on the
+person's servers (the `ownServersFailed` field of its failed status: every execution server they named is in trouble or
+none is mainnet, or their beacon server did not give the bootstrap). A clock that is behind, one of Orivon's servers
+failing beside a server of theirs, and a failure the host cannot place get the reason alone. A change to the servers
+puts a running host to sleep only while the light client is on, since a host started without one holds no servers
+(`verifier-subsystem.ts`'s `ethServersChanged`).

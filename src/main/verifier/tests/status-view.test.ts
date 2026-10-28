@@ -277,11 +277,18 @@ describe('the servers the person named', () => {
   })
 
   it('says a failure is theirs to settle: .eth waits, Orivon\'s servers are not tried, and how to go back', () => {
-    const failed = { state: 'failed', reason: '127.0.0.1:8545/•••• answered 401', retryAt: NOW + 5_000 } as const
+    const failed = { state: 'failed', reason: '127.0.0.1:8545/•••• answered 401', retryAt: NOW + 5_000, ownServersFailed: true } as const
     const view = lightClientView(facts({ lightClient: failed, ownServers: both }), NOW)
     expect(view.state).toBe('failed')
     expect(view.summary).toBe("Failed: 127.0.0.1:8545/•••• answered 401. Trying again in 5 s. Orivon's servers are not asked instead, so .eth names wait. Check the servers you set in Settings > Web3, or choose Orivon's servers there.")
     expect(lightClientView(facts({ lightClient: failed }), NOW).summary).toBe('Failed: 127.0.0.1:8545/•••• answered 401. Trying again in 5 s.')
+  })
+
+  it('does not send the person to their servers for a failure the host did not put on them', () => {
+    const elsewhere = { state: 'failed', reason: 'eth.drpc.org answered 429', retryAt: NOW + 5_000 } as const
+    for (const ownServers of [both, { execution: false, consensus: true }, { execution: true, consensus: false }]) {
+      expect(lightClientView(facts({ lightClient: elsewhere, ownServers }), NOW).summary).toBe('Failed: eth.drpc.org answered 429. Trying again in 5 s.')
+    }
   })
 
   it('says "your beacon server" where the beacon server would not start the light client', () => {

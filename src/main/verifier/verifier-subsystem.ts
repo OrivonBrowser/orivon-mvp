@@ -143,9 +143,11 @@ export function lightClientSettingChanged (): void {
   changed()
 }
 
-/** The person changed which Ethereum servers are asked, or an address in their list: applied at once, when the servers asked are not the same ones. */
+/** The person changed which Ethereum servers are asked, or an address in their list: applied at once, when the servers asked are not the same ones. A host started with the light client off holds no servers, so it keeps running (and the nodes it carries with it). */
 export function ethServersChanged (): void {
-  if (ethServers.changed()) lightClientSettingChanged()
+  if (!ethServers.changed()) return
+  if (lightClientSwitchedOff()) changed()
+  else lightClientSettingChanged()
 }
 
 /**
