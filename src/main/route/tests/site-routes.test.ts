@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ensureSiteSession, mustLeaveSession, keepSiteApart, sessionRoutesLike, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf, sitePartitionForOrigin, sitePartitionForTab } from '../site-routes.js'
+import { allowedTabChoice, ensureSiteSession, mustLeaveSession, keepSiteApart, sessionRoutesLike, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf, sitePartitionForOrigin, sitePartitionForTab } from '../site-routes.js'
 import type { Profile } from '../site-partition.js'
 
 const SITE = 'https://news.example'
@@ -73,6 +73,31 @@ describe('the session a website must run in, in a tab with a tunnel choice', () 
     expect(sitePartitionForTab(SITE, 'nym')).toBeUndefined()
     setSiteRoutes({ profileFor: () => undefined })
     for (const choice of ['nym', 'socks5', 'direct'] as const) expect(sitePartitionForTab('http://localhost:3000', choice)).toBeUndefined()
+  })
+})
+
+describe('the session a tab with a choice gets in a window held to Nym', () => {
+  it('is Nym\'s for a Nym choice, and the session the website would follow with no choice for direct and for the proxy', () => {
+    setSiteRoutes({ profileFor: () => undefined, heldTo: 'nym' })
+    expect(sitePartitionForTab(SITE, 'nym')).toBe('persist:tunnel-profile')
+    expect(sitePartitionForTab(SITE, 'direct')).toBeUndefined()
+    expect(sitePartitionForTab(SITE, 'socks5')).toBeUndefined()
+    expect(allowedTabChoice('direct')).toBeUndefined()
+    expect(allowedTabChoice('nym')).toBe('nym')
+  })
+
+  it('leaves a window held to nothing as it was', () => {
+    setSiteRoutes({ profileFor: () => undefined })
+    expect(sitePartitionForTab(SITE, 'direct')).toBe('persist:direct-profile')
+    expect(allowedTabChoice('socks5')).toBe('socks5')
+  })
+
+  it('cancels a load in the direct profile and in the proxy\'s: the guard judges the website by Nym, not by the choice', () => {
+    setSiteRoutes({ profileFor: () => undefined, heldTo: 'nym' })
+    const nym = (): 'nym' => 'nym'
+    expect(mustLeaveSession(`${SITE}/`, { shared: false, via: undefined, temporary: false }, () => false, nym, 'direct')).toBe(true)
+    expect(mustLeaveSession(`${SITE}/`, { shared: false, via: 'socks5', temporary: false }, () => false, nym, 'socks5')).toBe(true)
+    expect(mustLeaveSession(`${SITE}/`, { shared: false, via: 'nym', temporary: false }, () => false, nym, 'direct')).toBe(false)
   })
 })
 

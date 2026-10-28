@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { isTabTunnelChoice, profileForTab, setTabTunnelSource, tabChoiceOfContents, tabKindShowing, tunnelOfChoice } from '../tab-tunnel.js'
+import { choiceUnderHold, isTabTunnelChoice, profileForTab, setTabTunnelSource, tabChoiceOfContents, tabKindShowing, tunnelOfChoice } from '../tab-tunnel.js'
 import type { TabTunnelChoice } from '../tab-tunnel.js'
 import type { Profile } from '../site-partition.js'
 
@@ -40,6 +40,20 @@ describe('the profile a tab with a tunnel choice puts a website in', () => {
       return own !== undefined && own !== 'direct' && got === 'direct'
     }
     for (const choice of ['nym', 'socks5', 'direct'] as const) for (const own of owns) expect(lessTunnelled(choice, own)).toBe(false)
+  })
+})
+
+describe('the choice a window held to one tunnel allows a tab', () => {
+  it('is any choice in a window held to nothing', () => {
+    for (const choice of [undefined, 'nym', 'socks5', 'direct'] as const) expect(choiceUnderHold(choice, undefined)).toBe(choice)
+  })
+
+  it('is the held tunnel or none in a window held to it: direct and the other tunnel would leave it by a route it was promised not to use', () => {
+    expect(choiceUnderHold('nym', 'nym')).toBe('nym')
+    expect(choiceUnderHold(undefined, 'nym')).toBeUndefined()
+    expect(choiceUnderHold('direct', 'nym')).toBeUndefined()
+    expect(choiceUnderHold('socks5', 'nym')).toBeUndefined()
+    expect(choiceUnderHold('nym', 'socks5')).toBeUndefined()
   })
 })
 

@@ -1,7 +1,7 @@
 // Setting a tab's tunnel choice (ADR-0101): the tab takes the choice, and the website it shows moves into the session the choice
 // calls for. Tied to Electron through `tab-parking.ts`, which swaps the tab's view; what the routes and a report read back of the
 // tabs' choices is in `tab-tunnel-facts.ts`, which is not.
-import { ensureSiteSession } from '../route/site-routes.js'
+import { allowedTabChoice, ensureSiteSession } from '../route/site-routes.js'
 import { profilePartition } from '../route/site-partition.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import { repartitionView } from './tab-parking.js'
@@ -17,12 +17,17 @@ function assign (record: TabRecord, choice: TabTunnelChoice | undefined): void {
  * Gives the tab `choice` (null takes it away), makes the profile it calls for ready so that the tunnel starts coming up while
  * the person types, and moves the website the tab shows, if it shows one, into the session the choice calls for. The move
  * reloads the page. A move that cannot be made at all gives the choice back, so the tab never claims a tunnel its page is not
- * using; one that stopped half-way leaves the page in the session the choice calls for and closes the view it left.
+ * using; one that stopped half-way leaves the page in the session the choice calls for and closes the view it left. A window held
+ * to one tunnel (a private window held to Nym) takes no other choice: the request is refused and the tab keeps what it had.
  */
 export function setTabTunnelChoice (id: string, record: TabRecord, choice: TabTunnelChoice | null): void {
   const previous = record.tunnelChoice
   const next = choice ?? undefined
   if (previous === next) return
+  if (allowedTabChoice(next) !== next) {
+    console.error(`[route] tab tunnel refused: this window is held to one tunnel, so a tab takes no other (${id})`)
+    return
+  }
   assign(record, next)
   console.log(`[route] tab tunnel ${next === undefined ? 'cleared' : `chosen: ${next}`} (${id})`)
   if (next !== undefined) ensureSiteSession(profilePartition(next, true), false)

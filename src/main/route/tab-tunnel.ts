@@ -24,6 +24,15 @@ export function tunnelOfChoice (choice: TabTunnelChoice | undefined): TunnelKind
 }
 
 /**
+ * The choice a tab may carry in a window held to the tunnel `held` (a private window held to Nym; undefined for any other window):
+ * that tunnel's, or none. `direct` and the other tunnel would leave the window by a route it was promised never to use, as the
+ * route store refuses an entry that is not the held tunnel.
+ */
+export function choiceUnderHold (choice: TabTunnelChoice | undefined, held: TunnelKind | undefined): TabTunnelChoice | undefined {
+  return held === undefined || choice === held ? choice : undefined
+}
+
+/**
  * The profile the website at `origin` runs in, in a tab with `choice`, given the profile its own entry calls for
  * (`ownProfile`, undefined for no entry). Undefined means the session the website would follow with no entry at all: an
  * origin that cannot go through a tunnel (this computer, anything that is not a web origin) is never in a profile.

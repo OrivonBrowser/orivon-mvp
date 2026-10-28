@@ -214,6 +214,7 @@ export const routeSubsystem: Subsystem = {
     })
     setSiteRoutes({
       profileFor: routes.hub.profileFor,
+      ...(heldToNym ? { heldTo: 'nym' as const } : {}),
       keepApart: (origin, profile) => { routes.store.keepApart(origin, profile) },
       sentLikeItsOwn: (partition, origin) => {
         const holder = partition === undefined ? session.defaultSession : session.fromPartition(partition)

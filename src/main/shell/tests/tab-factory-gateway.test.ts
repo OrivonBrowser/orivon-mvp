@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const partitionForTarget = vi.fn((target: string) => (target.startsWith('https://site.eth') ? 'persist:site-eth' : undefined))
 const partitionForTab = vi.fn((target: string, _choice: unknown) => partitionForTarget(target))
@@ -18,6 +18,7 @@ vi.mock('electron', () => ({ session: { defaultSession: {} } }))
 
 const { TabFactory } = await import('../tab-factory.js')
 const { provideVerifierAccess } = await import('../../verifier/verifier-access.js')
+const { setSiteRoutes } = await import('../../route/site-routes.js')
 
 function factory (on: boolean): InstanceType<typeof TabFactory> {
   const host = { services: { settings: { get: () => on } } }
@@ -73,5 +74,20 @@ describe('a trusted tab opened with a tunnel choice', () => {
 
   it('has no choice when it is given none', () => {
     expect('tunnelChoice' in factory(false).trusted('https://a.example/').record).toBe(false)
+  })
+})
+
+describe('a tab opened with a tunnel choice in a window held to Nym', () => {
+  afterEach(() => { setSiteRoutes(undefined) })
+
+  it.each(['direct', 'socks5'] as const)('does not keep %s, whichever way it is made', (choice) => {
+    setSiteRoutes({ profileFor: () => undefined, heldTo: 'nym' })
+    expect('tunnelChoice' in factory(false).content('https://a.example/', choice).record).toBe(false)
+    expect('tunnelChoice' in factory(false).trusted('https://a.example/', undefined, choice).record).toBe(false)
+  })
+
+  it('keeps Nym', () => {
+    setSiteRoutes({ profileFor: () => undefined, heldTo: 'nym' })
+    expect(factory(false).content('https://a.example/', 'nym').record.tunnelChoice).toBe('nym')
   })
 })

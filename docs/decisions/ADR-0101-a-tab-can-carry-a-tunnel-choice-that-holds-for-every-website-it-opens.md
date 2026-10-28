@@ -29,6 +29,8 @@ An origin that cannot go through a tunnel (this computer, an address that is not
 
 **Failing closed.** Choosing a tunnel makes its profile ready at once, so the tunnel starts coming up while the person types. A tab that already shows a website is moved to the session its choice calls for. A move that cannot be made at all gives the choice back, so the tab never claims a tunnel its page is not using; one that stopped half-way leaves the page in the session the choice calls for and closes the view it left, so no script of the page runs on in the session it was in. A request held while the tunnel is not yet up waits; it is never sent direct.
 
+**A private window held to Nym takes no other choice.** Nothing in such a window leaves by another route, and the route store refuses any entry but Nym there; a tab's choice is held to the same rule. A request to give a tab `direct` or the proxy is refused and the tab keeps what it had; taking a choice away, or choosing Nym, is allowed. A tab opened with another choice carries none, and the session of a website and the guard on every session judge a tab as if it carried none, so a choice that reached a tab by some other way still sends nothing out of Nym.
+
 **The report states counts.** A bug report says how many tabs carry each choice and which tunnel the browser is set to, never an address. The log lines about a tab's choice say the tunnel and the tab's number, never a URL.
 
 ## Context

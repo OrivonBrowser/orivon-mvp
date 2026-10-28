@@ -5,7 +5,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { canTunnel, isProfilePartition, kindOfProfile, profileOfPartition, profilePartitionFor } from './site-partition.js'
 import type { Profile } from './site-partition.js'
 import type { TunnelKind } from './route-state.js'
-import { profileForTab } from './tab-tunnel.js'
+import { choiceUnderHold, profileForTab } from './tab-tunnel.js'
 import type { TabTunnelChoice } from './tab-tunnel.js'
 
 export interface SiteRoutes {
@@ -16,6 +16,8 @@ export interface SiteRoutes {
    * a session that is not tunnelled, or goes through the other tunnel, for an address that has a tunnel gives no.
    */
   readonly sentLikeItsOwn?: (partition: string | undefined, origin: string) => boolean
+  /** The tunnel this window is held to (a private window held to Nym), when it is: a tab's choice other than it is not honoured. */
+  readonly heldTo?: TunnelKind
   /** Records that the website at `origin` has storage in `profile` that stays until the person removes it: a website a tab's tunnel choice put there has no entry to say so. */
   readonly keepApart?: (origin: string, profile: Profile) => void
 }
@@ -27,10 +29,15 @@ export function setSiteRoutes (next: SiteRoutes | undefined): void {
   source = next
 }
 
+/** `choice` as this window allows it: in a window held to one tunnel (`SiteRoutes.heldTo`) that tunnel or none, anywhere else unchanged. */
+export function allowedTabChoice (choice: TabTunnelChoice | undefined): TabTunnelChoice | undefined {
+  return choiceUnderHold(choice, source?.heldTo)
+}
+
 /** The session the website at `origin` must run in when it is opened in a tab with `choice` (none: by its own entry alone), or undefined for the shared one. */
 export function sitePartitionForTab (origin: string, choice: TabTunnelChoice | undefined): string | undefined {
   if (source === undefined || !canTunnel(origin)) return undefined
-  const profile = profileForTab(choice, origin, source.profileFor(origin))
+  const profile = profileForTab(allowedTabChoice(choice), origin, source.profileFor(origin))
   return profile === undefined ? undefined : profilePartitionFor(profile, origin)
 }
 
@@ -74,7 +81,7 @@ export function mustLeaveSession (url: string, session: LoadingSession, servedFr
   if (origin === null || session.temporary || servedFromCache(origin)) return false
   if (session.shared && sitePartitionForTab(origin, choice) !== undefined) return true
   if (!canTunnel(origin)) return false
-  const wanted = tunnelWanted(origin, kindOf, choice)
+  const wanted = tunnelWanted(origin, kindOf, allowedTabChoice(choice))
   return wanted !== undefined && session.via !== 'held' && session.via !== wanted
 }
 

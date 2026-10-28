@@ -122,3 +122,41 @@ describe('giving a tab a tunnel choice', () => {
     for (const line of [...said, ...error.mock.calls.map((call) => String(call[0]))]) expect(line).not.toMatch(/secret|token|https?:/)
   })
 })
+
+describe('giving a tab a tunnel choice in a window held to Nym', () => {
+  beforeEach(() => { setSiteRoutes({ profileFor: () => undefined, heldTo: 'nym' }) })
+
+  it.each(['direct', 'socks5'] as const)('refuses %s: the tab keeps what it had, nothing moves and no profile is readied', (choice) => {
+    const { record, emitState } = fake()
+    setTabTunnelChoice('t1', record as never, choice)
+    expect('tunnelChoice' in record).toBe(false)
+    expect(repartitionView).not.toHaveBeenCalled()
+    expect(ensure).not.toHaveBeenCalled()
+    expect(emitState).not.toHaveBeenCalled()
+    expect(error).toHaveBeenCalled()
+  })
+
+  it('refuses the proxy for a tab that has Nym, which stays in Nym\'s profile', () => {
+    const { record } = fake({ tunnelChoice: 'nym', partition: 'persist:tunnel-profile' })
+    setTabTunnelChoice('t1', record as never, 'socks5')
+    expect(record['tunnelChoice']).toBe('nym')
+    expect(repartitionView).not.toHaveBeenCalled()
+  })
+
+  it('takes Nym, and takes it away', () => {
+    const { record } = fake()
+    setTabTunnelChoice('t1', record as never, 'nym')
+    expect(record['tunnelChoice']).toBe('nym')
+    expect(repartitionView).toHaveBeenCalledWith('t1', record, `${SITE}/page`, 'persist:tunnel-profile')
+    setTabTunnelChoice('t1', record as never, null)
+    expect('tunnelChoice' in record).toBe(false)
+  })
+
+  it('says why in the log, and never an address', () => {
+    const { record } = fake({}, 'https://secret.example/private?token=1')
+    setTabTunnelChoice('t1', record as never, 'direct')
+    const said = [...log.mock.calls, ...error.mock.calls].map((call) => String(call[0])).join('\n')
+    expect(said).toContain('held')
+    expect(said).not.toContain('secret.example')
+  })
+})

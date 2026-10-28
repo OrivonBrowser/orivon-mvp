@@ -18,6 +18,7 @@ import { guardInternalView } from '../pages/internal-tab.js'
 import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
 import { appTabArgsFor, makeTabView, partitionForTab, partitionForTarget, wireView } from './tab-view.js'
+import { allowedTabChoice } from '../route/site-routes.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import { paintBacking } from './tab-backing.js'
 import { DASHBOARD_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
@@ -38,9 +39,10 @@ function makeTabId (): string {
   return `tab-${nextId++}`
 }
 
-/** The record field for a tab's tunnel choice: absent when it has none. */
+/** The record field for a tab's tunnel choice: absent when it has none, or when the window is held to a tunnel and the choice is another. */
 function choiceOf (tunnelChoice: TabTunnelChoice | undefined): Pick<TabRecord, 'tunnelChoice'> {
-  return tunnelChoice === undefined ? {} : { tunnelChoice }
+  const allowed = allowedTabChoice(tunnelChoice)
+  return allowed === undefined ? {} : { tunnelChoice: allowed }
 }
 
 export interface BuiltTab {
