@@ -78,6 +78,30 @@ describe('lightClientFetch', () => {
     expect(JSON.stringify(result)).not.toContain('FAKE-KEY')
   })
 
+  it('refuses to start when a server that is not named local is an address for this computer or a home network in a spelling the local check does not take, or a name that is not a public one', () => {
+    const w = world()
+    const notInternet = ['https://[::ffff:7f00:1]:8545/', 'https://[::ffff:c0a8:114]:8545/', 'https://localhost.:8545/', 'https://foo.localhost/', 'https://169.254.169.254/', 'https://0.0.0.0/', 'https://100.64.0.1/', 'https://[fe80::1]/', 'https://nas.local/', 'https://printer.home.arpa/', 'https://router/', 'https://vitalik.eth/', 'https://eth.drpc.org./']
+    for (const server of notInternet) {
+      for (const given of [{ executionRpcs: [server], consensusRpc: BEACON }, { executionRpcs: [REMOTE], consensusRpc: server }]) {
+        const result = lightClientFetch({ ...given, checkpoint: CHECKPOINT, localEndpoints: [BEACON] }, w.remote, w.local, 'the light client')
+        expect(result, server).toHaveProperty('off')
+      }
+    }
+    expect(w.remoteAsked).toEqual([])
+  })
+
+  it('keeps a key out of the reason it gives for a server that is not a public address', () => {
+    const result = lightClientFetch({ executionRpcs: ['https://[::ffff:7f00:1]:8545/v3/FAKE-KEY-0123456789'], consensusRpc: BEACON, checkpoint: CHECKPOINT, localEndpoints: [BEACON] }, world().remote, world().local, 'the light client')
+    expect(result).toHaveProperty('off')
+    expect(JSON.stringify(result)).not.toContain('FAKE-KEY')
+  })
+
+  it('starts with servers that are public addresses or public names over https', async () => {
+    const w = world()
+    const fetch = fetchOf({ executionRpcs: ['https://eth.drpc.org', 'https://8.8.8.8/rpc', 'https://[2606:4700:4700::1111]/rpc'], consensusRpc: 'https://ethereum-beacon-api.publicnode.com', checkpoint: CHECKPOINT }, w, false)
+    expect(await (await fetch('https://8.8.8.8/rpc', { method: 'POST', body: '{}' })).text()).toBe('remote')
+  })
+
   it('refuses to start when the host has no way to a local server', () => {
     const result = lightClientFetch(config(), world().remote, undefined, 'the light client')
     expect(result).toHaveProperty('off')

@@ -17,8 +17,8 @@ host gets a fetch, `local-rpc-fetch.ts`, that dials only `localhost` or a loopba
 literal, over Node sockets that read no proxy setting, with no redirect followed and a limit on an answer's size and idle time.
 The config names which servers are local (`LightClientConfig.localEndpoints`), and the host re-checks that each is such a
 literal before it starts the client; the light client's lane fetch sends those origins to the local fetch on every route and
-every other to the lane's own. A server on the internet must be `https` and, where it leaves outside the tunnel, answer on
-port 443.
+every other to the lane's own. A server that is not named local must be `https` at a public address or a public name (never a local address in another
+spelling, `localhost.`, `*.localhost` or a single-label name) and, where it leaves outside the tunnel, answer on port 443.
 
 **A server's key never reaches a screen, a log, an error or a report.** Helios is given names that resolve nowhere on every
 lane (the direct one as well), so an error of its cannot quote an address. Every address that is shown is masked to

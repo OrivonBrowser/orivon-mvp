@@ -3,7 +3,7 @@
 // computer or their home network, whichever route the lane travels. A local server is never sent through a proxy or a tunnel:
 // that would carry the request to the network of a tunnel's exit. Config the host cannot make sense of starts nothing.
 
-import { EgressRefused, allowlisted } from '../egress.js'
+import { EgressRefused, allowlisted, isInternetHost } from '../egress.js'
 import type { WebFetch } from '../egress.js'
 import type { LightClientConfig } from '../protocol.js'
 import { isLocalLiteral, maskEndpoint } from './endpoint-mask.js'
@@ -34,6 +34,8 @@ function refusalOf (config: LightClientConfig, local: WebFetch | undefined): str
     }
     if (isLocalLiteral(parsed.hostname)) {
       if (!named.has(parsed.origin)) return `${maskEndpoint(endpoint)} is on this computer or a home network but is not named local`
+    } else if (!isInternetHost(parsed.hostname)) {
+      return `${maskEndpoint(endpoint)} is not an address on the internet, and is not named local`
     } else if (parsed.protocol !== 'https:') {
       return `${maskEndpoint(endpoint)} is on the internet and would be reached without TLS`
     }
