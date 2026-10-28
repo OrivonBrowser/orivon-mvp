@@ -49,7 +49,9 @@ as any peer's ([`../local-node/node-net.ts`](../local-node/node-net.ts)): a publ
 the node follows it. The node only dials through a relay. It holds no reservation on one and is not reachable through
 one, so it still listens on loopback alone. The relay sees this computer's address and the provider's, and how much is
 sent, but not the content: the node and the provider encrypt the connection end to end, and every block is checked
-against its CID in any case. A transfer through a relay is as fast as the relay lets it be.
+against its CID in any case. A transfer through a relay is as fast as the relay lets it be. When the node asks a peer it
+fetched from a moment ago for the next block, it waits 2 seconds for the answer, and 8 when every address of that peer
+is a relay address: a provider whose idle connection has closed needs about 2.5 seconds to be reached again.
 
 **Ready means the health endpoint answers.** The node reports `listening` and `ready` together when
 `GET /health` first answers (as soon as its listener is up; lookups happen on first use): it holds no peer set

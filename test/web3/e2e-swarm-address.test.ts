@@ -19,6 +19,7 @@ import { startSwarmFixture } from '../apps/swarm-gateway/gateway.mjs'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 
 const BLOCK_DELAY_MS = 800
+const SCRIPT_PAD = 300_000
 const LOAD_TIMEOUT_MS = 60_000
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 4 + DEFAULT_ACTION_TIMEOUT_MS * 6 + APP_CLOSE_RACE_MS + 60_000 + 2 * LOAD_TIMEOUT_MS
 
@@ -57,14 +58,15 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// address, follows a bzz:// link, opens a .eth name through a feed at its newest update shown as bzz://, keeps a .eth name on IPFS shown as ipfs://, never names the wrong network on a first visit, and refuses a tampered chunk', async () => {
+it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// address, follows a bzz:// link, opens a .eth name through a feed at its newest update shown as bzz://, keeps a .eth name on IPFS shown as ipfs://, never names the wrong network on a first visit, reads the leaves of a long script together, and refuses a tampered chunk', async () => {
   await runPhase('swarm-address', async (check) => {
     const node = await startSwarmFixture()
     const evilNode = await startSwarmFixture({ tamperAll: true })
     const linked = node.addSite({ 'index.html': page('linked swarm fixture') })
     const site = node.addSite({
       'index.html': `<!doctype html><meta charset="utf-8"><title>swarm fixture</title><body><a id="next" href="bzz://${linked}/">next</a><script src="app.js"></script></body>`,
-      'app.js': 'document.body.dataset.app = "ran"'
+      // Many 4 KB chunks long, so its leaves are read together over `/bytes`, each checked against the address its parent lists.
+      'app.js': `const pad = '${'x'.repeat(SCRIPT_PAD)}'; if (pad.length === ${String(SCRIPT_PAD)}) document.body.dataset.app = "ran"`
     })
     const feed = node.addFeed({ privateKey: FEED_KEY, topic: FEED_TOPIC })
     await feed.publish(node.addSite({ 'index.html': page('swarm update one') }))
@@ -107,6 +109,7 @@ it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// a
       await waitFor(async () => { loaded = await readPage(); return loaded.ran === 'ran' })
       check(`it is a secure context, and its verified script ran (${JSON.stringify(loaded)})`, loaded.secure && loaded.ran === 'ran')
       check(`the node was asked for chunks (${String(node.requests.length)} requests)`, node.requests.some((r) => r.startsWith('/chunks/')))
+      check('the script\'s leaves were asked for together', node.requests.some((r) => r.startsWith('/bytes/')))
 
       await view.click('#next')
       const followed = await waitForTab(chrome, { address: `bzz://${referenceCid(linked)}/`, title: 'linked swarm fixture' })

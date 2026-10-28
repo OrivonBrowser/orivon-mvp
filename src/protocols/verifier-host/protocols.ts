@@ -190,6 +190,7 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     endpoints: config.swarmEndpoints,
     route: config.swarmNode === true && node !== undefined ? nodeRouteOf(config, route) : route,
     feedIndexes: stores.swarmFeedIndexes,
+    log: (line) => { console.error(`[verifier] ${line}`) },
     ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure })
   })
 }
