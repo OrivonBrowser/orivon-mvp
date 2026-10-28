@@ -8,8 +8,9 @@ export type UpdateChoice = 'install' | 'github' | 'ens' | 'later'
 /** Whether this copy can replace itself. Not yet: the question then offers the two download pages alone, with `why` as its detail when there is one. */
 export type Installable = { readonly ok: true } | { readonly ok: false, readonly why?: string }
 
-const INSTALL = 0
-const DOWNLOAD = 0
+// Every button but the way out does something (opens a page, replaces the browser), so each is guarded.
+const GUARDED_WITH_INSTALL = [0, 1, 2]
+const GUARDED_DOWNLOADS = [0, 1]
 const FROM_GITHUB = 'Download from GitHub'
 const FROM_NAME = `Download from ${LATEST_RELEASE_NAME}`
 
@@ -22,10 +23,10 @@ export function updateQuestion (version: string, current: string, installable: I
     // The question appears while the person may be typing: a key meant for the page must land on no button.
     focus: 'dialog'
   } as const
-  if (installable.ok) return { ...common, guarded: [INSTALL], buttons: ['Install update', FROM_GITHUB, FROM_NAME, 'Not now'], cancelId: 3 }
+  if (installable.ok) return { ...common, guarded: GUARDED_WITH_INSTALL, buttons: ['Install update', FROM_GITHUB, FROM_NAME, 'Not now'], cancelId: 3 }
   return {
     ...common,
-    guarded: [DOWNLOAD],
+    guarded: GUARDED_DOWNLOADS,
     ...(installable.why === undefined ? {} : { detail: installable.why }),
     buttons: [FROM_GITHUB, FROM_NAME, 'Not now'],
     cancelId: 2
