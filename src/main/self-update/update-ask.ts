@@ -1,5 +1,5 @@
 // What the browser asks the person when a newer release is found, and how to read the answer. Pure: the wording and
-// the button order live here, the window and the asking are ./install-update-notice.ts.
+// the button order live here, the window and the asking are ./update-window.ts, the rules ./update-notice.ts.
 import type { QuestionSpec } from '../shell/question/question-spec.js'
 import { LATEST_RELEASE_NAME } from './release-url.js'
 

@@ -74,11 +74,14 @@ function isNewer (current: string, tag: string): boolean {
   return decideUpdateNotice({ currentVersion: current, latestVersion: tag, now: 0 }).shouldNotify
 }
 
-/** Whether `tag` is the version the person was told about, by parsed value so a `v` does not matter. */
+/**
+ * Whether the person was told about `tag` or a newer release, by parsed value so a `v` does not matter. A release
+ * pulled back leaves the told version above the newest one, and that newer release is still the one they know of.
+ */
 function isTold (told: string | undefined, tag: string): boolean {
   const a = told === undefined ? null : parseVersion(told)
   const b = parseVersion(tag)
-  return a !== null && b !== null && compareVersions(a, b) === 0
+  return a !== null && b !== null && compareVersions(a, b) >= 0
 }
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error)).slice(0, 200)
@@ -252,7 +255,7 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
           }
           adopt(result.release)
           // The person is reading it in Settings: a question about it would only repeat what they just read.
-          if (found !== null) state = { ...state, lastNotifiedVersion: found }
+          if (found !== null) markTold(found)
           state = stateWith(undefined)
           await persist()
           answer = { reached: result.release !== null, current, latest: result.release?.version ?? null, newer: found !== null, url: result.release === null ? null : releaseUrl(result.release.version) }

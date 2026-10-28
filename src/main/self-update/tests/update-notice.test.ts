@@ -265,6 +265,39 @@ describe('the update notice', () => {
     expect(s.ask).toHaveBeenCalledTimes(1)
   })
 
+  it('does not ask about a release older than one the person was told about, as when the newer one was pulled back', async () => {
+    const told = { lastCheckedAt: NOW - 2 * DEFAULT_CHECK_INTERVAL_MS, lastFoundVersion: 'v0.0.13', lastNotifiedVersion: 'v0.0.13' }
+    const s = setup({ state: told })
+    const heard: boolean[] = []
+    s.notice.onChange((offer) => { heard.push(offer?.pending === true) })
+    await s.notice.runScheduled()
+    await settled()
+    for (let tries = 0; tries < 3; tries++) await s.notice.tryAsk()
+    expect(s.ask).not.toHaveBeenCalled()
+    expect(s.notice.offer()).toMatchObject({ latest: 'v0.0.12', pending: false })
+    expect(heard).not.toContain(true)
+    expect(s.disk()).toEqual({ lastCheckedAt: NOW, lastFoundVersion: 'v0.0.12', lastNotifiedVersion: 'v0.0.13' })
+  })
+
+  it('asks about a release newer than the one that was pulled back', async () => {
+    const s = setup({
+      state: { lastCheckedAt: NOW - 2 * DEFAULT_CHECK_INTERVAL_MS, lastFoundVersion: 'v0.0.13', lastNotifiedVersion: 'v0.0.13' },
+      release: { version: 'v0.0.14', url: '' }
+    })
+    await s.notice.runScheduled()
+    await settled()
+    expect(s.ask).toHaveBeenCalledTimes(1)
+    expect(s.disk().lastNotifiedVersion).toBe('v0.0.14')
+  })
+
+  it('keeps the told version above the release it shows in Settings when the newer one was pulled back', async () => {
+    const s = setup({ state: { lastFoundVersion: 'v0.0.13', lastNotifiedVersion: 'v0.0.13' } })
+    const answer = await s.notice.checkNow()
+    expect(answer).toMatchObject({ latest: 'v0.0.12', newer: true })
+    expect(s.notice.offer()).toMatchObject({ latest: 'v0.0.12', pending: false })
+    expect(s.disk().lastNotifiedVersion).toBe('v0.0.13')
+  })
+
   it('keeps waiting, and logs why once, when asking where to ask throws', async () => {
     let broken = true
     const s = setup({ place: () => { if (broken) throw new Error('Object has been destroyed'); return IN_USE } })
