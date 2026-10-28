@@ -4,7 +4,7 @@
 carried. [`provider.ts`](provider.ts) is `RouteProvider`: open a TCP stream to `host:port` (the
 name unresolved), and optionally carry UDP and resolve names, and say how long opening one connection may take (`dialBudgetMs`, in place of the direct dial's 30 s). [`socks5.ts`](socks5.ts) is the
 provider for a SOCKS5 proxy, over the `socks` package. [`socks5-probe.ts`](socks5-probe.ts) asks a proxy for its greeting and opens nothing through it (the
-Settings page's Test). [`table.ts`](table.ts) turns the proxy a
+Settings page's Test). [`onion.ts`](onion.ts) says what an onion address is and why a route that is not Tor refuses one (pure). [`table.ts`](table.ts) turns the proxy a
 person set for an app into `routeFor(key)`. [`routed-socket.ts`](routed-socket.ts) and
 [`routed-secure.ts`](routed-secure.ts) open a plain and a TLS stream through a route in the shape
 the broker hands an app.

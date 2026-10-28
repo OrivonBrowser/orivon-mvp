@@ -6,6 +6,7 @@
 // direct dial has no session of its own. Tied to Electron only through the `resolveHost` it is given.
 import { isIP } from 'node:net'
 import { fail } from '../../broker/errors.js'
+import { isOnionHost, ONION_NEEDS_TOR } from '../../broker/route/onion.js'
 import type { Resolver } from '../../broker/policy/connect.js'
 import type { LookupAddress } from '../../contracts/index.js'
 
@@ -34,6 +35,8 @@ function answersOf (endpoints: Awaited<ReturnType<ChromiumResolveHost>>['endpoin
 /** A failure to resolve is 'unreachable' (handle-contracts.md), never a broker fault, whether Chromium failed or found nothing. */
 export function chromiumResolvers (resolveHost: ChromiumResolveHost): ChromiumResolvers {
   const resolve = async (host: string): Promise<LookupAddress[]> => {
+    // Asking Chromium would tell its resolver which hidden service the app means.
+    if (isOnionHost(host)) throw fail('unreachable', ONION_NEEDS_TOR)
     let answers: LookupAddress[]
     try {
       answers = answersOf((await resolveHost(host)).endpoints)
