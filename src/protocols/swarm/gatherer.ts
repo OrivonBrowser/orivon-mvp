@@ -35,8 +35,11 @@ export interface SwarmGathererOptions {
   /** A line for the report log: how long a mount and a large file took, how many chunks came from disk, and a bulk read that fell back. No line names a site or an address. */
   readonly log?: (line: string) => void
   /** Where verified chunks are kept between mounts. The host gives one that also keeps them on disk; unset, they are kept in memory for the life of this gatherer. */
-  readonly memory?: BlockMemory & { readonly recalledFromDisk?: () => number }
+  readonly memory?: ChunkMemory
 }
+
+/** A `BlockMemory` that can say how many chunks its `recall` has taken from disk. */
+type ChunkMemory = BlockMemory & { readonly recalledFromDisk?: () => number }
 
 const DEFAULT_INDEX_DOCUMENT = 'index.html'
 /** A media type, optionally with a charset: nothing a header could be split on. */
@@ -50,6 +53,25 @@ const LOGGED_FILE_BYTES = 256 * 1024
 /** ", N chunks from disk" for a log line, and nothing when none came from disk. */
 function diskNote (chunks: number): string {
   return chunks > 0 ? `, ${String(chunks)} chunks from disk` : ''
+}
+
+/**
+ * `memory` adding to `tally` each chunk its `recall` takes from disk. A recall is synchronous, so the count before and
+ * after it is that call's alone, whatever else is being read: each mount and each file read keeps a tally of its own.
+ */
+function counted (memory: ChunkMemory, tally: { chunks: number }): BlockMemory {
+  const fromDisk = memory.recalledFromDisk
+  if (fromDisk === undefined) return memory
+  return {
+    remember: (partition, key, block) => { memory.remember(partition, key, block) },
+    recall: (partition, key) => {
+      const before = fromDisk()
+      const found = memory.recall(partition, key)
+      tally.chunks += fromDisk() - before
+      return found
+    },
+    share: (partition, key, start) => memory.share(partition, key, start)
+  }
 }
 
 function swarmRecord (records: readonly NameRecord[]): NameRecord | undefined {
@@ -74,9 +96,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
   const deps: ChunkDeps | undefined = options.endpoints.length === 0
     ? undefined
     : { fetch: options.fetch, pool: new GatewayPool(options.endpoints, limits.perEndpointConcurrency, Date.now, options.route === undefined ? {} : { route: options.route }), limits, ...(options.log !== undefined && { log: options.log }) }
-  const memory = options.memory ?? new BlockCache()
-  /** Chunks the memory has taken from disk so far: a mount's share is the difference between two looks. */
-  const fromDisk = (): number => options.memory?.recalledFromDisk?.() ?? 0
+  const memory: ChunkMemory = options.memory ?? new BlockCache()
 
   return {
     id: 'swarm',
@@ -86,10 +106,11 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
       if (record === undefined) throw new ResolutionError('unsupported', `no record of ${name} names Swarm content`)
       if (deps === undefined) throw new ResolutionError('unavailable', 'this build has no Swarm node to load from yet, so Swarm content cannot be opened')
       const startedAt = Date.now()
-      const diskAtStart = fromDisk()
       await options.beforeMount?.(signal)
       const nodeReadyAt = Date.now()
-      const source = partition === undefined ? new ChunkSource(deps, NO_BLOCK_MEMORY) : new ChunkSource(deps, memory, partition)
+      const fromDisk = { chunks: 0 }
+      const sourceOf = (tally: { chunks: number }): ChunkSource => partition === undefined ? new ChunkSource(deps, NO_BLOCK_MEMORY) : new ChunkSource(deps, counted(memory, tally), partition)
+      const source = sourceOf(fromDisk)
       const refusals: Refusal[] = []
       const onRefusal = (refusal: Refusal): void => { refusals.push(refusal) }
       const nodes = new Map<string, ManifestNode>()
@@ -119,7 +140,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
         pointers.push(resolved.step)
         root = resolved.root
       }
-      options.log?.(`swarm: a site mounted in ${String(Date.now() - startedAt)} ms (the node ready after ${String(nodeReadyAt - startedAt)} ms, ${String(pointers.length - 1)} feeds followed${diskNote(fromDisk() - diskAtStart)})`)
+      options.log?.(`swarm: a site mounted in ${String(Date.now() - startedAt)} ms (the node ready after ${String(nodeReadyAt - startedAt)} ms, ${String(pointers.length - 1)} feeds followed${diskNote(fromDisk.chunks)})`)
       let failedResource: string | undefined
 
       /** Only a lie or a broken limit fails DDOC; nobody answering, or a missing path, does not. */
@@ -128,7 +149,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
         throw error
       }
 
-      async function openUnchecked (path: string, range: GatherRange | undefined, openSignal: AbortSignal): Promise<GatheredFile> {
+      async function openUnchecked (path: string, range: GatherRange | undefined, openSignal: AbortSignal, fileSource: ChunkSource): Promise<GatheredFile> {
         const segments = pathSegments(path)
         if (segments === undefined) throw new ResolutionError('not-found', `${path} is not a path this site can hold`)
         const load = loaderFor(openSignal)
@@ -142,7 +163,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
           found = await lookup(root, served, load, limits.maxNodesPerLookup)
         }
         if (found?.entry === undefined) throw new ResolutionError('not-found', `${path} is not in this site`)
-        const file = await openFile(async (address) => await source.get(address, openSignal, onRefusal), found.entry, { maxBytes: limits.maxBytesPerOpen, maxTreeDepth: limits.maxTreeDepth }, (parent, leaves) => source.leaves(parent, leaves, openSignal, onRefusal))
+        const file = await openFile(async (address) => await fileSource.get(address, openSignal, onRefusal), found.entry, { maxBytes: limits.maxBytesPerOpen, maxTreeDepth: limits.maxTreeDepth }, (parent, leaves) => fileSource.leaves(parent, leaves, openSignal, onRefusal))
         const declared = found.metadata?.['Content-Type']
         const contentType = declared !== undefined && CONTENT_TYPE.test(declared) && !HAS_EXTENSION.test(served) ? declared : undefined
         return {
@@ -159,14 +180,14 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
         pointers,
         async open (path, range, openSignal = signal) {
           let file: GatheredFile
+          const fileDisk = { chunks: 0 }
           try {
-            file = await openUnchecked(path, range, openSignal)
+            file = await openUnchecked(path, range, openSignal, sourceOf(fileDisk))
           } catch (error) {
             return noteFailure(error, path)
           }
           const body = file.body
           const openedAt = Date.now()
-          const diskAtOpen = fromDisk()
           return {
             ...file,
             body: (async function * () {
@@ -176,7 +197,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
                   read += part.length
                   yield part
                 }
-                if (read >= LOGGED_FILE_BYTES) options.log?.(`swarm: a file read, ${String(read)} bytes in ${String(Date.now() - openedAt)} ms${diskNote(fromDisk() - diskAtOpen)}`)
+                if (read >= LOGGED_FILE_BYTES) options.log?.(`swarm: a file read, ${String(read)} bytes in ${String(Date.now() - openedAt)} ms${diskNote(fileDisk.chunks)}`)
               } catch (error) {
                 noteFailure(error, path)
               }

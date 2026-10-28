@@ -54,10 +54,11 @@ describe('forgetting the Swarm chunks the host keeps', () => {
 })
 
 describe('forgetting what the nodes and the host kept', () => {
-  function deps (events: string[], hostGone: () => Promise<void> = async () => { events.push('host exited') }): ForgetDeps {
+  function deps (events: string[], hostGone: () => Promise<void> = async () => { events.push('host exited') }, currentSalt: () => string = () => NEW_SALT): ForgetDeps {
     return {
       forgetIpfsNode: async () => { events.push('ipfs node forgotten') },
-      replaceSalt: () => { events.push('salt replaced'); return NEW_SALT },
+      replaceSalt: () => { events.push('salt replaced') },
+      currentSalt,
       sleepHost: () => { events.push('host asleep') },
       hostGone,
       directory: () => dir
@@ -98,6 +99,16 @@ describe('forgetting what the nodes and the host kept', () => {
     touch(swarmChunkFile(NEW_SALT))
     await forgetNodeData(deps([]))
     expect(swarmFiles()).toEqual([swarmChunkFile(NEW_SALT)])
+  })
+
+  it('spares the salt in force when the files go, not the one it set: a second clear may have replaced it while the host was leaving', async () => {
+    const SECOND = '12'.repeat(32)
+    touch(swarmChunkFile(SALT))
+    touch(swarmChunkFile(NEW_SALT))
+    touch(swarmChunkFile(SECOND))
+    let salt = NEW_SALT
+    await forgetNodeData(deps([], async () => { salt = SECOND }, () => salt))
+    expect(swarmFiles()).toEqual([swarmChunkFile(SECOND)])
   })
 
   it('still replaces the salt and deletes the chunk files when the IPFS node could not be forgotten, and then reports it', async () => {

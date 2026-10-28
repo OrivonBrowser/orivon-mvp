@@ -118,7 +118,7 @@ function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch']
   })
 }
 
-function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores, route: RoutePace, readsNodes: boolean): Protocol {
+function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores, route: RoutePace, readsNodes: boolean, tunnel: TunnelRoute): Protocol {
   if (config.swarmNode !== true || node === undefined || !readsNodes) return refusedSwarm()
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
   return swarmProtocol({
@@ -127,7 +127,7 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     route: nodeRouteOf(config, route),
     feedIndexes: stores.swarmFeedIndexes,
     log: (line) => { console.error(`[verifier] ${line}`) },
-    ...(stores.swarmChunks !== undefined && { memory: new KeptChunkMemory(stores.swarmChunks) }),
+    ...(stores.swarmChunks !== undefined && { memory: new KeptChunkMemory(stores.swarmChunks, tunnel) }),
     beforeMount: node.ensure
   })
 }
@@ -139,5 +139,5 @@ export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores
   const ipfsNode = nodes.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
   const readsNodes = config.tunnelSitesReadNodes?.[tunnel] === true
-  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route, tunnel), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route, readsNodes), startSwarm(config, deps, swarmNode, stores, route, readsNodes)], route }
+  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route, tunnel), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route, readsNodes), startSwarm(config, deps, swarmNode, stores, route, readsNodes, tunnel)], route }
 }

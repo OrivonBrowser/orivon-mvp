@@ -15,6 +15,8 @@ import { KeptChunkMemory } from '../swarm-chunk-memory.js'
 const SALT = 'ab'.repeat(32)
 const SITE = 'https://one.example'
 const BIG = Uint8Array.from({ length: 40_000 }, (_, i) => (i * 7 + (i >> 8)) % 256)
+/** Over 256 KB, which is what a file read must be before the gatherer logs it, and every 4 KB chunk of it different. */
+const HUGE = Uint8Array.from({ length: 300_000 }, (_, i) => Math.imul(i ^ (i >>> 7), 2_654_435_761) >>> 24)
 const FILES = { 'index.html': '<h1>home</h1>', 'style.css': 'body{}', 'docs/guide.html': '<h1>guide</h1>' }
 
 let dir: string
@@ -61,6 +63,18 @@ describe('the memory in front of the chunk database', () => {
     new KeptChunkMemory(writer).remember(SITE, ref, chunk)
     writer.close()
     expect(database().get(SITE, ref)).toEqual(chunk)
+  })
+
+  it('keeps the chunks of one route apart from those of another on the disk, as it does in memory', () => {
+    const store = new Map<string, Uint8Array>()
+    const { ref } = buildFile(new Uint8Array(100).fill(3), store)
+    const chunk = store.get(ref)!
+    const disk = database()
+    new KeptChunkMemory(disk, 'nym').remember(SITE, ref, chunk)
+    disk.flush()
+    expect(new KeptChunkMemory(disk).recall(SITE, ref)).toBeUndefined()
+    expect(new KeptChunkMemory(disk, 'socks5').recall(SITE, ref)).toBeUndefined()
+    expect(new KeptChunkMemory(disk, 'nym').recall(SITE, ref)).toEqual(chunk)
   })
 
   it('does not hand the disk to a site that did not fetch the chunk', () => {
@@ -112,6 +126,28 @@ describe('a Swarm gatherer over the chunk database', () => {
     expect(asked(second.swarm.requests)).toEqual([])
     expect(again.ddoc()).toEqual({ status: 'met', refusals: [] })
     expect(lines.some((line) => /a site mounted in .* [1-9]\d* chunks from disk/.test(line))).toBe(true)
+  })
+
+  it('counts the chunks from disk of one file read on its own, however many others are being read at once', async () => {
+    const chunks = new Map<string, Uint8Array>()
+    const root = buildSite({ ...FILES, 'huge.bin': HUGE }, chunks)
+    const first = gathererOver(chunks, database())
+    const seen = await first.gatherer.mount('site.eth', [recordFor(root)], undefined, SITE)
+    await read(seen, '/huge.bin')
+    await read(seen, '/style.css')
+    databases[0]!.close()
+
+    const lines: string[] = []
+    const second = gathererOver(chunks, database(), lines)
+    const site = await second.gatherer.mount('site.eth', [recordFor(root)], undefined, SITE)
+    const tally = (pattern: RegExp): number => Number(pattern.exec(lines.find((line) => pattern.test(line)) ?? '')?.[1] ?? 0)
+    const mounted = tally(/a site mounted .*, (\d+) chunks from disk\)/)
+    const [small, huge] = await Promise.all([site.open('/style.css'), site.open('/huge.bin')])
+    for (const file of [small, huge]) for await (const part of file.body) void part
+    const hugeChunks = tally(/a file read, 300000 bytes .* (\d+) chunks from disk$/)
+    expect(hugeChunks).toBeGreaterThanOrEqual(Math.ceil(HUGE.length / 4096))
+    expect(mounted + hugeChunks).toBeLessThan(databases[1]!.fromDisk)
+    expect(asked(second.swarm.requests)).toEqual([])
   })
 
   it('asks the node for what the first gatherer did not read, and for nothing else', async () => {

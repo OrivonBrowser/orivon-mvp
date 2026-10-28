@@ -145,6 +145,63 @@ describe('the Swarm chunk database', () => {
     expect(left.length).toBeGreaterThanOrEqual(8)
   })
 
+  it('counts a chunk the memory above answered as used, so it outlives one nobody asked for', () => {
+    let minute = 1000
+    const options = { maxBytes: 6 * CHUNK, now: () => minute * 60_000 }
+    const kept = chunks(8)
+    const store = database(options)
+    for (const chunk of kept.slice(0, 5)) store.put(SITE, chunk.address, chunk.bytes)
+    store.flush()
+    minute += 5
+    store.touch(SITE, kept[0]!.address)
+    store.flush()
+    minute += 5
+    for (const chunk of kept.slice(5)) store.put(SITE, chunk.address, chunk.bytes)
+    store.flush()
+    const left = kept.map((chunk, at) => (store.get(SITE, chunk.address) === undefined ? -1 : at)).filter((at) => at >= 0)
+    expect(left).toContain(0)
+    expect(left).not.toContain(1)
+  })
+
+  it('ages rows by its own count of minutes of use, so a clock that was far ahead and is right now does not keep the old rows', () => {
+    let minute = 5_000_000
+    const options = { maxBytes: 10 * CHUNK, now: () => minute * 60_000 }
+    const old = chunks(8, 1)
+    const fresh = chunks(6, 2)
+    const first = database(options)
+    for (const chunk of old) first.put(SITE, chunk.address, chunk.bytes)
+    first.close()
+
+    minute = 1000
+    const next = database(options)
+    for (const chunk of fresh) next.put(SITE, chunk.address, chunk.bytes)
+    next.flush()
+    expect(fresh.every((chunk) => next.get(SITE, chunk.address) !== undefined)).toBe(true)
+    expect(old.filter((chunk) => next.get(SITE, chunk.address) !== undefined).length).toBeLessThan(old.length)
+  })
+
+  it('does not write a mark for the same chunk twice in a minute', () => {
+    let minute = 1000
+    const [chunk] = chunks(1)
+    const store = database({ now: () => minute * 60_000 })
+    store.put(SITE, chunk!.address, chunk!.bytes)
+    store.flush()
+    const reader = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+    const used = (): number => (reader.prepare('SELECT used FROM age').get() as { used: number }).used
+    const first = used()
+    minute += 5
+    store.get(SITE, chunk!.address)
+    store.touch(SITE, chunk!.address)
+    store.flush()
+    const second = used()
+    expect(second).toBeGreaterThan(first)
+    store.touch(SITE, chunk!.address)
+    store.get(SITE, chunk!.address)
+    store.flush()
+    expect(used()).toBe(second)
+    reader.close()
+  })
+
   it('deletes the files of an older salt when it opens, and no other file', () => {
     const [chunk] = chunks(1)
     const old = database({ salt: OTHER_SALT })
@@ -181,6 +238,51 @@ describe('the Swarm chunk database', () => {
     store.put(SITE, chunk!.address, chunk!.bytes)
     store.close()
     expect(database().get(SITE, chunk!.address)).toEqual(chunk!.bytes)
+  })
+
+  it('makes the file again, once and with a line, when it turns out to be damaged while in use, and runs without it the second time', () => {
+    const kept = chunks(20)
+    const first = database()
+    for (const chunk of kept) first.put(SITE, chunk.address, chunk.bytes)
+    first.close()
+    const damage = (): void => {
+      const path = join(dir, swarmChunkFile(SALT))
+      const bytes = readFileSync(path)
+      bytes.fill(0xff, 32768, 65536)
+      writeFileSync(path, bytes)
+    }
+    damage()
+
+    const store = database()
+    expect(store.get(SITE, kept[0]!.address)).toBeUndefined()
+    expect(lines.filter((line) => line.includes('damaged'))).toHaveLength(1)
+    store.put(SITE, kept[1]!.address, kept[1]!.bytes)
+    store.flush()
+    expect(store.get(SITE, kept[1]!.address)).toEqual(kept[1]!.bytes)
+    store.close()
+
+    damage()
+    expect(store.get(SITE, kept[1]!.address)).toBeUndefined()
+    expect(() => { store.put(SITE, kept[2]!.address, kept[2]!.bytes) }).not.toThrow()
+    expect(store.get(SITE, kept[2]!.address)).toBeUndefined()
+    expect(lines.filter((line) => line.includes('could not'))).toHaveLength(1)
+    expect(lines.join('\n')).not.toContain(dir)
+  })
+
+  it('leaves a file it cannot use because it is something else, and runs memory-only', () => {
+    const path = join(dir, swarmChunkFile(SALT))
+    const other = new DatabaseSync(path)
+    other.exec('CREATE TABLE chunk (note TEXT); INSERT INTO chunk VALUES (\'mine\')')
+    other.close()
+    const [chunk] = chunks(1)
+    const store = database()
+    store.put(SITE, chunk!.address, chunk!.bytes)
+    expect(store.get(SITE, chunk!.address)).toBeUndefined()
+    store.close()
+    const check = new DatabaseSync(path)
+    expect((check.prepare('SELECT note FROM chunk').get() as { note: string }).note).toBe('mine')
+    check.close()
+    expect(lines.filter((line) => line.includes('could not be opened'))).toHaveLength(1)
   })
 
   it('creates the directory when it is missing', () => {
@@ -240,7 +342,10 @@ describe('the Swarm chunk database', () => {
     const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
     expect((raw.prepare('PRAGMA page_size').get() as { page_size: number }).page_size).toBe(32768)
     raw.close()
-    expect(database().keptBytes).toBe(5 * CHUNK)
+    lines.length = 0
+    const again = database()
+    again.get(SITE, kept[0]!.address)
+    expect(lines).toContain(`swarm: the chunk store opened with ${String(5 * CHUNK)} bytes kept`)
   })
 
   it('opens nothing until it is used', () => {

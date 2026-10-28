@@ -9,26 +9,38 @@ import type { SwarmChunkDatabase } from './swarm-chunk-database.js'
 export class KeptChunkMemory implements BlockMemory {
   private readonly memory = new BlockCache()
 
-  constructor (private readonly database: SwarmChunkDatabase) {}
+  /**
+   * `namespace` is what keeps the chunks of one route apart on disk, as the in-memory caches of the routes are
+   * kept apart: a website in a tunnel's profile must never be answered by what the direct profile (or the other
+   * tunnel) kept for the same origin. The direct route's is empty.
+   */
+  constructor (private readonly database: SwarmChunkDatabase, private readonly namespace = '') {}
 
   /** How many chunks `recall` has answered from disk, for the host's report log. */
   recalledFromDisk = (): number => this.database.fromDisk
 
   remember (partition: string, key: string, block: Uint8Array): void {
     this.memory.remember(partition, key, block)
-    this.database.put(partition, key, block)
+    this.database.put(this.site(partition), key, block)
   }
 
   /** The cache first; a chunk only the disk has is checked there, and then answers from memory. */
   recall (partition: string, key: string): Uint8Array | undefined {
     const hot = this.memory.recall(partition, key)
-    if (hot !== undefined) return hot
-    const kept = this.database.get(partition, key)
+    if (hot !== undefined) {
+      this.database.touch(this.site(partition), key)
+      return hot
+    }
+    const kept = this.database.get(this.site(partition), key)
     if (kept !== undefined) this.memory.remember(partition, key, kept)
     return kept
   }
 
   share (partition: string, key: string, start: (signal: AbortSignal, onRefusal: (refusal: Refusal) => void) => Promise<Uint8Array>): SharedFetch {
     return this.memory.share(partition, key, start)
+  }
+
+  private site (partition: string): string {
+    return this.namespace === '' ? partition : `${this.namespace}\n${partition}`
   }
 }

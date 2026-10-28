@@ -37,8 +37,10 @@ export async function removeSwarmChunkFiles (dir: string, exceptSalt?: string): 
 export interface ForgetDeps {
   /** Stops the IPFS node and deletes its store. */
   readonly forgetIpfsNode: () => Promise<void>
-  /** Replaces the partition salt and returns the new one. */
-  readonly replaceSalt: () => string
+  /** Replaces the partition salt. */
+  readonly replaceSalt: () => void
+  /** The salt in force now: a host started since the replacement, or a second clear, may have made it newer than the one this call set. */
+  readonly currentSalt: () => string
   /** Puts the verifier host to sleep, so its process exits; it holds the old salt from its start, and its next start is given the new one. */
   readonly sleepHost: () => void
   /** Resolves once a process told to leave has exited. */
@@ -60,7 +62,7 @@ export async function forgetNodeData (deps: ForgetDeps): Promise<void> {
   } catch (error) {
     failure = error
   }
-  const salt = deps.replaceSalt()
+  deps.replaceSalt()
   deps.sleepHost()
   let timer: ReturnType<typeof setTimeout> | undefined
   const limit = new Promise<void>((resolve) => { timer = setTimeout(resolve, HOST_EXIT_WAIT_MS) })
@@ -70,7 +72,7 @@ export async function forgetNodeData (deps: ForgetDeps): Promise<void> {
     clearTimeout(timer)
   }
   try {
-    await removeSwarmChunkFiles(deps.directory(), salt)
+    await removeSwarmChunkFiles(deps.directory(), deps.currentSalt())
   } catch (error) {
     failure ??= error
   }

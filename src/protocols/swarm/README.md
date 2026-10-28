@@ -58,7 +58,7 @@ as it arrives, since the others' sizes wait on it.
 only content-addressed chunks (the ones `ChunkSource.get` and `ChunkSource.leaves` remember), never a single-owner chunk or a feed
 update, which are asked for because they may have changed. A chunk read back is hashed against its address again by the store, so
 nothing here trusts the disk. A mount with no partition keeps nothing in either place. The mount's log line, and a large file's,
-say how many chunks the memory took from disk while they ran; mounts running at the same time share that count.
+say how many chunks the memory took from disk for that mount or that read alone, whatever else was running.
 
 **A reference is spelled as a CID.** 64 hex characters cannot be one host label, so the canonical
 spelling is a CIDv1 of codec swarm-manifest over keccak-256 ([`reference.ts`](reference.ts)), 61
