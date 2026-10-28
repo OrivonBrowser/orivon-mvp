@@ -171,7 +171,8 @@ language, and the desktop session (X11 or Wayland, and the desktop's name); the 
 vendor and device numbers, its driver version, and which graphics features are on; the size and
 scaling of each screen; how much memory each kind of Orivon process uses; how many windows and
 tabs are open, and whether the window is private; your installed extensions (name, identifier,
-version, on or off); the values of a few settings that change how Orivon behaves (theme, cookies,
+version, on or off); for each of the eight apps holding the most network connections, how many it
+holds and how many it may (numbers only, never the app's name or address); the values of a few settings that change how Orivon behaves (theme, cookies,
 Global Privacy Control, Do Not Track, HTTPS-only, the secure DNS mode, memory and energy saver,
 start-up mode, spell checking, developer tools, extension developer mode, update checks, the
 Ethereum light client and whether it asks Orivon's servers or your own, where `ipfs://` content
