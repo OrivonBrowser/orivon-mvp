@@ -49,7 +49,7 @@ function mount (active: TabState | undefined) {
   const ctx = { shell, activeTab: () => active, anchorFor: () => ({ x: 1, y: 2, width: 3, height: 4 }) } as unknown as ChromeContext
   const module = createTunnelButton()
   module.init(ctx)
-  return { button, attrs, shell, ctx, render: (tunnel: 'on' | 'down' | null, tunnelVia: 'nym' | 'socks5' | null = null) => { module.render?.({ tunnel, tunnelVia } as never, ctx) }, listeners }
+  return { button, attrs, shell, ctx, render: (tunnel: 'on' | 'down' | null, tunnelVia: 'nym' | 'socks5' | null = null, tunnelByTab = false) => { module.render?.({ tunnel, tunnelVia, tunnelByTab } as never, ctx) }, listeners }
 }
 
 describe('the tunnel button look on a new tab', () => {
@@ -74,33 +74,57 @@ describe('the tunnel button look on a new tab', () => {
   })
 
   it('does not call a website\'s words a tab\'s: a website in a tab with a choice is the page\'s state, and says the choice is the tab\'s', () => {
-    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'nym').label).toBe(`Tunnels. This page goes through Nym. ${TAB_CHOICE_NOTE}`)
-    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'down', 'nym').label).toBe(`Tunnels. Nym is not answering, so this page's traffic is stopped. ${TAB_CHOICE_NOTE}`)
-    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, null).label).toBe(`Tunnels. ${TAB_TUNNEL_NOTES.direct}`)
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'nym', true).label).toBe(`Tunnels. This page goes through Nym. ${TAB_CHOICE_NOTE}`)
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'down', 'nym', true).label).toBe(`Tunnels. Nym is not answering, so this page's traffic is stopped. ${TAB_CHOICE_NOTE}`)
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, null, null, true).label).toBe(`Tunnels. ${TAB_TUNNEL_NOTES.direct}`)
     expect(tunnelButtonLook(site, 'on', 'nym').label, 'a tab with no choice says nothing of the tab').toBe('Tunnels. This page goes through Nym')
   })
 })
 
 describe('the tunnel button look when the page is not on the tunnel its tab chose', () => {
   it('does not say the choice is the tab\'s for a page on a tunnel of its own in a direct tab, which a direct choice leaves it', () => {
-    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, 'on', 'socks5').label).toBe('Tunnels. This page goes through your proxy')
-    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, 'down', 'nym').label).toBe('Tunnels. Nym is not answering, so this page\'s traffic is stopped')
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, 'on', 'socks5', true).label).toBe('Tunnels. This page goes through your proxy')
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, 'down', 'nym', true).label).toBe('Tunnels. Nym is not answering, so this page\'s traffic is stopped')
   })
 
   it('does not say it for a page on the other tunnel than the tab\'s, as a page an app opened is', () => {
-    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'socks5').label).toBe('Tunnels. This page goes through your proxy')
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'socks5', true).label).toBe('Tunnels. This page goes through your proxy')
   })
 
   it('says it only when the page is on the tunnel the tab chose', () => {
-    expect(tunnelButtonLook({ ...site, tunnelChoice: 'socks5' }, 'on', 'socks5').label).toBe(`Tunnels. This page goes through your proxy. ${TAB_CHOICE_NOTE}`)
-    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'nym').label).toBe(`Tunnels. This page goes through Nym. ${TAB_CHOICE_NOTE}`)
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'socks5' }, 'on', 'socks5', true).label).toBe(`Tunnels. This page goes through your proxy. ${TAB_CHOICE_NOTE}`)
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'nym', true).label).toBe(`Tunnels. This page goes through Nym. ${TAB_CHOICE_NOTE}`)
+  })
+})
+
+describe('the tunnel button look when the button is not about the tab', () => {
+  // An installed app, or a page in a session an app or a temporary route made for it, keeps its own tunnel whatever its tab carries, and the
+  // button opens that page's list: main says so with tunnelByTab false, and the tab's words would promise a setting the click does not open.
+  it('does not say the choice is the tab\'s for a page on the tunnel the tab chose, when that tunnel is the page\'s own', () => {
+    for (const via of ['nym', 'socks5'] as const) {
+      expect(tunnelButtonLook({ ...site, tunnelChoice: via }, 'on', via, false).label, via).not.toContain(TAB_CHOICE_NOTE)
+      expect(tunnelButtonLook({ ...site, tunnelChoice: via }, 'down', via, false).label, via).not.toContain(TAB_CHOICE_NOTE)
+    }
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'nym', false).label).toBe('Tunnels. This page goes through Nym')
+  })
+
+  it('does not say a direct tab\'s sites go direct for a page that goes direct by itself', () => {
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, null, null, false).label).toBe(TUNNEL_BUTTON_LABEL)
+  })
+
+  it('is told by the state main pushes, not read from the tab: the module draws the suffix only with tunnelByTab', () => {
+    const { attrs, render } = mount({ ...site, tunnelChoice: 'nym' })
+    render('on', 'nym', true)
+    expect(attrs.get('aria-label')).toBe(`Tunnels. This page goes through Nym. ${TAB_CHOICE_NOTE}`)
+    render('on', 'nym', false)
+    expect(attrs.get('aria-label')).toBe('Tunnels. This page goes through Nym')
   })
 })
 
 describe('the tunnel button on a blank page that is no new tab', () => {
   const popup = { url: 'about:blank', isNewTab: true, isInternal: false, blankPage: true } as TabState
 
-  it('is absent: the page is in a session of its own, which the new tab\'s words would not describe', () => {
+  it('is absent: a blank page in a tab that is not the dashboard\'s has no button in whatever session, as its opener writes into it', () => {
     expect(tunnelButtonLook(popup, 'on', 'nym').hidden).toBe(true)
     expect(tunnelButtonLook({ ...popup, tunnelChoice: 'nym' }, null).hidden).toBe(true)
   })

@@ -118,6 +118,8 @@ export interface ShellServices {
     readonly lookOf: (url: string, partition: string | undefined, choice?: TabTunnelChoice) => TunnelLook
     /** The look of a new tab, which shows no website: the tunnel its first address will leave by. */
     readonly newTabLookOf: (choice: TabTunnelChoice | undefined) => TunnelLook
+    /** Whether `origin` is an installed app, whose pages keep the app's own tunnel whatever their tab was told. */
+    readonly isApp: (origin: string) => boolean
     readonly onChange: (listener: () => void) => () => void
   }
   /** The nodes Orivon runs on this computer, for the Available networks popup and the dot on its button. */
@@ -217,6 +219,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
         return pageTunnelLook(routes, { origin, holder, temporary: isTemporaryRoutePartition(partition), choice })
       },
       newTabLookOf: (choice) => ctx.routes === undefined ? { mark: null, via: null } : newTabTunnelLook(ctx.routes, choice),
+      isApp: isOriginServedFromCacheSync,
       onChange: (listener) => ctx.routes?.hub.onChange(() => { listener() }) ?? (() => {})
     },
     networks: createNetworks(settings, ctx),

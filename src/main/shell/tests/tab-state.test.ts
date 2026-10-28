@@ -585,10 +585,13 @@ describe('a blank page that is no new tab', () => {
     expect(stateOf('about:blank', { partition: undefined, tunnelChoice: 'direct' })).toMatchObject({ isNewTab: true, blankPage: true, tunnelChoice: 'direct' })
   })
 
-  it('is not flagged on the dashboard tab, whether it shows the dashboard or a refused address', () => {
+  it('is flagged on a tab whose typed address was refused, which keeps its tunnel choice: the dashboard\'s tab has left the dashboard for a plain blank page', () => {
+    expect(stateOf('about:blank', { isDashboardTab: false, tunnelChoice: 'nym' })).toMatchObject({ isNewTab: true, blankPage: true, tunnelChoice: 'nym' })
+  })
+
+  it('is not flagged on the dashboard tab while it shows the dashboard', () => {
+    expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).toMatchObject({ isNewTab: true })
     expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).not.toHaveProperty('blankPage')
-    expect(stateOf('about:blank', { isDashboardTab: true })).toMatchObject({ isNewTab: true })
-    expect(stateOf('about:blank', { isDashboardTab: true })).not.toHaveProperty('blankPage')
   })
 
   it('is not flagged on a page that shows something', () => {

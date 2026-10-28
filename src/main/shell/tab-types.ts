@@ -129,6 +129,8 @@ export interface ShellState extends TabsSnapshot {
   tunnel: TunnelMark | null
   /** The tunnel the active page goes through, when it is on one: what the tunnel button names. */
   tunnelVia: TunnelKind | null
+  /** Whether the tab in front is the one the tunnel button is about: its own tunnel choice decides where its sites go and the button opens the tab's list (`tunnel-popover-tab.ts`). Not so for an installed app, nor a page in a session an app or a temporary route made. */
+  tunnelByTab: boolean
   /** The dot on the Available networks button: green while a node runs, amber while one starts or syncs, red when one the person switched on failed, none when nothing runs. */
   networksDot: 'green' | 'amber' | 'red' | 'none'
   /** Which profile this window is, for the chip beside the menu. */
