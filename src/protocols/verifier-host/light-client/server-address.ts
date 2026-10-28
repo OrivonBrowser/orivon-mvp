@@ -47,8 +47,9 @@ export function serverAddressProblem (text: string, kind: ServerKind): string | 
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return 'An address starts with https://, or http:// for a computer of yours.'
   if (url.username !== '' || url.password !== '') return 'Leave the user name and password out of the address; a key goes in the path or after a ?.'
-  if (url.hash !== '') return 'Leave the # and what follows it out of the address.'
-  if (kind === 'beacon' && url.search !== '') return 'A beacon server\'s address cannot hold a ? part, because the light client adds its own paths after it.'
+  // `url.hash` and `url.search` are empty for a bare # or ?, so the typed text is read.
+  if (text.includes('#')) return 'Leave the # and what follows it out of the address.'
+  if (kind === 'beacon' && text.includes('?')) return 'A beacon server\'s address cannot hold a ? part, because the light client adds its own paths after it.'
   const host = url.hostname.replace(/^\[|\]$/g, '')
   if (isLocalLiteral(url.hostname)) return undefined
   if (classifyAddress(host) !== 'unparseable' ? !isPublicUnicast(host) : !isInternetHost(host)) {

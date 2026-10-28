@@ -65,6 +65,12 @@ describe('serverAddressProblem: what no address may hold', () => {
     expect(execution('https://rpc.example.com/#key')).toMatch(/#/)
   })
 
+  it('refuses a # with nothing after it, which the URL parser drops without a trace', () => {
+    expect(execution('https://rpc.example.com/#')).toMatch(/#/)
+    expect(execution('http://127.0.0.1:8545/#')).toMatch(/#/)
+    expect(beacon('https://beacon.example.com/prefix#')).toMatch(/#/)
+  })
+
   it('never repeats the address it refuses', () => {
     for (const text of ['https://user:SECRETVALUE@rpc.example.com/', 'http://rpc.example.com/SECRETVALUE', 'https://rpc.example.com:8545/SECRETVALUE', 'https://node/SECRETVALUE', 'SECRETVALUE']) {
       expect(execution(text) ?? '', text).not.toContain('SECRETVALUE')
@@ -77,6 +83,12 @@ describe('serverAddressProblem: a beacon server', () => {
     expect(beacon('https://beacon.example.com/prefix')).toBeUndefined()
     expect(beacon('http://127.0.0.1:5052')).toBeUndefined()
     expect(beacon('https://beacon.example.com/?key=FAKE')).toMatch(/\?/)
+  })
+
+  it('refuses a ? with nothing after it, since the paths added after it would become its query', () => {
+    expect(beacon('https://beacon.example.com/prefix?')).toMatch(/\?/)
+    expect(beacon('http://127.0.0.1:5052?')).toMatch(/\?/)
+    expect(beacon('https://beacon.example.com/prefix?#')).toBeDefined()
   })
 
   it('may keep a query in an execution server, where a provider puts its key', () => {
