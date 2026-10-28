@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ipfsNodeView, lightClientLog, lightClientView } from '../status-view.js'
+import { checkpointProblem, ipfsNodeView, lightClientLog, lightClientView } from '../status-view.js'
 import type { VerifierFacts } from '../status-view.js'
 
 const NOW = 1_790_000_000_000
@@ -242,5 +242,61 @@ describe('lightClientLog', () => {
     log(failed('it timed out'))
     expect(log(synced(200))).toEqual({ level: 'log', text: 'light client synced at block 200' })
     expect(log(failed('it timed out'))).toEqual({ level: 'error', text: 'light client failed: it timed out' })
+  })
+})
+
+describe('the servers the person named', () => {
+  const KEY = 'FAKE-KEY-0123456789abcdef'
+  const OWN_ENDPOINTS = { ...ENDPOINTS, executionRpcs: [`https://mainnet.infura.io/v3/${KEY}`, 'http://192.168.1.20:8545'], consensusRpc: `http://127.0.0.1:5052/${KEY}2` }
+  const both = { execution: true, consensus: true } as const
+
+  it('shows an address masked, and says the servers are the person\'s', () => {
+    const view = lightClientView(facts({ endpoints: OWN_ENDPOINTS, ownServers: both }), NOW)
+    expect(view.endpoints.slice(0, 2)).toEqual([
+      { label: 'Your Ethereum RPCs', urls: ['https://mainnet.infura.io/••••', 'http://192.168.1.20:8545'] },
+      { label: 'Your beacon server', urls: ['http://127.0.0.1:5052/••••'] }
+    ])
+    expect(JSON.stringify(view)).not.toContain(KEY)
+  })
+
+  it('labels only the field that is theirs, and keeps Orivon\'s other server named as before', () => {
+    const view = lightClientView(facts({ endpoints: { ...ENDPOINTS, executionRpcs: ['https://rpc.example.com/x'] }, ownServers: { execution: true, consensus: false } }), NOW)
+    expect(view.endpoints.slice(0, 2).map((group) => group.label)).toEqual(['Your Ethereum RPCs', 'Beacon API'])
+  })
+
+  it('masks even Orivon\'s servers the same way, which hold no key and read as they did', () => {
+    expect(lightClientView(facts({}), NOW).endpoints[0]).toEqual({ label: 'Ethereum RPCs', urls: ['https://a.rpc', 'https://b.rpc'] })
+  })
+
+  it('says the chain is followed through their servers', () => {
+    const synced = { state: 'synced', block: 26_047_527, at: NOW - 2 * 60_000 } as const
+    expect(lightClientView(facts({ lightClient: synced, ownServers: both }), NOW).summary).toBe('Following the chain through your own servers: block 26,047,527, produced 2 minutes ago.')
+    expect(lightClientView(facts({ lightClient: synced, ownServers: { execution: true, consensus: false } }), NOW).summary).toMatch(/^Following the chain through your own Ethereum servers: block/)
+    expect(lightClientView(facts({ lightClient: synced, ownServers: { execution: false, consensus: true } }), NOW).summary).toMatch(/^Following the chain through your own beacon server: block/)
+    expect(lightClientView(facts({ lightClient: synced, ownServers: { execution: false, consensus: false } }), NOW).summary).toMatch(/^Following the chain: block/)
+  })
+
+  it('says a failure is theirs to settle: .eth waits, Orivon\'s servers are not tried, and how to go back', () => {
+    const failed = { state: 'failed', reason: '127.0.0.1:8545/•••• answered 401', retryAt: NOW + 5_000, ownServersFailed: true } as const
+    const view = lightClientView(facts({ lightClient: failed, ownServers: both }), NOW)
+    expect(view.state).toBe('failed')
+    expect(view.summary).toBe("Failed: 127.0.0.1:8545/•••• answered 401. Trying again in 5 s. Orivon's servers are not asked instead, so .eth names wait. Check the servers you set in Settings > Web3, or choose Orivon's servers there.")
+    expect(lightClientView(facts({ lightClient: failed }), NOW).summary).toBe('Failed: 127.0.0.1:8545/•••• answered 401. Trying again in 5 s.')
+  })
+
+  it('does not send the person to their servers for a failure the host did not put on them', () => {
+    const elsewhere = { state: 'failed', reason: 'eth.drpc.org answered 429', retryAt: NOW + 5_000 } as const
+    for (const ownServers of [both, { execution: false, consensus: true }, { execution: true, consensus: false }]) {
+      expect(lightClientView(facts({ lightClient: elsewhere, ownServers }), NOW).summary).toBe('Failed: eth.drpc.org answered 429. Trying again in 5 s.')
+    }
+  })
+
+  it('says "your beacon server" where the beacon server would not start the light client', () => {
+    const refused = { ok: false, problem: 'not-served', source: 'release', ageSeconds: 86_400 } as const
+    expect(lightClientView(facts({ checkpoint: refused, ownServers: { execution: false, consensus: true } }), NOW).summary).toBe('Not running: your beacon server would not start it from the checkpoint it was given, and no other is at hand.')
+    expect(lightClientView(facts({ checkpoint: refused, ownServers: { execution: false, consensus: true } }), NOW).checkpoint).toMatch(/^No usable checkpoint: your beacon server would not start the light client from the newest checkpoint/)
+    expect(checkpointProblem(refused, 'no-bootstrap', true)).toMatch(/your beacon server would not start the light client from any recent finalized block/)
+    expect(checkpointProblem(refused, 'no-bootstrap')).toMatch(/the beacon server would not start the light client from any recent finalized block/)
+    expect(checkpointProblem({ ok: false, problem: 'too-old', source: 'this-install', ageSeconds: 20 * 86_400, skippedUnserved: true }, undefined, true)).toMatch(/^a newer checkpoint has no bootstrap on your beacon server/)
   })
 })

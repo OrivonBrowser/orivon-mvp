@@ -57,8 +57,8 @@ describe('channelOf', () => {
 
 describe('reportedSettings', () => {
   it('lists the allowlist, and every web3 switch or choice, and no setting that is an address or text', () => {
-    for (const key of ['appearance.theme', 'privacy.secureDns', 'web3.lightClient', 'web3.ethGatewayRedirect', 'updates.check', 'developer.tools']) expect(REPORTED_SETTINGS).toContain(key)
-    for (const key of ['web3.scoreProvider', 'home.url', 'startup.pages', 'downloads.folder', 'performance.keepAwake']) expect(REPORTED_SETTINGS).not.toContain(key)
+    for (const key of ['appearance.theme', 'privacy.secureDns', 'web3.lightClient', 'web3.ethServers', 'web3.ethGatewayRedirect', 'updates.check', 'developer.tools']) expect(REPORTED_SETTINGS).toContain(key)
+    for (const key of ['web3.scoreProvider', 'web3.ethRpcs', 'web3.ethBeacon', 'home.url', 'startup.pages', 'downloads.folder', 'performance.keepAwake']) expect(REPORTED_SETTINGS).not.toContain(key)
   })
 
   it('reads values only, and skips anything that is not a string or a flag', () => {

@@ -2,9 +2,11 @@
 
 **What lives here.** `light-client.ts` (Helios, behind one EIP-1193 provider), `helios-errors.ts`,
 `rpc-failover.ts` (trying execution RPCs in turn per request, and keeping why each one failed), `clock.ts` (a computer whose clock
-is behind or ahead of the chain), and four files about the servers' addresses: `lane-names.ts` (the names Helios is given and the
+is behind or ahead of the chain), and five files about the servers' addresses: `lane-names.ts` (the names Helios is given and the
 words it says back), `lane-fetch.ts` (which fetch carries a request to which server), `endpoint-mask.ts` (an address shown masked)
-and `chain-check.ts` (a server that is not Ethereum mainnet).
+and `chain-check.ts` (a server that is not Ethereum mainnet), and `server-address.ts` (what an address the person types may be, and why one is
+refused: pure code, which the settings store and the Settings page apply before the host ever sees an address, and which holds
+the one rule for a name that could be on the internet that `egress.ts` shares).
 
 **What it depends on.** [`../egress.ts`](../egress.ts), [`../protocol.ts`](../protocol.ts) and
 `@a16z/helios`.
@@ -33,4 +35,10 @@ state.
 
 **A server's address may carry a key, so nothing that is shown or logged holds it.** An address the person names can hold an access key in its path, its query or a host label. `lane-names.ts`'s `publicText` reads a lane name inside Helios's or a fetch's words as the server it stands for, shown by `endpoint-mask.ts` as `host[:port]` and `/••••` when there is a path or query, and replaces every other part of a configured address with `••••`; the failed reason, the console lines and the errors a call of the provider raises all pass through it. `rpc-failover.ts` keeps for each execution server the last status it answered or the code its connection failed with, never the address or any text a server or a socket said; when the servers are the person's own and every one is in trouble, the failed reason begins with each one masked and what it answered. As the client starts, `chain-check.ts` asks each of the person's own execution servers for its chain id: one that answers a chain other than mainnet is dropped with a sentence saying which chain, and the start fails with that sentence when none is left; a server that cannot be asked, or gives no chain, stays, since its own trouble is the more useful thing to say when it is used.
 
-**A server on this computer or a home network is never carried by the lane's own fetch.** `lane-fetch.ts` wraps the lane's fetch so that a request to an origin the config names local goes to the host's local fetch (`../local-rpc-fetch.ts`) and every other to the lane's own, whichever route the lane travels, and so that a config it cannot make sense of starts no client: a local address that is not named, an address named local that is not one, a server not named local that is not a public address or name (a loopback or private literal in a spelling the local check does not take, `localhost.`, `*.localhost`, a single-label or `.local` name), a server on the internet that is not `https`, or no local fetch to send to.
+**A server on this computer or a home network is never carried by the lane's own fetch.** `lane-fetch.ts` wraps the lane's fetch so that a request to an origin the config names local goes to the host's local fetch (`../local-rpc-fetch.ts`) and every other to the lane's own, whichever route the lane travels, and so that a config it cannot make sense of starts no client: a local address that is not named, an address named local that is not one, a server not named local that is not a public address or name (a loopback or private literal in a spelling the local check does not take, `localhost.`, `*.localhost`, a single-label or `.local` name), a server on the internet that is not `https`, or no local fetch to send to. The shared client reports that refusal to the shell as a failed status (`protocols.ts`), so the main log, the status page and a bug report say why `.eth` is off. A name on the internet is judged as a name: one the person types that resolves to a private address is not caught here, and is reached by the lane's own route (the security model's T12 residual).
+
+**A refusal reads in the person's words and never repeats the address.** `server-address.ts`'s `serverAddressProblem` returns the reason an
+address cannot be a server (not an address, a user name in it, a `?` part on a beacon server, a name no public server answers to,
+`http` on the internet, a port other than 443 on the internet) as a sentence for the Settings page, and each sentence is the same one the store
+gives, since both call it. An address that passes here is what the host's own re-check (`lane-fetch.ts`) accepts, because both read the same
+classification (`isLocalLiteral`, `isInternetHost`); a change to one is a change to the other.

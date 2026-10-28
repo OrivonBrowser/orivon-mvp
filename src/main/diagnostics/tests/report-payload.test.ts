@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { buildDiagnostics } from '../diagnostics-facts.js'
 import { buildPayload, cut, fitDiagnostics, isSendable, LIMITS, previewText, wireBody, wireVersion } from '../report-payload.js'
+import { forgetSecrets, noteSecret } from '../secret-scrub.js'
 import { CHOICES, CRASH, FACTS, HOME, sources } from './report-fixtures.js'
 
 const TOP_LEVEL = ['schema', 'reportId', 'description', 'contact', 'version', 'crash', 'diagnostics', 'log', 'page', 'dump']
@@ -47,6 +48,33 @@ describe('buildPayload', () => {
     expect(payload.log?.[0]).toBe('2026-10-07T11:00:00.000Z LOG hello ~/x')
     expect(payload.diagnostics?.system.cpuModel).toBe('~/odd')
     expect(JSON.stringify(payload)).not.toContain(HOME)
+  })
+
+  describe('an Ethereum server\'s key the person typed in Settings', () => {
+    const KEY = 'FAKE-KEY-0123456789abcdef'
+    afterEach(() => { forgetSecrets() })
+
+    it('is in no field of the report, whatever the field is: the log, the crash, the description, the page and the diagnostics', () => {
+      noteSecret(`https://mainnet.infura.io/v3/${KEY}`, 'https://mainnet.infura.io/••••')
+      noteSecret(KEY)
+      const payload = buildPayload(sources({
+        choices: { ...CHOICES, description: `It broke on https://mainnet.infura.io/v3/${KEY}` },
+        crash: { ...CRASH, message: `failed ${KEY}`, stack: `at ${KEY}`, page: `https://example.org/?k=${KEY}` },
+        log: [`2026-10-07T11:00:00.000Z ERROR [verifier] https://mainnet.infura.io/v3/${KEY} answered 401`],
+        diagnostics: buildDiagnostics({ ...FACTS, system: { ...FACTS.system, cpuModel: KEY } })
+      }))
+      expect(JSON.stringify(payload)).not.toContain(KEY)
+      expect(payload.description).toBe('It broke on https://mainnet.infura.io/••••')
+      expect(payload.log?.[0]).toBe('2026-10-07T11:00:00.000Z ERROR [verifier] https://mainnet.infura.io/•••• answered 401')
+      expect(previewText(payload)).not.toContain(KEY)
+    })
+
+    it('is scrubbed before a field is cut, so a field never ends up longer than the server takes', () => {
+      noteSecret(KEY)
+      const payload = buildPayload(sources({ choices: { ...CHOICES, description: `${'x'.repeat(LIMITS.description - 10)}${KEY}` } }))
+      expect(payload.description.length).toBeLessThanOrEqual(LIMITS.description)
+      expect(payload.description).not.toContain(KEY.slice(0, 10))
+    })
   })
 
   it('cuts every field to the length the server takes, never sending over it', () => {

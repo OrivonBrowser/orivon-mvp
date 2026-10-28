@@ -10,6 +10,11 @@ import { SETTINGS, isSettingKey, validateSetting } from './schema.js'
 import { SETTINGS_FILE_VERSION, isSettingsFile, settingsFromFile } from './settings-file.js'
 import type { SettingKey, SettingValue, SettingsValues } from './schema.js'
 
+/** Why the file could not be read, without its text: a parse error quotes the start of the file, which may hold a key that secret-scrub.ts has not been told of yet. */
+function readFailure (error: unknown): string {
+  return error instanceof SyntaxError ? 'it is not valid JSON' : (error as NodeJS.ErrnoException).code ?? 'it could not be read'
+}
+
 export type SetResult = { readonly ok: true } | { readonly ok: false, readonly reason: 'unknown-key' | 'invalid-value' | 'locked' }
 
 export interface SettingChange {
@@ -54,7 +59,7 @@ export class SettingsStore {
       parsed = JSON.parse(await readFile(this.filePath, 'utf8'))
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        console.warn('[orivon] settings file unreadable, using defaults:', error)
+        console.warn(`[orivon] settings file unreadable, using defaults: ${readFailure(error)}`)
         await this.holdTunnelOn()
       }
       return

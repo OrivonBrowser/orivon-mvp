@@ -3,6 +3,7 @@ import type { LightClientConfig } from '../../protocol.js'
 import { startHeliosLightClient } from '../light-client.js'
 import type { LightClient } from '../../service.js'
 import { resetHeliosClock } from '../clock.js'
+import { CLOCK_BEHIND_REASON } from '../helios-errors.js'
 
 // See light-client.test.ts for why Helios is mocked and how its fake behaves.
 vi.mock('@a16z/helios', () => ({ createHeliosProvider: vi.fn() }))
@@ -79,7 +80,7 @@ describe('startHeliosLightClient -- servers the person named', () => {
     const client = startHeliosLightClient(OWN, (async () => answerWith('0xaa36a7')) as never, () => {})
     await failed(client)
     const status = client.status()
-    expect(status).toMatchObject({ state: 'failed', reason: 'mainnet.infura.io/•••• is not Ethereum mainnet (chain 11155111); b.rpc is not Ethereum mainnet (chain 11155111)' })
+    expect(status).toMatchObject({ state: 'failed', reason: 'mainnet.infura.io/•••• is not Ethereum mainnet (chain 11155111); b.rpc is not Ethereum mainnet (chain 11155111)', ownServersFailed: true })
     expect(createHeliosProvider).not.toHaveBeenCalled()
   })
 
@@ -103,8 +104,24 @@ describe('startHeliosLightClient -- servers the person named', () => {
     const client = startHeliosLightClient(OWN, fetch as never, () => {})
     await failed(client)
     const status = client.status()
-    expect(status).toMatchObject({ state: 'failed', reason: 'mainnet.infura.io/•••• answered 401; b.rpc answered 429 (error sending request for url (https://mainnet.infura.io/••••/): status 401)' })
+    expect(status).toMatchObject({ state: 'failed', reason: 'mainnet.infura.io/•••• answered 401; b.rpc answered 429 (error sending request for url (https://mainnet.infura.io/••••/): status 401)', ownServersFailed: true })
     expect(JSON.stringify(status)).not.toContain(KEY)
+  })
+
+  it('reads the execution lane in Helios\'s words as the server still in use, not the first one named, once that one was dropped', async () => {
+    vi.mocked(createHeliosProvider).mockImplementation((async (given: Names) => {
+      await globalThis.fetch(new Request(given.executionRpc, { method: 'POST', body: rpc }))
+      throw new Error(`error sending request for url (${given.executionRpc}/): status 429`)
+    }) as never)
+    const fetch = async (url: string, init?: RequestInit): Promise<Response> => {
+      if (String(init?.body).includes('eth_chainId')) return answerWith(url === A ? '0xaa36a7' : '0x1')
+      return new Response('no', { status: 429 })
+    }
+    const client = startHeliosLightClient(OWN, fetch as never, () => {})
+    await failed(client)
+    const status = client.status()
+    expect(status).toMatchObject({ state: 'failed', reason: 'b.rpc answered 429 (error sending request for url (https://b.rpc/): status 429)' })
+    expect(JSON.stringify(status)).not.toContain('infura')
   })
 
   it('does not name a server that was in trouble in an earlier attempt when this attempt fails before asking any', async () => {
@@ -136,6 +153,7 @@ describe('startHeliosLightClient -- servers the person named', () => {
     const client = startHeliosLightClient(OWN, fetch as never, () => {})
     await failed(client)
     expect(client.status()).toMatchObject({ state: 'failed', reason: 'sync failed' })
+    expect(client.status()).not.toHaveProperty('ownServersFailed')
   })
 
   it('leaves Orivon\'s servers\' failures as they read, whatever answered', async () => {
@@ -146,6 +164,7 @@ describe('startHeliosLightClient -- servers the person named', () => {
     const client = startHeliosLightClient({ ...CONFIG, executionRpcs: OWN.executionRpcs, consensusRpc: OWN.consensusRpc }, (async () => new Response('no', { status: 503 })) as never, () => {})
     await failed(client)
     expect(client.status()).toMatchObject({ state: 'failed', reason: 'sync failed' })
+    expect(client.status()).not.toHaveProperty('ownServersFailed')
   })
 
   it('shows the lane names Helios quotes as the servers, with no key in the failed reason', async () => {
@@ -157,6 +176,48 @@ describe('startHeliosLightClient -- servers the person named', () => {
     const status = client.status()
     expect(status).toMatchObject({ state: 'failed', reason: 'could not fetch bootstrap: error sending request for url (http://127.0.0.1:5052/••••/eth/v1/beacon/light_client/bootstrap/0x01) caused by https://mainnet.infura.io/••••' })
     expect(JSON.stringify(status)).not.toContain(KEY)
+  })
+
+  describe('whose servers a failure is blamed on', () => {
+    const troubleOf = (config: LightClientConfig, error: string, answer: (url: string, init?: RequestInit) => Promise<Response>): LightClient => {
+      vi.mocked(createHeliosProvider).mockImplementation((async (given: Names) => {
+        await globalThis.fetch(new Request(given.executionRpc, { method: 'POST', body: rpc })).catch(() => {})
+        throw new Error(error)
+      }) as never)
+      return startHeliosLightClient(config, answer as never, () => {})
+    }
+    const refuse = async (_url: string, init?: RequestInit): Promise<Response> => String(init?.body).includes('eth_chainId') ? answerWith('0x1') : new Response('no', { status: 429 })
+
+    it('blames the person\'s beacon server when it would not give the bootstrap, whatever else it answered', async () => {
+      vi.mocked(createHeliosProvider).mockImplementation((async () => { throw new Error('could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request') }) as never)
+      const client = startHeliosLightClient({ ...OWN, ownServers: { execution: false, consensus: true } }, (async () => answerWith('0x1')) as never, () => {})
+      await failed(client)
+      expect(client.status()).toMatchObject({ state: 'failed', ownServersFailed: true })
+    })
+
+    it('does not blame a beacon server that is Orivon\'s for the person\'s own execution servers', async () => {
+      vi.mocked(createHeliosProvider).mockImplementation((async () => { throw new Error('could not fetch bootstrap: rpc error on method: bootstrap, message: error sending request') }) as never)
+      const client = startHeliosLightClient({ ...OWN, ownServers: { execution: true, consensus: false } }, (async () => answerWith('0x1')) as never, () => {})
+      await failed(client)
+      expect(client.status()).not.toHaveProperty('ownServersFailed')
+    })
+
+    it('does not blame the person when only their beacon server is theirs and Orivon\'s execution servers are the ones in trouble', async () => {
+      const client = troubleOf({ ...CONFIG, executionRpcs: ['https://eth.drpc.example', 'https://mev.example'], consensusRpc: OWN.consensusRpc, ownServers: { execution: false, consensus: true } }, 'error sending request: status 429', refuse)
+      await failed(client)
+      expect(client.status()).toMatchObject({ state: 'failed', reason: 'error sending request: status 429' })
+      expect(client.status()).not.toHaveProperty('ownServersFailed')
+    })
+
+    it('does not blame the person for a clock that is behind, whatever their servers answered', async () => {
+      const client = troubleOf(OWN, 'sync failed: invalid timestamp', async (url, init) => {
+        if (String(init?.body).includes('eth_chainId')) return answerWith('0x1')
+        throw new Error(`no route to ${url}`)
+      })
+      await failed(client)
+      expect(client.status()).toMatchObject({ state: 'failed', reason: CLOCK_BEHIND_REASON })
+      expect(client.status()).not.toHaveProperty('ownServersFailed')
+    })
   })
 
   it('logs a refresh failure without the key, and answers a failed call without it', async () => {

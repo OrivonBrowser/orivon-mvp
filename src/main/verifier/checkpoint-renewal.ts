@@ -24,6 +24,8 @@ export interface RenewalDeps {
   readonly hostRunning: () => boolean
   /** Puts the host to sleep and starts it again, so that its configuration is built with the checkpoint now chosen. */
   readonly restartHost: () => void
+  /** The beacon server the light client bootstraps from, when the person named one (`local`: it is on this computer or a home network, so a request to it must not go through a proxy or a tunnel). Absent: Orivon's. */
+  readonly consensus?: () => { readonly url: string, readonly local: boolean }
 }
 
 export class CheckpointRenewal {
@@ -41,6 +43,9 @@ export class CheckpointRenewal {
   /** Roots the beacon server has no bootstrap for: none is chosen again in this run. */
   private readonly unserved = new Set<string>()
 
+  /** The server `unserved` was learned from: another server may serve what this one did not. */
+  private bootstrapServer: string | undefined
+
   constructor (private readonly deps: RenewalDeps) {}
 
   /** The servers asked; a test build may name its own. */
@@ -48,9 +53,9 @@ export class CheckpointRenewal {
     return testBeaconApis() ?? DEFAULT_ENDPOINTS.checkpointBeaconApis
   }
 
-  /** The server the light client bootstraps from, and the one whose bootstrap a renewed checkpoint must have; a test build's first server stands in for it. */
+  /** The server the light client bootstraps from, and the one whose bootstrap a renewed checkpoint must have; a test build's first server stands in for it. It is the person's own when they named one. */
   consensusRpc (): string {
-    return testBeaconApis()?.[0] ?? DEFAULT_ENDPOINTS.consensusRpc
+    return testBeaconApis()?.[0] ?? this.deps.consensus?.().url ?? DEFAULT_ENDPOINTS.consensusRpc
   }
 
   /** The release's own checkpoint; a test build may take it to be older than it is. */
@@ -61,6 +66,12 @@ export class CheckpointRenewal {
 
   /** Chooses afresh from the release's and the stored checkpoint. */
   choose (): CheckpointChoice {
+    const server = this.consensusRpc()
+    if (this.bootstrapServer !== undefined && this.bootstrapServer !== server) {
+      this.unserved.clear()
+      this.fetcher.reset()
+    }
+    this.bootstrapServer = server
     this.chosen = chooseCheckpoint(this.shipped(), this.deps.store().checkpoint(), Math.floor(Date.now() / 1000), MAX_CHECKPOINT_AGE_SECONDS, this.unserved)
     return this.chosen
   }
@@ -110,17 +121,22 @@ export class CheckpointRenewal {
   }
 
   /**
-   * One attempt to fetch a checkpoint, stored as this install's own with the servers that agreed on it, so that Settings can
-   * say where it came from. It counts as a success only if a checkpoint the light client can start from is then at hand: a
+   * One attempt to fetch a checkpoint, stored as this install's own with the servers of Orivon's that agreed on it, so that
+   * Settings can say where it came from. It counts as a success only if a checkpoint the light client can start from is then at hand: a
    * server that hands back a root already given up (a backend that disagrees with the one that answered before) is a failed
    * attempt, and waits as one.
    */
   private async attempt (): Promise<FetchOutcome> {
-    const outcome = await fetchAgreedCheckpoint(beaconJson, this.servers(), this.consensusRpc(), Math.floor(Date.now() / 1000), { unserved: this.unserved })
+    const consensus = this.consensusRpc()
+    // Only the person's own server can be local; a test build's stand-in beacon servers are asked as they always were.
+    const local = testBeaconApis() === undefined && this.deps.consensus?.().local === true ? consensus : undefined
+    const outcome = await fetchAgreedCheckpoint(async (url) => await beaconJson(url, local), this.servers(), consensus, Math.floor(Date.now() / 1000), { unserved: this.unserved })
     if (!outcome.ok) return outcome
     try {
       const { root, timestamp, servers } = outcome.checkpoint
-      this.deps.store().saveFetchedCheckpoint({ root, timestamp }, servers, Math.floor(Date.now() / 1000), this.unserved)
+      // The file is copied into every new profile and private session, so it names Orivon's servers only: the person's own address may hold a key.
+      const orivons = this.servers()
+      this.deps.store().saveFetchedCheckpoint({ root, timestamp }, servers.filter((server) => orivons.includes(server)), Math.floor(Date.now() / 1000), this.unserved)
     } catch (error) {
       console.error('[verifier] could not keep the fetched checkpoint:', error)
     }

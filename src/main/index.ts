@@ -43,7 +43,9 @@ import { copyPrivateExtensions } from './launch/private-extensions.js'
 import { copyPrivatePicture } from './launch/private-picture.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
-import { configureVerifier, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
+import { configureVerifier, ethServersChanged, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
+import { effectiveEthServers, noteEthSecrets } from './verifier/eth-servers.js'
+import { noteSecret } from './diagnostics/secret-scrub.js'
 import { createPageScoreLookup } from './browsing/page-score-lookup.js'
 import { installSchemeRouting } from './scheme-routing/install-scheme-routing.js'
 import { netFetchJson } from './browsing/score-provider-client.js'
@@ -239,6 +241,10 @@ export function boot (runtime: Runtime): void {
     applyThemeSetting(shell.settings, nativeTheme)
     // The proxy an app can be routed through is the saved one until now; from here the setting itself.
     ctx.routes?.followSettings(shell.settings)
+    // The Ethereum servers the person chose. Their addresses may hold a key: whatever the choice is now, each is noted for the log and report scrub before anything is printed.
+    const ethServers = (choice = shell.settings.get('web3.ethServers')): ReturnType<typeof effectiveEthServers> => effectiveEthServers({ choice, rpcs: shell.settings.get('web3.ethRpcs'), beacon: shell.settings.get('web3.ethBeacon') })
+    const noteEthServers = (): void => { noteEthSecrets(ethServers('custom'), noteSecret) }
+    noteEthServers()
     // The host starts only when a .eth address is needed, by which time the settings have been read: the person's choice reaches it.
     configureVerifier({
       lightClientEnabled: () => shell.settings.get('web3.lightClient'),
@@ -247,13 +253,16 @@ export function boot (runtime: Runtime): void {
       ipfsSource: () => shell.settings.get('web3.ipfsSource') === 'gateways' ? 'gateways' : 'node',
       ipfsLookupService: () => shell.settings.get('web3.ipfsLookupService'),
       swarmNodeEnabled: () => shell.settings.get('web3.swarmNode'),
-      nodesFollowTunnel: () => shell.settings.get('network.tunnel.nodes')
+      nodesFollowTunnel: () => shell.settings.get('network.tunnel.nodes'),
+      ethServers: () => ethServers()
     })
     // Where IPFS is read from, and whether the light client runs, apply at once: the node and the verifier host start again from the new choice.
     shell.settings.onChange(({ key }) => {
       if (key === 'web3.ipfsSource') ipfsSettingsChanged('source')
       else if (key === 'web3.ipfsLookupService') ipfsSettingsChanged('lookupService')
       else if (key === 'web3.lightClient') lightClientSettingChanged()
+      // The exact keys: `web3.ethGatewayRedirect` starts with the same letters and has nothing to do with the servers.
+      else if (key === 'web3.ethServers' || key === 'web3.ethRpcs' || key === 'web3.ethBeacon') { noteEthServers(); ethServersChanged() }
       else if (key === 'web3.swarmNode') swarmSettingChanged()
       else if (key === 'network.tunnel.nodes') tunnelDefaultChanged()
     })
