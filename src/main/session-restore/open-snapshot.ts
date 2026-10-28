@@ -32,6 +32,8 @@ export function openSnapshot (tabs: TabManager, snapshot: TabSnapshot, active: b
     if (opened.created && record !== undefined) {
       record.pinned = clean.pinned
       rememberOpenedFrom(record, clean)
+      // Through the manager, so a window held to one tunnel refuses a choice it does not allow, as it does for a tab opened on a website.
+      if (clean.tunnelChoice !== undefined) tabs.setTunnelChoice(opened.id, clean.tunnelChoice)
     }
     return opened.id
   }

@@ -85,7 +85,7 @@ export function sanitizeSnapshot (raw: unknown): TabSnapshot | null {
     if (!isInternalPageId(page) || page === 'private' || page === 'reader' || typeof path !== 'string' || path.length > MAX_INTERNAL_PATH_LENGTH || !path.startsWith('/')) return null
     const address = parseInternalUrl(internalUrl(page, path))
     if (address?.page !== page) return null
-    return { url: internalUrl(address.page, address.path), title, pinned, internal: address, ...cleanGroupIndex(candidate['group']) }
+    return { url: internalUrl(address.page, address.path), title, pinned, internal: address, ...cleanGroupIndex(candidate['group']), ...cleanChoice(candidate['tunnelChoice']) }
   }
   const url = cleanUrl(candidate['url'])
   if (url === null) return null
@@ -140,7 +140,7 @@ export function snapshotOf (record: TabRecord, wc: WebContents): TabSnapshot | n
   }
   if (record.internalPage !== null) {
     const address = parseInternalUrl(wc.getURL()) ?? openedFrom.get(record)?.internal ?? { page: record.internalPage, path: '/' }
-    return sanitizeSnapshot({ url: internalUrl(address.page, address.path), title, pinned, internal: address })
+    return sanitizeSnapshot({ url: internalUrl(address.page, address.path), title, pinned, internal: address, tunnelChoice: record.tunnelChoice })
   }
   const url = wc.getURL()
   if (url === '') {
