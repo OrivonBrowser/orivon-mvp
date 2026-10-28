@@ -1,6 +1,6 @@
-// What "Check now" found, in words. The check is main's; the page shows the
-// answer. Another open Settings window's own "Check now" arrives as
-// `updates.changed`, so the two windows agree without either asking again.
+// What the last look found, in words. The look is main's; the page shows the answer: the one its own "Check now"
+// got, the release main's background look found (asked for on load), and what another open Settings window's look
+// found, which arrives as `updates.changed`, so the windows agree without either asking again.
 import type { OrivonInternal } from '../shared/bridge.js'
 
 interface Answer {
@@ -19,12 +19,18 @@ export class UpdatesState {
 
   constructor (private readonly bridge: OrivonInternal, private readonly changed: () => void) {}
 
-  /** True once this was for an `updates.changed` push -- another window's own check, never this one's (it already set `answer` itself). */
+  /** True once this was for an `updates.changed` push: a look made elsewhere, or the release main's background look found or dropped (null). */
   handle (topic: string, payload: unknown): boolean {
     if (topic !== 'updates.changed') return false
-    this.answer = payload as Answer
+    this.answer = payload as Answer | null
     this.changed()
     return true
+  }
+
+  /** Asks main what is on offer, so a release its background look found shows without pressing Check. */
+  async load (): Promise<void> {
+    const reply = await this.bridge.request('updates', { type: 'state' }) as { ok?: boolean, answer?: Answer | null } | undefined
+    if (reply?.ok === true && reply.answer !== undefined && reply.answer !== null && this.answer === null) this.answer = reply.answer
   }
 
   async check (): Promise<void> {
