@@ -80,6 +80,7 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'],
   }
   const reach = lightClientFetch(lightClient, fetch, deps.localFetch, 'the light client')
   if ('off' in reach) {
+    // The refusal depends on the config alone, so the shared client has already reported it to the shell (protocols.ts).
     resolvers.push(offResolver(`the Ethereum servers set in Settings cannot be used: ${reach.off}`))
     return defineProtocol(ENS, { resolvers })
   }

@@ -9,11 +9,12 @@ import { readCapped } from '../gateways/gateways.js'
 import { EgressRefused } from '../gateways/allowlisted-fetch.js'
 import type { WebFetch } from '../gateways/allowlisted-fetch.js'
 import type { CcipRequestParameters } from '../ens/resolver.js'
-import { BUILTIN_ADDRESSES } from '../builtin.js'
 import type { DirectFetch } from './direct-fetch.js'
+import { LOCAL_NAME, isInternetHost, namesThisComputer } from './light-client/server-address.js'
 
 export { EgressRefused, allowlisted } from '../gateways/allowlisted-fetch.js'
 export type { WebFetch } from '../gateways/allowlisted-fetch.js'
+export { isInternetHost }
 
 export interface CcipDeps {
   /** Every address the host resolves to, from the same resolver the request will use. Never asked when the name is resolved at the far end of the tunnel (`farEnd`). */
@@ -53,21 +54,6 @@ export const DEFAULT_CCIP_LIMITS: CcipLimits = { maxResponseBytes: 1024 * 1024, 
 
 const MAX_URLS = 8
 const HEX = /^0x(?:[0-9a-fA-F]{2})*$/
-
-/** Names that only mean something on a local network: a tunnel's far end would resolve them on its own side. */
-const LOCAL_NAME = /\.(?:local|lan|internal|home\.arpa|corp|home|intranet|private)$/i
-
-/** Whether `host` is a name that reaches this computer or Orivon's own verifier: `localhost`, anything under it, and a protocol's host. */
-function namesThisComputer (host: string): boolean {
-  return host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)
-}
-
-/** Whether a server's host, address literal or name, could be on the internet: no loopback, private, link-local or reserved literal, and no name that is this computer's, a local network's, a single label or a spelling with a trailing dot. */
-export function isInternetHost (host: string): boolean {
-  const bare = host.replace(/^\[|\]$/g, '')
-  if (classifyAddress(bare) !== 'unparseable') return isPublicUnicast(bare)
-  return !namesThisComputer(bare) && !LOCAL_NAME.test(bare) && bare.includes('.') && !bare.endsWith('.')
-}
 
 type UrlCheck = { readonly ok: true, readonly addresses: readonly string[] } | { readonly ok: false, readonly refusal: string }
 

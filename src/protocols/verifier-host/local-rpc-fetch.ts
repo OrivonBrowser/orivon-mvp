@@ -55,7 +55,7 @@ function capped (response: Response, max: number): Response {
   if (response.body === null) return response
   const declared = Number(response.headers.get('content-length'))
   if (Number.isFinite(declared) && declared > max) {
-    void response.body.cancel()
+    response.body.cancel().catch((error: unknown) => { console.error('[verifier] a local node\'s oversized answer could not be dropped:', error) })
     throw new Error(`a local node's answer is larger than ${String(max)} bytes`)
   }
   let seen = 0

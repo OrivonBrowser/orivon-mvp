@@ -1,4 +1,5 @@
 import type { Section } from '../model.js'
+import { endpointListControl } from '../controls/endpoint-list.js'
 
 export const web3: Section = {
   id: 'web3',
@@ -32,6 +33,29 @@ export const web3: Section = {
       help: 'An address like https://vitalik.eth.limo/ goes through a public gateway, which decides what the page is. Orivon opens vitalik.eth itself instead, checked on this computer, and keeps the rest of the address. This applies to .eth.limo and .eth.link pages opened in a tab and to what any page loads from such an address (images, scripts, stylesheets and requests), and not while the light client is off or cannot start. Frames are the one thing that keeps loading through the gateway, because a .eth site refuses to be framed by another site. Sign-ins, wallet connections and data a site keeps under its eth.limo address stay there and are not seen at the .eth name.',
       keywords: ['eth.limo', 'eth.link', 'gateway', 'redirect', 'ens'],
       control: { type: 'toggle', key: 'web3.ethGatewayRedirect' }
+    },
+    {
+      id: 'web3-eth-servers',
+      label: 'Ethereum servers',
+      help: "Orivon's servers are the public Ethereum servers Orivon asks by default. With your own, yours are asked instead of Orivon's, and Orivon's are not tried when yours fail: a .eth name waits until yours answer again, and the light client's state below says which one broke. Every answer is still checked on this computer, so a server can stop a .eth site from loading but never make one show the wrong site. A server learns the names you open; an address with a key in it ties them to your account there, even through a tunnel. A server on this computer or your home network is reached directly, never through a tunnel. In a private window that runs through Nym, Orivon's servers are always used. A change applies at once.",
+      keywords: ['ethereum', 'ens', 'eth', 'rpc', 'node', 'infura', 'alchemy', 'drpc', 'custom', 'own', 'server', 'servers', 'beacon', 'privacy', 'helios', 'light client'],
+      control: { type: 'choice', key: 'web3.ethServers', locked: (state) => state.isHeld('web3.ethServers') }
+    },
+    {
+      id: 'web3-eth-rpcs',
+      label: 'Your Ethereum servers',
+      help: 'Up to four addresses, asked in the order listed. An address on the internet starts with https://, like https://mainnet.infura.io/v3/your-key. For a node on this computer or your home network, type its address, like http://127.0.0.1:8545 or http://192.168.1.20:8545. A key in an address is hidden here, in the logs and in bug reports. Leave the list empty to keep asking Orivon\'s servers.',
+      keywords: ['rpc', 'ethereum', 'node', 'infura', 'alchemy', 'drpc', 'custom', 'url', 'address', 'key', 'local', 'dappnode'],
+      control: endpointListControl('web3.ethRpcs', { kind: 'execution', max: 4, placeholder: 'Add an address, like https://rpc.example.com/key', empty: "No address added: Orivon's Ethereum servers are asked.", label: 'Add an Ethereum server address', full: 'You can list up to 4 addresses' }),
+      visible: (state) => state.value('web3.ethServers') === 'custom'
+    },
+    {
+      id: 'web3-eth-beacon',
+      label: 'Your beacon server',
+      help: 'Optional. The light client starts from a recent checkpoint, which this server must be able to give. An address has no ? part. Leave it empty to keep asking Orivon\'s beacon server.',
+      keywords: ['beacon', 'consensus', 'ethereum', 'node', 'custom', 'url', 'address', 'checkpoint'],
+      control: endpointListControl('web3.ethBeacon', { kind: 'beacon', max: 1, placeholder: 'Add an address, like https://beacon.example.com', empty: "No address added: Orivon's beacon server is asked.", label: 'Add a beacon server address', full: 'Remove the address to add another' }),
+      visible: (state) => state.value('web3.ethServers') === 'custom'
     },
     {
       id: 'web3-state',

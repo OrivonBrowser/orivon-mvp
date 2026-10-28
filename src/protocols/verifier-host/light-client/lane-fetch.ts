@@ -3,10 +3,11 @@
 // computer or their home network, whichever route the lane travels. A local server is never sent through a proxy or a tunnel:
 // that would carry the request to the network of a tunnel's exit. Config the host cannot make sense of starts nothing.
 
-import { EgressRefused, allowlisted, isInternetHost } from '../egress.js'
+import { EgressRefused, allowlisted } from '../egress.js'
 import type { WebFetch } from '../egress.js'
 import type { LightClientConfig } from '../protocol.js'
 import { isLocalLiteral, maskEndpoint } from './endpoint-mask.js'
+import { isInternetHost } from './server-address.js'
 
 /** The lane's fetch (`send`), or why this lane may not start: said in words that hold no part of an address. */
 export type LightClientFetch = { readonly send: WebFetch } | { readonly off: string }
