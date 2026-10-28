@@ -30,8 +30,7 @@ import { telemetryDomain } from './telemetry-domain.js'
 import { reportDomainFor } from '../diagnostics/report-runner.js'
 import { defaultBrowserHost } from '../os/default-browser-runner.js'
 import { osDomain } from '../os/os-domain.js'
-import { checkUpdateNow } from '../self-update/update-check-runner.js'
-import { updatesDomain } from '../self-update/updates-domain.js'
+import { answerOfOffer, updatesDomain } from '../self-update/updates-domain.js'
 import { isStoreInstall } from '../os/windows-store.js'
 import { onTelemetryChanged } from '../../telemetry/runner.js'
 import { profilesDomain } from '../launch/profiles-domain.js'
@@ -234,11 +233,12 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     }),
     telemetry: telemetryDomain(services.profiles.isPrivate),
     updates: updatesDomain(
-      async () => await checkUpdateNow(app),
+      async () => await services.browserUpdate.checkNow(),
       services.profiles.isPrivate,
       (answer) => { services.internalPages.publish('updates.changed', answer, ['settings']) },
       (caller, url) => { services.windows.findOwner(caller.contents)?.tabs.createTab(url) },
-      isStoreInstall()
+      isStoreInstall(),
+      () => services.browserUpdate.offer()
     ),
     report: reportDomainFor(services, ctx),
     about: aboutDomain()
@@ -257,6 +257,8 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     services.internalPages.publish('apps.changed', undefined, ['settings'])
   })
   services.searchEngines.onChange(() => { services.internalPages.publish('searchEngines.changed', undefined, ['settings']) })
+  // A release found by the background look reaches an open Settings too, not only the one its own Check now found.
+  services.browserUpdate.onChange((offer) => { services.internalPages.publish('updates.changed', answerOfOffer(offer), ['settings']) })
   services.shortcuts.onChange(() => { services.internalPages.publish('shortcuts.changed', services.shortcuts.rows(), ['settings']) })
   // Every grant/revoke, from every surface (install, the site-info popover, a
   // dev-grant test seam, the Apps list's own revoke), lands through the

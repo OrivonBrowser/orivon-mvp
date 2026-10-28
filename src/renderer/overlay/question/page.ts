@@ -36,11 +36,10 @@ export const questionPage: OverlayPage = {
       armTimer = setTimeout(() => { root.classList.remove('arming') }, guardMs)
     }
 
-    /** Main starts its clock when it takes this report, so the page's own look-ready timer starts from the reply, never before it. */
+    /** Main starts its clock when it takes this report, so the page's own look-ready timer starts from the reply, never before it. Every question reports, guarded or not: it is how main knows the question is on screen. */
     function reportDrawn (id: string): void {
       clearTimeout(armTimer)
-      if (guardMs <= 0) return
-      root.classList.add('arming')
+      if (guardMs > 0) root.classList.add('arming')
       const mine = ++drawing
       void overlay.request({ type: 'drawn', id }).then(() => { if (mine === drawing) arm() }, () => { if (mine === drawing) arm() })
     }
