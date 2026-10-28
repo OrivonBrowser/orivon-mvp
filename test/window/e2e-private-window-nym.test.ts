@@ -165,6 +165,23 @@ it('shows the site\'s tunnel switch on and fixed in the popover, and never makes
   expect(world.decoy.hits()).toBe(0)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
+it('gives a tab no tunnel choice but Nym: direct and the proxy are refused, and the next page still comes through Nym', async () => {
+  const world = await launchHeld(false)
+  await clickAddressBarRetrying(world.chrome, world.url)
+  expect((await waitForTab(world.chrome, { address: world.url, title: 'tunnelled' }, 60_000)).ok).toBe(true)
+  const tabId = (await activeTabInfo(world.chrome)).activeId as string
+  type Seam = { set: (tab: string, choice: string | null) => boolean, choiceOf: (tab: string) => string | undefined }
+  for (const choice of ['direct', 'socks5']) {
+    const found = await world.app.evaluate((_electron, [id, value]) => (globalThis as unknown as { __orivonDevTabTunnel?: Seam }).__orivonDevTabTunnel?.set(id as string, value as string), [tabId, choice])
+    expect(found, 'the test seam found the tab').toBe(true)
+    expect(await world.app.evaluate((_electron, id) => (globalThis as unknown as { __orivonDevTabTunnel?: Seam }).__orivonDevTabTunnel?.choiceOf(id as string), tabId), `${choice} was not kept`).toBeUndefined()
+  }
+  const next = `${world.url}second`
+  await clickAddressBarRetrying(world.chrome, next)
+  expect((await waitForTab(world.chrome, { address: next, title: 'tunnelled' }, 60_000)).ok, 'the next page came through Nym').toBe(true)
+  expect(world.decoy.hits(), 'nothing left on the direct route').toBe(0)
+}, 4 * QA_TEST_TIMEOUT_MS)
+
 it('fails closed when Nym cannot start: the page does not load and nothing arrives anywhere', async () => {
   const world = await launchHeld(true)
   await clickAddressBarRetrying(world.chrome, world.url)

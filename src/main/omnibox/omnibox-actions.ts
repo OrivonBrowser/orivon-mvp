@@ -125,7 +125,8 @@ function perform (ctx: WindowContext, outcome: Outcome): void {
   } else if (source !== null) {
     openTypedViewSource(tabs, source)
   } else {
-    openFromBrowser(tabs, localFileOf(outcome.target) ?? outcome.target, outcome.disposition === 'tab')
+    // The new tab is opened from the tab in front, whose choice the suggestions just asked through: its first request goes the same way.
+    openFromBrowser(tabs, localFileOf(outcome.target) ?? outcome.target, outcome.disposition === 'tab', tabs.activeTunnelChoice())
   }
   // The page in front, the one chosen unless it opened behind, takes the keyboard from the address bar.
   tabs.activeWebContents()?.focus()

@@ -22,6 +22,7 @@ import type { OverlayHostHandle } from '../overlays/overlay-host.js'
 import { extensionPopupPanel } from '../extensions/extension-popup-host.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
+import { openFromActiveTab } from './open-from-browser.js'
 import { reloadFromCard } from './reload-from-card.js'
 import { firstVisitNow } from '../app-setup/tab-setup-ref.js'
 import { announceEntryChange } from '../app-setup/entry-changes.js'
@@ -91,20 +92,20 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
       },
       isPrivate: services.isPrivate
     }),
-    // "Open <the home an app names>": a new tab at that name.
+    // "Open <the home an app names>": a new tab at that name, in the tunnel of the tab the popover is about.
     (domain) => {
       siteInfo.close()
-      tabs.createTab(`https://${domain}/`)
+      openFromActiveTab(tabs, `https://${domain}/`)
     },
     // A "?" on the Web3 Score page: the page that says what the levels mean, in a new tab.
     () => {
       siteInfo.close()
       openWeb3ScoreHelp(tabs)
     },
-    // "Report a problem with this site": a new tab at the address the app's manifest names.
+    // "Report a problem with this site": a new tab at the address the app's manifest names, in the tunnel of the tab the popover is about.
     (url) => {
       siteInfo.close()
-      tabs.createTab(url)
+      openFromActiveTab(tabs, url)
     },
     dirname
   )

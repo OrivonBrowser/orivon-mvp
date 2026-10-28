@@ -34,7 +34,7 @@ file (`app-file-response.ts`, no Electron in it), with the pure decision in
 `session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
 claims, decided at that document's own commit and reused afterward rather than re-decided live (except a cache-served origin and a local file, checked live),
-reusing [`../shell/tab-view.ts`](../shell/tab-view.ts)'s own `partitionForTarget` rule so every
+reusing [`../shell/tab-partition.ts`](../shell/tab-partition.ts)'s own `partitionForTab` rule (with the tunnel choice of the tab the contents belongs to) so every
 renderer-reachable broker channel can refuse a call whose WebContents never committed the origin
 it claims in the session it belongs in. A local file's key is attributed only while the tab's session is the
 one `localPartitionFor` names ([`../local-files/`](../local-files/)), checked at every call: the path of
@@ -46,7 +46,7 @@ a document is fixed for its life, so only the session can be wrong.
 [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts),
 [`../../protocols/builtin.ts`](../../protocols/builtin.ts), [`../shell/`](../shell/) (the native
 question `external-link-prompt.ts`; `showing-window.ts`;
-`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-view.ts`'s `partitionForTarget`), [`../local-files/`](../local-files/)'s `partition.ts`, the
+`exclusive-access-notice.ts`; `lock-navigation.ts`; `tab-partition.ts`'s `partitionForTab`), [`../route/`](../route/)'s `tab-tunnel.ts` (`tabChoiceOfContents`, the tunnel choice of a tab, which the shell supplies), [`../local-files/`](../local-files/)'s `partition.ts`, the
 top-level `registry.ts`. Only `permission-gate.ts`, `web-context-host.ts`, `web-request-owner.ts`,
 `own-listener-media-gate.ts`, `local-node-port-gate.ts`, `app-files-by-url.ts` and `session-attribution.ts` import `electron`: the decision files, `web-request-compose.ts`
 included, are unit-tested under plain vitest.

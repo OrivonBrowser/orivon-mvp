@@ -17,7 +17,9 @@ import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import { guardInternalView } from '../pages/internal-tab.js'
 import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
-import { appTabArgsFor, makeTabView, partitionForTarget, wireView } from './tab-view.js'
+import { appTabArgsFor, makeTabView, partitionForTab, partitionForTarget, wireView } from './tab-view.js'
+import { allowedTabChoice } from '../route/site-routes.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import { paintBacking } from './tab-backing.js'
 import { DASHBOARD_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
 
@@ -35,6 +37,12 @@ export const BLANK_URL = 'about:blank'
 let nextId = 1
 function makeTabId (): string {
   return `tab-${nextId++}`
+}
+
+/** The record field for a tab's tunnel choice: absent when it has none, or when the window is held to a tunnel and the choice is another. */
+function choiceOf (tunnelChoice: TabTunnelChoice | undefined): Pick<TabRecord, 'tunnelChoice'> {
+  const allowed = allowedTabChoice(tunnelChoice)
+  return allowed === undefined ? {} : { tunnelChoice: allowed }
 }
 
 export interface BuiltTab {
@@ -81,8 +89,8 @@ export class TabFactory {
     return gatewayRedirectFor(this.host.services?.settings, target) ?? target
   }
 
-  /** A website or an app, or the new-tab page when `url` is undefined. `target` is what to load. */
-  content (url?: string): BuiltTab & { readonly target: string } {
+  /** A website or an app, or the new-tab page when `url` is undefined. `target` is what to load. `tunnelChoice` is the choice of the tab that opens this one: the tab keeps it, and its session is the one that choice calls for from the first load. */
+  content (url?: string, tunnelChoice?: TabTunnelChoice): BuiltTab & { readonly target: string } {
     // Computed BEFORE the view exists: preload is fixed at
     // WebContentsView creation and can never change for this tab
     // afterward, so the dashboard-or-not decision has to be made here,
@@ -100,7 +108,7 @@ export class TabFactory {
     // cannot tell that apart from a real app on scheme alone, but the
     // dashboard is shell UI (ADR-0003's "browser state" tier), never app
     // content, and must never be isolated as if it were an app's own origin.
-    const partition = isDashboard ? undefined : partitionForTarget(target)
+    const partition = isDashboard ? undefined : partitionForTab(target, tunnelChoice)
 
     const view = makeTabView(
       isDashboard ? this.newTabPreload : this.appPreload,
@@ -127,7 +135,7 @@ export class TabFactory {
     )
     if (isDashboard) markFirstDashboardLoad(view.webContents, this.dashboardUrl)
     const id = makeTabId()
-    const record = this.recordFor(view, partition, { isDashboardTab: isDashboard })
+    const record = this.recordFor(view, partition, { isDashboardTab: isDashboard, ...choiceOf(tunnelChoice) })
     wireView(id, record)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record, target }
@@ -137,13 +145,14 @@ export class TabFactory {
    * policy (today: the extension host's extension-url-policy.ts) -- same
    * session/app-tab handling as content(), without its sanitizeDirectUrl
    * gate, which refuses chrome-extension: outright. `named` is the session the caller
-   * says the page belongs in (a profile's, for a page of an extension in it). */
-  trusted (requested: string, named?: string): BuiltTab & { readonly target: string } {
+   * says the page belongs in (a profile's, for a page of an extension in it, or the one a tunnel choice calls for), and
+   * `tunnelChoice` is the choice the tab keeps. */
+  trusted (requested: string, named?: string, tunnelChoice?: TabTunnelChoice): BuiltTab & { readonly target: string } {
     const target = this.opensAs(requested)
     const partition = named ?? partitionForTarget(target)
     const view = makeTabView(this.appPreload, partition, appTabArgsFor(target, this.broker()))
     const id = makeTabId()
-    const record = this.recordFor(view, partition)
+    const record = this.recordFor(view, partition, choiceOf(tunnelChoice))
     wireView(id, record)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record, target }
@@ -187,9 +196,9 @@ export class TabFactory {
 
   /** A popup Chromium already created, with its opener, in the opener's
    * session (./popups.ts). It navigates itself; nothing is loaded. */
-  popup (view: WebContentsView, partition: string | undefined): BuiltTab {
+  popup (view: WebContentsView, partition: string | undefined, tunnelChoice?: TabTunnelChoice): BuiltTab {
     const id = makeTabId()
-    const record = this.recordFor(view, partition)
+    const record = this.recordFor(view, partition, choiceOf(tunnelChoice))
     wireView(id, record)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record }
@@ -199,10 +208,10 @@ export class TabFactory {
    * the opener's own, where the blob was minted. Neither `partitionForTarget` nor
    * `sanitizeDirectUrl` (content()'s own gates) apply to a blob: URL: it has no derivable origin
    * of its own to compute a partition from, and nobody could ever type one into the address bar. */
-  blob (url: string, partition: string | undefined): BuiltTab & { readonly target: string } {
+  blob (url: string, partition: string | undefined, tunnelChoice?: TabTunnelChoice): BuiltTab & { readonly target: string } {
     const view = makeTabView(this.appPreload, partition, appTabArgsFor(url, this.broker()))
     const id = makeTabId()
-    const record = this.recordFor(view, partition)
+    const record = this.recordFor(view, partition, choiceOf(tunnelChoice))
     wireView(id, record)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record, target: url }

@@ -30,9 +30,9 @@ export function fakeTabs (room = true, host: object = {}): FakeTabs {
     get tabCount () { return order.length },
     ids: () => [...order],
     record: (id: string) => records.get(id),
-    createTab: vi.fn((url?: string, active = true) => {
+    createTab: vi.fn((url?: string, active = true, _options?: unknown, tunnelChoice?: TabRecord['tunnelChoice']) => {
       calls.push(`create ${url ?? '(new tab page)'} ${active ? 'front' : 'back'}`)
-      const id = add({})
+      const id = add(tunnelChoice === undefined ? {} : { tunnelChoice })
       if (active) fake.active = id
       return id
     }),
@@ -51,6 +51,13 @@ export function fakeTabs (room = true, host: object = {}): FakeTabs {
       const existing = order.find((id) => records.get(id)?.internalPage === page)
       if (existing !== undefined) { fake.active = existing; return }
       fake.active = add({ internalPage: page as never })
+    }),
+    setTunnelChoice: vi.fn((id: string, choice: NonNullable<TabRecord['tunnelChoice']> | null) => {
+      calls.push(`choice ${id} ${choice ?? 'none'}`)
+      const record = records.get(id)
+      if (record === undefined) return
+      if (choice === null) delete record.tunnelChoice
+      else record.tunnelChoice = choice
     }),
     activateTab: vi.fn((id: string) => { calls.push(`activate ${id}`); fake.active = id }),
     moveTab: vi.fn((id: string, index: number) => {

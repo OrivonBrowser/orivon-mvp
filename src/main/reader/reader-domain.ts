@@ -4,6 +4,7 @@
 import type { WebContents } from 'electron'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import type { SettingsStore } from '../settings/settings-store.js'
+import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import type { ReaderTabs } from './reader-runner.js'
 import { closeReader, placeBeside } from './reader-runner.js'
 import type { ReaderArticles } from './reader-store.js'
@@ -14,7 +15,7 @@ type ReaderPref = (typeof READER_PREFS)[number]
 export interface ReaderOwner {
   /** What the article is kept under: the reader tab's record. */
   readonly key: object
-  readonly tabs: ReaderTabs & { createTab: (url: string, active: boolean) => string }
+  readonly tabs: ReaderTabs & { createTab: (url: string, active: boolean, loadOptions?: undefined, tunnelChoice?: TabTunnelChoice) => string }
   readonly tabId: string
   /** Prints the reader tab, as the Print command does. */
   readonly print: () => void
@@ -69,7 +70,8 @@ export function readerDomain (deps: ReaderDomainDeps): InternalDomain {
           if (owner === undefined || entry === undefined || typeof index !== 'number' || !Number.isInteger(index)) return { ok: false }
           const url = entry.links[index]
           if (url === undefined) return { ok: false }
-          const id = owner.tabs.createTab(url, false)
+          // The reader tab carries the tunnel choice of the article's tab (reader-runner.ts), so a link leaves by the same tunnel.
+          const id = owner.tabs.createTab(url, false, undefined, owner.tabs.record(owner.tabId)?.tunnelChoice)
           if (id !== '') placeBeside(owner.tabs, id, owner.tabId)
           return { ok: true }
         }

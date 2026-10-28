@@ -9,6 +9,7 @@ import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/over
 import { commandById } from '../shortcuts/commands.js'
 import { asPopupsCommand, popupsView } from './popups-view.js'
 import type { PopupsView } from './popups-view.js'
+import { openFromActiveTab } from '../shell/open-from-browser.js'
 import { popupBlocks } from './site-popups.js'
 import type { PopupBlocks } from './popup-blocks.js'
 
@@ -47,9 +48,9 @@ export function createPopupsBubble ({ window, services, close }: OverlayWindow, 
       if (asked.type === 'open') {
         const url = open.urls[asked.index]
         if (url === undefined) return undefined
-        // A deliberate act: the address goes through the ordinary tab pipeline, which refuses what no tab may open.
+        // A deliberate act: the address goes through the ordinary tab pipeline, which refuses what no tab may open, in the tunnel of the tab that blocked it.
         close()
-        window.tabs.createTab(url)
+        openFromActiveTab(window.tabs, url)
       } else if (asked.type === 'apply') {
         if (asked.allow) {
           services.siteSettings.set(open.origin, 'popups', 'allow')

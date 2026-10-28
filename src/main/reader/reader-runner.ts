@@ -77,6 +77,10 @@ export async function toggleReader (tabs: ReaderTabs, deps: ReaderDeps): Promise
   // Beside an article that is in a group, the reader tab is in that group too, as a tab opened to its right is.
   record.reader = { source: activeId, address: tab.url }
   record.groupId = tabs.record(activeId)?.groupId ?? null
+  // Opened from the article's page: a link in the reader leaves by the tunnel the article's tab was set to, and a reused reader tab takes the next article's.
+  const choice = tabs.record(activeId)?.tunnelChoice
+  if (choice === undefined) delete record.tunnelChoice
+  else record.tunnelChoice = choice
   placeBeside(tabs, readerId, activeId)
   if (existing !== undefined) deps.publish('reader.changed', undefined)
   const alive = (): boolean => deps.articles.get(record)?.token === entry.token && tabs.ids().includes(readerId)

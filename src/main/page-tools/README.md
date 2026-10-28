@@ -14,7 +14,7 @@ that do type the contents they take as a small interface, so every tool is teste
 `real-deps.ts` is the one file that touches the file system, the clipboard and the save dialog.
 
 **What it depends on.** `../overlays/` (types), `../shell/` (`file-dialogs.ts`, the window and tab
-types), `../local-files/local-file-apps.ts` (`isRecordedLocalPath`, so a saved page is never named after a recorded file), `../shortcuts/commands.ts` (the id a toast link runs), `../browsing/omnibox.ts` (the address
+types, and `tab-partition.ts`: the session a source tab opens in when the tab in front has a tunnel choice), `../local-files/local-file-apps.ts` (`isRecordedLocalPath`, so a saved page is never named after a recorded file), `../shortcuts/commands.ts` (the id a toast link runs), `../browsing/omnibox.ts` (the address
 gate for `view-source:`).
 
 **What it must never import.** `../shell/tabs.ts` for its class (only its type), a renderer, or

@@ -10,7 +10,7 @@ const ARTICLE: Article = {
   blocks: [{ t: 'p', c: [{ t: 'a', i: 0, href: 'https://one.test/', c: ['one'] }, ' ', { t: 'a', i: 1, href: 'https://two.test/', c: ['two'] }] }]
 }
 
-function setup () {
+function setup (tunnelChoice?: 'nym' | 'socks5' | 'direct') {
   const articles = new ReaderArticles()
   const window = {}
   const settings = { values: new Map<string, string>(), get: (key: string) => settings.values.get(key) ?? ({ 'reader.font': 'sans', 'reader.size': '18', 'reader.width': 'medium', 'reader.theme': 'auto' } as Record<string, string>)[key], set: vi.fn((key: string, value: unknown) => { settings.values.set(key, String(value)); return { ok: true } }) }
@@ -20,9 +20,9 @@ function setup () {
     tabId: 'reader',
     print: () => { calls.push('print') },
     tabs: {
-      createTab: (url: string) => { calls.push(`open ${url}`); return 'new' },
+      createTab: (url: string, _active: boolean, _load?: unknown, choice?: string) => { calls.push(`open ${url}${choice === undefined ? '' : ` via ${choice}`}`); return 'new' },
       ids: () => ['a', 'reader', 'new'], getState: () => ({ tabs: [], activeTabId: null }), moveTab: (id: string, index: number) => { calls.push(`move ${id} ${String(index)}`) },
-      record: () => ({ reader: { source: 'a' } }), activateTab: (id: string) => { calls.push(`activate ${id}`) }, closeTab: (id: string) => { calls.push(`close ${id}`) }, liveWebContents: () => undefined, openInternal: () => {}
+      record: () => ({ reader: { source: 'a' }, ...(tunnelChoice === undefined ? {} : { tunnelChoice }) }), activateTab: (id: string) => { calls.push(`activate ${id}`) }, closeTab: (id: string) => { calls.push(`close ${id}`) }, liveWebContents: () => undefined, openInternal: () => {}
     } as never
   }
   const domain = readerDomain({ articles, settings: settings as never, ownerOf: (contents) => (contents as unknown as { known?: boolean }).known === true ? owner : undefined })
@@ -55,6 +55,15 @@ describe('the reader domain', () => {
     }
     expect(s.ask({ type: 'pref', key: 'reader.font', value: 4 })).toEqual({ ok: false })
     expect(s.settings.set).not.toHaveBeenCalled()
+  })
+
+  it('opens a link in a tab that keeps the tunnel choice of the reader tab, which took it from the article\'s tab', () => {
+    for (const choice of ['nym', 'socks5', 'direct'] as const) {
+      const s = setup(choice)
+      s.articles.set(s.window, ARTICLE, linkTable(ARTICLE), 'a')
+      expect(s.ask({ type: 'open', index: 0 })).toEqual({ ok: true })
+      expect(s.calls[0]).toBe(`open https://one.test/ via ${choice}`)
+    }
   })
 
   it('opens a link by its index, beside the reader, and by nothing else', () => {

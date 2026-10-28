@@ -10,7 +10,13 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
     expect(Object.keys(diagnostics.app)).toEqual(['commit', 'channel', 'electron', 'chromium', 'node', 'v8', 'packaged', 'uptimeSec'])
     expect(Object.keys(diagnostics.system)).toEqual(['platform', 'release', 'arch', 'cpus', 'cpuModel', 'memoryMb', 'freeMemoryMb', 'locale', 'session', 'desktop', 'ozone'])
-    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'extensions', 'appSockets', 'settings'])
+    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'extensions', 'appSockets', 'settings'])
+  })
+
+  it('states how many tabs carry each tunnel choice, as counts and nothing else', () => {
+    expect(diagnostics.browser.tunnels).toEqual({ tabs: { nym: 1, socks5: 0, direct: 0 } })
+    expect(Object.keys(diagnostics.browser.tunnels)).toEqual(['tabs'])
+    expect(Object.values(diagnostics.browser.tunnels.tabs).every((count) => Number.isInteger(count))).toBe(true)
   })
 
   it('rounds the uptime to whole seconds', () => {
@@ -80,7 +86,7 @@ describe('channelOf', () => {
 
 describe('reportedSettings', () => {
   it('lists the allowlist, and every web3 switch or choice, and no setting that is an address or text', () => {
-    for (const key of ['appearance.theme', 'privacy.secureDns', 'web3.lightClient', 'web3.ethServers', 'web3.ethGatewayRedirect', 'updates.check', 'developer.tools']) expect(REPORTED_SETTINGS).toContain(key)
+    for (const key of ['appearance.theme', 'privacy.secureDns', 'web3.lightClient', 'web3.ethServers', 'web3.ethGatewayRedirect', 'updates.check', 'developer.tools', 'network.route.kind', 'network.nym.enabled', 'network.tunnel.everywhere']) expect(REPORTED_SETTINGS).toContain(key)
     for (const key of ['web3.scoreProvider', 'web3.ethRpcs', 'web3.ethBeacon', 'home.url', 'startup.pages', 'downloads.folder', 'performance.keepAwake']) expect(REPORTED_SETTINGS).not.toContain(key)
   })
 

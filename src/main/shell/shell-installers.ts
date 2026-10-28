@@ -32,6 +32,7 @@ import { installContentSettings } from '../site-settings/install-content-setting
 import { installSitePermissions } from '../site-settings/install-site-permissions.js'
 import { installSiteSessions } from './install-site-sessions.js'
 import { installTabGroups } from '../tab-groups/install-tab-groups.js'
+import { installTabTunnel } from './install-tab-tunnel.js'
 import type { ShellServices } from './shell-services.js'
 
 export interface ShellInstaller {
@@ -66,6 +67,7 @@ export const SHELL_INSTALLERS: readonly ShellInstaller[] = [
   installSiteSessions,
   installTabGroups,
   installTabSlots,
+  installTabTunnel,
   installTabVisibility,
   installTelemetrySites,
   installUpdateNotice
