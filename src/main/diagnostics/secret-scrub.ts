@@ -1,7 +1,8 @@
 // The text of an address that holds a key must never reach the log, a report or a screen. The places that learn such a key
 // (the Ethereum servers the person typed in Settings) note it here when they read it; every line that is logged and every
 // report body is then scrubbed of it. A secret is remembered for the whole run, so a key the person has since removed is
-// still kept out of a line printed later. Pure: no I/O.
+// still kept out of a line printed later. A line printed before the key was read is not scrubbed, so the one reader that
+// logs before it (the settings store, which reads the file first) never quotes the file's text. Pure: no I/O.
 
 import { MASK } from '../../protocols/verifier-host/light-client/endpoint-mask.js'
 
