@@ -4,6 +4,9 @@ import { createOmniboxOverlay } from '../omnibox-overlay.js'
 import type { WindowContext } from '../../shell/window-context.js'
 import { SHELL_EVENT_CHANNEL } from '../../channels.js'
 import { provideVerifierAccess } from '../../verifier/verifier-access.js'
+import { suggestFetchFor } from '../suggest-net.js'
+
+vi.mock('../suggest-net.js', () => ({ suggestFetchFor: vi.fn(() => vi.fn()) }))
 
 interface FakeTab { id: string, url: string, displayUrl: string, title: string, favicon: null, isNewTab: boolean }
 
@@ -17,7 +20,7 @@ function fakeWindow (tabs: FakeTab[], activeTabId: string | null) {
     ids: () => tabs.map((entry) => entry.id),
     navigate: vi.fn(), createTab: vi.fn(), openLocalFile: vi.fn(() => Promise.resolve('f1')), openInternal: vi.fn(), activateTab: vi.fn(), closeTab: vi.fn(),
     activeWebContents: () => ({ focus: vi.fn() }),
-    activeTunnelChoice: () => undefined
+    activeTunnelChoice: (): string | undefined => undefined
   }
   return {
     overlays, sent, manager,
@@ -63,6 +66,15 @@ describe('the omnibox chrome actions', () => {
       run('omnibox.query', { text: 'exam', typing: false, anchor })
       expect(here.overlays.show).toHaveBeenCalledTimes(1)
       expect(here.overlays.send).toHaveBeenCalledWith('omnibox', expect.objectContaining({ type: 'rows', selected: 0 }))
+    })
+
+    it('asks for suggestions through the tunnel choice of the tab in front, and with none for a tab that has none', () => {
+      const { run, here, anchor } = setup()
+      run('omnibox.query', { text: 'exa', typing: true, anchor })
+      expect(suggestFetchFor).toHaveBeenLastCalledWith(undefined)
+      here.manager.activeTunnelChoice = () => 'nym'
+      run('omnibox.query', { text: 'exam', typing: true, anchor })
+      expect(suggestFetchFor).toHaveBeenLastCalledWith('nym')
     })
 
     it('starts the verifier host as soon as the text names a .eth host, and for no other text', () => {
