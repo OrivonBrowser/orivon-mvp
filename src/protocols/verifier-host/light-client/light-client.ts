@@ -10,7 +10,7 @@ import type { WebFetch } from '../egress.js'
 import { clockJump, heliosClockLead, installHeliosClock, measureClockLead, setHeliosClockLead } from './clock.js'
 import { checkMainnet, wrongChainText } from './chain-check.js'
 import { maskEndpoint } from './endpoint-mask.js'
-import { CLOCK_AHEAD_REASON, CLOCK_BEHIND_REASON, bootstrapMissing, clockBehind, heliosError, outOfSync, serverBehindReason } from './helios-errors.js'
+import { CLOCK_AHEAD_REASON, CLOCK_BEHIND_REASON, bootstrapFetchFailed, bootstrapMissing, clockBehind, heliosError, outOfSync, serverBehindReason } from './helios-errors.js'
 import { laneNames, publicText } from './lane-names.js'
 import { failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
@@ -162,7 +162,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   }
 
   /** Helios's words, or a fetch's, as they may be shown or logged: the lane names read as the servers, masked, with no key in them. */
-  const clean = (text: string): string => publicText(text, names, config)
+  const clean = (text: string): string => publicText(text, names, config, asked)
   const cleaned = (error: unknown): unknown => {
     if (!(error instanceof Error)) return error
     const text = clean(error.message)
@@ -174,6 +174,8 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     return asked.map((endpoint) => `${maskEndpoint(endpoint)} ${problems.get(endpoint) ?? ''}`).join('; ')
   }
   const reportedWrongChain = new Set<string>()
+  /** Whether this attempt failed because none of the execution servers the person named is mainnet. */
+  let noMainnet = false
   /** Drops a server of the person's that is not Ethereum mainnet, and fails the start when none is. */
   const checkChain = async (): Promise<void> => {
     if (config.ownServers?.execution !== true) return
@@ -185,7 +187,10 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       reportedWrongChain.add(endpoint)
       console.error(`[verifier] ${wrongChainText(endpoint, chainId)}; it is not used`)
     }
-    if (usable.length === 0) throw new Error(wrong.map(({ endpoint, chainId }) => wrongChainText(endpoint, chainId)).join('; '))
+    if (usable.length === 0) {
+      noMainnet = true
+      throw new Error(wrong.map(({ endpoint, chainId }) => wrongChainText(endpoint, chainId)).join('; '))
+    }
   }
 
   /** The only step allowed to change `state`. Throws on failure; the
@@ -290,6 +295,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
 
   const run = async (attempt: number): Promise<void> => {
     problems.clear()
+    noMainnet = false
     setState({ state: 'syncing', since: Date.now() })
     try {
       await checkChain()
@@ -319,11 +325,14 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
         }
       }
       const delay = Math.min(FIRST_RETRY_MS * 2 ** attempt, MAX_RETRY_MS)
-      const foldTrouble = (text: string): string => { const trouble = ownTrouble(); return trouble === undefined ? text : `${trouble} (${text})` }
       synced = new Promise<void>((resolve) => { markSynced = resolve })
       // Plain words stand in for Helios's text where the clock may be the cause and the servers could not say; where they say it is right, a head too old is a server's.
-      const reason = behind && measured === undefined ? CLOCK_BEHIND_REASON : ahead && measured === undefined ? CLOCK_AHEAD_REASON : ahead && measured === 0 ? serverBehindReason(headAgeSeconds) : foldTrouble(clean(message(error)))
-      setState({ state: 'failed', reason, retryAt: Date.now() + delay, ...(bootstrapMissing(error) && { bootstrapMissing: true as const }) })
+      const plain = behind && measured === undefined ? CLOCK_BEHIND_REASON : ahead && measured === undefined ? CLOCK_AHEAD_REASON : ahead && measured === 0 ? serverBehindReason(headAgeSeconds) : undefined
+      const trouble = ownTrouble()
+      const reason = plain ?? (trouble === undefined ? clean(message(error)) : `${trouble} (${clean(message(error))})`)
+      // Only a failure that is the person's servers' is put on them: a clock, or Orivon's own server, may be why the rest fail.
+      const theirs = plain === undefined && (noMainnet || trouble !== undefined || (config.ownServers?.consensus === true && bootstrapFetchFailed(error)))
+      setState({ state: 'failed', reason, retryAt: Date.now() + delay, ...(bootstrapMissing(error) && { bootstrapMissing: true as const }), ...(theirs && { ownServersFailed: true as const }) })
       setTimeout(() => { void run(attempt + 1) }, delay).unref()
     }
   }

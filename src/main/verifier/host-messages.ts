@@ -103,7 +103,7 @@ function isLightClientState (value: unknown): value is LightClientState {
     case 'starting': return true
     case 'syncing': return typeof value['since'] === 'number'
     case 'synced': return typeof value['block'] === 'number' && typeof value['at'] === 'number' && (value['clockLeadMs'] === undefined || (typeof value['clockLeadMs'] === 'number' && Number.isFinite(value['clockLeadMs'])))
-    case 'failed': return typeof value['reason'] === 'string' && (value['retryAt'] === undefined || typeof value['retryAt'] === 'number') && (value['bootstrapMissing'] === undefined || value['bootstrapMissing'] === true)
+    case 'failed': return typeof value['reason'] === 'string' && (value['retryAt'] === undefined || typeof value['retryAt'] === 'number') && (value['bootstrapMissing'] === undefined || value['bootstrapMissing'] === true) && (value['ownServersFailed'] === undefined || value['ownServersFailed'] === true)
     default: return false
   }
 }

@@ -82,14 +82,19 @@ export function everywhereBeforeReady (filePath: string): boolean {
 
 /**
  * What a private window held to Nym is held to: the whole browser through the tunnel, the tunnel Nym, Nym allowed to
- * run, and no proxy address (the person's own proxy is not for this window to edit, show or test). The settings copy it starts from is written with these (`forceSettingsFile`), so the first thing the process reads
+ * run, and no proxy address (the person's own proxy is not for this window to edit, show or test). The Ethereum servers are
+ * Orivon's too, and the person's own are left out of the copy: an address with a key in it would tie this window's lookups to
+ * the person's account. The settings copy it starts from is written with these (`forceSettingsFile`), so the first thing the process reads
  * already says so, and its settings store reads them whatever the file holds and refuses a change to any of them.
  */
 export const NYM_HELD_SETTINGS: ReadonlyMap<SettingKey, SettingValue> = new Map<SettingKey, SettingValue>([
   ['network.tunnel.everywhere', true],
   ['network.route.kind', 'nym'],
   ['network.nym.enabled', true],
-  ['network.route.proxy', '']
+  ['network.route.proxy', ''],
+  ['web3.ethServers', 'orivon'],
+  ['web3.ethRpcs', ''],
+  ['web3.ethBeacon', '']
 ])
 
 /**

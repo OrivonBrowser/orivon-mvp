@@ -404,4 +404,30 @@ describe('CheckpointFetcher', () => {
     expect(await f.renew()).toEqual({ ok: false, problem: 'unreachable' })
     expect(f.mayAttempt()).toBe(false)
   })
+
+  it('forgets a failure and its wait when reset, and starts the wait again from the first', async () => {
+    const { fetcher: f, clock, runs } = fetcher([failure, failure, failure])
+    await f.renew()
+    clock.now += FIRST_BACKOFF_MS
+    await f.renew()
+    expect(f.lastProblem()).toBe('disagree')
+    f.reset()
+    expect(f.lastProblem()).toBeUndefined()
+    expect(f.mayAttempt()).toBe(true)
+    await f.renew()
+    expect(runs()).toBe(3)
+    clock.now += FIRST_BACKOFF_MS
+    expect(f.mayAttempt()).toBe(true)
+  })
+
+  it('leaves no failure behind from an attempt that began before a reset', async () => {
+    let release: (outcome: FetchOutcome) => void = () => {}
+    const { fetcher: f } = fetcher([new Promise<FetchOutcome>((resolve) => { release = resolve })])
+    const attempt = f.renew()
+    f.reset()
+    release(failure)
+    expect(await attempt).toEqual(failure)
+    expect(f.lastProblem()).toBeUndefined()
+    expect(f.mayAttempt()).toBe(true)
+  })
 })

@@ -58,3 +58,15 @@ describe('isFromHost status, for a failure caused by a missing bootstrap', () =>
     expect(isFromHost({ type: 'status', status: { ...failed, bootstrapMissing } })).toBe(false)
   })
 })
+
+describe('isFromHost status, for a failure that is the person\'s servers\'', () => {
+  const failed = { state: 'failed', reason: 'x', retryAt: 1 }
+
+  it.each([undefined, true])('accepts ownServersFailed %j', (ownServersFailed) => {
+    expect(isFromHost({ type: 'status', status: { ...failed, ...(ownServersFailed === undefined ? {} : { ownServersFailed }) } })).toBe(true)
+  })
+
+  it.each([false, 'yes', 1, null])('refuses ownServersFailed %j', (ownServersFailed) => {
+    expect(isFromHost({ type: 'status', status: { ...failed, ownServersFailed } })).toBe(false)
+  })
+})

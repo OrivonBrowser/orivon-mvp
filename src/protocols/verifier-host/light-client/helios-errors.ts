@@ -47,6 +47,14 @@ export function bootstrapMissing (error: unknown): boolean {
   return BOOTSTRAP_MISSING.test(error instanceof Error ? error.message : String(error))
 }
 
+/** Helios's failure when it could not get the bootstrap from the consensus server, for any reason: no other server is asked for it. */
+const BOOTSTRAP_FETCH_FAILED = /could not fetch bootstrap/
+
+/** Whether Helios failed to start because the consensus server did not give the bootstrap: an answer of 404 or any other, or none. */
+export function bootstrapFetchFailed (error: unknown): boolean {
+  return BOOTSTRAP_FETCH_FAILED.test(error instanceof Error ? error.message : String(error))
+}
+
 /** What Settings and a .eth error page say when the clock stands in the way and the servers' time could not be used to allow for it. */
 export const CLOCK_BEHIND_REASON = "this computer's clock is behind, so the chain's newest blocks look as if they come from the future. Setting the clock right, in the system's date and time settings, lets the light client start"
 

@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DiagnosticsService, LOG_GONE_LINE } from '../diagnostics-service.js'
 import type { ServiceEnv } from '../diagnostics-service.js'
+import { forgetSecrets, noteSecret } from '../secret-scrub.js'
 
 let root: string
 let clock: number
@@ -31,7 +32,7 @@ beforeEach(() => {
   clock = Date.parse('2026-10-07T10:00:00Z')
   counter = 0
 })
-afterEach(() => { rmSync(root, { recursive: true, force: true }) })
+afterEach(() => { rmSync(root, { recursive: true, force: true }); forgetSecrets() })
 
 describe('a run that ends in an orderly quit', () => {
   it('leaves nothing for the next start to find', () => {
@@ -235,5 +236,27 @@ describe('the log', () => {
     service.end()
     expect(service.logLines()[0]).toContain('ERROR something broke')
     expect(readFileSync(join(root, 'diagnostics', 'logs', 'current.log'), 'utf8')).toContain('ERROR something broke')
+  })
+})
+
+describe('a key in an Ethereum server\'s address the person typed in Settings', () => {
+  const KEY = 'FAKE-KEY-0123456789abcdef'
+
+  it('is in neither the ring nor current.log, which a report includes', () => {
+    noteSecret(KEY)
+    const service = new DiagnosticsService(env())
+    service.log('error', `[verifier] light client failed: https://mainnet.infura.io/v3/${KEY} answered 401`)
+    service.end()
+    expect(service.logLines()[0]).toContain('/v3/•••• answered 401')
+    expect(readFileSync(join(root, 'diagnostics', 'logs', 'current.log'), 'utf8')).not.toContain(KEY)
+    expect(service.logLines().join('\n')).not.toContain(KEY)
+  })
+
+  it('is not kept in a crash record either', () => {
+    noteSecret(KEY)
+    const service = new DiagnosticsService(env())
+    const record = service.record({ kind: 'main-error', process: 'main', reason: 'crashed', exitCode: null, message: `failed ${KEY}`, stack: `at ${KEY}`, page: `https://x/?k=${KEY}` })
+    expect(JSON.stringify(record)).not.toContain(KEY)
+    expect(readFileSync(join(root, 'diagnostics', 'crashes.json'), 'utf8')).not.toContain(KEY)
   })
 })
