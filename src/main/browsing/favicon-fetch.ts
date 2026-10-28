@@ -19,6 +19,7 @@ import type { Session } from 'electron'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import type { Resolver } from '../../broker/policy/connect.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
+import { isOnionHost } from '../../broker/route/onion.js'
 import { electronResolveHost } from '../../loader/electron/resolve.js'
 import { FaviconCache } from './favicon-cache.js'
 import { MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
@@ -166,6 +167,8 @@ export async function isSafeFaviconUrl (url: string, pageUrl: string, resolveHos
   if (classifyAddress(host) !== 'unparseable') return isPublicUnicast(host)
   // A routed app's lookups name the host to its route and resolve nothing here: the proxy decides what the name reaches.
   if (options.routed === true) return true
+  // Resolving an onion name here would tell the resolver which hidden service a page names.
+  if (isOnionHost(host)) return false
 
   let answers: readonly string[]
   try {

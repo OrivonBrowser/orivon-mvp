@@ -12,6 +12,7 @@ Each section below lists what that release carried; `[Unreleased]` is what has l
 
 ### Fixed
 
+- **An onion address is never looked up by a resolver**: with no tunnel on, a website set to go direct, an app that is not routed or a Nym tunnel, `name.onion` was resolved like any name, so a resolver learned the hidden service and an ISP that answers every unknown name with loopback sent the tab to this computer. Only your own SOCKS5 tunnel carries an onion address now; the sheet over the tab says so.
 - **An onion address typed with no scheme opens over http**: `name.onion` was sent to `https://name.onion/` and failed with a certificate or tunnel error, because an onion service serves plain http on port 80 and Tor already encrypts the connection. "Always use secure connections" leaves an `http://` onion address alone, and an explicit `https://` one stays https.
 - **A release is no longer lost when the system shows no notification**: the version used to count as told before anything was shown, so a system without notifications never told you of it. It now counts as told once the question has been on screen and you answered or dismissed it, so a question that could not be drawn is asked again.
 - **A `.eth` name that does not exist says so again under ENSv2**: a missing subname of a name ENS still serves from its first registry (`foo.vitalik.eth`) showed "Cannot check this site right now", because ENSv2's mirror of that registry answers it with an `UnreachableName` revert; Orivon now reads that as a proven absence and shows "Nothing here".
