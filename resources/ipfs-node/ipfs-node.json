@@ -1,9 +1,9 @@
 {
-  "cid": "bafybeiepcxr3f7vy5tn3tpgpkbkxlofrz67juwkietctvejwxt3sbfekje",
+  "cid": "bafybeidrkfl4p42q23r4rokxfv5p5qfmjpbimmsozeektoxxv3bfwvzhom",
   "name": "ipfs-node",
   "files": [
     { "name": "ipfs-node.js", "bytes": 1029470, "sha256": "65e491baed9cf5cc523159007bc5f095bcb3fe1220edf09bab8ac6bc5b4607de" },
-    { "name": "ipfs-node.core.wasm", "bytes": 16987736, "sha256": "3c5cce27ff7e82ba77aa126c107546aa81819d927925d5623755e4d2b98c909a" },
+    { "name": "ipfs-node.core.wasm", "bytes": 17020614, "sha256": "08e25c1770c65c2f834338ea5428ea1c286cb9ac09ba37140d30ce9054b5130e" },
     { "name": "ipfs-node.core2.wasm", "bytes": 4034, "sha256": "0951f6f06ceb2f8eeaf08cb8795d9c0d736c7ddbd0f59de907a7445cb74f4b44" },
     { "name": "ipfs-node.core3.wasm", "bytes": 1731, "sha256": "9f41ab2d3dd7205c7e11485e6dabf12283ea21a0e41e98c5c87491b8829c6043" },
     { "name": "ipfs-node.core4.wasm", "bytes": 697, "sha256": "b2af96affe99d9933542ab583edce875939e92459b5796c61e2c6d029ba84cec" },
