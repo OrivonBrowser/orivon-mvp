@@ -1,6 +1,6 @@
 # ADR-0031: Helios is the light client, admitted as a WebAssembly dependency
 
-- **Status:** accepted
+- **Status:** accepted; [`ADR-0100`](ADR-0100-the-person-may-name-their-own-ethereum-servers.md) amends which servers it asks: Orivon's by default, the person's own instead when they name them
 - **Date:** 2026-09-24
 - **Type:** architecture / security
 - **Decided by:** owner, for a light client proving `.eth` names and starting at launch
