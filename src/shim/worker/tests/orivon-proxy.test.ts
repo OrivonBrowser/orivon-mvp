@@ -123,6 +123,20 @@ describe('handles', () => {
     await expect(remote.closed).rejects.toMatchObject({ code: 'reset', platformCode: 'ECONNRESET' })
   })
 
+  it('closes a handle whose call finishes after the Worker is gone, which nobody is left to close', async () => {
+    const socket = fakeHandle('late')
+    let answer: (() => void) | undefined
+    const client = connect({ net: { connect: async () => await new Promise((resolve) => { answer = () => { resolve(socket) } }) } })
+    void client.net.connect({ host: 'x', port: 443 }).catch(() => {})
+    await vi.waitFor(() => { expect(answer).toBeDefined() })
+
+    await server?.dispose()
+    server = undefined
+    answer?.()
+
+    await vi.waitFor(() => { expect(socket.closedCount()).toBe(1) })
+  })
+
   it('closes every handle the Worker still holds when it is disposed', async () => {
     const file = fakeHandle('f2')
     const client = connect({ fs: { open: async () => file } })

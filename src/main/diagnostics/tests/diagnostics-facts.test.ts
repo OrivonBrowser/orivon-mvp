@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDiagnostics, channelOf, REPORTED_SETTINGS, reportedSettings } from '../diagnostics-facts.js'
+import { appSocketReadings, buildDiagnostics, channelOf, REPORTED_APPS, REPORTED_SETTINGS, reportedSettings } from '../diagnostics-facts.js'
 import type { CrashRecord } from '../crash-records.js'
 import { CRASH, FACTS } from './report-fixtures.js'
 
@@ -10,7 +10,7 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
     expect(Object.keys(diagnostics.app)).toEqual(['commit', 'channel', 'electron', 'chromium', 'node', 'v8', 'packaged', 'uptimeSec'])
     expect(Object.keys(diagnostics.system)).toEqual(['platform', 'release', 'arch', 'cpus', 'cpuModel', 'memoryMb', 'freeMemoryMb', 'locale', 'session', 'desktop', 'ozone'])
-    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'extensions', 'settings'])
+    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'extensions', 'appSockets', 'settings'])
   })
 
   it('states how many tabs carry each tunnel choice, as counts and nothing else', () => {
@@ -46,6 +46,29 @@ describe('buildDiagnostics', () => {
     expect(recentCrashes).toHaveLength(10)
     expect(recentCrashes[0]?.at).toBe('2026-10-07T10:14:00Z')
     expect(Object.keys(recentCrashes[0] ?? {})).toEqual(['kind', 'at', 'process', 'reason', 'exitCode'])
+  })
+})
+
+describe('appSocketReadings', () => {
+  it('lists the apps holding anything, the fullest first, and leaves out an idle one', () => {
+    expect(appSocketReadings([
+      { open: 0, inFlight: 0, allowance: 64 },
+      { open: 12, inFlight: 1, allowance: 64 },
+      { open: 384, inFlight: 0, allowance: 384 },
+      { open: 0, inFlight: 40, allowance: 64 }
+    ])).toEqual([
+      { open: 384, inFlight: 0, allowance: 384 },
+      { open: 12, inFlight: 1, allowance: 64 },
+      { open: 0, inFlight: 40, allowance: 64 }
+    ])
+  })
+
+  it('lists at most the busiest few, and only the three numbers of each', () => {
+    const many = Array.from({ length: 20 }, (_, index) => ({ open: index + 1, inFlight: 0, allowance: 64, origin: 'https://private.example' }))
+    const listed = appSocketReadings(many)
+    expect(listed).toHaveLength(REPORTED_APPS)
+    expect(listed[0]?.open).toBe(20)
+    expect(Object.keys(listed[0] ?? {})).toEqual(['open', 'inFlight', 'allowance'])
   })
 })
 

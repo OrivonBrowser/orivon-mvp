@@ -43,6 +43,27 @@ export interface ExtensionReading {
   readonly enabled: boolean
 }
 
+/** What one installed app holds in the broker against what it may hold: numbers only, so a report names no app. */
+export interface AppSocketReading {
+  /** Sockets, listeners and accepted connections it has open; what its allowance counts. */
+  readonly open: number
+  /** Calls it has running or waiting, among them every connection attempt that has not answered. */
+  readonly inFlight: number
+  readonly allowance: number
+}
+
+/** The most apps a report lists: the ones holding the most. */
+export const REPORTED_APPS = 8
+
+/** The apps that hold anything, the fullest first. An idle app says nothing about why another ran out. */
+export function appSocketReadings (usages: readonly AppSocketReading[]): AppSocketReading[] {
+  return usages
+    .filter(({ open, inFlight }) => open > 0 || inFlight > 0)
+    .sort((a, b) => b.open - a.open || b.inFlight - a.inFlight)
+    .slice(0, REPORTED_APPS)
+    .map(({ open, inFlight, allowance }) => ({ open, inFlight, allowance }))
+}
+
 export interface DiagnosticsFacts {
   readonly commit: string
   readonly channel: Channel
@@ -75,6 +96,7 @@ export interface DiagnosticsFacts {
     /** How many tabs carry each tunnel choice: counts only. */
     readonly tunnels: { readonly tabs: { readonly nym: number, readonly socks5: number, readonly direct: number } }
     readonly extensions: readonly ExtensionReading[]
+    readonly appSockets: readonly AppSocketReading[]
     readonly settings: Readonly<Record<string, string | boolean>>
   }
   readonly crashes: readonly CrashRecord[]

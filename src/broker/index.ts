@@ -29,7 +29,7 @@ import { HandleTable } from './handles/handles.js'
 import { errnoOf, fail } from './errors.js'
 import { GrantLedger } from './grants/grant-ledger.js'
 import { createGrantsChangeEmitter } from './grants/grant-events.js'
-import { socketAllowance } from './grants/resource-limits.js'
+import { socketAllowanceOf, socketUsageOf } from './socket-usage.js'
 import { isolationKeyFromUrl } from './policy/origin.js'
 import { createReachProxyCheck } from './capabilities/reach-proxy.js'
 import { widensAuthority } from './policy/update.js'
@@ -211,18 +211,9 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
   const heldSync = (origin: string, capability: CapabilityKind): boolean => grantedPatternsSync(origin, capability) !== undefined
 
-  /**
-   * A200: `Broker.app.socketAllowanceSync`'s implementation -- a thin,
-   * never-throwing delegate to `GrantLedger.socketAllowance`, same shape as
-   * `hasGrantsSync` above. It already answers the platform default for a row
-   * it holds nothing for, so a malformed `origin` (the raw string) still gets
-   * a safe number rather than a broker fault. A restored app not yet
-   * re-registered answers from its pinned manifest's declaration.
-   */
+  /** A200: `Broker.app.socketAllowanceSync`, ./socket-usage.ts's `socketAllowanceOf`. */
   function socketAllowanceSync (origin: string): number {
-    const key = isolationKeyFromUrl(origin) ?? origin
-    const pinned = ledger.manifestFor(key) === undefined ? pinnedManifests.get(key) : undefined
-    return pinned === undefined ? ledger.socketAllowance(key) : socketAllowance({ manifest: pinned, fsBytesUsed: 0 })
+    return socketAllowanceOf(ledger, pinnedManifests, origin)
   }
 
   /**
@@ -474,7 +465,7 @@ export function createBroker (deps: CreateBrokerOptions): Broker {
 
   const forgetOrigin = createForgetOrigin({ canonical, grants, revokePersisted, pickedPaths: pickedPathsFor, revokeUserSelectedPath, handleTable, ledger, grantsChanged })
   return {
-    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, grantedPatternsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync, reachBypassesProxy: createReachProxyCheck(deps) },
+    app: { manifest, grants, isRegisteredSync, hasGrantsSync, heldSync, grantedPatternsSync, registeredOriginsSync, persistedAppsSync, hydrateFromPinnedManifest, pickedPaths: pickedPathsFor, socketAllowanceSync, socketUsageSync: (origin) => socketUsageOf(handleTable, origin, socketAllowanceSync(origin)), reachBypassesProxy: createReachProxyCheck(deps) },
     net,
     id,
     web,

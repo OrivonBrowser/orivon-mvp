@@ -44,6 +44,9 @@ function streamsOf (socket: OrivonTcpSocket): { input: InputStream, output: Outp
 /** How long a dropped socket that wrote waits for its peer to end before the program's read side is released anyway. */
 export const DROP_GRACE_MS = 5_000
 
+/** The least a dropped socket that wrote waits after its writer's close before its handle is closed, whatever its peer has done. */
+const WRITE_FENCE_MS = 250
+
 export interface TcpContext {
   readonly net: SocketNet
   readonly names: ResolvedNames
@@ -58,6 +61,8 @@ export class TcpSocket {
   #local: IpSocketAddress | undefined
   #pending: 'running' | 'done' | { readonly failure: unknown } | undefined
   #socket: OrivonTcpSocket | undefined
+  /** Abandons the connect in flight (ADR-0071); undefined once it has answered. */
+  #connecting: AbortController | undefined
   #server: TcpServer | undefined
   #streams: ReturnType<typeof streamsOf> | undefined
   readonly #accepted: Connection[] = []
@@ -129,8 +134,11 @@ export class TcpSocket {
     this.#checkAddress(remoteAddress)
     const address = addressOf(remoteAddress)
     if (remoteAddress.val.port === 0 || isUnspecified(address)) throw 'invalid-argument'
-    this.#start(this.#context.net.connect({ host: this.#context.names.hostFor(address), port: remoteAddress.val.port })
-      .then((socket) => { this.#adopt(socket, (kept) => { this.#socket = kept }) }))
+    const connecting = new AbortController()
+    this.#connecting = connecting
+    this.#start(this.#context.net.connect({ host: this.#context.names.hostFor(address), port: remoteAddress.val.port, signal: connecting.signal })
+      .then((socket) => { this.#adopt(socket, (kept) => { this.#socket = kept }) })
+      .finally(() => { if (this.#connecting === connecting) this.#connecting = undefined }))
     this.#state = 'connect-started'
   }
 
@@ -273,47 +281,48 @@ export class TcpSocket {
   }
 
   /**
-   * A program that wrote to this socket and then simply lets it go out of
-   * scope -- no explicit shutdown() -- must not lose that output. Once the
-   * program has handed this socket a byte, this closes the CONNECTION
-   * THROUGH ITS OWN WRITABLE STREAM rather than through `this.#socket`'s
-   * handle-level close(): that close() is a call to the Worker's separate
-   * orivon control channel (../worker/orivon-client.ts/orivon-server.ts),
-   * independent of the MessagePort relaying this stream's still-in-flight
-   * writes across that same Worker boundary -- and was measured
-   * (tests/tcp-dispose-race.test.ts) to reach the broker and end the real
-   * socket before an already-"flushed" write had actually landed there,
-   * silently dropping it. Closing through the writer instead keeps this
-   * socket's own FIN strictly behind every write already queued on it,
-   * because both travel the one channel the writer itself uses.
+   * A program that drops a socket gives up what it holds in the broker, whatever the socket had got to, as a native
+   * close() frees its descriptor. A connect still in flight is abandoned, so the dial stops and its slot is free.
+   * A connected socket's handle is closed, never left for its peer to end: a peer that accepts a connection and
+   * says nothing would keep the origin's slot for ever.
    *
-   * A socket the program never wrote to (an unaccepted, queued connection
-   * dropped along with its listener, say) has nothing to lose this way, so
-   * it keeps the direct, immediate handle close.
+   * A socket the program wrote to is first closed THROUGH ITS OWN WRITABLE STREAM, and its handle only after the
+   * peer has ended its side or `dropGraceMs` has passed. A handle-level close() is a call on the Worker's separate
+   * orivon control channel, independent of the MessagePort relaying this stream's still-in-flight writes, and was
+   * measured (tests/tcp-dispose-race.test.ts) to reach the broker and end the real socket before an
+   * already-"flushed" write had actually landed there, silently dropping it. The Worker's writer cannot see a
+   * write land (a transferred stream settles when a chunk is posted), so time is the only fence it has: closing
+   * through the writer keeps this socket's own FIN strictly behind every write already queued on it, and the
+   * fence of a few hundred milliseconds, and the peer's end or the grace period beyond it, keep the handle's close
+   * behind that. The grace also bounds a writer whose close() never settles because the peer stopped reading.
    *
-   * A drop releases the read side too, which a program that wrote and then
-   * dropped never read to its end. The reader is cancelled only after the
-   * writer has closed and the peer has ended its side or `dropGraceMs` has
-   * passed, never at once: cancelling a socket's readable ends the whole
-   * connection, and would drop what the writer has not yet landed.
+   * A socket the program never wrote to (an unaccepted, queued connection dropped along with its listener, say)
+   * has nothing to lose this way, so its handle is closed at once.
    */
   [Symbol.dispose] (): void {
     this.#state = 'closed'
     this.#signal.notify()
+    this.#connecting?.abort()
+    this.#connecting = undefined
     const streams = this.#streams
+    const socket = this.#socket
+    const release = (): void => {
+      void streams?.reader.cancel().catch(() => {})
+      void socket?.close().catch(() => {})
+    }
     if (streams?.wrote() === true) {
-      const release = (): void => { void streams.reader.cancel().catch(() => {}) }
-      void streams.writer.close().catch(() => {}).then(async () => {
-        let timer: ReturnType<typeof setTimeout> | undefined
-        await Promise.race([streams.reader.closed.catch(() => {}), new Promise<void>((resolve) => { timer = setTimeout(resolve, this.#context.dropGraceMs) })])
-        clearTimeout(timer)
+      const timers: Array<ReturnType<typeof setTimeout>> = []
+      const after = async (ms: number): Promise<void> => { await new Promise<void>((resolve) => { timers.push(setTimeout(resolve, ms)) }) }
+      // The fence runs even when the peer ended long ago: the writer's close settles when it is posted, not when the writes land.
+      const behind = streams.writer.close().catch(() => {}).then(async () => { await Promise.all([streams.reader.closed.catch(() => {}), after(Math.min(WRITE_FENCE_MS, this.#context.dropGraceMs))]) })
+      void Promise.race([behind, after(this.#context.dropGraceMs)]).then(() => {
+        for (const timer of timers) clearTimeout(timer)
         release()
       })
     } else {
-      void this.#socket?.close().catch(() => {})
-      void streams?.reader.cancel().catch(() => {})
+      release()
     }
     void this.#server?.close().catch(() => {})
-    for (const [socket] of this.#accepted.splice(0)) socket[Symbol.dispose]()
+    for (const [queued] of this.#accepted.splice(0)) queued[Symbol.dispose]()
   }
 }
