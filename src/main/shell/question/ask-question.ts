@@ -26,7 +26,7 @@ export interface AskOptions {
   readonly signal?: AbortSignal | undefined
   /** A new page in the tab ends the question: it was about the page that asked. */
   readonly endOnNavigation?: boolean | undefined
-  /** Called each time the panel is put up. A question that ends first (no toolbar in time, tab or window gone, queue full) never calls it, and its cancel looks like an Escape. */
+  /** Called each time the page reports the question drawn, so it is on screen. A question that ends first (no toolbar in time, tab or window gone, queue full, closed while the panel still loads) never calls it, and its cancel looks like an Escape. */
   readonly onShown?: (() => void) | undefined
 }
 

@@ -64,7 +64,8 @@ pointer or the focus on it) and answers the switches of a spec's `choices` (a ro
 the question belongs to, under the address pill with its top edge inside the toolbar; a background tab's question waits
 for its tab, a kiosk draws it centred, and only a question asked when no shell window exists opens a native box. A caller
 that must tell a question the person saw from one that ended unseen (no toolbar in time, tab or window gone) passes
-`options.onShown`: the cancel result is the same for an Escape and for both.
+`options.onShown`, called when the panel's page reports the question drawn (not at the show, which can come while the page is
+still loading): the cancel result is the same for an Escape and for both.
 `navigation-hold.ts` holds a tab's page where it is while a question about it is open (`holdNavigation`, nesting and
 released once): `tab-view.ts` drops a main-frame navigation, a redirect and a `window.open` the page starts meanwhile, so
 an answer cannot be given to a page that is no longer the one asked about. A change of address inside the document is

@@ -104,6 +104,24 @@ run('asks in the window in use, in the question panel, and Not now writes the ve
   }
 }, TEST_TIMEOUT_MS)
 
+run('Escape on the drawn panel dismisses it, and the version counts as told because the person saw the question', async () => {
+  const { app, state } = await launched()
+  try {
+    await lookStarted(app)
+    const panel = await waitQuestion(app)
+    // The guard only starts running once main took the page's report that it drew, so a panel past it has reported.
+    await panel.waitForSelector('.q:not(.arming)')
+    expect(state()?.lastNotifiedVersion).toBeUndefined()
+    await panel.keyboard.press('Escape').catch(() => {})
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
+    expect(await waitFor(() => state()?.lastNotifiedVersion === TAG)).toBe(true)
+    expect(mainOutput(app)).toContain('answer: closed without a choice')
+    expect(await noNativeDialogs(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 run('Download from GitHub opens the release page in a new Orivon tab of that window', async () => {
   const { app, chrome, state } = await launched()
   try {

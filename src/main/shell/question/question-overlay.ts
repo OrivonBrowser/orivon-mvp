@@ -22,7 +22,7 @@ interface Held {
   readonly window: ShellWindow
   readonly spec: QuestionSpec
   readonly settle: (result: QuestionResult) => void
-  /** Called each time the panel is put up for this question. */
+  /** Called each time the page reports the question drawn, which is when it is on screen: the show alone comes while the page may still be loading. */
   readonly shown: (() => void) | undefined
   /** The ids of the rows the person has switched on so far, when they have moved one: the panel is built afresh at every show, and a tab switch away and back must not lose them. */
   switched?: ReadonlySet<string>
@@ -132,7 +132,6 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
         shownAt = null
         keys.reset()
         disarm()
-        entry.shown?.()
         const view = viewOf(entry.id, entry.spec)
         const { switched } = entry
         return switched === undefined || view.choices === undefined ? view : { ...view, choices: view.choices.map((choice) => ({ ...choice, on: switched.has(choice.id) })) }
@@ -141,7 +140,10 @@ export function createQuestionPanel (name: string, now: () => number = Date.now)
       request: (command) => {
         const drawn = drawnId(command)
         if (drawn !== undefined) {
-          if (drawn === shownId && shownAt === null) shownAt = now()
+          if (drawn === shownId && shownAt === null) {
+            shownAt = now()
+            heldQuestion(drawn)?.shown?.()
+          }
           return true
         }
         const moved = asSwitched(command)

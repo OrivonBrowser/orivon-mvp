@@ -127,14 +127,25 @@ describe('askQuestion', () => {
     await answer
   })
 
-  it('tells the caller once the panel is up, and not when the question ends without ever being shown', async () => {
+  it('tells the caller once the panel has drawn, and not when the question ends before that', async () => {
     const shown = rig()
     const onShown = vi.fn()
     const answer = shown.ask({ contents: shown.contents }, CONSENT, { onShown })
     await vi.advanceTimersByTimeAsync(0)
+    expect(onShown).not.toHaveBeenCalled()
+    shown.drawn()
     expect(onShown).toHaveBeenCalledTimes(1)
     slotClosed(shown.window, QUESTION_OVERLAY, 'escape')
     await answer
+
+    const cold = rig()
+    const beforeDraw = vi.fn()
+    const coldAnswer = cold.ask({ contents: cold.contents }, CONSENT, { onShown: beforeDraw })
+    await vi.advanceTimersByTimeAsync(0)
+    slotClosed(cold.window, QUESTION_OVERLAY, 'escape')
+    cold.drawn()
+    await coldAnswer
+    expect(beforeDraw).not.toHaveBeenCalled()
 
     const never = rig({ chromeVisible: false })
     const unshown = vi.fn()

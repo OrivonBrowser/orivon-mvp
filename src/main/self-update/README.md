@@ -61,8 +61,9 @@ for a window (once per reason), the question asked, and the answer.
 `lastNotifiedVersion` after the person closed a question the panel had drawn, never before it is shown, so a release
 that could not be shown (no window in use, a failed panel, a question cancelled before the toolbar was ready) is asked
 about again instead of lost. `askQuestion` answers such a cancel exactly as it answers an Escape, so
-`update-window.ts` learns whether the panel was up from `AskOptions.onShown`. A question that closes unseen is asked again
-twice more, then waits for the next look. The told version never moves back: if "Check now" in Settings showed a newer
+`update-window.ts` learns whether the panel was up from `AskOptions.onShown`, which fires when the panel's page reports the
+question drawn: the overlay page loads cold, so a question closed after the show and before the draw was never on screen
+and is not counted. A question that closes unseen is asked again twice more, then waits for the next look. The told version never moves back: if "Check now" in Settings showed a newer
 release while a question about an older one was open, answering the old one leaves the newer one told. "Check now" also
 counts the release it shows as told: the person has just read it. *Provisional*: whether Settings alone should leave the
 question to appear is the owner's call.
