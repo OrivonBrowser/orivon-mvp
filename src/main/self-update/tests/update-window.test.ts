@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AskPlace } from '../../os/install-default-browser-ask.js'
-import type { AskQuestion } from '../../shell/question/ask-question.js'
+import type { AskOptions, AskQuestion } from '../../shell/question/ask-question.js'
 import { askInWindow, updatePlace } from '../update-window.js'
 
 const RELEASE = { version: 'v0.0.12', url: 'https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.12' }
@@ -44,7 +44,7 @@ describe('where the update question may be asked', () => {
 })
 
 describe('asking about a release in a window', () => {
-  const drawnThenEscaped: AskQuestion = vi.fn(async (_target, _spec, options) => { options?.onShown?.(); return { response: 1, checkboxChecked: false } })
+  const drawnThenEscaped: AskQuestion = vi.fn(async (_target: unknown, _spec: unknown, options?: AskOptions) => { options?.onShown?.(); return { response: 1, checkboxChecked: false } })
   const answering = (response: number, clicked?: true): AskQuestion => vi.fn(async () => ({ response, checkboxChecked: false, ...(clicked === true ? { clicked } : {}) }))
 
   it('asks in that window and tab, with the version shown without its v', async () => {
