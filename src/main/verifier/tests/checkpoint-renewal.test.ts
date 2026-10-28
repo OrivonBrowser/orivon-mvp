@@ -256,7 +256,7 @@ describe('CheckpointRenewal', () => {
 
       it('tries a beacon server named after a failure at once, and does not blame it for the old one\'s failure', async () => {
         vi.setSystemTime(LATER_MS)
-        let server = { url: CONSENSUS!, local: false }
+        let server: { url: string, local: boolean } = { url: CONSENSUS!, local: false }
         const { renewal, saved } = harness(false, () => {}, () => server)
         serve(FRESH, LATER_EPOCH, LATER_EPOCH + 31)
         answers.delete(`${CONSENSUS!}/eth/v1/beacon/light_client/bootstrap/${FRESH}`)

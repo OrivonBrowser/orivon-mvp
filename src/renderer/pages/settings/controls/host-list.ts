@@ -97,8 +97,8 @@ function createView (key: SettingKey, options: HostListOptions, state: SettingsS
     const text = field.value.trim()
     if (text === '') return
     const outcome = model.add(hosts, text)
-    if (outcome.kind === 'invalid' || outcome.kind === 'full') { say(outcome.problem); return }
     if (outcome.kind === 'duplicate') { say(''); field.value = ''; return }
+    if (outcome.kind !== 'added') { say(outcome.problem); return }
     focusNext = { kind: 'field' }
     const refused = await save(outcome.items)
     if (refused !== null) {
