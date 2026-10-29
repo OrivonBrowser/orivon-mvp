@@ -21,6 +21,7 @@ import { appTabArgsFor, makeTabView, partitionForTab, partitionForTarget, wireVi
 import { allowedTabChoice } from '../route/site-routes.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import { paintBacking } from './tab-backing.js'
+import { watchPopupOpener } from './popup-with-opener.js'
 import { DASHBOARD_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
@@ -199,6 +200,7 @@ export class TabFactory {
   popup (view: WebContentsView, partition: string | undefined, tunnelChoice?: TabTunnelChoice): BuiltTab {
     const id = makeTabId()
     const record = this.recordFor(view, partition, choiceOf(tunnelChoice))
+    watchPopupOpener(view, record, () => { this.host.emitState() })
     wireView(id, record)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record }

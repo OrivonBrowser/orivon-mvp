@@ -97,6 +97,93 @@ describe('putting a popup into the window', () => {
   })
 })
 
+describe('a popup opened while a tab\'s first page was loading', () => {
+  const page = (): { contents: never, emit: (event: string, ...args: unknown[]) => void } => {
+    const listeners = new Map<string, Array<(...args: unknown[]) => void>>()
+    const contents = {
+      on: (event: string, listener: (...args: unknown[]) => void) => { listeners.set(event, [...(listeners.get(event) ?? []), listener]) },
+      removeListener: (event: string, listener: (...args: unknown[]) => void) => { listeners.set(event, (listeners.get(event) ?? []).filter((candidate) => candidate !== listener)) }
+    }
+    return { contents: contents as never, emit: (event, ...args) => { for (const listener of listeners.get(event) ?? []) listener(...args) } }
+  }
+
+  it('takes the keyboard back once from the page that took it as it committed, and stays', async () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, ['--page=tunnels'], 'tunnels')
+    const tab = page()
+    popover.holdAgainstArrival(tab.contents)
+    last().handlers.get('focus')?.()
+    last().focus.mockClear()
+
+    tab.emit('focus')
+    last().handlers.get('blur')?.()
+    await afterNativeCall()
+    expect(attached()).toBe(1)
+    expect(last().focus).toHaveBeenCalledTimes(1)
+
+    // The hold is spent: the next blur is a click away.
+    last().handlers.get('blur')?.()
+    await afterNativeCall()
+    expect(attached()).toBe(0)
+  })
+
+  it('closes on a click away once the popup has the keyboard, though the page took it from the chrome while the popup was still loading', async () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, ['--page=tunnels'], 'tunnels')
+    const tab = page()
+    popover.holdAgainstArrival(tab.contents)
+    tab.emit('focus')
+    last().handlers.get('focus')?.()
+    last().focus.mockClear()
+
+    last().handlers.get('blur')?.()
+    await afterNativeCall()
+    expect(attached()).toBe(0)
+    expect(last().focus, 'the popup does not take the keyboard from the person who clicked away').not.toHaveBeenCalled()
+  })
+
+  it('closes on a blur that no page caused, or that a press in the page caused', async () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, ['--page=tunnels'], 'tunnels')
+    const tab = page()
+    popover.holdAgainstArrival(tab.contents)
+    last().handlers.get('blur')?.()
+    await afterNativeCall()
+    expect(attached()).toBe(0)
+
+    popover.toggle(ANCHOR, ['--page=web3'], 'web3')
+    expect(attached(), 'a different icon\'s click is fresh intent').toBe(1)
+    const pressed = page()
+    popover.holdAgainstArrival(pressed.contents)
+    pressed.emit('input-event', {}, { type: 'mouseDown' })
+    pressed.emit('focus')
+    last().handlers.get('blur')?.()
+    await afterNativeCall()
+    expect(attached()).toBe(0)
+  })
+
+  it('holds nothing for a popup that is not showing, nor after the page has loaded', async () => {
+    const { popover, attached } = setup()
+    const closed = page()
+    popover.holdAgainstArrival(closed.contents)
+    popover.toggle(ANCHOR, ['--page=tunnels'], 'tunnels')
+    closed.emit('focus')
+    last().handlers.get('blur')?.()
+    await afterNativeCall()
+    expect(attached()).toBe(0)
+
+    popover.toggle(ANCHOR, ['--page=main'], 'main')
+    expect(attached(), 'a different icon\'s click is fresh intent').toBe(1)
+    const loaded = page()
+    popover.holdAgainstArrival(loaded.contents)
+    loaded.emit('did-stop-loading')
+    loaded.emit('focus')
+    last().handlers.get('blur')?.()
+    await afterNativeCall()
+    expect(attached()).toBe(0)
+  })
+})
+
 describe('a toolbar icon\'s toggle while a popup it did not open is showing or just closed', () => {
   it('closes on a blur only after the call that blurred it has returned', async () => {
     const { popover, attached } = setup()

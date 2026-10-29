@@ -1,5 +1,5 @@
 import type { ShellStatePart } from '../shell-state-parts.js'
-import { tabForTunnelPopover } from '../tunnel-popover-tab.js'
+import { openingAddressOf, tabForTunnelPopover } from '../tunnel-popover-tab.js'
 
 /**
  * Whether the page in front goes through a tunnel, and which, for the colour of the address bar's tunnel button and the name it
@@ -10,7 +10,7 @@ import { tabForTunnelPopover } from '../tunnel-popover-tab.js'
 export const tunnelStatePart: ShellStatePart = {
   name: 'tunnel',
   read: ({ window, services }, tabs) => {
-    const tunnelByTab = tabForTunnelPopover(tabs, (id) => window.tabs.partitionOf(id), services.tunnel.isApp) !== undefined
+    const tunnelByTab = tabForTunnelPopover(tabs, (id) => window.tabs.partitionOf(id), services.tunnel.isApp, openingAddressOf(window.tabs)) !== undefined
     if (tabs.activeTabId === null) return { tunnel: null, tunnelVia: null, tunnelByTab }
     const active = tabs.tabs.find((tab) => tab.id === tabs.activeTabId)
     if (active?.isNewTab === true && active.blankPage !== true) {

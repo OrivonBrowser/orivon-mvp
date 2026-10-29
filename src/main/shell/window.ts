@@ -226,7 +226,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     layout: { chromeHeight, layoutChrome, tabBounds },
     bookmarksBarShown,
     overlays,
-    closeSiteInfo: () => { panels.siteInfo.close() }
+    closeSiteInfo: (arrived) => { panels.siteInfo.closeUnlessAbout(arrived) }
   })
   const { pushState } = windowState
 

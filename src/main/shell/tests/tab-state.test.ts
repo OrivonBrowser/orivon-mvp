@@ -590,6 +590,28 @@ describe('a blank page that is no new tab', () => {
     expect(stateOf('about:blank', { isDashboardTab: false, tunnelChoice: 'nym' })).toMatchObject({ isNewTab: true, blankPage: true, tunnelChoice: 'nym' })
   })
 
+  it('is flagged on a popup a page opened that has committed nothing yet, which shows the empty document its opener writes into though it is no new tab', () => {
+    const view = {}
+    for (const partition of [undefined, 'persist:tunnel-profile']) {
+      const state = stateOf('', { partition, view, popupWithOpener: view, tunnelChoice: 'nym' })
+      expect(state, String(partition)).toMatchObject({ isNewTab: false, blankPage: true, tunnelChoice: 'nym' })
+    }
+  })
+
+  it('is flagged on a popup that holds its opener before the record has it, and not on a tab opened by a link with a target, which has none', () => {
+    const withOpener = { ...makeFakeWebContents(), getURL: () => '', opener: { url: 'https://opener.example/' } }
+    expect(buildTabState('t1', { isDashboardTab: false } as never, withOpener as never, env)).toMatchObject({ blankPage: true })
+    const withoutOpener = { ...makeFakeWebContents(), getURL: () => '', opener: null }
+    expect(buildTabState('t1', { isDashboardTab: false } as never, withoutOpener as never, env)).not.toHaveProperty('blankPage')
+  })
+
+  it('is not flagged on a popup once it shows a page, nor on a tab that began as one and now shows another view, nor on a tab the browser opened', () => {
+    const view = {}
+    expect(stateOf('https://news.example/', { view, popupWithOpener: view })).not.toHaveProperty('blankPage')
+    expect(stateOf('', { view: {}, popupWithOpener: view })).not.toHaveProperty('blankPage')
+    expect(stateOf('', { view })).not.toHaveProperty('blankPage')
+  })
+
   it('is not flagged on the dashboard tab while it shows the dashboard', () => {
     expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).toMatchObject({ isNewTab: true })
     expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).not.toHaveProperty('blankPage')
@@ -627,14 +649,14 @@ describe('a new tab before its page has loaded', () => {
   })
 
   it('is a tab the tunnel button\'s popover is about, for the button is shown from that state on and a press must open something', () => {
-    const popoverTab = (record: Record<string, unknown>, url = ''): string | undefined => tabForTunnelPopover({ tabs: [loading(record, url)], activeTabId: 't1' }, () => undefined, () => false)
+    const popoverTab = (record: Record<string, unknown>, url = ''): string | undefined => tabForTunnelPopover({ tabs: [loading(record, url)], activeTabId: 't1' }, () => undefined, () => false, () => undefined)
     expect(popoverTab({ isDashboardTab: true })).toBe('t1')
     expect(popoverTab({ isDashboardTab: true, tunnelChoice: 'nym' })).toBe('t1')
     expect(popoverTab({ isDashboardTab: true }, env.dashboardUrl)).toBe('t1')
   })
 
   it('is no tab for the popover when it is a blank page that is no dashboard, with no address yet or about:blank', () => {
-    const popoverTab = (url: string): string | undefined => tabForTunnelPopover({ tabs: [loading({ isDashboardTab: false }, url)], activeTabId: 't1' }, () => undefined, () => false)
+    const popoverTab = (url: string): string | undefined => tabForTunnelPopover({ tabs: [loading({ isDashboardTab: false }, url)], activeTabId: 't1' }, () => undefined, () => false, () => undefined)
     expect(popoverTab('about:blank')).toBeUndefined()
     expect(popoverTab('')).toBeUndefined()
   })

@@ -17,7 +17,7 @@ interface Fakes {
 
 const stop = vi.fn()
 
-function fakes (unreadable = false, settledFails = false): Fakes & { records: Map<string, unknown> } {
+function fakes (unreadable = false, settledFails = false, committed = 'https://news.example/a'): Fakes & { records: Map<string, unknown> } {
   let onHub: ((origin: string) => void) | undefined
   let onSetting: ((change: { key: string }) => void) | undefined
   let release: () => void = () => {}
@@ -27,7 +27,7 @@ function fakes (unreadable = false, settledFails = false): Fakes & { records: Ma
     tabs: {
       ids: () => ['t1'],
       record: (id: string) => records.get(id),
-      liveWebContents: () => ({ getURL: () => 'https://news.example/a', stop })
+      liveWebContents: () => ({ getURL: () => committed, stop })
     }
   }
   const ctx = {
@@ -37,7 +37,7 @@ function fakes (unreadable = false, settledFails = false): Fakes & { records: Ma
     }
   }
   const services = {
-    windows: { all: () => [window], liveTabOrigins: () => ['https://news.example'] },
+    windows: { all: () => [window] },
     settings: { onChange: (listener: (change: { key: string }) => void) => { onSetting = listener; return () => {} } }
   }
   return {
@@ -122,5 +122,50 @@ describe('a tab that cannot be moved to the session its tunnel calls for', () =>
     world.settle()
     await vi.waitFor(() => { expect(stop).toHaveBeenCalledOnce() })
     expect(repartitionView).not.toHaveBeenCalled()
+  })
+})
+
+describe('a tab whose first page has not committed', () => {
+  const opening = (): ReturnType<typeof fakes> => {
+    const world = fakes(false, false, '')
+    Object.assign(world.records.get('t1') as object, { inflightUrl: 'https://t.example/x', inflightTarget: 'https://news.example/a' })
+    return world
+  }
+
+  it('moves into the session of the website it is opening when that website\'s tunnel changes, loading the address it was opening there', async () => {
+    const world = opening()
+    world.install()
+    world.settle()
+    world.changeHub('https://news.example')
+    await vi.waitFor(() => { expect(repartitionView).toHaveBeenCalledWith('t1', world.records.get('t1'), 'https://news.example/a', 'persist:site-x') })
+    expect(asked).toEqual([['https://news.example/a', undefined]])
+  })
+
+  it('leaves the tab alone when another website\'s tunnel changes', async () => {
+    const world = opening()
+    world.install()
+    world.settle()
+    world.changeHub('https://t.example')
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(repartitionView).not.toHaveBeenCalled()
+  })
+
+  it('moves into that session when the tunnel is set while the list of settings cannot be read, as a tab showing the website does', async () => {
+    const world = fakes(true, false, '')
+    Object.assign(world.records.get('t1') as object, { inflightTarget: 'https://news.example/a' })
+    world.install()
+    world.settle()
+    world.changeSetting('network.route.proxy')
+    await vi.waitFor(() => { expect(repartitionView).toHaveBeenCalledWith('t1', world.records.get('t1'), 'https://news.example/a', 'persist:site-x') })
+  })
+
+  it('has its load stopped when the sessions could not follow the switch, as the loads of a tab showing the website are', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const world = fakes(false, true, '')
+    Object.assign(world.records.get('t1') as object, { inflightTarget: 'https://news.example/a' })
+    world.install()
+    world.changeHub('https://news.example')
+    world.settle()
+    await vi.waitFor(() => { expect(stop).toHaveBeenCalledOnce() })
   })
 })

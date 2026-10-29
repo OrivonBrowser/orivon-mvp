@@ -76,7 +76,8 @@ export function tunnelButtonLook (active: TabState | undefined, tunnel: ShellSta
 
 /** The tunnel button in the address pill: it opens the tunnels page of the site-info popup, anchored to itself. Its colour is the page's
  * tunnel state (a new tab's, the tunnel its first address will leave by). On a new tab it sends no address: main sees the tab has none
- * and opens the popup for the tab. Press-then-click is handled as the shield's is (`site-badges.ts`). */
+ * and opens the popup for the tab; a tab whose first page has not committed sends its empty address, and main reads the one it is opening.
+ * Press-then-click is handled as the shield's is (`site-badges.ts`). */
 export function createTunnelButton (): ChromeModule {
   let button: HTMLButtonElement | undefined
   return {
