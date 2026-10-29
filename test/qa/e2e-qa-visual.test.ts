@@ -180,6 +180,9 @@ for (const scheme of SCHEMES) {
         await chrome.click('#menu')
         expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
         const menuPage = app.windows().find((page) => page.url().includes('overlay=menu')) as Page
+        // The menu counts as shown once its view is attached, and this click follows the hover that builds the view by moments, so its page can still be loading: until its stylesheet applies, a layout read sees the browser's own 8px body margin.
+        await menuPage.waitForLoadState('load')
+        await menuPage.waitForSelector('.menu-row')
         check('the menu card fills its view to the right edge', await menuPage.evaluate(() => document.documentElement.clientWidth - document.body.getBoundingClientRect().right) === 0)
         await state(check, app, `menu-popup-${scheme}`, {
           expected: 'The main menu is open as a popup under the menu button at the top right: a list of labelled entries, none cut off or overlapping, inside the window.',
@@ -592,7 +595,7 @@ for (const scheme of SCHEMES) {
 window.__r = {}
 document.getElementById('go').addEventListener('click', () => window.__next())
 window.__next = () => {}
-window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then((stream) => { window.__r.state = stream.getVideoTracks()[0].readyState }, (error) => { window.__r.state = 'ERR:' + error.name })
+window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then((stream) => { stream.getVideoTracks()[0].addEventListener('ended', () => { window.__r.ended = (window.__r.ended || 0) + 1 }); window.__r.state = stream.getVideoTracks()[0].readyState }, (error) => { window.__r.state = 'ERR:' + error.name })
 </script>`)
     })
     const { app, chrome } = await launchShell({ scheme })
@@ -660,7 +663,10 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
           action: 'Chose the entire screen in the picker and pressed Share.',
           ignore: [FIXTURE_ADDRESS, { x: 330, y: 100, width: 340, height: 30 }]
         })
-        await (bar as Page).click('text=Stop sharing')
+        // Stop sharing closes the bar's own page, so the click can end with the page gone and says nothing: the page's track has not ended just before the press and has ended after it.
+        expect(await view.evaluate(() => (window as unknown as { __r: { ended?: number } }).__r.ended)).toBeUndefined()
+        await (bar as Page).click('text=Stop sharing').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
+        await view.waitForFunction(() => (window as unknown as { __r: { ended?: number } }).__r.ended === 1, undefined, { timeout: 30_000 })
         expect(await waitFor(() => app.windows().every((page) => !page.url().includes('overlay=sharing-bar')))).toBe(true)
       })
     } finally {

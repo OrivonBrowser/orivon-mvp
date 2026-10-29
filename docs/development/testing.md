@@ -379,6 +379,14 @@ screenshot of each view (measured behaviour in the `orivon-electron` skill). An 
 in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to
 `window.orivon.*` are not covered yet.
 
+**A popup counts as shown once its view is attached, not once its page has loaded.** The main menu takes focus, so
+the overlay host attaches its view as soon as it is asked to open (`overlay-host.ts`, `show`), and `popoverShown` is
+true once Playwright lists the page. The pointer entering the menu button builds the view ahead of the click, and
+`chrome.click('#menu')` moves the pointer onto the button before it presses, so the press can land while the page is
+still loading. Until the page's stylesheet applies (`surface.css` sets the body margin to 0), a read of its layout sees
+the browser's default 8px margin. A spec that measures the menu therefore waits for the page's `load` and for its first
+`.menu-row`, as `e2e-qa-visual` does before it checks the menu card's width.
+
 **Real pointer input, when a spec's synthetic input is not enough.** Playwright's mouse is a debugger
 call: it sends no window-manager focus change and never meets the window's own hit test, so a bug that
 depends on what a real press does to focus (the main menu's hold-the-button reopen is one), or on a
