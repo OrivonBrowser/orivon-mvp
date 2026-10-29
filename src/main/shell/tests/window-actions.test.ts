@@ -76,8 +76,8 @@ describe('shellActions press', () => {
 describe('shellActions openSiteInfo for the tunnel button', () => {
   const anchor = { x: 900, y: 40, width: 30, height: 30 }
   /** `keyboardPlaced` false is a tab opened on the start page whose keyboard is still moving: what waits on it runs when `place()` is called. */
-  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string, keyboardPlaced = true): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn>, place: () => void, state: { tabs: unknown[], activeTabId: string | null } } {
-    const sitePanel = { close: vi.fn(), toggle: vi.fn(), toggleTab: vi.fn() }
+  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string, keyboardPlaced = true, inflightTarget?: string, opener?: unknown): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn>, holdAgainstArrival: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn>, place: () => void, state: { tabs: unknown[], activeTabId: string | null } } {
+    const sitePanel = { close: vi.fn(), toggle: vi.fn(), toggleTab: vi.fn(), holdAgainstArrival: vi.fn() }
     const parts = makeParts({})
     const state = { tabs, activeTabId }
     const waiting: Array<() => void> = []
@@ -89,7 +89,7 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
       waiting.push(run)
       return () => { waiting.splice(waiting.indexOf(run), 1) }
     }
-    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, keyboard: { whenPlaced } }
+    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, record: () => ({ inflightUrl: 'https://start.example/', inflightTarget }), liveWebContents: (id: string) => ({ id, ...(opener === undefined ? {} : { opener }) }), keyboard: { whenPlaced } }
     ;(parts.panels as unknown as { siteInfo: unknown }).siteInfo = sitePanel
     return { actions: shellActions(parts), sitePanel, closeOverlays: parts.closeOverlays as unknown as ReturnType<typeof vi.fn>, place: () => { for (const run of waiting.splice(0)) run() }, state }
   }
@@ -122,6 +122,67 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     const inProfile = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1', 'persist:tunnel-profile')
     inProfile.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
     expect(inProfile.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+  })
+
+  it('opens it for the website a tab with no page yet is opening, which the chrome cannot name, as it does once the page has come', () => {
+    const plain = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/a')
+    plain.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(plain.sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+    expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(plain.sitePanel.holdAgainstArrival, 'the list stays open when the page takes the keyboard as it commits').toHaveBeenCalledExactlyOnceWith({ id: 't1' })
+    const withChoice = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1', 'persist:tunnel-profile', true, 'https://news.example/a')
+    withChoice.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(withChoice.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    expect(withChoice.sitePanel.toggle).not.toHaveBeenCalled()
+    expect(withChoice.sitePanel.holdAgainstArrival).toHaveBeenCalledExactlyOnceWith({ id: 't1' })
+  })
+
+  it('opens it for the website a redirect has led the tab to, which the record keeps as the target of the load, never the address it started at', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/landing')
+    actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+  })
+
+  it('opens it for the page the tab has committed since the chrome last drew it, when the chrome still sent no address', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false }], 't1', undefined, true, undefined)
+    actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+    expect(sitePanel.holdAgainstArrival, 'the page has arrived, so there is nothing to hold against').not.toHaveBeenCalled()
+  })
+
+  it('opens no list of a website for a popup whose page has an opener until the website has answered, since the opener writes into what the popup shows', () => {
+    const popup = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/a', { url: 'https://evil.example/' })
+    popup.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(popup.sitePanel.toggle).not.toHaveBeenCalled()
+    expect(popup.sitePanel.toggleTab).not.toHaveBeenCalled()
+    const severed = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/a', null)
+    severed.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(severed.sitePanel.toggle, 'a page opened with no opener is main\'s own').toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the tab\'s list when a tab with a choice shows no page and opens none, and nothing for one with no choice', () => {
+    const withChoice = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false, tunnelChoice: 'direct' }], 't1')
+    withChoice.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(withChoice.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    const plain = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1')
+    plain.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(plain.sitePanel.toggle).not.toHaveBeenCalled()
+  })
+
+  it('holds the list against no arrival when the page is already there', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1')
+    actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
+    expect(sitePanel.toggleTab).toHaveBeenCalledTimes(1)
+    expect(sitePanel.holdAgainstArrival).not.toHaveBeenCalled()
+  })
+
+  it('does not read the address a tab is opening for the shield or the key, which are about the page', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/a')
+    actions.openSiteInfo(anchor, 'main', '')
+    actions.openSiteInfo(anchor, 'web3', '')
+    expect(sitePanel.toggle).not.toHaveBeenCalled()
+    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
   })
 
   it('opens it for a blank page that is no new tab as for a page with no origin: nothing, in a session of its own or the shared one', () => {

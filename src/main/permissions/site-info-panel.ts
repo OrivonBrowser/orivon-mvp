@@ -11,10 +11,12 @@ import type { BaseWindow, View, WebContents } from 'electron'
 import type { SiteInfoController } from './site-info-controller.js'
 import { registerSiteInfoIpc } from '../ipc/site-info-ipc.js'
 import { registerSiteInfoTabIpc } from '../ipc/site-info-tab-ipc.js'
+import { popupIsAbout } from './popover-arrival.js'
 import { createPopoverView } from './popover-view.js'
 import type { PopoverAnchor } from './popover-view.js'
 import { PANEL_POPOVER_BACKGROUND } from '../shell/theme-colors.js'
 import type { SitePermissionsAccess } from '../site-settings/site-permissions-view.js'
+import type { FirstPage } from '../shell/window-state.js'
 
 /** Which page the popup opens showing -- the connection row's own switches
  * (`'main'`) or the delivery-evidence page a shield click or the main
@@ -36,6 +38,10 @@ export interface SiteInfoPanel {
   /** The tunnels page for the tab `tabId` rather than for a website: the tab is fixed for the popup's life, as an origin is. The tunnel button of a new tab, and of a tab with a choice, opens it. */
   toggleTab: (anchor: PopoverAnchor, tabId: string, pressedAt?: number) => void
   close: () => void
+  /** Closes the popup unless it is about what `arrived` names: the first page its tab committed, or the tab. A list the tunnel button opened while a tab's page was loading is still right when the page comes; any other change of origin leaves it stale. */
+  closeUnlessAbout: (arrived: FirstPage | null) => void
+  /** The popup was just opened while `contents`, a tab's page, had not committed: the page taking the keyboard as it commits does not close it (`PopoverView.holdAgainstArrival`). */
+  holdAgainstArrival: (contents: WebContents) => void
   isOpen: () => boolean
   restack: () => void
 }
@@ -94,6 +100,10 @@ export function createSiteInfoPanel (
       popover.toggle(anchor, ['--orivon-site-info-page=tunnels'], 'tunnels', pressedAt)
     },
     close: popover.close,
+    closeUnlessAbout (arrived) {
+      if (!popover.isOpen() || !popupIsAbout({ tab: openTab, origin: openOrigin }, arrived)) popover.close()
+    },
+    holdAgainstArrival: popover.holdAgainstArrival,
     isOpen: popover.isOpen,
     restack: popover.restack
   }

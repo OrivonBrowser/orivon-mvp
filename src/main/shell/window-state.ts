@@ -29,8 +29,14 @@ export interface WindowStateDeps {
   readonly layout: Pick<WindowLayout, 'chromeHeight' | 'layoutChrome' | 'tabBounds'>
   readonly bookmarksBarShown: () => boolean
   readonly overlays: OverlayHostHandle
-  /** Dismisses the site-info popover alone: it describes one origin. */
-  readonly closeSiteInfo: () => void
+  /** Dismisses the site-info popover alone: it describes one origin. `arrived` is set when the tab in front has just committed its first page, which the popover may have been opened for while it loaded: what the popover is about is then still right. */
+  readonly closeSiteInfo: (arrived: FirstPage | null) => void
+}
+
+/** The tab in front, and the origin of the first page it has committed. */
+export interface FirstPage {
+  readonly tabId: string | null
+  readonly origin: string | null
 }
 
 export interface WindowState {
@@ -134,8 +140,9 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
     const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId)
     const activeOrigin = activeTab === undefined ? null : originFromUrl(activeTab.url)
     if (activeOrigin !== lastActiveOrigin) {
+      const arrived = lastActiveOrigin === null && !switched ? { tabId: state.activeTabId, origin: activeOrigin } : null
       lastActiveOrigin = activeOrigin
-      closeSiteInfo()
+      closeSiteInfo(arrived)
     }
     const activeUrl = activeTab === undefined ? null : activeTab.url.split('#')[0] ?? null
     if (activeUrl !== lastActiveUrl) {

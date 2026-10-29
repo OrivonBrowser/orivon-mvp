@@ -14,7 +14,7 @@ import { runChromeAction } from './chrome-actions.js'
 import { createPressStamps } from './press-stamps.js'
 import type { ShellServices } from './shell-services.js'
 import { tabDragActions } from './tab-drag-actions.js'
-import { tabForTunnelPopover } from './tunnel-popover-tab.js'
+import { addressOfFrontTab, openingAddressOf, tabForTunnelPopover } from './tunnel-popover-tab.js'
 import { moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
@@ -55,6 +55,15 @@ export function shellActions (parts: WindowParts): ShellActions {
   const presses = createPressStamps()
   /** A press of the tunnel button that waits for its tab's keyboard (`TabManager.keyboard`). No list is drawn while it waits, so a second press of the button in that time is the same press again, not a close. */
   let waitingList: { readonly tabId: string, readonly cancel: (() => void) | undefined } | undefined
+  const openingAddress = openingAddressOf(tabs)
+  /** A popup opened on a tab whose first page has not committed keeps the keyboard when that page takes it as it commits. */
+  const holdForArrival = (): void => {
+    const state = tabs.getState()
+    const front = state.tabs.find((tab) => tab.id === state.activeTabId)
+    const contents = front?.url === '' ? tabs.liveWebContents(front.id) : undefined
+    if (contents !== undefined) panels.siteInfo.holdAgainstArrival(contents)
+  }
+  const aboutTab = (): string | undefined => tabForTunnelPopover(tabs.getState(), (id) => tabs.partitionOf(id), isOriginServedFromCacheSync, openingAddress)
 
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()
@@ -107,7 +116,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     openSiteInfo: (anchor, page, url) => {
       const pressedAt = presses.take(page)
       // The tunnel button of a new tab, and of a tab that carries a tunnel choice, is about the tab: no website has an origin to be about.
-      const tabId = page === 'tunnels' ? tabForTunnelPopover(tabs.getState(), (id) => tabs.partitionOf(id), isOriginServedFromCacheSync) : undefined
+      const tabId = page === 'tunnels' ? aboutTab() : undefined
       if (tabId !== undefined) {
         if (waitingList?.tabId === tabId) return
         waitingList?.cancel?.()
@@ -115,19 +124,23 @@ export function shellActions (parts: WindowParts): ShellActions {
         // A new tab's page takes the keyboard in its first moments and would close a list that is open by then, so the list opens once the tab's keyboard is placed.
         const cancel = tabs.keyboard.whenPlaced(tabId, () => {
           waitingList = undefined
-          if (tabForTunnelPopover(tabs.getState(), (id) => tabs.partitionOf(id), isOriginServedFromCacheSync) !== tabId) return
+          if (aboutTab() !== tabId) return
           panels.networks.close()
           closeOverlays()
           panels.siteInfo.toggleTab(anchor, tabId, pressedAt)
+          holdForArrival()
         })
         if (cancel !== undefined) waitingList = { tabId, cancel }
         return
       }
-      const origin = url === undefined ? undefined : isolationKeyFromUrl(url) ?? undefined
+      // A tab whose first page has not committed has no address to send: the button is about the one it is opening, as it is once the page has come.
+      const address = url !== undefined && url !== '' ? url : page === 'tunnels' ? addressOfFrontTab(tabs.getState(), openingAddress) : undefined
+      const origin = address === undefined ? undefined : isolationKeyFromUrl(address) ?? undefined
       if (origin === undefined) return // no canonical origin -- nothing this popup can show
       panels.networks.close()
       closeOverlays()
       panels.siteInfo.toggle(anchor, origin, page, pressedAt)
+      if (page === 'tunnels') holdForArrival()
     },
     runCommand: (id) => { services.commands.run(id, entry) },
     act: (name, payload) => runChromeAction(name, payload, { window: entry, services, takePress: (button) => presses.take(button) }),

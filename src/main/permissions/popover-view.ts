@@ -18,6 +18,8 @@ import { lockNavigation } from '../shell/lock-navigation.js'
 import { isEchoOfClose } from '../shell/press-stamps.js'
 import { SHELL_PARTITION } from '../shell/shell-session.js'
 import type { ShellEntry } from '../shell/shell-session.js'
+import { watchArrival } from './popover-arrival.js'
+import type { ArrivalHold } from './popover-arrival.js'
 import { onThemeUpdated, resolveThemeColor } from '../shell/theme-colors.js'
 import type { ThemeColorPair } from '../shell/theme-colors.js'
 import { recordPopoverShown, recordViewBackground } from '../shell/view-background-test-hook.js'
@@ -120,6 +122,8 @@ export interface PopoverView {
   toggle: (anchor: PopoverAnchor, extraArgs: readonly string[], key?: string, pressedAt?: number) => void
   close: () => void
   isOpen: () => boolean
+  /** The open popup was opened while `contents`, a tab's page, had not committed its first page. When that page commits and takes the keyboard, the popup takes it back and stays, once; a press in the page, or the page having loaded, ends this and the popup closes as a click away does. A no-op while the popup is closed. */
+  holdAgainstArrival: (contents: WebContents) => void
   /** Builds a `warm` popup's view now, if it is not already built -- a no-op
    * for a non-`warm` popup (nothing to build ahead of an open it always pays
    * for) and a no-op if already built. Idempotent: safe to call from a hover
@@ -170,6 +174,8 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   /** Which icon the showing popup was opened by, and which one the last close was of. */
   let shownKey = ''
   let lastClosedKey = ''
+  /** Set while the showing popup waits for a tab's first page to commit (`holdAgainstArrival`). */
+  let arrival: ArrivalHold | null = null
 
   /** A view's contents, or undefined once they were destroyed (the view then answers `webContents` with nothing, whatever its type says). */
   function contentsOf (view: WebContentsView): WebContents | undefined {
@@ -226,7 +232,19 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // toolbar popup rather than a stuck overlay. After the native call, never
     // inside it: Chromium blurs a view a window resize leaves outside from
     // within `setSize`, and removing the view there ends the main process.
-    popup.webContents.on('blur', () => { setImmediate(() => { if (shown === popup) hide() }) })
+    popup.webContents.on('focus', () => { arrival?.popupHoldsKeyboard() })
+    popup.webContents.on('blur', () => {
+      setImmediate(() => {
+        if (shown !== popup) return
+        // The page taking the keyboard as its first page commits is not a click away: the popup takes it back, once.
+        if (arrival?.arrivedWithKeyboard() === true) {
+          arrival.end()
+          contentsOf(popup)?.focus()
+          return
+        }
+        hide()
+      })
+    })
     // A popup whose page is gone (crashed, or its contents destroyed) leaves the window the same way a click away does,
     // so the person's next click on its icon opens a new one instead of closing the dead one.
     const gone = (): void => {
@@ -287,6 +305,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   /** `focusTabAfter`: the popup's page is gone, so it cannot be asked whether it held the keyboard. */
   function hide (focusTabAfter = false): void {
     if (shown === null) return
+    arrival?.end()
     const popup = shown
     const contents = shownContents
     const id = shownContentsId
@@ -359,6 +378,12 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     },
     close: () => { hide() },
     isOpen: () => shown !== null,
+    holdAgainstArrival (contents) {
+      if (shown === null) return
+      arrival?.end()
+      const hold: ArrivalHold = watchArrival(contents, () => { if (arrival === hold) arrival = null })
+      arrival = hold
+    },
     prewarm () { if (spec.warm === true) ensureWarmView() },
     restack () { if (shown !== null && contentsOf(shown) !== undefined) attachShown(contentView, shown) }
   }

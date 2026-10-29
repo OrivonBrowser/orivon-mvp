@@ -121,7 +121,25 @@ describe('createWindowState', () => {
     expect(closeSiteInfo).not.toHaveBeenCalled()
 
     push([tab('a', 'https://b.example/')], 'a')
-    expect(closeSiteInfo).toHaveBeenCalledTimes(1)
+    expect(closeSiteInfo).toHaveBeenCalledExactlyOnceWith(null)
+  })
+
+  it('tells the site-info popover which tab and origin arrived when a tab commits its first page, so one opened while it loaded can stay', () => {
+    const { push, closeSiteInfo } = setup()
+    push([tab('a', 'https://a.example/')], 'a')
+    push([tab('b', '')], 'b')
+    closeSiteInfo.mockClear()
+
+    push([tab('b', 'https://b.example/page')], 'b')
+    expect(closeSiteInfo).toHaveBeenCalledExactlyOnceWith({ tabId: 'b', origin: 'https://b.example' })
+
+    // Any later move to another origin leaves the popover stale, and so does arriving on another tab.
+    closeSiteInfo.mockClear()
+    push([tab('b', 'https://c.example/')], 'b')
+    push([tab('a', 'https://a.example/'), tab('b', '')], 'b')
+    push([tab('a', 'https://a.example/'), tab('b', '')], 'a')
+    expect(closeSiteInfo.mock.calls.every(([arrived]) => arrived === null)).toBe(true)
+    expect(closeSiteInfo).toHaveBeenCalled()
   })
 
   it('hands a late favicon to the bookmark for that page, and tells the fullscreen state which tabs exist', () => {

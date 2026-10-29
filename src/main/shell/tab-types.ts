@@ -82,7 +82,7 @@ export interface TabState {
   sharing?: DisplaySurfaceKind
   /** Another page is showing this tab's contents. Absent reads as false. */
   shared?: boolean
-  /** The page is a blank one in a tab that is not the dashboard's, in whatever session: a popup a page opened with no address, which the page writes into, or a tab whose address was refused. It is not the new tab the tunnel button is about. Absent reads as false. */
+  /** The page is a blank one in a tab that is not the dashboard's, in whatever session: a popup a page opened with no address, or one whose first page has not committed (`popupWithOpener`), which the page writes into, or a tab whose address was refused. It is not the new tab the tunnel button is about, and it has no button. Absent reads as false. */
   blankPage?: boolean
   /** The tunnel the tab was told to send every website it opens through (`nym`, `socks5`), or `direct`. Absent when it has none. */
   tunnelChoice?: TabTunnelChoice
@@ -356,6 +356,10 @@ export interface TabRecord {
   reader?: { source: string, address?: string } | null
   /** The main frame's address while a navigation has started and not yet committed, failed or stopped (inflight-url.ts). Absent when none is in flight. */
   inflightUrl?: string
+  /** Where that navigation leads now: `inflightUrl`, or the address a redirect of it has led to. Absent when none is in flight. */
+  inflightTarget?: string
+  /** Set on a tab that began as a popup a page opened with an opener (`popup-with-opener.ts`): the view Chromium made for it. While that is still the tab's `view` and it has committed nothing, the page that opened it can write into its empty document, which `webContents.opener` cannot say once that page has cut the link. Absent on a tab the browser opened itself and on one a link with a target opened. */
+  popupWithOpener?: WebContentsView
   /** The temporary routed session this tab last left an app for, so Forward onto that page opens it in the same session and never directly (leaving-route.ts). */
   routedAway?: string
   /** The pages of the tab's history that its view does not hold (tab-outer-history.ts). Absent reads as none. */

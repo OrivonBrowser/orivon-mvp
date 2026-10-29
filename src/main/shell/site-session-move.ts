@@ -4,6 +4,7 @@
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
+import type { TabRecord } from './tab-types.js'
 
 /** What the decision reads of a tab. */
 export interface TabInSession {
@@ -14,6 +15,11 @@ export interface TabInSession {
   readonly showsPage: boolean
   /** The tunnel choice of the tab, if it has one: it decides the session ahead of the website's own entry. */
   readonly tunnelChoice?: TabTunnelChoice
+}
+
+/** The address a tab is on for its session: its page's, or while it has none the one its first navigation leads to. '' with neither. */
+export function addressOfTab (committed: string, record: Pick<TabRecord, 'inflightTarget'>): string {
+  return committed !== '' ? committed : record.inflightTarget ?? ''
 }
 
 export interface TabMove {
