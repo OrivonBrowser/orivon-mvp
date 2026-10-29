@@ -51,6 +51,11 @@ const refusing = (): Worker => new Worker("const p = require('node:worker_thread
 const approving = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', (m) => p.postMessage({ id: m.id, ok: true }))", { eval: true })
 /** A thread that answers with nothing at all. */
 const nulled = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', () => p.postMessage(null))", { eval: true })
+/** The real thread, which also counts in `sent` each answer it sends, so a test can know one is on its way while the host's thread is held. */
+function counting (sent: Int32Array): () => Worker {
+  const count = "{ const wt = require('node:worker_threads'); const sent = new Int32Array(wt.workerData); const post = wt.parentPort.postMessage.bind(wt.parentPort); wt.parentPort.postMessage = (...args) => { post(...args); Atomics.add(sent, 0, 1); Atomics.notify(sent, 0) } }\n"
+  return () => new Worker(count + code, { eval: true, workerData: sent.buffer })
+}
 
 /** `count` content-addressed chunks, each a different file, and their addresses. */
 function chunksOf (count: number): Array<{ address: string, chunk: Uint8Array }> {
@@ -157,13 +162,22 @@ describe('where the chunk check pool runs its checks', () => {
 
   it('keeps a thread whose answer waited behind the host\'s own busy thread past the stall limit', async () => {
     const lines: string[] = []
-    const pool = poolOf(real, { stallMs: 50, log: (line) => { lines.push(line) } })
-    await pool.verify(FIRST.address, FIRST.chunk)
+    const sent = new Int32Array(new SharedArrayBuffer(4))
+    const pool = poolOf(counting(sent), { stallMs: 50, log: (line) => { lines.push(line) } })
+    // The host's thread held by something else until the thread has sent `count` answers and the stall timer has come due,
+    // however slowly a loaded machine runs the thread.
+    const hold = (count: number): void => {
+      const held = Date.now()
+      for (let now = Atomics.load(sent, 0); now < count && Date.now() < held + 30_000; now = Atomics.load(sent, 0)) Atomics.wait(sent, 0, now, 1000)
+      while (Date.now() < held + 200) { /* busy */ }
+      expect(Atomics.load(sent, 0)).toBeGreaterThanOrEqual(count)
+    }
+    const first = pool.verify(FIRST.address, FIRST.chunk)
+    hold(3) // the two chunks a new thread is first asked about, and this one
+    expect(await first).toBe(true)
     const where: CheckedOn[] = []
     const answer = pool.verify(FIRST.address, FIRST.chunk, (on) => { where.push(on) })
-    // The host's thread held by something else, while the thread answers and the stall timer comes due.
-    const until = Date.now() + 200
-    while (Date.now() < until) { /* busy */ }
+    hold(4)
     expect(await answer).toBe(true)
     expect(where).toEqual([1])
     expect(lines).toEqual([])
