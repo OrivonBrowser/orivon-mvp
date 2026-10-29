@@ -4,7 +4,7 @@ import type { WindowContext } from '../window-context.js'
 
 type Look = { mark: string | null, via: string | null }
 
-function ctx (lookOf: (url: string, partition: string | undefined, choice?: string) => Look, active: { url: string, partition?: string } | null, newTabLookOf: (choice: string | undefined) => Look = () => ({ mark: null, via: null }), isApp: (origin: string) => boolean = () => false) {
+function ctx (lookOf: (url: string, partition: string | undefined, choice?: string) => Look, active: { url: string, partition?: string | undefined } | null, newTabLookOf: (choice: string | undefined) => Look = () => ({ mark: null, via: null }), isApp: (origin: string) => boolean = () => false) {
   return {
     window: { tabs: { liveWebContents: () => active === null ? undefined : { getURL: () => active.url }, partitionOf: () => active?.partition } },
     services: { tunnel: { lookOf, newTabLookOf, isApp, onChange: vi.fn(() => () => {}) } }

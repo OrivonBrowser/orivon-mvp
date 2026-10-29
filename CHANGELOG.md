@@ -17,6 +17,10 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+### Added
+
+- **A tunnel for one tab, chosen before the first address**: the tunnel button is now on the new tab. Turn on Nym or your proxy there and the address you type, and every site that tab opens until it closes, goes through it from its first request; on a website that goes through the tab's tunnel the button says "Set for this tab". The new-tab page is not kept in the saved session until it navigates. In a window 640 pixels wide or less the toolbar's navigation buttons and the address bar's padding are 2 to 4 pixels tighter, so the address field keeps its room beside the new button.
+
 ## [0.0.12] - 2026-10-28
 
 Pre-release, published 2026-10-28. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.12).
@@ -55,25 +59,6 @@ Pre-release, published 2026-10-28. [Release page](https://github.com/OrivonBrows
 
 ## [0.0.11] - 2026-10-24
 
-- **Swarm sites open about eight times sooner**: a file's leaves come from Orivon's Swarm node in one request per 512 KB, each still checked against the address its parent lists, up to 4 MB ahead, from a node that keeps 250 peers; a feed with no new update is found in one round. The WebTorrent app's page loaded in 15 to 18 s where it took 141 s, and a first start finds its peers about 10 s sooner.
-- **A newer Orivon release is announced inside the browser**: the update check no longer raises an operating-system notification. Once per version, in the window you are using, a question under the address bar offers "Download from GitHub" (the release page, in a new Orivon tab), "Download from latest.orivonstack.eth" (the start page of that name, which downloads the package for your system, in a new Orivon tab) or "Not now", and waits while the window is minimised, full screen or covered by another question. Settings > About shows a release the background check found, and the report log says why a check failed.
-- **Swarm sites open about five times sooner**: a file's leaves come from Orivon's Swarm node in one request per 512 KB, each still checked against the address its parent lists, and a feed with no new update is found in one round; the WebTorrent app's page loaded in 25 s where it took 141 s.
-- **The newest-release start page asks search engines not to index it**: the `index.html` that `latest.orivonstack.eth` opens now carries `<meta name="robots" content="noindex">`, as its `latest.orivonstack.com` twin does. A visitor sees the same page; the folder's CID changes on the next `sync`, the releases' do not.
-- **`.eth.limo` addresses inside a page load as `.eth`**: an image, script, stylesheet, font, media file or request a page loads from a `<name>.eth.limo` or `.eth.link` address now comes from the `.eth` name, checked on this computer, and a request from another origin can still read it. Frames keep loading through the gateway, since a `.eth` site refuses to be framed by another site; Settings > Web3 turns it off.
-- **Orivon's IPFS node is built from public source**: the node now comes from the public `orivon-ipfs-node` repository (MIT or Apache-2.0), built by its workflow and published as one pinned IPFS folder that the app checks by size and sha256. It resolves peers' `/dns` and `/dnsaddr` names over TCP to `1.1.1.1` and `1.0.0.1`, so it sends no datagrams, and its default bootstrap list gains the one peer reached by address alone.
-- **Orivon's IPFS node can fetch from a provider behind a relay**: a provider whose only address goes through a circuit relay is now ranked after the direct ones and reached through that relay, so an `ipfs://` address whose only provider sits behind a home router and a relay can open. The relay is the one the provider's record names; it sees the two IP addresses, never the content, which is encrypted end to end.
-- **A provider behind a relay has longer to answer**: when the IPFS node asks a peer it fetched from a moment ago and every address of that peer goes through a circuit relay, it waits 8 seconds for the answer instead of 2, since a provider whose idle connection closed needs about 2.5 seconds to be reached again; the next file of a shared folder no longer fails because that provider was passed over.
-- **A fresh share's provider is found in seconds**: the IPFS node now keeps the addresses a provider's record carries, so a provider that is reachable only through a circuit relay can be dialled, and its walk through the network asks 10 peers at a time, holds up to 64 connections and ends 250 ms after the first provider it can reach. A share announced a moment ago opened in 4 to 9 minutes on Linux; on GitHub's Linux, macOS and Windows runners its provider was found in 2 to 7 seconds, 20 of 20 times each.
-
-### Added
-
-- **A tunnel for one tab, chosen before the first address**: the tunnel button is now on the new tab. Turn on Nym or your proxy there and the address you type, and every site that tab opens until it closes, goes through it from its first request; on a website that goes through the tab's tunnel the button says "Set for this tab". The new-tab page is not kept in the saved session until it navigates.
-- **Settings > Web3 can ask your own Ethereum servers**: choose Your own servers and name up to four Ethereum RPC addresses and a beacon server; a node on this computer or your home network works. They replace Orivon's, which are never asked in their place, and a key in an address is hidden in the log, on screen and in a bug report.
-- **Node shim: `/` and `/orivon` exist as directories**: a program that makes a folder by walking from `/` (`stat` each ancestor, `mkdir` the missing ones) now reaches the app's files. They list one entry, the next segment toward the files, and every write, removal, rename and open on them, and any path beside the files, still fails `EACCES`.
-- **Node shim: `crypto.randomInt`, `fs.mkdtemp`, `fs.cp` and `fs.copyFile`**: `randomInt` draws by rejection sampling over the platform's random values, in both forms; `copyFile`, `cp` (with `recursive`, `force`, `errorOnExist` and `filter`) and `mkdtemp` work on the app's own files and on a folder the person picked, in the callback and promise forms, with Node's errors.
-
-- **Node shim: SQLite user-defined functions and backup**: `better-sqlite3`'s `db.function(name, [options], fn)` and `db.backup(destination)`, and `node:sqlite`'s `DatabaseSync#function`, now work (they threw "not built"); `aggregate`, `table`, `serialize` and `loadExtension` still refuse by name, and a backup cannot start inside a transaction.
-- **Node shim: a SQLite database from bytes, and `serialize`**: `better-sqlite3`'s `new Database(buffer)` opens the bytes of a database file as a database in the engine's memory (readable, writable, never written to a file; with `readonly` it refuses writes), and `db.serialize()` returns a database's bytes as a `Buffer`; `aggregate`, `table` and `loadExtension` still refuse by name.
 Pre-release, published 2026-10-24. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.11).
 
 ### Changed for apps
