@@ -74,16 +74,14 @@ describe('a tab whose first page has not committed (its address is empty)', () =
     expect(tabForTunnelPopover(snapshot(uncommitted({ tunnelChoice: 'nym' })), shared, isApp, opening('https://app.example/'))).toBeUndefined()
   })
 
-  it('is the tab when it shows nothing and opens nothing, or opens an address with no origin: no website is there to be about, as on a new tab', () => {
-    for (const address of [undefined, 'data:text/html,hi', 'blob:null/1234']) {
-      expect(tabForTunnelPopover(snapshot(uncommitted()), shared, notApp, opening(address)), String(address)).toBe('t1')
-      expect(tabForTunnelPopover(snapshot(uncommitted({ tunnelChoice: 'direct' })), shared, notApp, opening(address)), String(address)).toBe('t1')
-    }
+  it('is the tab when it carries a choice and opens nothing yet, as it was before the page had an address; with no choice it is no tab, the one blank page the button has no list for', () => {
+    for (const tunnelChoice of ['nym', 'socks5', 'direct'] as const) expect(tabForTunnelPopover(snapshot(uncommitted({ tunnelChoice })), shared, notApp, opening(undefined)), tunnelChoice).toBe('t1')
+    expect(tabForTunnelPopover(snapshot(uncommitted()), shared, notApp, opening(undefined))).toBeUndefined()
   })
 
-  it('is no tab in a session of an app or a temporary route, which keeps its own tunnel, even when nothing is being opened', () => {
+  it('is no tab in a session of an app or a temporary route, which keeps its own tunnel, whatever it is opening', () => {
     for (const partition of ['persist:app-3f9c', 'orivon-route-tab-3f9c0a']) {
-      expect(tabForTunnelPopover(snapshot(uncommitted()), inPartition(partition), notApp, opening(undefined)), partition).toBeUndefined()
+      expect(tabForTunnelPopover(snapshot(uncommitted({ tunnelChoice: 'nym' })), inPartition(partition), notApp, opening('https://news.example/a')), partition).toBeUndefined()
     }
   })
 

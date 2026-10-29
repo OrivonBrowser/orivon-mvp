@@ -137,11 +137,14 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     expect(withChoice.sitePanel.holdAgainstArrival).toHaveBeenCalledExactlyOnceWith({ id: 't1' })
   })
 
-  it('opens the tab\'s list when a tab shows no page and opens none, as on a new tab, instead of nothing', () => {
-    const { actions, sitePanel } = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1')
-    actions.openSiteInfo(anchor, 'tunnels', '')
-    expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
-    expect(sitePanel.toggle).not.toHaveBeenCalled()
+  it('opens the tab\'s list when a tab with a choice shows no page and opens none, and nothing for one with no choice', () => {
+    const withChoice = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false, tunnelChoice: 'direct' }], 't1')
+    withChoice.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(withChoice.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    const plain = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1')
+    plain.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(plain.sitePanel.toggle).not.toHaveBeenCalled()
   })
 
   it('holds the list against no arrival when the page is already there', () => {
