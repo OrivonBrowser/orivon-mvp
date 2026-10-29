@@ -27,7 +27,7 @@ interface Hosted { port: number, hits: () => number, close: () => Promise<void> 
 
 async function host (title: string): Promise<Hosted> {
   let hits = 0
-  const server: Server = createServer((_request, response) => { hits += 1; response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(`<!doctype html><title>${title}</title><body>${title}<button id="blank" onclick="window.open('about:blank')">blank</button><button id="sized" onclick="window.open(this.dataset.target, '', 'width=420,height=320')">sized</button><button id="sizedCut" onclick="const w = window.open(this.dataset.target, '', 'width=420,height=320'); w.opener = null">sized, link cut</button><a id="out" target="_blank" href="about:blank">out</a></body>`) })
+  const server: Server = createServer((_request, response) => { hits += 1; response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(`<!doctype html><title>${title}</title><body>${title}<button id="blank" onclick="window.open('about:blank')">blank</button><button id="sized" onclick="window.open(this.dataset.target, '', 'width=420,height=320')">sized</button><button id="sizedCut" onclick="const w = window.open(this.dataset.target, '', 'width=420,height=320'); setTimeout(() => { w.opener = null }, 300)">sized, link cut</button><a id="out" target="_blank" href="about:blank">out</a></body>`) })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   return { port: (server.address() as AddressInfo).port, hits: () => hits, close: async () => { await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections() }) } }
 }
@@ -415,7 +415,7 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press o
   }
 }, 6 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tab-tunnel-button-opens-before-the-first-page-commits] a popup a page opened onto a website that has not answered has no tunnel button, whether or not the page cut its link to the popup, and has the button once its page has come', async () => {
+it('[app:tab-tunnel-button-opens-before-the-first-page-commits] a popup a page opened onto a website that has not answered has no tunnel button, whether or not the page cuts its link to the popup afterwards, and has the button once its page has come', async () => {
   const { app, chrome } = await start()
   try {
     await clickAddressBarRetrying(chrome, url())
@@ -428,11 +428,23 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] a popup a page o
       await delay(ABSENCE_SETTLE_MS)
       const before = held.requests()
       const page = findViewShowing(app, chrome, url()) as Page
-      await page.evaluate(([id, target]) => { (document.querySelector(`#${String(id)}`) as HTMLElement).dataset.target = target }, [button, heldUrl()])
+      await page.evaluate(({ id, target }) => { (document.querySelector(`#${id}`) as HTMLElement).dataset.target = target }, { id: button, target: heldUrl() })
       await page.click(`#${button}`)
       expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) !== first), `${button}: the popup is the tab in front`).toBe(true)
       expect(await waitFor(() => held.requests() > before), `${button}: the popup asked the website, which has not answered`).toBe(true)
       expect(await waitFor(async () => !(await chrome.locator('#tunnel-btn').isVisible())), `${button}: the popup has no button while its page has not come`).toBe(true)
+      if (button === 'sizedCut') {
+        // The page cuts its link after the popup began to load; the tab is brought to the front again so that its state is read once more, with no opener left to read.
+        await delay(ABSENCE_SETTLE_MS)
+        const popupId = await activeId(chrome)
+        await chrome.click('#new-tab')
+        expect(await waitFor(async () => (await tabIds(chrome)).length === 3 && await activeId(chrome) !== popupId)).toBe(true)
+        const extra = await activeId(chrome)
+        await chrome.evaluate((tab) => { (window as unknown as { orivonShell: { closeTab: (id: string) => void } }).orivonShell.closeTab(tab) }, extra)
+        expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) === popupId)).toBe(true)
+        await delay(ABSENCE_SETTLE_MS)
+        expect(await chrome.locator('#tunnel-btn').isVisible(), `${button}: still no button once the page has cut the link`).toBe(false)
+      }
 
       held.release()
       expect((await waitForTab(chrome, { address: heldUrl(), title: 'held' }, 60_000)).ok, `${button}: the page came`).toBe(true)

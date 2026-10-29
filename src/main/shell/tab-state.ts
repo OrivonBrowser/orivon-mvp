@@ -4,6 +4,7 @@ import type { WebContents } from 'electron'
 import { internalPageIcon } from '../pages/internal-icons.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { BLANK_URL } from './tab-factory.js'
+import { isPageOpenedPopup } from './popup-with-opener.js'
 import { signalState } from './tab-signals.js'
 import type { TabRecord, TabState } from './tab-types.js'
 
@@ -38,7 +39,7 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     audible: false,
     crashed: record?.crashed ?? null,
     // Only the dashboard's tab is a new tab to the tunnel button: any other blank page may be a popup its opener writes into, in any session. A popup is that too until its first page commits, when its address reads empty.
-    ...((url === BLANK_URL && record?.isDashboardTab === false) || (url === '' && record?.popupView !== undefined && record.popupView === record.view) ? { blankPage: true } : {}),
+    ...((url === BLANK_URL && record?.isDashboardTab === false) || (url === '' && isPageOpenedPopup(record, wc)) ? { blankPage: true } : {}),
     ...(record?.tunnelChoice === undefined ? {} : { tunnelChoice: record.tunnelChoice }),
     ...(record === undefined ? {} : signalState(record, wc))
   }

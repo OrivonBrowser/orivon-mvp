@@ -118,8 +118,8 @@ describe('the address a tab in front is opening', () => {
 
 describe('where a tab\'s first navigation leads', () => {
   const view = { webContents: {} }
-  type Record = { inflightTarget?: string, view?: object, popupView?: object }
-  const tabs = (record: Record | undefined, contents: { opener?: unknown } | undefined) => openingAddressOf({ record: () => record, liveWebContents: () => contents })
+  type Opening = { inflightTarget?: string, view?: object, popupWithOpener?: object }
+  const tabs = (record: Opening | undefined, contents: { opener?: unknown } | undefined) => openingAddressOf({ record: () => record as never, liveWebContents: () => contents })
 
   it('is the address the navigation has been redirected to, which the record keeps beside the one it started at', () => {
     expect(tabs({ inflightTarget: 'https://news.example/a' }, { opener: null })('t1')).toBe('https://news.example/a')
@@ -131,11 +131,11 @@ describe('where a tab\'s first navigation leads', () => {
   })
 
   it('is nothing for a tab that started as a popup, however the opener reads later: the page that opened it can cut the link and still write into the document', () => {
-    expect(tabs({ inflightTarget: 'https://news.example/a', view, popupView: view }, { opener: null })('t1')).toBeUndefined()
+    expect(tabs({ inflightTarget: 'https://news.example/a', view, popupWithOpener: view }, { opener: null })('t1')).toBeUndefined()
   })
 
   it('is the address once the tab shows another view than the popup it started as, which the browser itself is loading', () => {
-    expect(tabs({ inflightTarget: 'https://news.example/a', view: { webContents: {} }, popupView: view }, { opener: null })('t1')).toBe('https://news.example/a')
+    expect(tabs({ inflightTarget: 'https://news.example/a', view: { webContents: {} }, popupWithOpener: view }, { opener: null })('t1')).toBe('https://news.example/a')
   })
 
   it('is nothing with nothing in flight, no record or no live page', () => {

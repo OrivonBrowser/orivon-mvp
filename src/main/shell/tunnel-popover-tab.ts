@@ -1,6 +1,7 @@
 // Which tab the tunnel button's popover is about, when it is about a tab and not a website (ADR-0101). Pure.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isProfilePartition } from '../route/site-partition.js'
+import { isPageOpenedPopup } from './popup-with-opener.js'
 import type { TabRecord, TabsSnapshot } from './tab-types.js'
 
 /** The address a tab with no page yet is opening, by tab id: its `url` is '' until the first page commits, and main holds the address in flight. */
@@ -8,22 +9,20 @@ export type OpeningAddress = (id: string) => string | undefined
 
 /** What `openingAddressOf` reads of a window's tabs. */
 export interface OpeningTabs {
-  readonly record: (id: string) => Pick<TabRecord, 'inflightTarget' | 'view' | 'popupView'> | undefined
+  readonly record: (id: string) => Pick<TabRecord, 'inflightTarget' | 'view' | 'popupWithOpener'> | undefined
   readonly liveWebContents: (id: string) => { readonly opener?: unknown } | undefined
 }
 
 /**
  * Where the first navigation of a tab leads now (`TabRecord.inflightTarget`, after its redirects), by tab id. Not for a popup a page
  * opened: it shows its initial empty document until the website answers, and the page that opened it writes into that document as
- * freely as into its own, so what the tab was told it loads cannot speak for what it shows. That is read from the record (the view the
- * popup was made in is still the tab's), since the opening page can cut `opener` and keep writing; a live opener counts as well.
+ * freely as into its own, so what the tab was told it loads cannot speak for what it shows (`popup-with-opener.ts`).
  */
 export function openingAddressOf (tabs: OpeningTabs): OpeningAddress {
   return (id) => {
     const contents = tabs.liveWebContents(id)
     const record = tabs.record(id)
-    if (contents === undefined || record === undefined || (contents.opener ?? null) !== null) return undefined
-    if (record.popupView !== undefined && record.popupView === record.view) return undefined
+    if (contents === undefined || record === undefined || isPageOpenedPopup(record, contents)) return undefined
     return record.inflightTarget
   }
 }

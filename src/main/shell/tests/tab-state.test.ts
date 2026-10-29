@@ -593,15 +593,22 @@ describe('a blank page that is no new tab', () => {
   it('is flagged on a popup a page opened that has committed nothing yet, which shows the empty document its opener writes into though it is no new tab', () => {
     const view = {}
     for (const partition of [undefined, 'persist:tunnel-profile']) {
-      const state = stateOf('', { partition, view, popupView: view, tunnelChoice: 'nym' })
+      const state = stateOf('', { partition, view, popupWithOpener: view, tunnelChoice: 'nym' })
       expect(state, String(partition)).toMatchObject({ isNewTab: false, blankPage: true, tunnelChoice: 'nym' })
     }
   })
 
+  it('is flagged on a popup that holds its opener before the record has it, and not on a tab opened by a link with a target, which has none', () => {
+    const withOpener = { ...makeFakeWebContents(), getURL: () => '', opener: { url: 'https://opener.example/' } }
+    expect(buildTabState('t1', { isDashboardTab: false } as never, withOpener as never, env)).toMatchObject({ blankPage: true })
+    const withoutOpener = { ...makeFakeWebContents(), getURL: () => '', opener: null }
+    expect(buildTabState('t1', { isDashboardTab: false } as never, withoutOpener as never, env)).not.toHaveProperty('blankPage')
+  })
+
   it('is not flagged on a popup once it shows a page, nor on a tab that began as one and now shows another view, nor on a tab the browser opened', () => {
     const view = {}
-    expect(stateOf('https://news.example/', { view, popupView: view })).not.toHaveProperty('blankPage')
-    expect(stateOf('', { view: {}, popupView: view })).not.toHaveProperty('blankPage')
+    expect(stateOf('https://news.example/', { view, popupWithOpener: view })).not.toHaveProperty('blankPage')
+    expect(stateOf('', { view: {}, popupWithOpener: view })).not.toHaveProperty('blankPage')
     expect(stateOf('', { view })).not.toHaveProperty('blankPage')
   })
 
