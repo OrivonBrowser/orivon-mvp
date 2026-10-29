@@ -76,7 +76,7 @@ describe('shellActions press', () => {
 describe('shellActions openSiteInfo for the tunnel button', () => {
   const anchor = { x: 900, y: 40, width: 30, height: 30 }
   /** `keyboardPlaced` false is a tab opened on the start page whose keyboard is still moving: what waits on it runs when `place()` is called. */
-  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string, keyboardPlaced = true): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn>, place: () => void, state: { tabs: unknown[], activeTabId: string | null } } {
+  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string, keyboardPlaced = true, inflightUrl?: string): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn>, place: () => void, state: { tabs: unknown[], activeTabId: string | null } } {
     const sitePanel = { close: vi.fn(), toggle: vi.fn(), toggleTab: vi.fn() }
     const parts = makeParts({})
     const state = { tabs, activeTabId }
@@ -89,7 +89,7 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
       waiting.push(run)
       return () => { waiting.splice(waiting.indexOf(run), 1) }
     }
-    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, keyboard: { whenPlaced } }
+    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, record: () => ({ inflightUrl }), keyboard: { whenPlaced } }
     ;(parts.panels as unknown as { siteInfo: unknown }).siteInfo = sitePanel
     return { actions: shellActions(parts), sitePanel, closeOverlays: parts.closeOverlays as unknown as ReturnType<typeof vi.fn>, place: () => { for (const run of waiting.splice(0)) run() }, state }
   }
@@ -122,6 +122,32 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     const inProfile = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1', 'persist:tunnel-profile')
     inProfile.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
     expect(inProfile.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+  })
+
+  it('opens it for the website a tab with no page yet is opening, which the chrome cannot name, as it does once the page has come', () => {
+    const plain = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/a')
+    plain.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(plain.sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+    expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
+    const withChoice = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1', 'persist:tunnel-profile', true, 'https://news.example/a')
+    withChoice.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(withChoice.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    expect(withChoice.sitePanel.toggle).not.toHaveBeenCalled()
+  })
+
+  it('opens the tab\'s list when a tab shows no page and opens none, as on a new tab, instead of nothing', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1')
+    actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    expect(sitePanel.toggle).not.toHaveBeenCalled()
+  })
+
+  it('does not read the address a tab is opening for the shield or the key, which are about the page', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/a')
+    actions.openSiteInfo(anchor, 'main', '')
+    actions.openSiteInfo(anchor, 'web3', '')
+    expect(sitePanel.toggle).not.toHaveBeenCalled()
+    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
   })
 
   it('opens it for a blank page that is no new tab as for a page with no origin: nothing, in a session of its own or the shared one', () => {

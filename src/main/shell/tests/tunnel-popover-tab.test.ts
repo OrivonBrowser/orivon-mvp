@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tabForTunnelPopover } from '../tunnel-popover-tab.js'
+import { addressBeingOpened, tabForTunnelPopover } from '../tunnel-popover-tab.js'
 import type { TabsSnapshot, TabState } from '../tab-types.js'
 
 const tab = (over: Partial<TabState> = {}): TabState => ({ id: 't1', url: 'https://news.example/', isNewTab: false, isInternal: false, ...over } as TabState)
@@ -56,3 +56,54 @@ describe('which tab the tunnel button\'s popover is about', () => {
     expect(tabForTunnelPopover({ tabs: [], activeTabId: null }, shared, notApp)).toBeUndefined()
   })
 })
+
+describe('a tab whose first page has not committed (its address is empty)', () => {
+  const uncommitted = (over: Partial<TabState> = {}): TabState => tab({ url: '', ...over })
+  const opening = (address: string | undefined) => (): string | undefined => address
+
+  it('is no tab when it is opening a website and carries no choice: the press is about that website, as it is once the page has come', () => {
+    expect(tabForTunnelPopover(snapshot(uncommitted()), shared, notApp, opening('https://news.example/a'))).toBeUndefined()
+  })
+
+  it('is the tab when it carries a choice and is opening a website, which the choice decides', () => {
+    for (const tunnelChoice of ['nym', 'socks5', 'direct'] as const) expect(tabForTunnelPopover(snapshot(uncommitted({ tunnelChoice })), shared, notApp, opening('https://news.example/a')), tunnelChoice).toBe('t1')
+  })
+
+  it('is no tab for an installed app it is opening, whatever the tab carries, as for the app\'s page', () => {
+    const isApp = (origin: string): boolean => origin === 'https://app.example'
+    expect(tabForTunnelPopover(snapshot(uncommitted({ tunnelChoice: 'nym' })), shared, isApp, opening('https://app.example/'))).toBeUndefined()
+  })
+
+  it('is the tab when it shows nothing and opens nothing, or opens an address with no origin: no website is there to be about, as on a new tab', () => {
+    for (const address of [undefined, 'data:text/html,hi', 'blob:null/1234']) {
+      expect(tabForTunnelPopover(snapshot(uncommitted()), shared, notApp, opening(address)), String(address)).toBe('t1')
+      expect(tabForTunnelPopover(snapshot(uncommitted({ tunnelChoice: 'direct' })), shared, notApp, opening(address)), String(address)).toBe('t1')
+    }
+  })
+
+  it('is no tab in a session of an app or a temporary route, which keeps its own tunnel, even when nothing is being opened', () => {
+    for (const partition of ['persist:app-3f9c', 'orivon-route-tab-3f9c0a']) {
+      expect(tabForTunnelPopover(snapshot(uncommitted()), inPartition(partition), notApp, opening(undefined)), partition).toBeUndefined()
+    }
+  })
+
+  it('asks for the address only of a tab with no page, never of one that shows a page', () => {
+    const pending = (): string => 'https://other.example/'
+    expect(tabForTunnelPopover(snapshot(tab({ url: 'https://news.example/' })), shared, notApp, pending)).toBeUndefined()
+    expect(tabForTunnelPopover(snapshot(tab({ url: 'https://news.example/', tunnelChoice: 'nym' })), shared, (origin) => origin === 'https://other.example', pending)).toBe('t1')
+  })
+})
+
+describe('the address a tab in front is opening', () => {
+  const snapshotOf = (...tabs: TabState[]): TabsSnapshot => snapshot(...tabs)
+  it('is the address in flight for a tab that has no page yet', () => {
+    expect(addressBeingOpened(snapshotOf(tab({ url: '' })), () => 'https://news.example/a')).toBe('https://news.example/a')
+  })
+
+  it('is nothing for a tab that shows a page, which the page answers for, nor when nothing is in flight, nor with no tab in front', () => {
+    expect(addressBeingOpened(snapshotOf(tab({ url: 'https://news.example/' })), () => 'https://other.example/')).toBeUndefined()
+    expect(addressBeingOpened(snapshotOf(tab({ url: '' })), () => undefined)).toBeUndefined()
+    expect(addressBeingOpened({ tabs: [], activeTabId: null }, () => 'https://news.example/')).toBeUndefined()
+  })
+})
+

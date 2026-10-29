@@ -8,7 +8,7 @@
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-tab-tunnel-button.test.ts
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
-import type { Server } from 'node:http'
+import type { Server, ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -19,7 +19,7 @@ import { assertNoElectronSurvivors, closeElectron } from '../support/launch-elec
 import { shoot } from '../support/auth-support.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
-import { activeTabInfo, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, activeTabInfo, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const NAME = 'plain.nym.test'
 
@@ -27,19 +27,33 @@ interface Hosted { port: number, hits: () => number, close: () => Promise<void> 
 
 async function host (title: string): Promise<Hosted> {
   let hits = 0
-  const server: Server = createServer((_request, response) => { hits += 1; response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(`<!doctype html><title>${title}</title><body>${title}<button id="blank" onclick="window.open('about:blank')">blank</button></body>`) })
+  const server: Server = createServer((_request, response) => { hits += 1; response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(`<!doctype html><title>${title}</title><body>${title}<button id="blank" onclick="window.open('about:blank')">blank</button><a id="out" target="_blank" href="about:blank">out</a></body>`) })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   return { port: (server.address() as AddressInfo).port, hits: () => hits, close: async () => { await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections() }) } }
+}
+
+/** A website that takes the request and answers only when released: a tab opened onto it has committed nothing meanwhile. */
+interface Held { port: number, requests: () => number, release: () => void, close: () => Promise<void> }
+
+async function holdingHost (): Promise<Held> {
+  const waiting: ServerResponse[] = []
+  let requests = 0
+  const server: Server = createServer((_request, response) => { requests += 1; waiting.push(response) })
+  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
+  const release = (): void => { for (const response of waiting.splice(0)) response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end('<!doctype html><title>held</title><body>held</body>') }
+  return { port: (server.address() as AddressInfo).port, requests: () => requests, release, close: async () => { release(); await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections() }) } }
 }
 
 let dir: string
 let decoy: Hosted
 let real: Hosted
+let held: Held
 let nymLog: string
 let moduleDir: string
 let configFile: string
 const cleanups: Array<() => Promise<void> | void> = []
 const url = (): string => `http://${NAME}:${String(decoy.port)}/`
+const heldUrl = (): string => `http://${NAME}:${String(held.port)}/`
 const askedOfNym = (): number => readFileSync(nymLog, 'utf8').split('\n').filter((line) => line.startsWith('tcp ') && line.endsWith(` ${NAME}:${String(decoy.port)}`)).length
 
 beforeAll(async () => {
@@ -51,11 +65,12 @@ beforeAll(async () => {
   writeFileSync(join(moduleDir, 'smolmix_wasm_bg.wasm'), EMPTY_WASM)
   decoy = await host('direct')
   real = await host('tunnelled')
-  cleanups.push(async () => { await decoy.close(); await real.close() })
+  held = await holdingHost()
+  cleanups.push(async () => { await decoy.close(); await real.close(); await held.close() })
   nymLog = join(dir, 'fake.log')
   writeFileSync(nymLog, '')
   configFile = join(dir, 'fake.json')
-  writeFileSync(configFile, JSON.stringify({ failStart: false, log: nymLog, targets: { [`${NAME}:${String(decoy.port)}`]: { host: '127.0.0.1', port: real.port } } }))
+  writeFileSync(configFile, JSON.stringify({ failStart: false, log: nymLog, targets: { [`${NAME}:${String(decoy.port)}`]: { host: '127.0.0.1', port: real.port }, [`${NAME}:${String(held.port)}`]: { host: '127.0.0.1', port: held.port } } }))
 }, 60_000)
 
 afterAll(async () => {
@@ -288,6 +303,73 @@ it('[app:tab-tunnel-button-blank-popup-in-the-shared-session-has-no-button] a bl
     expect(await attribute(chrome, 'data-tunnel')).toBeNull()
     expect(await attribute(chrome, 'aria-label')).toBe('Tunnels')
   } finally {
+    await closeElectron(app)
+  }
+}, 6 * QA_TEST_TIMEOUT_MS)
+
+const loadingPages = async (app: ElectronApplication): Promise<number> => await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((wc) => wc.isLoading()).length)
+
+/** Clicks a link of the page in front that opens `heldUrl()` in a new tab, and returns once that tab is in front, its request has reached the website, and nothing has been answered. */
+async function openHeldInNewTab (app: ElectronApplication, chrome: Page, page: Page): Promise<void> {
+  const first = await activeId(chrome)
+  const before = held.requests()
+  await page.evaluate((target) => { (document.querySelector('#out') as HTMLAnchorElement).href = target }, heldUrl())
+  await page.click('#out')
+  expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) !== first), 'the link opened a tab in front').toBe(true)
+  expect(await waitFor(() => held.requests() > before), 'the new tab asked the website, which has not answered').toBe(true)
+  expect(await loadingPages(app), 'a page is loading').toBeGreaterThan(0)
+}
+
+it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the tunnels button pressed on a tab opened onto a website that has not answered yet opens the list of that website, and the same list once the page has come', async () => {
+  const { app, chrome } = await start()
+  try {
+    await clickAddressBarRetrying(chrome, url())
+    expect((await waitForTab(chrome, { address: url(), title: 'direct' }, 60_000)).ok).toBe(true)
+    expect(await waitFor(() => findViewShowing(app, chrome, url()) !== undefined)).toBe(true)
+    await openHeldInNewTab(app, chrome, findViewShowing(app, chrome, url()) as Page)
+    expect(await chrome.locator('#tunnel-btn').isVisible(), 'the tab draws the button while its page has not committed').toBe(true)
+
+    // Nothing has come from the website, so the tab has no address of its own yet: the press is about the address it is opening.
+    const popover = await openList(app, chrome)
+    expect(await loadingPages(app), 'the list opened while the page was still loading').toBeGreaterThan(0)
+    expect(await popover.locator('.site-claim').textContent(), 'the list is the website\'s, not the tab\'s').toContain(`${NAME}:${String(held.port)}`)
+    expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-label')).toBe('Use Nym for this site')
+
+    // The page comes while the list is open: the list is not closed by the page taking the keyboard.
+    held.release()
+    expect((await waitForTab(chrome, { address: heldUrl(), title: 'held' }, 60_000)).ok).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(findPopup(app) !== undefined, 'the list stays open when the page arrives').toBe(true)
+    await closeList(app, chrome)
+
+    // The same press on the page now shown opens the same list.
+    const again = await openList(app, chrome)
+    expect(await again.locator('.site-claim').textContent()).toContain(`${NAME}:${String(held.port)}`)
+    await closeList(app, chrome)
+  } finally {
+    held.release()
+    await closeElectron(app)
+  }
+}, 6 * QA_TEST_TIMEOUT_MS)
+
+it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press on a tab opened from a tab that carries a tunnel opens the list of the tab, since its choice covers the website before it has answered', async () => {
+  const { app, chrome } = await start()
+  try {
+    const popover = await openList(app, chrome)
+    await popover.click('#tunnel-switch-nym')
+    expect(await waitFor(async () => await attribute(chrome, 'data-tunnel') === 'on')).toBe(true)
+    await closeList(app, chrome)
+    await clickAddressBarRetrying(chrome, url())
+    expect((await waitForTab(chrome, { address: url(), title: 'tunnelled' }, 60_000)).ok).toBe(true)
+    expect(await waitFor(() => findViewShowing(app, chrome, url()) !== undefined)).toBe(true)
+    await openHeldInNewTab(app, chrome, findViewShowing(app, chrome, url()) as Page)
+
+    const list = await openList(app, chrome)
+    expect(await list.locator('.site-claim').textContent(), 'the list is the tab\'s').toBe('This tab')
+    expect(await list.locator('#tunnel-switch-nym').getAttribute('aria-checked'), 'the tab it was opened from handed it its choice').toBe('true')
+    await closeList(app, chrome)
+  } finally {
+    held.release()
     await closeElectron(app)
   }
 }, 6 * QA_TEST_TIMEOUT_MS)
