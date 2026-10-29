@@ -207,6 +207,39 @@ it('[app:tab-tunnel-button-direct-for-this-tab-under-a-tunnelled-browser] with t
   }
 }, 6 * QA_TEST_TIMEOUT_MS)
 
+it('[app:tab-tunnel-button-opens-the-moment-a-new-tab-shows] the tunnels button pressed in the same task that draws a new tab opens the list of that tab, with nothing waited for before the press', async () => {
+  const { app, chrome } = await start()
+  try {
+    const first = await activeId(chrome)
+    // The press comes from the chrome's own state listener, after the chrome has drawn the state that shows the new tab in front: the earliest
+    // moment a person can press a button that is shown. A page that is not loaded yet is no reason for the button to do nothing.
+    const drawn = await chrome.evaluate(async (previous) => await new Promise<{ isNewTab: boolean, url: string, label: string | null }>((resolve) => {
+      interface Pushed { tabs: Array<{ id: string, url: string, isNewTab: boolean }>, activeTabId: string | null }
+      const shell = (window as unknown as { orivonShell: { onState: (listener: (state: Pushed) => void) => () => void } }).orivonShell
+      const button = document.querySelector<HTMLButtonElement>('#tunnel-btn') as HTMLButtonElement
+      const stop = shell.onState((state) => {
+        const active = state.tabs.find((tab) => tab.id === state.activeTabId)
+        if (active === undefined || active.id === previous || button.hidden) return
+        stop()
+        button.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }))
+        button.click()
+        resolve({ isNewTab: active.isNewTab, url: active.url, label: button.getAttribute('aria-label') })
+      })
+      ;(document.querySelector('#new-tab') as HTMLElement).click()
+    }), first)
+    const opened = await waitFor(() => findPopup(app) !== undefined)
+    expect.soft(drawn.isNewTab, `the first state that shows the new tab says it is the new tab (its address then: "${drawn.url}")`).toBe(true)
+    expect.soft(drawn.label).toBe('Tunnels')
+    expect(opened, 'the press opened the list').toBe(true)
+    const popover = findPopup(app) as Page
+    await popover.waitForSelector('#tunnel-switch-nym')
+    expect(await popover.locator('.site-claim').textContent(), 'the list is about the tab').toBe('This tab')
+    await closeList(app, chrome)
+  } finally {
+    await closeElectron(app)
+  }
+}, 6 * QA_TEST_TIMEOUT_MS)
+
 it('[app:tab-tunnel-button-blank-popup-of-a-tunnelled-tab-has-no-button] a blank popup a page opens in a tab given a tunnel is in that tunnel\'s session and is no new tab: its tunnel button is gone, and the page\'s comes back with the page', async () => {
   const { app, chrome } = await start()
   try {

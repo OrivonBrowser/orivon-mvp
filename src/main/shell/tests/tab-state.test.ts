@@ -61,6 +61,7 @@ const { provideVerifierAccess } = await import('../../verifier/verifier-access.j
 const { setPinned } = await import('../tab-pin.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
 const { buildTabState } = await import('../tab-state.js')
+const { tabForTunnelPopover } = await import('../tunnel-popover-tab.js')
 const { closeOthers, closeToRight, duplicateTab, newTabToRight, othersToClose, rightToClose, tabMenuFlags, toggleMute, togglePin } = await import('../tab-commands.js')
 
 beforeEach(() => { createdViews.length = 0 })
@@ -597,5 +598,49 @@ describe('a blank page that is no new tab', () => {
   it('is not flagged on a page that shows something', () => {
     expect(stateOf('https://news.example/', { partition: 'persist:tunnel-profile' })).not.toHaveProperty('blankPage')
     expect(stateOf('https://news.example/', {})).not.toHaveProperty('blankPage')
+  })
+})
+
+describe('a new tab before its page has loaded', () => {
+  const env = { dashboardUrl: 'http://localhost:5999/newtab/', partnerOf: () => null }
+  const loading = (record: Record<string, unknown>, url = '') => {
+    const wc = { ...makeFakeWebContents(), getURL: () => url, isLoading: () => true }
+    return buildTabState('t1', record as never, wc as never, env)
+  }
+
+  it('is the new tab from the first state that shows it: the page has no address until the dashboard commits, and the record already says it is the dashboard\'s', () => {
+    const state = loading({ isDashboardTab: true })
+    expect(state).toMatchObject({ url: '', isNewTab: true })
+    expect(state).not.toHaveProperty('blankPage')
+  })
+
+  it('is the new tab on a manager\'s fresh tab at the moment it is created, before loadURL has committed anything', () => {
+    const manager = newManager()
+    const id = manager.createTab()
+    ;(createdViews.at(-1) as RecordedView).webContents.getURL = () => ''
+    expect(manager.getState().tabs.find((tab) => tab.id === id)).toMatchObject({ url: '', isNewTab: true })
+  })
+
+  it('is no new tab once the tab has left the dashboard, though a refused or pending page has no address yet', () => {
+    expect(loading({ isDashboardTab: false })).toMatchObject({ url: '', isNewTab: false })
+    expect(loading({ isDashboardTab: false, tunnelChoice: 'nym' })).toMatchObject({ isNewTab: false })
+  })
+
+  it('is a tab the tunnel button\'s popover is about, for the button is shown from that state on and a press must open something', () => {
+    const popoverTab = (record: Record<string, unknown>, url = ''): string | undefined => tabForTunnelPopover({ tabs: [loading(record, url)], activeTabId: 't1' }, () => undefined, () => false)
+    expect(popoverTab({ isDashboardTab: true })).toBe('t1')
+    expect(popoverTab({ isDashboardTab: true, tunnelChoice: 'nym' })).toBe('t1')
+    expect(popoverTab({ isDashboardTab: true }, env.dashboardUrl)).toBe('t1')
+  })
+
+  it('is no tab for the popover when it is a blank page that is no dashboard, with no address yet or about:blank', () => {
+    const popoverTab = (url: string): string | undefined => tabForTunnelPopover({ tabs: [loading({ isDashboardTab: false }, url)], activeTabId: 't1' }, () => undefined, () => false)
+    expect(popoverTab('about:blank')).toBeUndefined()
+    expect(popoverTab('')).toBeUndefined()
+  })
+
+  it('keeps the dashboard\'s address for the new tab and a page that only looks like it for a page', () => {
+    expect(loading({ isDashboardTab: true }, env.dashboardUrl)).toMatchObject({ isNewTab: true })
+    expect(loading({ isDashboardTab: false }, env.dashboardUrl)).toMatchObject({ isNewTab: false })
   })
 })

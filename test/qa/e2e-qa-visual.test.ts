@@ -205,7 +205,7 @@ for (const scheme of SCHEMES) {
         await tabList.waitForSelector('#tunnel-switch-nym')
         expect(await popupSized(app, '/site-info/')).toBe(true)
         await state(check, app, `tunnel-list-new-tab-${scheme}`, {
-          expected: 'The popup under the tunnel button on the new tab, headed "Tunnels" with "This tab" under it, lists two tunnels, Nym and your own SOCKS5 address, each with its logo and a switch that is off, and one sentence under them that says to pick a tunnel and every site opened in this tab goes through it; nothing is cut off, and the popup sits inside the window. The tunnel button at the right end of the address pill is open (pressed) and plain.',
+          expected: 'The popup under the tunnel button on the new tab, headed "Tunnels" with "This tab" under it, lists two tunnels, "Nym" with its logo and "Your proxy" with the generic tunnel icon, each with a switch that is off, and one sentence under them that says to pick a tunnel and every site opened in this tab goes through it; nothing is cut off, and the popup sits inside the window. The tunnel button at the right end of the address pill is open (pressed) and plain.',
           action: 'Clicked the tunnel button on the new tab and waited for its list to be drawn.'
         })
         await chrome.click('#tunnel-btn')
