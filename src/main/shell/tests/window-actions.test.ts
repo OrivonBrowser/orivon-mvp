@@ -81,7 +81,7 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     const parts = makeParts({})
     const state = { tabs, activeTabId }
     const waiting: Array<() => void> = []
-    const whenKeyboardPlaced = (_id: string, run: () => void): (() => void) | undefined => {
+    const whenPlaced = (_id: string, run: () => void): (() => void) | undefined => {
       if (keyboardPlaced) {
         run()
         return undefined
@@ -89,7 +89,7 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
       waiting.push(run)
       return () => { waiting.splice(waiting.indexOf(run), 1) }
     }
-    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, whenKeyboardPlaced }
+    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, keyboard: { whenPlaced } }
     ;(parts.panels as unknown as { siteInfo: unknown }).siteInfo = sitePanel
     return { actions: shellActions(parts), sitePanel, closeOverlays: parts.closeOverlays as unknown as ReturnType<typeof vi.fn>, place: () => { for (const run of waiting.splice(0)) run() }, state }
   }

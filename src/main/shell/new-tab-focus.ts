@@ -53,3 +53,36 @@ export function watchNewTab (contents: Pick<WebContents, 'on' | 'removeListener'
   contents.on('did-fail-load', settle)
   contents.on('destroyed', finish)
 }
+
+/**
+ * What waits for a new tab's keyboard to be placed (`placed` above), by tab id. A new tab's page takes the keyboard in its first
+ * moments, and a popup that is open then loses it and closes as a click away does, so what a press opens in that moment waits here.
+ * Every `run` is called once, or cancelled.
+ */
+export class KeyboardWaiters {
+  private readonly waiting = new Map<string, Array<() => void>>()
+
+  /** A tab opened on the start page starts waiting for its keyboard. */
+  begin (id: string): void { this.waiting.set(id, []) }
+
+  /** The keyboard is placed, or the tab has left the books: runs what waits on it, whose caller then finds no tab. */
+  release (id: string): void {
+    const runs = this.waiting.get(id)
+    this.waiting.delete(id)
+    for (const run of runs ?? []) run()
+  }
+
+  /** Runs `run` once tab `id`'s keyboard is placed, and at once for a tab that is not waiting. Returns what cancels a `run` still waiting, undefined when it ran. */
+  whenPlaced (id: string, run: () => void): (() => void) | undefined {
+    const runs = this.waiting.get(id)
+    if (runs === undefined) {
+      run()
+      return undefined
+    }
+    runs.push(run)
+    return () => {
+      const at = runs.indexOf(run)
+      if (at !== -1) runs.splice(at, 1)
+    }
+  }
+}

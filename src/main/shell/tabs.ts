@@ -21,7 +21,7 @@ import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import { exitHtmlFullscreen, goBack, goForward, navigateTab, reloadTab } from './tab-navigation.js'
 import type { NavigationEnv } from './tab-navigation.js'
 import { TabOpener } from './tab-open.js'
-import { watchNewTab } from './new-tab-focus.js'
+import { KeyboardWaiters, watchNewTab } from './new-tab-focus.js'
 import { TabPanes } from './tab-panes.js'
 import { setTabTunnelChoice } from './tab-tunnel-choice.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
@@ -42,8 +42,8 @@ export class TabManager {
    * destroyed window for its bounds and throws; teardown destroys the window before its views, whose `destroyed` events arrive late. */
   private disposed = false
   private readonly listeners = new Set<(state: TabsSnapshot) => void>()
-  /** What waits for a tab opened on the start page to have its keyboard placed (./new-tab-focus.ts), by tab id. A tab with no entry has nothing to wait for. */
-  private readonly unplaced = new Map<string, Array<() => void>>()
+  /** What waits for a tab opened on the start page to have its keyboard placed (./new-tab-focus.ts). */
+  readonly keyboard = new KeyboardWaiters()
   /** The push a burst of page signals waits for: one per burst, however many tabs and signals made it. */
   private pendingPush: ReturnType<typeof setTimeout> | null = null
   /** The narrow surface tab-view.ts's per-view wiring calls back through. */
@@ -204,9 +204,9 @@ export class TabManager {
   private watchFreshTab (id: string, contents: WebContents): void {
     const shell = this.shell
     if (shell?.runCommand === undefined) return
-    this.unplaced.set(id, [])
+    this.keyboard.begin(id)
     watchNewTab(contents, {
-      placed: () => { this.releaseUnplaced(id) },
+      placed: () => { this.keyboard.release(id) },
       input: () => ({
         active: this.activeId === id,
         // Still the start page: the record's flag, which the tab's first navigation clears.
@@ -217,32 +217,6 @@ export class TabManager {
       focusAddressBar: () => { shell.runCommand?.('nav.focusAddress') },
       returnKeyboard: () => { shell.focusChrome?.() }
     })
-  }
-
-  /** Runs what waits on tab `id`: its keyboard is placed, or the tab is gone. */
-  private releaseUnplaced (id: string): void {
-    const waiting = this.unplaced.get(id)
-    this.unplaced.delete(id)
-    for (const run of waiting ?? []) run()
-  }
-
-  /**
-   * Runs `run` once the keyboard has stopped moving by itself in a tab opened on the start page, and at once in any other tab. The
-   * page of a new tab takes the keyboard in its first moments, and a popup that is open then loses it and closes as a click away
-   * does: what a press in those moments opens waits for this. Every `run` is called exactly once, also when the tab closes first,
-   * unless the function this returns (undefined when `run` already ran) cancels it.
-   */
-  whenKeyboardPlaced (id: string, run: () => void): (() => void) | undefined {
-    const waiting = this.unplaced.get(id)
-    if (waiting === undefined) {
-      run()
-      return undefined
-    }
-    waiting.push(run)
-    return () => {
-      const at = waiting.indexOf(run)
-      if (at !== -1) waiting.splice(at, 1)
-    }
   }
 
   getState (): TabsSnapshot {
@@ -370,8 +344,7 @@ export class TabManager {
     this.tabs.delete(id)
     const idx = this.order.indexOf(id)
     if (idx !== -1) this.order.splice(idx, 1)
-    // After the tab is out of the books, so what waited on it finds no tab.
-    this.releaseUnplaced(id)
+    this.keyboard.release(id)
     record.host.devtools?.closeFor(record.view.webContents)
     if (closeView && !record.view.webContents.isDestroyed()) {
       record.view.webContents.close()

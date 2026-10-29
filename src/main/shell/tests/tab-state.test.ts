@@ -656,7 +656,7 @@ describe('waiting for a new tab\'s keyboard', () => {
     const manager = shellManager()
     const id = manager.createTab('https://site.example/')
     const run = vi.fn()
-    expect(manager.whenKeyboardPlaced(id, run)).toBeUndefined()
+    expect(manager.keyboard.whenPlaced(id, run)).toBeUndefined()
     expect(run).toHaveBeenCalledTimes(1)
   })
 
@@ -664,7 +664,7 @@ describe('waiting for a new tab\'s keyboard', () => {
     const manager = shellManager()
     const id = manager.createTab()
     const run = vi.fn()
-    expect(manager.whenKeyboardPlaced(id, run)).toBeTypeOf('function')
+    expect(manager.keyboard.whenPlaced(id, run)).toBeTypeOf('function')
     await turn()
     expect(run).not.toHaveBeenCalled()
     ;(createdViews.at(-1) as RecordedView).webContents.emit('focus')
@@ -672,7 +672,7 @@ describe('waiting for a new tab\'s keyboard', () => {
     await turn()
     expect(run).toHaveBeenCalledTimes(1)
     const later = vi.fn()
-    expect(manager.whenKeyboardPlaced(id, later)).toBeUndefined()
+    expect(manager.keyboard.whenPlaced(id, later)).toBeUndefined()
     expect(later).toHaveBeenCalledTimes(1)
   })
 
@@ -681,8 +681,8 @@ describe('waiting for a new tab\'s keyboard', () => {
     const id = manager.createTab()
     const run = vi.fn()
     const kept = vi.fn()
-    const cancel = manager.whenKeyboardPlaced(id, run) as () => void
-    manager.whenKeyboardPlaced(id, kept)
+    const cancel = manager.keyboard.whenPlaced(id, run) as () => void
+    manager.keyboard.whenPlaced(id, kept)
     cancel()
     ;(createdViews.at(-1) as RecordedView).webContents.emit('did-finish-load')
     await turn()
@@ -695,7 +695,7 @@ describe('waiting for a new tab\'s keyboard', () => {
     const other = manager.createTab('https://site.example/')
     const id = manager.createTab()
     const run = vi.fn(() => { expect(manager.getState().tabs.some((tab) => tab.id === id)).toBe(false) })
-    manager.whenKeyboardPlaced(id, run)
+    manager.keyboard.whenPlaced(id, run)
     manager.closeTab(id)
     expect(run).toHaveBeenCalledTimes(1)
     expect(manager.getState().tabs.map((tab) => tab.id)).toEqual([other])
