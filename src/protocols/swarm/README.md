@@ -14,8 +14,8 @@ keeps verified chunks on disk, in the host that runs this code.
 **Not tied to Electron.** Durable. It runs over an injected `fetch`.
 
 **What it depends on.** [`../resolution/`](../resolution/), [`../gateways/`](../gateways/) (the
-scheduling every content-addressed protocol shares), `multiformats` and `viem` (keccak-256 and
-signature recovery).
+scheduling every content-addressed protocol shares), `multiformats`, `@noble/hashes` (the keccak-256
+of [`chunk.ts`](chunk.ts)'s chunk tree) and `viem` (signature recovery, hex conversion, the manifest's hashes).
 
 **What it must never import.** `electron`, `src/main/`, `src/loader/`, `src/broker/`, any `node:*`
 module, and another protocol's folder. The verifier host gives it a `fetch` that reaches only the
