@@ -8,6 +8,7 @@ import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 import { isShimSource } from './src/shim/is-shim-source.js'
 import { privacyNotice } from './scripts/privacy-notice-plugin.js'
 import { buildCommit } from './scripts/build-commit.js'
+import { CHUNK_CHECK_WORKER_SOURCE, chunkCheckWorkerCode } from './scripts/chunk-check-worker-bundle.js'
 import { releaseNotes } from './src/main/info/release-notes.js'
 
 export const root = dirname(fileURLToPath(import.meta.url))
@@ -154,6 +155,44 @@ export function pageBufferPackage (): Plugin {
   }
 }
 
+/** The name the verifier host's entry gives the code of its chunk check thread, which the main build replaces with that code as a string. */
+export const CHUNK_CHECK_WORKER_PLACEHOLDER = '__ORIVON_CHUNK_CHECK_WORKER__'
+const VERIFIER_HOST_ENTRY = normalizePath(resolve(root, 'src/protocols/verifier-host/entry.ts'))
+
+/**
+ * Inlines the chunk check thread's code into the verifier host's entry, which starts the thread from the string: a file beside
+ * the host could not be read by a thread from inside app.asar. Fails the build rather than ship the placeholder, or a host
+ * entry it never saw: a host without the thread checks every chunk in its own thread and says so only in its log.
+ */
+export function chunkCheckWorker (): Plugin {
+  let code: Promise<string> | undefined
+  let inlined = false
+  return {
+    name: 'orivon:chunk-check-worker',
+    enforce: 'post',
+    buildStart () {
+      // Built again on each build, so a watched rebuild never pairs a new host with the thread of an older one.
+      code = undefined
+      inlined = false
+      this.addWatchFile(resolve(root, CHUNK_CHECK_WORKER_SOURCE))
+    },
+    async transform (source, id) {
+      if (normalizePath(id.split('?')[0] ?? id) !== VERIFIER_HOST_ENTRY) return null
+      const uses = source.split(CHUNK_CHECK_WORKER_PLACEHOLDER).length - 1
+      if (uses !== 1) throw new Error(`${VERIFIER_HOST_ENTRY} must name ${CHUNK_CHECK_WORKER_PLACEHOLDER} exactly once, not ${String(uses)} times`)
+      code ??= chunkCheckWorkerCode(root)
+      const worker = JSON.stringify(await code)
+      inlined = true
+      return { code: source.replace(CHUNK_CHECK_WORKER_PLACEHOLDER, () => worker), map: null }
+    },
+    generateBundle (_options, bundle) {
+      const chunks = Object.values(bundle).filter((output) => output.type === 'chunk')
+      if (chunks.some((chunk) => chunk.code.includes(CHUNK_CHECK_WORKER_PLACEHOLDER))) throw new Error(`${CHUNK_CHECK_WORKER_PLACEHOLDER} is left in the build`)
+      if (!inlined && chunks.some((chunk) => chunk.isEntry && chunk.name === 'verifier-host')) throw new Error(`the verifier host was built without its chunk check thread: ${VERIFIER_HOST_ENTRY} was never transformed`)
+    }
+  }
+}
+
 // electron-vite 5's isolatedEntries reporter (preload, below) calls
 // process.stdout.clearLine()/cursorTo()/moveCursor() unconditionally, and
 // they exist only on a TTY, so every piped build (CI, `npm run smoke`)
@@ -181,6 +220,7 @@ function bundledReleaseNotes (): ReturnType<typeof releaseNotes> {
 
 export default defineConfig({
   main: {
+    plugins: [chunkCheckWorker()],
     // Maps the virtual specifiers electron-chrome-extensions-lib.d.ts
     // declares to the real vendored files, for BUNDLING only -- tsc never
     // sees this file, so it resolves those specifiers through the .d.ts's

@@ -196,7 +196,8 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     route: config.swarmNode === true && node !== undefined ? nodeRouteOf(config, route) : route,
     feedIndexes: stores.swarmFeedIndexes,
     log: (line) => { console.error(`[verifier] ${line}`) },
-    ...(stores.swarmChunks !== undefined && { memory: new KeptChunkMemory(stores.swarmChunks) }),
+    ...(stores.swarmChunks !== undefined && { memory: new KeptChunkMemory(stores.swarmChunks, '', deps.chunkChecks) }),
+    ...(deps.chunkChecks !== undefined && { checker: deps.chunkChecks }),
     ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure, ...(config.swarmSwitchedOff === true && { holdMounts: true }) })
   })
 }

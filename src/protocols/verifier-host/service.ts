@@ -9,6 +9,7 @@ import type { Eip1193Provider } from '../ens/resolver.js'
 import { createRunCertificate } from './serve/certificate.js'
 import type { WebFetch } from './egress.js'
 import type { DirectFetch } from './direct-fetch.js'
+import type { ChunkCheckPool } from './chunk-check-pool.js'
 import { startProtocols } from './protocols.js'
 import { startTunnelProtocols } from './tunnel-protocols.js'
 import { NodeLinks } from './node-link.js'
@@ -61,6 +62,11 @@ export interface HostDeps {
    * host with no such path: a light client whose config names a local server then does not start.
    */
   readonly localFetch?: WebFetch
+  /**
+   * Where a Swarm chunk is checked against its address: a few worker threads, so a site read back from disk does not hold the thread
+   * every protocol is served on (`chunk-check-pool.ts`). Absent in a host with none: each chunk is then checked in the thread that asks.
+   */
+  readonly chunkChecks?: ChunkCheckPool
 }
 
 export interface RunningHost {
@@ -103,6 +109,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const sites = new RoutedSites(sitesOf(registry, route), (tunnel) => tunnelSet(tunnel).sites)
   const certificate = createRunCertificate()
   const server = createVerifierServer(registry, sites, certificate, undefined, { direct: route, tunnel: (tunnel) => tunnelSet(tunnel).route }, consent)
+  server.once('close', () => { deps.chunkChecks?.close() })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, '127.0.0.1', () => {

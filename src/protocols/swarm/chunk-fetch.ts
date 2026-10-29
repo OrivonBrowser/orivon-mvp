@@ -11,8 +11,10 @@ import { failedAttempt, fetchAcrossGateways } from '../gateways/fetch-passes.js'
 import { GatewayFailure, askGateway, readCapped } from '../gateways/gateways.js'
 import type { Fetch, GatewayPool } from '../gateways/gateways.js'
 import type { AttemptOutcome } from '../gateways/race.js'
-import { MAX_CHUNK_BYTES, MAX_SOC_BYTES, SPAN_BYTES, verifyCac, verifySoc } from './chunk.js'
+import { MAX_CHUNK_BYTES, MAX_SOC_BYTES, SPAN_BYTES, verifySoc } from './chunk.js'
 import type { VerifiedSoc } from './chunk.js'
+import { CHECK_HERE } from './chunk-check.js'
+import type { ChunkChecker } from './chunk-check.js'
 import type { SwarmLimits } from './limits.js'
 import type { NodeWait } from './node-wait.js'
 
@@ -22,6 +24,8 @@ export interface ChunkDeps {
   readonly limits: SwarmLimits
   /** A line for the report log, naming no site or address. */
   readonly log?: (line: string) => void
+  /** Where a content-addressed chunk is checked against its address. Unset, in the thread that asks. */
+  readonly checker?: ChunkChecker
 }
 
 /** What a kind of chunk is checked against: its size cap, and a check returning what the bytes mean, or undefined when they are not the chunk at `address`. */
@@ -66,7 +70,10 @@ async function fetchChunk<T> (address: string, accept: Acceptance<T>, deps: Chun
   return await fetchAcrossGateways(`chunk ${address}`, { pool: deps.pool, hedgeDelayMs: deps.limits.hedgeDelayMs }, (endpoint, attemptSignal, unwell) => attemptEndpoint(endpoint, address, accept, deps, attemptSignal, onRefusal, unwell, answers), signal)
 }
 
-const CAC: Acceptance<Uint8Array> = { maxBytes: MAX_CHUNK_BYTES, verify: (address, bytes) => verifyCac(address, bytes) ? bytes : undefined }
+function cacOf (deps: ChunkDeps): Acceptance<Uint8Array> {
+  const checker = deps.checker ?? CHECK_HERE
+  return { maxBytes: MAX_CHUNK_BYTES, verify: async (address, bytes) => await checker.verify(address, bytes) ? bytes : undefined }
+}
 const SOC: Acceptance<VerifiedSoc> = { maxBytes: MAX_SOC_BYTES, verify: verifySoc }
 
 /**
@@ -151,7 +158,7 @@ export class ChunkSource {
     // Not `await this.ready?.(...)`: without a wait the fetch must still start on this turn, so a read made next joins it.
     if (this.ready !== undefined) await this.ready(signal)
     const shared = this.memory.share(this.partition, address, async (sharedSignal, sharedOnRefusal) => {
-      const bytes = await fetchChunk(address, CAC, this.deps, sharedSignal, sharedOnRefusal)
+      const bytes = await fetchChunk(address, cacOf(this.deps), this.deps, sharedSignal, sharedOnRefusal)
       this.memory.remember(this.partition, address, bytes)
       return bytes
     })
@@ -215,7 +222,7 @@ export class ChunkSource {
         const fromBulk = await answer.promise
         if (fromBulk === undefined && sharedSignal.aborted) throw sharedSignal.reason
         if (fromBulk === undefined && this.ready !== undefined) await this.ready(sharedSignal)
-        const bytes = fromBulk ?? await fetchChunk(leaf.address, CAC, this.deps, sharedSignal, sharedOnRefusal)
+        const bytes = fromBulk ?? await fetchChunk(leaf.address, cacOf(this.deps), this.deps, sharedSignal, sharedOnRefusal)
         this.memory.remember(this.partition, leaf.address, bytes)
         return bytes
       })
@@ -236,6 +243,7 @@ export class ChunkSource {
       alone()
       return answers
     }
+    const checker = this.deps.checker ?? CHECK_HERE
     const from = owned[0]!.leaf.offset
     const last = owned[owned.length - 1]!.leaf
     const body = new Uint8Array(last.offset + last.size - from)
@@ -249,29 +257,40 @@ export class ChunkSource {
           if (response.body === null) return
           const reader = response.body.getReader()
           let filled = 0
+          let begun = 0
+          let refused = false
+          let settled: Promise<void> = Promise.resolve()
           try {
-            while (filled < body.length) {
+            while (filled < body.length && !refused) {
               const { done, value } = await reader.read()
-              if (done) return
+              if (done) break
               progress()
               const used = Math.min(skip, value.length)
               skip -= used
               const take = Math.min(value.length - used, body.length - filled)
               body.set(value.subarray(used, used + take), filled)
               filled += take
-              for (; next < owned.length; next++) {
-                const { leaf, answer } = owned[next]!
+              // Every leaf now whole is checked at once, and answered in order: the first that fails ends the read, and the rest are fetched alone.
+              for (; begun < owned.length; begun++) {
+                const { leaf, answer } = owned[begun]!
                 const end = leaf.offset - from + leaf.size
                 if (end > filled) break
                 const chunk = leafChunk(body.subarray(leaf.offset - from, end), leaf.size)
-                if (!verifyCac(leaf.address, chunk)) {
-                  stopped = 'a leaf that failed its address'
-                  return
-                }
-                answer.resolve(chunk)
+                const verdict = checker.verify(leaf.address, chunk).catch(() => false)
+                settled = settled.then(async () => {
+                  if (refused) return
+                  if (!await verdict) {
+                    refused = true
+                    stopped = 'a leaf that failed its address'
+                    return
+                  }
+                  answer.resolve(chunk)
+                  next++
+                })
               }
             }
           } finally {
+            await settled
             await reader.cancel().catch(() => {})
           }
         },
