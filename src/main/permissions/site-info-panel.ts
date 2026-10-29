@@ -98,6 +98,7 @@ export function createSiteInfoPanel (
     },
     close: popover.close,
     closeUnlessAbout (arrived) {
+      console.log('[pdbg] closeUnlessAbout', JSON.stringify(arrived), 'openTab', openTab, 'openOrigin', openOrigin, 'isOpen', popover.isOpen())
       const about = arrived !== null && (openTab !== null ? openTab === arrived.tabId : arrived.origin !== null && openOrigin === arrived.origin)
       if (!about || !popover.isOpen()) popover.close()
     },

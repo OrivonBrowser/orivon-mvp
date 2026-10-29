@@ -10,7 +10,7 @@
 // `transparent: true` window, which the shell's is not, by design. A
 // separate view sized to the popup needs none of that.
 
-import { app, WebContentsView, type BaseWindow, type View, type WebContents } from 'electron'
+import { app, WebContentsView, webContents as allContents, type BaseWindow, type View, type WebContents } from 'electron'
 import { join } from 'node:path'
 import { attachShown } from '../shell/attach-view.js'
 import { rendererEntryUrl, validatedDevServerUrl } from '../shell/renderer-entry.js'
@@ -226,7 +226,11 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // toolbar popup rather than a stuck overlay. After the native call, never
     // inside it: Chromium blurs a view a window resize leaves outside from
     // within `setSize`, and removing the view there ends the main process.
-    popup.webContents.on('blur', () => { setImmediate(() => { if (shown === popup) hide() }) })
+    popup.webContents.on('blur', () => {
+      const focused = allContents.getFocusedWebContents()
+      console.log('[pdbg] popup blur; focused now:', focused?.getURL().slice(0, 60) ?? 'none', 'shown:', shown === popup)
+      setImmediate(() => { if (shown === popup) { console.log('[pdbg] hide from blur; popup focused:', popup.webContents.isFocused()); hide() } })
+    })
     // A popup whose page is gone (crashed, or its contents destroyed) leaves the window the same way a click away does,
     // so the person's next click on its icon opens a new one instead of closing the dead one.
     const gone = (): void => {
@@ -287,6 +291,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
   /** `focusTabAfter`: the popup's page is gone, so it cannot be asked whether it held the keyboard. */
   function hide (focusTabAfter = false): void {
     if (shown === null) return
+    console.log('[pdbg] hide called', new Error().stack?.split('\n').slice(2, 6).join(' | '))
     const popup = shown
     const contents = shownContents
     const id = shownContentsId
