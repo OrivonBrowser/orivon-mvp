@@ -75,12 +75,23 @@ describe('shellActions press', () => {
 
 describe('shellActions openSiteInfo for the tunnel button', () => {
   const anchor = { x: 900, y: 40, width: 30, height: 30 }
-  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn> } {
+  /** `keyboardPlaced` false is a tab opened on the start page whose keyboard is still moving: what waits on it runs when `place()` is called. */
+  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string, keyboardPlaced = true): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn>, place: () => void, state: { tabs: unknown[], activeTabId: string | null } } {
     const sitePanel = { close: vi.fn(), toggle: vi.fn(), toggleTab: vi.fn() }
     const parts = makeParts({})
-    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => ({ tabs, activeTabId }), partitionOf: () => partition }
+    const state = { tabs, activeTabId }
+    const waiting: Array<() => void> = []
+    const whenKeyboardPlaced = (_id: string, run: () => void): (() => void) | undefined => {
+      if (keyboardPlaced) {
+        run()
+        return undefined
+      }
+      waiting.push(run)
+      return () => { waiting.splice(waiting.indexOf(run), 1) }
+    }
+    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, whenKeyboardPlaced }
     ;(parts.panels as unknown as { siteInfo: unknown }).siteInfo = sitePanel
-    return { actions: shellActions(parts), sitePanel, closeOverlays: parts.closeOverlays as unknown as ReturnType<typeof vi.fn> }
+    return { actions: shellActions(parts), sitePanel, closeOverlays: parts.closeOverlays as unknown as ReturnType<typeof vi.fn>, place: () => { for (const run of waiting.splice(0)) run() }, state }
   }
 
   it('opens the popover for the new tab in front, with no address to be about', () => {
@@ -120,6 +131,47 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
       expect(sitePanel.toggleTab, String(partition)).not.toHaveBeenCalled()
       expect(sitePanel.toggle, String(partition)).not.toHaveBeenCalled()
     }
+  })
+
+  it('opens the list of a new tab whose keyboard is still moving only once it is placed, with the press it came from', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(80_000)
+    try {
+      const { actions, sitePanel, closeOverlays, place } = partsWith([{ id: 't1', isNewTab: true, isInternal: false }], 't1', undefined, false)
+      actions.press('tunnels')
+      actions.openSiteInfo(anchor, 'tunnels')
+      expect(sitePanel.toggleTab).not.toHaveBeenCalled()
+      expect(closeOverlays).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(300)
+      place()
+      expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', 80_000)
+      expect(closeOverlays).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('takes a second press of the button while it waits as the cancelling of the first: no list opens, and the next press waits again', () => {
+    const { actions, sitePanel, place } = partsWith([{ id: 't1', isNewTab: true, isInternal: false }], 't1', undefined, false)
+    actions.openSiteInfo(anchor, 'tunnels')
+    actions.openSiteInfo(anchor, 'tunnels')
+    place()
+    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
+    actions.openSiteInfo(anchor, 'tunnels')
+    place()
+    expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+  })
+
+  it('opens nothing when the tab it waited for is no longer the one the button is about, and the next press is not read as a cancel', () => {
+    const { actions, sitePanel, place, state } = partsWith([{ id: 't1', isNewTab: true, isInternal: false }, { id: 't2', url: 'https://news.example/', isNewTab: false, isInternal: false }], 't1', undefined, false)
+    actions.openSiteInfo(anchor, 'tunnels')
+    state.activeTabId = 't2'
+    place()
+    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
+    state.activeTabId = 't1'
+    actions.openSiteInfo(anchor, 'tunnels')
+    place()
+    expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
   })
 
   it('never opens the tab\'s popover for the shield or the key, which are about the page', () => {

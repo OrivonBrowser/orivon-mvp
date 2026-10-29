@@ -18,6 +18,8 @@ export interface NewTabWatchDeps {
   focusAddressBar: () => void
   /** Hands the keyboard back to the chrome's page without touching the field: what is typed in the bar by then stays. */
   returnKeyboard: () => void
+  /** The keyboard's own moves are over, once: the page has taken it and it went back to the chrome, or the load ended, failed or was abandoned. A popup that opens before this loses the keyboard to the page's grab and closes as a click away does. */
+  placed?: () => void
 }
 
 /** A new tab in front starts with the keyboard in the address bar, not in its own page. */
@@ -27,16 +29,27 @@ export function wantsAddressBar (input: NewTabFocusInput): boolean {
 
 /** Gives the bar the keyboard at creation, and returns it to the chrome just after the tab's page takes it at its first
  * commit, or at the end of its load if it never did. The second turn is the page's own doing, which no call at creation
- * can pre-empt; it keeps what has been typed in the bar since, so it never selects the field again. */
+ * can pre-empt; it keeps what has been typed in the bar since, so it never selects the field again. `placed` says when
+ * the keyboard has stopped moving by itself. */
 export function watchNewTab (contents: Pick<WebContents, 'on' | 'removeListener' | 'isDestroyed'>, deps: NewTabWatchDeps): void {
   if (wantsAddressBar(deps.input())) deps.focusAddressBar()
+  let placed = false
+  const finish = (): void => {
+    if (placed) return
+    placed = true
+    deps.placed?.()
+  }
   const settle = (): void => {
     contents.removeListener('focus', settle)
     contents.removeListener('did-finish-load', settle)
+    contents.removeListener('did-fail-load', settle)
     setImmediate(() => {
       if (!contents.isDestroyed() && wantsAddressBar(deps.input())) deps.returnKeyboard()
+      finish()
     })
   }
   contents.on('focus', settle)
   contents.on('did-finish-load', settle)
+  contents.on('did-fail-load', settle)
+  contents.on('destroyed', finish)
 }

@@ -644,3 +644,60 @@ describe('a new tab before its page has loaded', () => {
     expect(loading({ isDashboardTab: false }, env.dashboardUrl)).toMatchObject({ isNewTab: false })
   })
 })
+
+describe('waiting for a new tab\'s keyboard', () => {
+  const turn = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve) })
+  function shellManager (): InstanceType<typeof TabManager> {
+    const shell = { window: { isDestroyed: () => false, isFocused: () => true }, htmlFullscreenChanged: vi.fn(), runCommand: vi.fn(), focusChrome: vi.fn() }
+    return new TabManager({ children: [], addChildView: vi.fn(), removeChildView: vi.fn() } as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), 'http://localhost:5999/newtab/', {} as SubsystemContext, shell as never)
+  }
+
+  it('runs at once for a tab that is not on the start page, and says there is nothing to cancel', () => {
+    const manager = shellManager()
+    const id = manager.createTab('https://site.example/')
+    const run = vi.fn()
+    expect(manager.whenKeyboardPlaced(id, run)).toBeUndefined()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for a tab on the start page until its page has taken the keyboard and it has gone back, then runs once', async () => {
+    const manager = shellManager()
+    const id = manager.createTab()
+    const run = vi.fn()
+    expect(manager.whenKeyboardPlaced(id, run)).toBeTypeOf('function')
+    await turn()
+    expect(run).not.toHaveBeenCalled()
+    ;(createdViews.at(-1) as RecordedView).webContents.emit('focus')
+    expect(run).not.toHaveBeenCalled()
+    await turn()
+    expect(run).toHaveBeenCalledTimes(1)
+    const later = vi.fn()
+    expect(manager.whenKeyboardPlaced(id, later)).toBeUndefined()
+    expect(later).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not run what was cancelled', async () => {
+    const manager = shellManager()
+    const id = manager.createTab()
+    const run = vi.fn()
+    const kept = vi.fn()
+    const cancel = manager.whenKeyboardPlaced(id, run) as () => void
+    manager.whenKeyboardPlaced(id, kept)
+    cancel()
+    ;(createdViews.at(-1) as RecordedView).webContents.emit('did-finish-load')
+    await turn()
+    expect(run).not.toHaveBeenCalled()
+    expect(kept).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs what waits when the tab closes first, for a caller that then finds no tab', () => {
+    const manager = shellManager()
+    const other = manager.createTab('https://site.example/')
+    const id = manager.createTab()
+    const run = vi.fn(() => { expect(manager.getState().tabs.some((tab) => tab.id === id)).toBe(false) })
+    manager.whenKeyboardPlaced(id, run)
+    manager.closeTab(id)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(manager.getState().tabs.map((tab) => tab.id)).toEqual([other])
+  })
+})
