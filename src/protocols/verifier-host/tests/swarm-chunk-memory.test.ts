@@ -3,8 +3,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { bytesToHex, concat } from 'viem'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { buildFile, buildSite } from '../../../../test/apps/swarm-gateway/encode.mjs'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { buildFeedManifest, buildFile, buildSite, legacyUpdate, ownerOf, signFeedUpdate } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { GatewayPool } from '../../gateways/gateways.js'
 import type { NameRecord } from '../../resolution/records.js'
 import { ChunkSource } from '../../swarm/chunk-fetch.js'
@@ -12,8 +12,9 @@ import type { SubtreeLeaf } from '../../swarm/chunk-fetch.js'
 import { DEFAULT_LIMITS } from '../../swarm/limits.js'
 import { createSwarmGatherer } from '../../swarm/gatherer.js'
 import type { FeedIndexStore } from '../../swarm/feed.js'
+import { feedUpdateAddress } from '../../swarm/chunk.js'
 import { referenceCid } from '../../swarm/reference.js'
-import { A, fakeSwarm, text } from '../../swarm/tests/swarm.test-helpers.js'
+import { A, TEST_KEY, TOPIC, fakeSwarm, text } from '../../swarm/tests/swarm.test-helpers.js'
 import { SwarmChunkDatabase } from '../swarm-chunk-database.js'
 import { swarmChunkFile } from '../swarm-chunk-files.js'
 import { KeptChunkMemory } from '../swarm-chunk-memory.js'
@@ -287,5 +288,104 @@ describe('a Swarm gatherer over the chunk database', () => {
     expect(text(await read(site, '/style.css'))).toBe('body{}')
     expect(asked(second.swarm.requests).length).toBeGreaterThan(0)
     expect(databases[1]!.refused).toBeGreaterThan(0)
+  })
+})
+
+describe('a Swarm feed site over the chunk database', () => {
+  const OWNER = ownerOf(TEST_KEY)
+
+  async function feedSite (updates: number) {
+    const chunks = new Map<string, Uint8Array>()
+    const feedRoot = buildFeedManifest({ owner: OWNER, topic: TOPIC }, chunks)
+    const roots: string[] = []
+    for (let index = 0; index < updates; index++) {
+      const root = buildSite({ 'index.html': `update ${String(index)}` }, chunks)
+      roots.push(root)
+      const signed = await signFeedUpdate({ privateKey: TEST_KEY, topic: TOPIC, index, wrapped: legacyUpdate(root, BigInt(index)) })
+      chunks.set(signed.address, signed.chunk)
+    }
+    return { chunks, feedRoot, roots }
+  }
+
+  /** A gatherer whose memory also keeps feed updates, over `disk` and the endpoint `fetch`; `beforeMount` stands for the node. */
+  function over (chunks: Map<string, Uint8Array>, disk: SwarmChunkDatabase, namespace = '', beforeMount?: (signal: AbortSignal) => Promise<void>) {
+    const swarm = fakeSwarm(chunks)
+    const memory = new KeptChunkMemory(disk, namespace)
+    const gatherer = createSwarmGatherer({ fetch: swarm.fetch, endpoints: [A], feedIndexes: feeds, memory, keptUpdates: memory, ...(beforeMount !== undefined && { beforeMount }) })
+    return { swarm, gatherer }
+  }
+
+  const never = async (): Promise<void> => { await new Promise<void>(() => {}) }
+
+  it('opens from disk after a restart with no node at all, and sends no request', async () => {
+    const { chunks, feedRoot, roots } = await feedSite(3)
+    const first = over(chunks, database())
+    expect(text(await read(await first.gatherer.mount('feed.eth', [recordFor(feedRoot)], undefined, SITE), '/'))).toBe('update 2')
+    databases[0]!.close()
+
+    const second = over(chunks, database(), '', never)
+    const site = await second.gatherer.mount('feed.eth', [recordFor(feedRoot)], undefined, SITE)
+    expect(text(await read(site, '/'))).toBe('update 2')
+    expect(site.root.cid).toBe(referenceCid(roots[2]!))
+    expect(second.swarm.requests).toEqual([])
+    expect(site.ddoc()).toEqual({ status: 'met', refusals: [] })
+  })
+
+  it('refuses a kept update whose bytes changed on disk, deletes it, and asks the network for the feed', async () => {
+    const { chunks, feedRoot, roots } = await feedSite(2)
+    const first = over(chunks, database())
+    await first.gatherer.mount('feed.eth', [recordFor(feedRoot)], undefined, SITE)
+    databases[0]!.close()
+    const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+    const address = Buffer.from(feedUpdateAddress(OWNER, TOPIC, 1n), 'hex')
+    const row = raw.prepare('SELECT bytes FROM chunk WHERE address = ?').get(address) as { bytes: Uint8Array }
+    const flipped = row.bytes.slice()
+    flipped[flipped.length - 1] = flipped[flipped.length - 1]! ^ 1
+    raw.prepare('UPDATE chunk SET bytes = ? WHERE address = ?').run(flipped, address)
+    raw.close()
+
+    const second = over(chunks, database())
+    const site = await second.gatherer.mount('feed.eth', [recordFor(feedRoot)], undefined, SITE)
+    expect(site.root.cid).toBe(referenceCid(roots[1]!))
+    expect(second.swarm.requests.some((url) => url.includes('/chunks/'))).toBe(true)
+    databases[1]!.close()
+
+    const third = over(chunks, database(), '', never)
+    const again = await third.gatherer.mount('feed.eth', [recordFor(feedRoot)], undefined, SITE)
+    expect(again.root.cid).toBe(referenceCid(roots[1]!))
+    expect(third.swarm.requests).toEqual([])
+  })
+
+  it('keeps the update of one site and one route apart from every other', async () => {
+    const feed = { owner: OWNER, topic: TOPIC }
+    const memory = new KeptChunkMemory(database())
+    memory.rememberUpdate(SITE, feed, 4n, new Uint8Array(145).fill(7))
+    expect(await memory.recallUpdate(SITE, feed)).toEqual({ index: 4n, chunk: new Uint8Array(145).fill(7) })
+    expect(await memory.recallUpdate('https://two.example', feed)).toBeUndefined()
+    expect(await new KeptChunkMemory(databases[0]!, 'socks5').recallUpdate(SITE, feed)).toBeUndefined()
+    memory.forgetUpdate(SITE, feed)
+    expect(await memory.recallUpdate(SITE, feed)).toBeUndefined()
+  })
+
+  it('opens the newer version from disk at the next start after a check found it, sending no request', async () => {
+    const { chunks, feedRoot, roots } = await feedSite(2)
+    const old = new Map(chunks)
+    old.delete(feedUpdateAddress(OWNER, TOPIC, 1n))
+    const first = over(old, database())
+    await first.gatherer.mount('feed.eth', [recordFor(feedRoot)], undefined, SITE)
+    await read(await first.gatherer.mount('direct.eth', [recordFor(roots[1]!)], undefined, SITE), '/')
+    databases[0]!.close()
+
+    const second = over(chunks, database())
+    const site = await second.gatherer.mount('feed.eth', [recordFor(feedRoot)], undefined, SITE)
+    expect(text(await read(site, '/'))).toBe('update 0')
+    await vi.waitFor(() => { expect(site.hasNewer?.()).toBe(true) })
+    databases[1]!.close()
+
+    const third = over(chunks, database(), '', never)
+    const next = await third.gatherer.mount('feed.eth', [recordFor(feedRoot)], undefined, SITE)
+    expect(next.root.cid).toBe(referenceCid(roots[1]!))
+    expect(text(await read(next, '/'))).toBe('update 1')
+    expect(third.swarm.requests).toEqual([])
   })
 })

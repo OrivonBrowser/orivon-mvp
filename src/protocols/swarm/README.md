@@ -55,8 +55,9 @@ as it arrives, since the others' sizes wait on it.
 `BlockMemory` ([`../gateways/cache.ts`](../gateways/cache.ts)) a gatherer keeps chunks in between mounts; unset, it is an in-memory
 `BlockCache`. The verifier host passes one that also keeps them on disk
 ([`../verifier-host/swarm-chunk-database.ts`](../verifier-host/swarm-chunk-database.ts), which says where, keyed how and cleared how):
-only content-addressed chunks (the ones `ChunkSource.get` and `ChunkSource.leaves` remember), never a single-owner chunk or a feed
-update, which are asked for because they may have changed. A chunk read back is hashed against its address again by the store, so
+the content-addressed chunks (the ones `ChunkSource.get` and `ChunkSource.leaves` remember), and, apart from them, the one
+single-owner chunk of the update each feed was last followed to (`SwarmGathererOptions.keptUpdates`, below); any other single-owner
+chunk is asked for, because it may have changed. A chunk read back is hashed against its address again by the store, so
 nothing here trusts the disk. The disk is the optional `BlockMemory.recallKept`, a slower store behind the cache that answers on a turn
 of the event loop of its own: `ChunkSource.get` asks it after the cache, and `ChunkSource.leaves` asks it for every leaf of a file
 before the rest go to the node in one `/bytes` request, so a file read from disk never holds the process, and this directory still
@@ -67,8 +68,8 @@ say how many chunks `recallKept` took from disk for that mount or that read alon
 the node the endpoints name (the verifier host's `NodeLink.ensure`) as a mount begins, and the mount carries on without the answer
 ([`node-wait.ts`](node-wait.ts)). `ChunkSource` takes a `ready` wait and calls it only after the memory and the store have missed, and
 before the request, its timers and its pool slot, so a wait of seconds never counts against `chunkTimeoutMs`: for one chunk before its
-shared fetch, and for a file's leaves before the `/bytes` request and before any leaf fetched alone. A feed's lookup always waits,
-because its newest update is mutable. So a site whose every chunk is in memory or in the store opens, and is read, while the node is
+shared fetch, and for a file's leaves before the `/bytes` request and before any leaf fetched alone. A feed's lookup waits, because
+its newest update is mutable, unless the feed is followed from the update kept for it (below). So a site whose every chunk is in memory or in the store opens, and is read, while the node is
 starting, slow or failed, and a read that needs the network fails with the node's own error (`NodeUnavailable`: off, failed, or still
 starting), never with "no endpoint answered". A refusal is the node's answer to the ask that was made, and a node can be ready by the
 time a page asks for a file the mount did not need, so a file read that begins after a refusal asks again, once for all its chunks. The
@@ -76,6 +77,22 @@ answer is always observed, so a mount that finishes without it leaves no rejecti
 answer is itself the refusal: every mount then waits for `beforeMount` before it reads anything, and the verifier host sets it when the
 person has switched Swarm off, so a site on disk does not open against the switch. The mount's log line says `did not wait for the node`
 or `waited N ms for the node`, and a large file's says so when it waited; neither names a site or an address.
+
+**A feed is followed from the update it was last followed to, and a newer one is used from the next load.**
+`SwarmGathererOptions.keptUpdates` ([`feed.ts`](feed.ts)'s `KeptFeedUpdates`) is where the host keeps, for each partition and feed, the
+whole signed single-owner chunk of the update a mount followed and its index. A mount with a partition that meets the feed again
+reads it ([`followKept`](feed.ts)), recomputes the address it must have been signed for (`feedUpdateAddress` and `verifySoc`, as
+for a chunk from the network, so the disk is trusted no more than the node) and uses it without waiting for the node, but only when
+its index is not below the highest `FeedIndexStore` has seen: a kept update older than that is skipped and the network asked, so a
+feed is never read as older than it has been. A kept update that fails its check is deleted. The mount then starts
+one look for a newer update ([`kept-feeds.ts`](kept-feeds.ts)): it waits for the node like any read, runs under its own time limit
+(`feedCheckTimeoutMs`), and cannot fail or hold the mount. At most one runs for a feed in a partition. An update it finds is
+recorded and kept in place of the old one, and the mount that opened from the old one answers `hasNewer`, which the host reads when
+the person starts a page load (`serve/sites.ts`): that load mounts again and opens the newer update at once, while every other
+request is served from the mount in hand, so what is being read never changes under it. The first visit, a partition-less mount,
+an update that fails its check, and a person who has switched Swarm off (`holdMounts` makes every mount wait for the node first)
+behave as if nothing were kept. The mount's log line says how many feeds came from a kept update; the look logs one line when it
+finds a newer one and one, with a reason and no address, when it fails.
 
 **A reference is spelled as a CID.** 64 hex characters cannot be one host label, so the canonical
 spelling is a CIDv1 of codec swarm-manifest over keccak-256 ([`reference.ts`](reference.ts)), 61

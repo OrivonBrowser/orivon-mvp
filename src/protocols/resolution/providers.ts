@@ -76,6 +76,12 @@ export interface MountedSite {
   readonly servedFrom?: ServedFrom
   readonly root: ContentRoot
   readonly pointers: readonly PointerStep[]
+  /**
+   * True once a check made after this mount found a newer version of the content than the one it was mounted from, and kept
+   * it. A page load the person starts then mounts again; every other request is still served from this mount, so a page that
+   * is open never changes under its reader.
+   */
+  hasNewer?: () => boolean
   /** `/` and a directory serve its `index.html` (a protocol may list a directory that has none). Throws a ResolutionError; `not-found` for a missing path. */
   open: (path: string, range?: GatherRange, signal?: AbortSignal) => Promise<GatheredFile>
   ddoc: () => DdocReport

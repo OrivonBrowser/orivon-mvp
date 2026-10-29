@@ -10,13 +10,32 @@ import type { PointerStep } from '../resolution/records.js'
 import type { Refusal } from '../resolution/providers.js'
 import { lookUpSoc } from './chunk-fetch.js'
 import type { ChunkDeps } from './chunk-fetch.js'
-import { cacAddress, feedUpdateAddress, isZeroPadding, readSpan, SPAN_BYTES } from './chunk.js'
+import { cacAddress, feedUpdateAddress, isZeroPadding, readSpan, SPAN_BYTES, verifySoc } from './chunk.js'
 import { referenceCid } from './reference.js'
 
 /** The highest update index seen for each feed, kept across runs: a feed is never read as older than it has been. */
 export interface FeedIndexStore {
   highest: (owner: string, topic: string) => bigint | undefined
   record: (owner: string, topic: string, index: bigint) => void
+}
+
+/** The update of a feed that was last followed, as it was signed: its index and its whole single-owner chunk. */
+export interface KeptUpdate {
+  readonly index: bigint
+  readonly chunk: Uint8Array
+}
+
+/**
+ * Where the update a feed was last followed to is kept between runs, for each partition: a signed chunk that is checked again
+ * whenever it is used, so a store that lies or rots costs a request, never a wrong page. `partition` is the one a mount is given.
+ */
+export interface KeptFeedUpdates {
+  /** What is kept for `feed` in `partition`, unchecked; undefined when nothing is, or the store cannot be read. Never rejects. */
+  recallUpdate: (partition: string, feed: FeedId) => Promise<KeptUpdate | undefined>
+  /** Keeps `chunk`, the verified single-owner chunk of update `index`, in place of any older one. Never throws. */
+  rememberUpdate: (partition: string, feed: FeedId, index: bigint, chunk: Uint8Array) => void
+  /** Deletes what is kept for `feed`: it failed its check. Never throws. */
+  forgetUpdate: (partition: string, feed: FeedId) => void
 }
 
 export interface FeedId {
@@ -72,6 +91,7 @@ async function indexGuess (feed: FeedId, deps: ChunkDeps, signal: AbortSignal): 
 interface Update {
   readonly index: bigint
   readonly wrapped: Uint8Array
+  readonly chunk: Uint8Array
 }
 
 /**
@@ -92,7 +112,7 @@ async function newestUpdate (feed: FeedId, floor: bigint | undefined, deps: Chun
     probes++
     if (probes > deps.limits.maxFeedProbes) throw new ResolutionError('unverifiable', `more than ${String(deps.limits.maxFeedProbes)} probes to find the newest update of a feed`)
     const soc = await lookUpSoc(feedUpdateAddress(feed.owner, feed.topic, index), deps, signal, onRefusal)
-    return soc === undefined ? undefined : { index, wrapped: soc.wrapped }
+    return soc === undefined ? undefined : { index, wrapped: soc.wrapped, chunk: soc.chunk }
   }
 
   const base = floor ?? 0n
@@ -157,6 +177,9 @@ export interface ResolvedFeed {
   /** The reference the feed's newest update points at, lowercase hex. */
   readonly root: string
   readonly step: PointerStep
+  readonly index: bigint
+  /** The update's whole single-owner chunk, which is what `KeptFeedUpdates` keeps. */
+  readonly chunk: Uint8Array
 }
 
 /** Throws a ResolutionError. */
@@ -164,5 +187,31 @@ export async function resolveFeed (feed: FeedId, deps: ChunkDeps, store: FeedInd
   const update = await newestUpdate(feed, store.highest(feed.owner, feed.topic), deps, signal, onRefusal)
   store.record(feed.owner, feed.topic, update.index)
   const root = targetOf(update.wrapped)
-  return { root, step: { step: 'swarm-feed', owner: feed.owner, topic: feed.topic, index: update.index, target: referenceCid(root) } }
+  return { root, step: { step: 'swarm-feed', owner: feed.owner, topic: feed.topic, index: update.index, target: referenceCid(root) }, index: update.index, chunk: update.chunk }
+}
+
+/**
+ * The update `kept` holds for `feed`, followed without a request: checked against the address it was signed for, as a chunk
+ * from the network is, and never below the highest index seen before, so a feed is no older than it has been. A kept update
+ * that fails its check is forgotten; one that is merely older than the store has seen is left for the network read to replace.
+ * Undefined means ask the network.
+ */
+export async function followKept (feed: FeedId, partition: string, kept: KeptFeedUpdates, store: FeedIndexStore): Promise<ResolvedFeed | undefined> {
+  const found = await kept.recallUpdate(partition, feed)
+  if (found === undefined) return undefined
+  const seen = store.highest(feed.owner, feed.topic)
+  if (seen !== undefined && found.index < seen) return undefined
+  const soc = await verifySoc(feedUpdateAddress(feed.owner, feed.topic, found.index), found.chunk)
+  let root: string | undefined
+  try {
+    if (soc !== undefined) root = targetOf(soc.wrapped)
+  } catch (error) {
+    if (!(error instanceof ResolutionError)) throw error
+  }
+  if (soc === undefined || root === undefined) {
+    kept.forgetUpdate(partition, feed)
+    return undefined
+  }
+  store.record(feed.owner, feed.topic, found.index)
+  return { root, step: { step: 'swarm-feed', owner: feed.owner, topic: feed.topic, index: found.index, target: referenceCid(root) }, index: found.index, chunk: found.chunk }
 }

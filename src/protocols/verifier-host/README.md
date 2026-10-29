@@ -67,8 +67,10 @@ characters of sha256 of the profile's partition salt; main hands the host the di
 when the IPFS node is off, and leaves it out when the profile cannot hold a salt. Rows are keyed by `partitionStoreKey(salt, partition)`
 (`partition-key.ts`, the key the IPFS node's store uses) and the chunk address, so the file holds no origin in plain text and one site's
 chunks are never another's hits; a site read through a tunnel is kept under the tunnel's name too ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts)'s
-namespace), as the routes' in-memory caches are kept apart. Only content-addressed chunks are kept, never a single-owner chunk or a feed
-update. At most 256 MB of chunk bytes are kept in all, least recently used first; the file is about a sixth larger (32 KB pages hold
+namespace), as the routes' in-memory caches are kept apart. What is kept is the content-addressed chunks, and for each feed a site
+followed, the one single-owner chunk of the update it was last followed to, under its own address in the same table and with its
+index in a small table of its own ([`ADR-0103`](../../../docs/decisions/ADR-0103-a-swarm-feed-site-opens-from-the-update-it-last-followed.md)):
+the database hands that chunk back unchecked, and the gatherer verifies its signature again on every use. At most 256 MB of chunk bytes are kept in all, least recently used first; the file is about a sixth larger (32 KB pages hold
 seven rows each, and the indexes), and its `-wal` is cut back to 8 MB after each checkpoint (`journal_size_limit`). Use is a count in
 the file that goes up once for each minute of use and once at the start of a run, so a clock that is wrong cannot age rows; it lives in
 a table of its own beside each row's size, and a row is marked at most once a minute, also when the memory in front answered it, so a
@@ -86,6 +88,12 @@ auto-checkpoint (1000 pages, 32 MB) runs the checkpoint's `fsync` inside that ca
 dozen writes (1.9 s at worst), where `OFF` keeps every commit under ten milliseconds. What `OFF` risks is a file damaged by a crash of the
 computer, not of the process, and nothing here needs the file to survive that: each row is hashed on its way out, the counters are
 worked out when the file opens, and a file SQLite reports as damaged is deleted and made again.
+
+**A page load the person starts mounts a site again when a check found a newer version of it.** `Sites.get` is told which request is a
+page load (`Sec-Fetch-Mode: navigate` with `Sec-Fetch-Dest: document`, which Chromium sets and a page cannot forge) and drops a mounted
+site that answers `MountedSite.hasNewer`, as it does one the gateway consent names; any other request, a subresource or a frame
+included, is served from the mount in hand, so a page that is open never changes version under its reader. The Swarm gatherer is the
+one that sets it ([`../swarm/README.md`](../swarm/README.md)).
 
 **Opening, remaking and sweeping.** The file is opened at the first Swarm mount with a partition. A file SQLite reports as damaged, at
 open or in use, is deleted and made again, once in a run, and so is one whose `user_version` is not this code's layout number (the file

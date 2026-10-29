@@ -1,13 +1,16 @@
 // Verified Swarm chunks kept on disk between runs, one SQLite file per salt. A chunk is stored under the
 // partition key of the site that fetched it and is hashed against its address again when it is read back, so the
-// disk is trusted no more than the node. Everything here is an optimisation: an error is logged once and the
-// chunk is fetched again. README.md's Design notes say why the file is shaped as it is.
+// disk is trusted no more than the node. The update a site's feed was last followed to is kept the same way, as a
+// row of the chunk table under its single-owner address, and handed back unchecked for the caller to verify.
+// Everything here is an optimisation: an error is logged once and the chunk is fetched again. README.md's Design
+// notes say why the file is shaped as it is.
 
 import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { StatementSync } from 'node:sqlite'
-import { MAX_CHUNK_BYTES, verifyCac } from '../swarm/chunk.js'
+import { feedUpdateAddress, MAX_CHUNK_BYTES, MAX_SOC_BYTES, verifyCac } from '../swarm/chunk.js'
+import type { FeedId } from '../swarm/feed.js'
 import { partitionStoreKey } from './partition-key.js'
 import { swarmChunkFile, swarmChunkFileSet, swarmChunkFilesIn } from './swarm-chunk-files.js'
 
@@ -40,9 +43,10 @@ const CACHE_KIB = 8192
 /** After a checkpoint the `-wal` is cut back to this size, instead of staying as large as it once grew. */
 const WAL_LIMIT_BYTES = 8 * 1024 * 1024
 /** The layout `SCHEMA` makes, kept in the file's own `user_version`: a file of any other number is not this code's. */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 const MINUTE_MS = 60_000
 const ADDRESS = /^[0-9a-f]{64}$/
+const DECIMAL = /^[0-9]{1,20}$/
 /** SQLite's primary result codes for a file that is not, or is no longer, a sound database (SQLITE_CORRUPT, SQLITE_NOTADB). */
 const DAMAGED = [11, 26]
 
@@ -56,6 +60,12 @@ CREATE TABLE chunk (
 CREATE UNIQUE INDEX chunk_key ON chunk (site, address);
 CREATE TABLE age (id INTEGER PRIMARY KEY, used INTEGER NOT NULL, size INTEGER NOT NULL);
 CREATE INDEX age_used ON age (used, size);
+CREATE TABLE feed_update (
+  site TEXT NOT NULL,
+  feed BLOB NOT NULL,
+  position TEXT NOT NULL,
+  PRIMARY KEY (site, feed)
+) WITHOUT ROWID;
 PRAGMA user_version = ${String(SCHEMA_VERSION)};
 `
 
@@ -67,6 +77,9 @@ interface Statements {
   readonly removeChunk: StatementSync
   readonly removeAge: StatementSync
   readonly oldest: StatementSync
+  readonly findFeed: StatementSync
+  readonly setFeed: StatementSync
+  readonly removeFeed: StatementSync
 }
 
 interface Waiting {
@@ -80,6 +93,11 @@ interface Found {
   /** A blob in every row this writes; SQLite would hold any other value a hand-edited file puts there. */
   readonly bytes: unknown
   readonly size: number
+}
+
+/** The key a feed is kept under: its owner's 20 bytes, then its topic's 32. */
+function feedKey (feed: FeedId): Buffer {
+  return Buffer.from(`${feed.owner}${feed.topic}`, 'hex')
 }
 
 /** Why an operation failed, without the paths or text an error may carry. */
@@ -143,7 +161,10 @@ function attach (path: string): { db: DatabaseSync, statements: Statements, byte
       touchKey: db.prepare('UPDATE age SET used = ? WHERE id = (SELECT id FROM chunk WHERE site = ? AND address = ?)'),
       removeChunk: db.prepare('DELETE FROM chunk WHERE id = ?'),
       removeAge: db.prepare('DELETE FROM age WHERE id = ?'),
-      oldest: db.prepare('SELECT id, size FROM age ORDER BY used, id LIMIT ?')
+      oldest: db.prepare('SELECT id, size FROM age ORDER BY used, id LIMIT ?'),
+      findFeed: db.prepare('SELECT position FROM feed_update WHERE site = ? AND feed = ?'),
+      setFeed: db.prepare('INSERT OR REPLACE INTO feed_update (site, feed, position) VALUES (?, ?, ?)'),
+      removeFeed: db.prepare('DELETE FROM feed_update WHERE site = ? AND feed = ?')
     }
     return { db, statements, ...counters(db) }
   } catch (error) {
@@ -203,6 +224,95 @@ export class SwarmChunkDatabase {
     this.note(site, address)
     this.fromDisk++
     return row.bytes
+  }
+
+  /**
+   * The update `partition`'s page last followed `feed` to: its index and its single-owner chunk, as stored and not checked, since
+   * checking it is the caller's. Undefined when none is kept, when its chunk has been evicted, or when its row cannot be read.
+   */
+  getFeedUpdate (partition: string, feed: FeedId): { index: bigint, chunk: Uint8Array } | undefined {
+    const statements = this.use()
+    if (statements === undefined) return undefined
+    const site = partitionStoreKey(this.options.salt, partition)
+    const key = feedKey(feed)
+    let row: Found | undefined
+    let index: bigint | undefined
+    try {
+      const at = statements.findFeed.get(site, key) as { position: unknown } | undefined
+      if (at === undefined) return undefined
+      index = typeof at.position === 'string' && DECIMAL.test(at.position) ? BigInt(at.position) : undefined
+      if (index !== undefined) row = statements.find.get(site, Buffer.from(feedUpdateAddress(feed.owner, feed.topic, index), 'hex')) as Found | undefined
+    } catch (error) {
+      this.fail('read', error)
+      return undefined
+    }
+    if (index === undefined || row === undefined || !(row.bytes instanceof Uint8Array)) {
+      this.dropFeedUpdate(partition, feed)
+      return undefined
+    }
+    this.note(site, feedUpdateAddress(feed.owner, feed.topic, index))
+    return { index, chunk: row.bytes }
+  }
+
+  /**
+   * Keeps `chunk`, the single-owner chunk of update `index` of `feed` that the caller checked, for `partition`, in place of the
+   * update kept before and never below it. It counts toward the cap like a chunk, and is written at once: it is rare, and a
+   * restart straight after must find it.
+   */
+  putFeedUpdate (partition: string, feed: FeedId, index: bigint, chunk: Uint8Array): void {
+    if (chunk.length > MAX_SOC_BYTES || index < 0n || index >= 2n ** 64n) return
+    const statements = this.use()
+    if (statements === undefined) return
+    const site = partitionStoreKey(this.options.salt, partition)
+    const key = feedKey(feed)
+    try {
+      this.bytes = this.write(() => {
+        const before = statements.findFeed.get(site, key) as { position: unknown } | undefined
+        const old = typeof before?.position === 'string' && DECIMAL.test(before.position) ? BigInt(before.position) : undefined
+        if (old !== undefined && old > index) return this.bytes
+        let bytes = this.bytes
+        if (old !== undefined && old !== index) bytes = this.removeUpdate(statements, site, feed, old, bytes)
+        const address = Buffer.from(feedUpdateAddress(feed.owner, feed.topic, index), 'hex')
+        const inserted = statements.insert.run(site, address, chunk)
+        if (Number(inserted.changes) === 1) {
+          statements.insertAge.run(Number(inserted.lastInsertRowid), this.stamp(), chunk.length)
+          bytes += chunk.length
+        } else {
+          statements.touchKey.run(this.stamp(), site, address)
+        }
+        statements.setFeed.run(site, key, index.toString())
+        return this.evict(statements, bytes)
+      })
+    } catch (error) {
+      this.fail('write', error)
+    }
+  }
+
+  /** Forgets what is kept for `feed` in `partition`: the update's row and its chunk. */
+  dropFeedUpdate (partition: string, feed: FeedId): void {
+    const statements = this.use()
+    if (statements === undefined) return
+    const site = partitionStoreKey(this.options.salt, partition)
+    try {
+      this.bytes = this.write(() => {
+        const at = statements.findFeed.get(site, feedKey(feed)) as { position: unknown } | undefined
+        const index = typeof at?.position === 'string' && DECIMAL.test(at.position) ? BigInt(at.position) : undefined
+        const bytes = index === undefined ? this.bytes : this.removeUpdate(statements, site, feed, index, this.bytes)
+        statements.removeFeed.run(site, feedKey(feed))
+        return bytes
+      })
+    } catch (error) {
+      this.fail('write', error)
+    }
+  }
+
+  /** Deletes the chunk of update `index` of `feed` from the table, if it is there; returns the bytes kept after. */
+  private removeUpdate (statements: Statements, site: string, feed: FeedId, index: bigint, bytes: number): number {
+    const row = statements.find.get(site, Buffer.from(feedUpdateAddress(feed.owner, feed.topic, index), 'hex')) as Found | undefined
+    if (row === undefined) return bytes
+    statements.removeChunk.run(row.id)
+    statements.removeAge.run(row.id)
+    return Math.max(0, bytes - row.size)
   }
 
   /** Marks a chunk the memory above answered as used now, so what a person uses all day is not what eviction takes first. */

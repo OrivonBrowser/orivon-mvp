@@ -4,9 +4,10 @@
 import { BlockCache } from '../gateways/cache.js'
 import type { BlockMemory, SharedFetch } from '../gateways/cache.js'
 import type { Refusal } from '../resolution/providers.js'
+import type { FeedId, KeptFeedUpdates, KeptUpdate } from '../swarm/feed.js'
 import type { SwarmChunkDatabase } from './swarm-chunk-database.js'
 
-export class KeptChunkMemory implements BlockMemory {
+export class KeptChunkMemory implements BlockMemory, KeptFeedUpdates {
   private readonly memory = new BlockCache()
   /** The disk reads, one after another: each waits for the one before it and for a turn of the event loop of its own. */
   private reading: Promise<unknown> = Promise.resolve()
@@ -49,6 +50,24 @@ export class KeptChunkMemory implements BlockMemory {
     return this.memory.share(partition, key, start)
   }
 
+  /** The update kept for `feed`, read on a turn of the event loop of its own and not queued behind the chunk reads: it is one row, and a mount waits for it. */
+  async recallUpdate (partition: string, feed: FeedId): Promise<KeptUpdate | undefined> {
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    try {
+      return this.database.getFeedUpdate(this.site(partition), feed)
+    } catch {
+      return undefined
+    }
+  }
+
+  rememberUpdate (partition: string, feed: FeedId, index: bigint, chunk: Uint8Array): void {
+    try { this.database.putFeedUpdate(this.site(partition), feed, index, chunk) } catch { /* the store says so itself, once */ }
+  }
+
+  forgetUpdate (partition: string, feed: FeedId): void {
+    try { this.database.dropFeedUpdate(this.site(partition), feed) } catch { /* the store says so itself, once */ }
+  }
+
   private readKept (partition: string, key: string): Uint8Array | undefined {
     try {
       const kept = this.database.get(this.site(partition), key)
@@ -62,4 +81,10 @@ export class KeptChunkMemory implements BlockMemory {
   private site (partition: string): string {
     return this.namespace === '' ? partition : `${this.namespace}\n${partition}`
   }
+}
+
+/** The options that keep a gatherer's chunks and the feed updates it follows in `database`, for the route `namespace` names. */
+export function keptIn (database: SwarmChunkDatabase, namespace = ''): { readonly memory: KeptChunkMemory, readonly keptUpdates: KeptChunkMemory } {
+  const kept = new KeptChunkMemory(database, namespace)
+  return { memory: kept, keptUpdates: kept }
 }
