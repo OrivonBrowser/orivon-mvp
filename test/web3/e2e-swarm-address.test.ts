@@ -5,8 +5,9 @@
 // machine. A `.eth` name is shown under the scheme of the network its content
 // is on: `bzz://` for Swarm, `ipfs://` for IPFS. On a first visit the loading
 // screen and the address bar never name a network the name is not on.
-import { mkdirSync } from 'node:fs'
+import { mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import type { Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { referenceCid } from '../../src/protocols/swarm/reference.js'
@@ -28,6 +29,22 @@ const FEED_KEY = `0x${'22'.repeat(32)}` as const
 const FEED_TOPIC = 'cd'.repeat(32)
 
 const page = (title: string, body = title): string => `<!doctype html><meta charset="utf-8"><title>${title}</title><body>${body}</body>`
+
+/** How many chunks the verifier host has written to its Swarm chunk file in `dir`; 0 while there is none. */
+function keptChunks (dir: string): number {
+  try {
+    const file = readdirSync(dir).find((name) => /^swarm-chunks-[0-9a-f]{16}\.db$/.test(name))
+    if (file === undefined) return 0
+    const database = new DatabaseSync(join(dir, file), { readOnly: true })
+    try {
+      return Number((database.prepare('SELECT count(*) AS n FROM chunk').get() as { n: number }).n)
+    } finally {
+      database.close()
+    }
+  } catch {
+    return 0
+  }
+}
 
 interface LoadingWatch { readonly screens: string[], readonly bars: string[], readonly titles: string[], readonly loaded: boolean }
 
@@ -110,6 +127,11 @@ it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// a
       check(`it is a secure context, and its verified script ran (${JSON.stringify(loaded)})`, loaded.secure && loaded.ran === 'ran')
       check(`the node was asked for chunks (${String(node.requests.length)} requests)`, node.requests.some((r) => r.startsWith('/chunks/')))
       check('the script\'s leaves were asked for together', node.requests.some((r) => r.startsWith('/bytes/')))
+
+      const verifierDir = join(await running.evaluate(({ app: electronApp }) => electronApp.getPath('userData')), 'verifier')
+      const kept = await waitFor(() => keptChunks(verifierDir) > 0)
+      check(`the verifier host kept the verified chunks of the page in its Swarm chunk file (${String(keptChunks(verifierDir))} rows)`, kept)
+      expect(kept).toBe(true)
 
       await view.click('#next')
       const followed = await waitForTab(chrome, { address: `bzz://${referenceCid(linked)}/`, title: 'linked swarm fixture' })

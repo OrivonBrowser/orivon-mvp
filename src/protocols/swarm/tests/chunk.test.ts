@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { bytesToHex, hexToBytes } from 'viem'
-import { bmtRoot, cacAddress, feedUpdateAddress, readSpan, verifyCac, verifySoc } from '../chunk.js'
+import { bytesToHex, hexToBytes, keccak256 } from 'viem'
+import { bmtRoot, CHUNK_PAYLOAD_BYTES, cacAddress, feedUpdateAddress, readSpan, verifyCac, verifySoc } from '../chunk.js'
 import { bmtRoot as referenceBmtRoot, buildFile, chunkAddress, feedSocAddress, legacyUpdate, makeChunk, signFeedUpdate, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { SWARM_ETH } from './live-vectors.js'
 import { TEST_KEY, TOPIC } from './swarm.test-helpers.js'
@@ -18,6 +18,82 @@ describe('bmtRoot', () => {
 
   it('refuses a payload over a chunk', () => {
     expect(() => bmtRoot(new Uint8Array(4097))).toThrow(RangeError)
+  })
+})
+
+/** The BMT root by the plain definition, with viem's keccak-256 on every node: pad to 4096 bytes, then hash pairs of 32-byte segments until one is left. */
+function treeRoot (payload: Uint8Array): Uint8Array {
+  let level = new Uint8Array(CHUNK_PAYLOAD_BYTES)
+  level.set(payload)
+  while (level.length > 32) {
+    const next = new Uint8Array(level.length / 2)
+    for (let at = 0; at < level.length; at += 64) next.set(keccak256(level.slice(at, at + 64), 'bytes'), at / 2)
+    level = next
+  }
+  return level
+}
+
+/** Bytes that differ from one 32-byte segment to the next, so a hash written to the wrong place changes the root. */
+const patterned = (length: number, seed: number): Uint8Array => {
+  let state = seed
+  return Uint8Array.from({ length }, () => {
+    state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0
+    return state >>> 24
+  })
+}
+
+describe('bmtRoot against the plain tree', () => {
+  it('equals a tree hashed node by node with viem, for every length that changes the tree', () => {
+    for (const length of [0, 1, 31, 32, 33, 63, 64, 65, 96, 127, 128, 129, 1000, 2048, 2049, 4032, 4095, 4096]) {
+      const payload = patterned(length, length + 1)
+      expect(hex(bmtRoot(payload)), `${String(length)} bytes`).toBe(hex(treeRoot(payload)))
+    }
+  })
+
+  it('equals it across lengths from 0 to 4096 whose steps land inside and between 64-byte blocks', () => {
+    for (let length = 0; length <= CHUNK_PAYLOAD_BYTES; length += 37) {
+      const payload = patterned(length, 7)
+      expect(hex(bmtRoot(payload)), `${String(length)} bytes`).toBe(hex(treeRoot(payload)))
+    }
+  })
+
+  it('does not change the payload, reads a view at an offset, and keeps an earlier root intact when it is called again', () => {
+    const backing = patterned(5000, 99)
+    const view = backing.subarray(300, 300 + 3001)
+    const before = new Uint8Array(backing)
+    const first = bmtRoot(view)
+    const firstHex = hex(first)
+    expect(firstHex).toBe(hex(treeRoot(view)))
+    bmtRoot(patterned(4096, 5))
+    bmtRoot(new Uint8Array())
+    expect(hex(first)).toBe(firstHex)
+    expect(backing).toEqual(before)
+  })
+
+  it('addresses a chunk as keccak-256 of its span and root', () => {
+    for (const length of [0, 1, 64, 2500, 4096]) {
+      const chunk = new Uint8Array(8 + length)
+      chunk.set(patterned(8, length), 0)
+      chunk.set(patterned(length, length + 3), 8)
+      const expected = keccak256(new Uint8Array([...chunk.subarray(0, 8), ...treeRoot(chunk.subarray(8))]))
+      expect(`0x${hex(cacAddress(chunk))}`, `${String(length)} bytes`).toBe(expected)
+      expect(verifyCac(expected.slice(2), chunk)).toBe(true)
+    }
+  })
+
+  it('refuses a chunk with any one bit flipped, in the span, the first segment, the middle or the last byte', () => {
+    const chunk = new Uint8Array(8 + CHUNK_PAYLOAD_BYTES)
+    chunk.set(patterned(8, 1), 0)
+    chunk.set(patterned(CHUNK_PAYLOAD_BYTES, 2), 8)
+    const address = keccak256(new Uint8Array([...chunk.subarray(0, 8), ...treeRoot(chunk.subarray(8))])).slice(2)
+    expect(verifyCac(address, chunk)).toBe(true)
+    for (const at of [0, 7, 8, 39, 40, 71, 72, 2000, 4103]) {
+      for (const bit of [0, 7]) {
+        const flipped = new Uint8Array(chunk)
+        flipped[at] = flipped[at]! ^ (1 << bit)
+        expect(verifyCac(address, flipped), `byte ${String(at)} bit ${String(bit)}`).toBe(false)
+      }
+    }
   })
 })
 

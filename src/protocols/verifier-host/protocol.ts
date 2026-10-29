@@ -84,8 +84,16 @@ export interface HostConfig {
   readonly swarmEndpoints: readonly string[]
   /** Highest feed update index seen per feed, as decimal strings keyed `<owner>/<topic>`, from earlier runs. */
   readonly swarmFeedIndexes: Readonly<Record<string, string>>
-  /** `swarmEndpoints` is the Swarm node Orivon runs: before each Swarm mount the host asks main for it (`node-wanted`) and waits for its state. */
+  /** `swarmEndpoints` is the Swarm node Orivon runs: as each Swarm mount begins the host asks main for it (`node-wanted`), and a read waits for its state only where a chunk has to come from it. */
   readonly swarmNode?: boolean
+  /** The person has switched Swarm off. Every Swarm mount is then held for the node's answer, which says so, before it reads anything: a site kept on disk does not open against the switch. */
+  readonly swarmSwitchedOff?: boolean
+  /**
+   * Where verified Swarm chunks are kept between runs (`swarm-chunk-database.ts`): the verifier's directory in the profile, and the
+   * per-profile salt in hex that keys the rows and names the file. Present in every run that reads Swarm, whether or not the IPFS node
+   * is chosen; absent, chunks are kept in memory alone.
+   */
+  readonly swarmChunks?: { readonly dir: string, readonly salt: string }
   /** Present when the person chose to read IPFS from the node Orivon runs: `endpoint` is its origin. Each mount asks main for the node first (`node-wanted`), and a mount the node cannot serve reads from `gateways` and says why. */
   readonly ipfsNode?: {
     readonly endpoint: string

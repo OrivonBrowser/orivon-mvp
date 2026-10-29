@@ -48,13 +48,14 @@ import { mountCeilingMs } from '../../protocols/verifier-host/pace.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
-import { configureSwarmNode, swarmNode, swarmNodeState } from './swarm-node-subsystem.js'
+import { configureSwarmNode, swarmNode, swarmNodeState, swarmSwitchedOff } from './swarm-node-subsystem.js'
 import { configureIpfsNode, ipfsNode, ipfsNodeEndpoint, ipfsNodeState } from './ipfs-node-subsystem.js'
 import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 import { configureNodeRoute, ethereumOutsideTunnel, nodesMayServeTunnelSites, nodesRunThroughTunnel } from './node-route.js'
+import { forgetNodeData as forgetNodes } from './forget-node-data.js'
 
 /** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
 const MOUNT_GRACE_MS = 5_000
@@ -163,13 +164,11 @@ export function swarmSettingChanged (): void {
 
 /**
  * Clearing cached data or all history: the IPFS node stops and its block store is deleted, and the salt its partition
- * keys are made with is replaced, so nothing it kept about the sites visited can be read back or asked for.
+ * keys are made with is replaced, so nothing it kept about the sites visited can be read back or asked for. The Swarm
+ * chunks the host keeps are keyed by the same salt: the host exits, and its files go (`forget-node-data.ts`).
  */
-export async function forgetIpfsNodeData (): Promise<void> {
-  await ipfsNode.forget()
-  verifierStore().rotatePartitionSalt()
-  // The host holds the old salt from its start; its next request rebuilds its config with the new one.
-  idleHost()
+export async function forgetNodeData (): Promise<void> {
+  await forgetNodes({ forgetIpfsNode: async () => { await ipfsNode.forget() }, replaceSalt: () => { verifierStore().rotatePartitionSalt() }, sleepHost: () => { idleHost() }, hostGone: async () => { await supervisor?.whenGone() }, directory: () => verifierStore().directory, currentSalt: () => verifierStore().partitionSalt() })
 }
 
 /** Whether this run was started with the light client forced off from outside (`ORIVON_ETH_LIGHT_CLIENT=off`): no setting changes that. */
@@ -232,6 +231,7 @@ async function hostConfig (): Promise<HostConfig> {
   const front = await tunnelFront(routesOf())
   hostThroughTunnel = front !== undefined
   const stored = verifierStore()
+  const swarmChunks = stored.swarmChunks()
   const lightClient = await lightClientConfig({ switchedOff: lightClientSwitchedOff(), renewing, renewal, servers: ethServers.forHost() })
   const gateways = seam?.gateways ?? DEFAULT_ENDPOINTS.gateways
   return {
@@ -248,9 +248,11 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsSequences: stored.ipnsSequences(),
     swarmEndpoints: swarmEndpoints(seam),
     ...(seam === undefined && { swarmNode: true }),
+    ...(swarmSwitchedOff() && { swarmSwitchedOff: true }),
     tunnelSitesReadNodes: { nym: nodesMayServeTunnelSites('nym'), socks5: nodesMayServeTunnelSites('socks5') }, ...(nodesRunThroughTunnel() && { nodesRouted: true }), ...(await ethereumOutsideTunnel(front !== undefined) && { ethereumOutside: true }),
     ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice(), ...(seam?.ipfsNode?.retryWaitMs !== undefined && { retryWaitMs: seam.ipfsNode.retryWaitMs }) } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
+    ...(swarmChunks !== undefined && { swarmChunks }),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures })
   }
 }

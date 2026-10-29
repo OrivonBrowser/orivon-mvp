@@ -30,6 +30,7 @@ import type { Fetch } from '../gateways/gateways.js'
 import { lightClientFetch } from './light-client/lane-fetch.js'
 import { paceOn, routeFor } from './pace.js'
 import type { RoutePace } from '../route-pace.js'
+import { KeptChunkMemory } from './swarm-chunk-memory.js'
 
 /** What the person is told when a Swarm site is opened with the tunnel on for it, and "Use tunnel to run network nodes" is on. */
 export const SWARM_NOT_TUNNELLED = 'Swarm content loads only from the Swarm node Orivon runs on this computer. "Use tunnel to run network nodes" is on in Settings under Tunnels, and the node cannot send its traffic through the tunnel for one site, so this site is not opened while the tunnel is on for it. Turn the tunnel off for it, or turn that setting off, to open it.'
@@ -117,7 +118,7 @@ function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch']
   })
 }
 
-function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores, route: RoutePace, readsNodes: boolean): Protocol {
+function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefined, stores: SharedStores, route: RoutePace, readsNodes: boolean, tunnel: TunnelRoute): Protocol {
   if (config.swarmNode !== true || node === undefined || !readsNodes) return refusedSwarm()
   const endpointFetch = allowlisted(config.swarmEndpoints, deps.fetch, 'the Swarm gatherer')
   return swarmProtocol({
@@ -126,7 +127,9 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     route: nodeRouteOf(config, route),
     feedIndexes: stores.swarmFeedIndexes,
     log: (line) => { console.error(`[verifier] ${line}`) },
-    beforeMount: node.ensure
+    ...(stores.swarmChunks !== undefined && { memory: new KeptChunkMemory(stores.swarmChunks, tunnel) }),
+    beforeMount: node.ensure,
+    ...(config.swarmSwitchedOff === true && { holdMounts: true })
   })
 }
 
@@ -137,5 +140,5 @@ export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores
   const ipfsNode = nodes.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
   const readsNodes = config.tunnelSitesReadNodes?.[tunnel] === true
-  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route, tunnel), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route, readsNodes), startSwarm(config, deps, swarmNode, stores, route, readsNodes)], route }
+  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route, tunnel), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route, readsNodes), startSwarm(config, deps, swarmNode, stores, route, readsNodes, tunnel)], route }
 }

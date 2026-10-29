@@ -74,6 +74,13 @@ export class SharedFetch {
 export interface BlockMemory {
   remember: (partition: string, key: string, block: Uint8Array) => void
   recall: (partition: string, key: string) => Uint8Array | undefined
+  /**
+   * For a memory with a slower store behind its cache (the verifier host's Swarm chunks on disk): the block the store
+   * holds for `key`, checked against its address, or undefined. Asked after `recall` found nothing. It reads the store
+   * on a turn of the event loop of its own, so a caller that asks for hundreds at once does not hold the process while
+   * they are read. Never rejects.
+   */
+  recallKept?: (partition: string, key: string) => Promise<Uint8Array | undefined>
   /** The in-flight fetch for `key` in `partition`, starting one with
    * `start` if none is already running. */
   share: (partition: string, key: string, start: (signal: AbortSignal, onRefusal: (refusal: Refusal) => void) => Promise<Uint8Array>) => SharedFetch
