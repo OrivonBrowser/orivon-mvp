@@ -58,8 +58,11 @@ loops, so a few minutes of main's own lines are not pushed out by one host. An e
 `HostLog.flush()` run on `will-quit`, from a listener placed ahead of this folder's own, which writes the log file out and ends the
 run: what a host held back is then in the file, not lost with the process. A host whose switch (`ORIVON_VERIFIER_LOG`,
 `ORIVON_IPFS_NODE_LOG`, `ORIVON_SWARM_NODE_LOG`, `ORIVON_NYM_TUNNEL_LOG`, each `=1`) is on is neither collapsed, capped nor
-filtered: a developer running from a terminal sees everything the host prints. The 60 is *provisional*: a measured session's
-volume per host settles it.
+filtered: a developer running from a terminal sees everything the host prints. The 60 is *provisional*. A host writes mainly one
+line per site mounted, one per file of 256 KiB or more and one per failure, so only a failure flood reaches 60 a minute.
+Measured on a source run of the Swarm end-to-end spec (six Swarm sites mounted and one large file read in 13 s), the verifier host
+wrote 6 lines, 4 of them within one second, beside 3 of main's own; the smoke run, which loads no `.eth` name, made it write none,
+and the IPFS node, Swarm node and Nym hosts ran in neither. A real person's log would settle the number.
 
 **The Nym tunnel's host writes only its own lines to the log.** The WebAssembly library the host runs passes its own strings to
 `console.error` and `console.warn`, and they can name where a Nym-routed app connects, which is what Nym exists to hide. Every line
