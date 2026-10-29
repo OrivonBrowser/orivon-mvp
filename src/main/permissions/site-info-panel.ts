@@ -15,6 +15,7 @@ import { createPopoverView } from './popover-view.js'
 import type { PopoverAnchor } from './popover-view.js'
 import { PANEL_POPOVER_BACKGROUND } from '../shell/theme-colors.js'
 import type { SitePermissionsAccess } from '../site-settings/site-permissions-view.js'
+import type { FirstPage } from '../shell/window-state.js'
 
 /** Which page the popup opens showing -- the connection row's own switches
  * (`'main'`) or the delivery-evidence page a shield click or the main
@@ -36,6 +37,8 @@ export interface SiteInfoPanel {
   /** The tunnels page for the tab `tabId` rather than for a website: the tab is fixed for the popup's life, as an origin is. The tunnel button of a new tab, and of a tab with a choice, opens it. */
   toggleTab: (anchor: PopoverAnchor, tabId: string, pressedAt?: number) => void
   close: () => void
+  /** Closes the popup unless it is about what `arrived` names: the first page its tab committed, or the tab. A list the tunnel button opened while a tab's page was loading is still right when the page comes; any other change of origin leaves it stale. */
+  closeUnlessAbout: (arrived: FirstPage | null) => void
   isOpen: () => boolean
   restack: () => void
 }
@@ -94,6 +97,10 @@ export function createSiteInfoPanel (
       popover.toggle(anchor, ['--orivon-site-info-page=tunnels'], 'tunnels', pressedAt)
     },
     close: popover.close,
+    closeUnlessAbout (arrived) {
+      const about = arrived !== null && (openTab !== null ? openTab === arrived.tabId : arrived.origin !== null && openOrigin === arrived.origin)
+      if (!about || !popover.isOpen()) popover.close()
+    },
     isOpen: popover.isOpen,
     restack: popover.restack
   }

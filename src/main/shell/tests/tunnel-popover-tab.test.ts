@@ -95,15 +95,13 @@ describe('a tab whose first page has not committed (its address is empty)', () =
 })
 
 describe('the address a tab in front is opening', () => {
-  const snapshotOf = (...tabs: TabState[]): TabsSnapshot => snapshot(...tabs)
   it('is the address in flight for a tab that has no page yet', () => {
-    expect(addressBeingOpened(snapshotOf(tab({ url: '' })), () => 'https://news.example/a')).toBe('https://news.example/a')
+    expect(addressBeingOpened(snapshot(tab({ url: '' })), () => 'https://news.example/a')).toBe('https://news.example/a')
   })
 
   it('is nothing for a tab that shows a page, which the page answers for, nor when nothing is in flight, nor with no tab in front', () => {
-    expect(addressBeingOpened(snapshotOf(tab({ url: 'https://news.example/' })), () => 'https://other.example/')).toBeUndefined()
-    expect(addressBeingOpened(snapshotOf(tab({ url: '' })), () => undefined)).toBeUndefined()
+    expect(addressBeingOpened(snapshot(tab({ url: 'https://news.example/' })), () => 'https://other.example/')).toBeUndefined()
+    expect(addressBeingOpened(snapshot(tab({ url: '' })), () => undefined)).toBeUndefined()
     expect(addressBeingOpened({ tabs: [], activeTabId: null }, () => 'https://news.example/')).toBeUndefined()
   })
 })
-
