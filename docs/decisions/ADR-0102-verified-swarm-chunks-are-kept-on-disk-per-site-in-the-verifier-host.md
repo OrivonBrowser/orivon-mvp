@@ -1,6 +1,6 @@
 # ADR-0102: Verified Swarm chunks are kept on disk per site, in the verifier host
 
-- **Status:** accepted. Extends [`ADR-0077`](ADR-0077-swarm-content-is-verified-chunk-by-chunk-from-a-local-node.md): its rule that a chunk is used only after its address is recomputed now also covers a chunk read back from disk.
+- **Status:** accepted. Extends [`ADR-0077`](ADR-0077-swarm-content-is-verified-chunk-by-chunk-from-a-local-node.md): its rule that a chunk is used only after its address is recomputed now also covers a chunk read back from disk. **Amended 2026-10-29 (`d-0747`)**: a mount no longer waits for the Swarm node before it reads from disk; a read waits for the node only where a chunk has to come from it.
 - **Date:** 2026-10-28
 - **Type:** architecture / security
 - **Decided by:** AI recommendation accepted by default

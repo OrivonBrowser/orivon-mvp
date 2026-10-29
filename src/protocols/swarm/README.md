@@ -63,6 +63,20 @@ before the rest go to the node in one `/bytes` request, so a file read from disk
 imports nothing from `node:`. A mount with no partition keeps nothing in either place. The mount's log line, and a large file's,
 say how many chunks `recallKept` took from disk for that mount or that read alone, whatever else was running.
 
+**A mount starts the node and waits for it only where a chunk must come from an endpoint.** `SwarmGathererOptions.beforeMount` asks for
+the node the endpoints name (the verifier host's `NodeLink.ensure`) as a mount begins, and the mount carries on without the answer
+([`node-wait.ts`](node-wait.ts)). `ChunkSource` takes a `ready` wait and calls it only after the memory and the store have missed, and
+before the request, its timers and its pool slot, so a wait of seconds never counts against `chunkTimeoutMs`: for one chunk before its
+shared fetch, and for a file's leaves before the `/bytes` request and before any leaf fetched alone. A feed's lookup always waits,
+because its newest update is mutable. So a site whose every chunk is in memory or in the store opens, and is read, while the node is
+starting, slow or failed, and a read that needs the network fails with the node's own error (`NodeUnavailable`: off, failed, or still
+starting), never with "no endpoint answered". A refusal is the node's answer to the ask that was made, and a node can be ready by the
+time a page asks for a file the mount did not need, so a file read that begins after a refusal asks again, once for all its chunks. The
+answer is always observed, so a mount that finishes without it leaves no rejection unhandled. `holdMounts` is for the one case where the
+answer is itself the refusal: every mount then waits for `beforeMount` before it reads anything, and the verifier host sets it when the
+person has switched Swarm off, so a site on disk does not open against the switch. The mount's log line says `did not wait for the node`
+or `waited N ms for the node`, and a large file's says so when it waited; neither names a site or an address.
+
 **A reference is spelled as a CID.** 64 hex characters cannot be one host label, so the canonical
 spelling is a CIDv1 of codec swarm-manifest over keccak-256 ([`reference.ts`](reference.ts)), 61
 characters; the resolver refuses any other spelling so that one site has one origin.
