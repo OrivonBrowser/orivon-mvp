@@ -18,7 +18,7 @@ export interface NewTabWatchDeps {
   focusAddressBar: () => void
   /** Hands the keyboard back to the chrome's page without touching the field: what is typed in the bar by then stays. */
   returnKeyboard: () => void
-  /** The keyboard's own moves are over, once: the page has taken it and it went back to the chrome, or the load ended, failed or was abandoned. A popup that opens before this loses the keyboard to the page's grab and closes as a click away does. */
+  /** The keyboard's own moves are over, once: the page has taken it (and it went back to the chrome when the bar wants it; in a window without the OS focus, a tab not in front or under the welcome screen it stays in the page), or the load ended or failed, or the page was destroyed. A popup that opens before this loses the keyboard to the page's grab and closes as a click away does. */
   placed?: () => void
 }
 

@@ -53,7 +53,7 @@ export function shellActions (parts: WindowParts): ShellActions {
   const { entry, services, panels, closeOverlays, openWindow, topHeight, area } = parts
   const { tabs, window } = entry
   const presses = createPressStamps()
-  /** A press of the tunnel button that waits for its tab's keyboard (`TabManager.keyboard`): a second press of it cancels, as a second press closes a list. */
+  /** A press of the tunnel button that waits for its tab's keyboard (`TabManager.keyboard`). No list is drawn while it waits, so a second press of the button in that time is the same press again, not a close. */
   let waitingList: { readonly tabId: string, readonly cancel: (() => void) | undefined } | undefined
 
   const showTabMenuFor = (id: string): void => {
@@ -109,10 +109,9 @@ export function shellActions (parts: WindowParts): ShellActions {
       // The tunnel button of a new tab, and of a tab that carries a tunnel choice, is about the tab: no website has an origin to be about.
       const tabId = page === 'tunnels' ? tabForTunnelPopover(tabs.getState(), (id) => tabs.partitionOf(id), isOriginServedFromCacheSync) : undefined
       if (tabId !== undefined) {
-        const again = waitingList?.tabId === tabId
+        if (waitingList?.tabId === tabId) return
         waitingList?.cancel?.()
         waitingList = undefined
-        if (again) return
         // A new tab's page takes the keyboard in its first moments and would close a list that is open by then, so the list opens once the tab's keyboard is placed.
         const cancel = tabs.keyboard.whenPlaced(tabId, () => {
           waitingList = undefined

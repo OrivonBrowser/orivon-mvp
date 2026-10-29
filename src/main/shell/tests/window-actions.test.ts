@@ -151,18 +151,25 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     }
   })
 
-  it('takes a second press of the button while it waits as the cancelling of the first: no list opens, and the next press waits again', () => {
-    const { actions, sitePanel, place } = partsWith([{ id: 't1', isNewTab: true, isInternal: false }], 't1', undefined, false)
-    actions.openSiteInfo(anchor, 'tunnels')
-    actions.openSiteInfo(anchor, 'tunnels')
-    place()
-    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
-    actions.openSiteInfo(anchor, 'tunnels')
-    place()
-    expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+  it('takes a second press of the button while it waits as the same press: its list opens once, when the keyboard is placed, with the first press\'s stamp', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(80_000)
+    try {
+      const { actions, sitePanel, place } = partsWith([{ id: 't1', isNewTab: true, isInternal: false }], 't1', undefined, false)
+      actions.press('tunnels')
+      actions.openSiteInfo(anchor, 'tunnels')
+      vi.advanceTimersByTime(200)
+      actions.press('tunnels')
+      actions.openSiteInfo(anchor, 'tunnels')
+      expect(sitePanel.toggleTab).not.toHaveBeenCalled()
+      place()
+      expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', 80_000)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
-  it('opens nothing when the tab it waited for is no longer the one the button is about, and the next press is not read as a cancel', () => {
+  it('opens nothing when the tab it waited for is no longer the one the button is about, and the next press is not read as a repeat of it', () => {
     const { actions, sitePanel, place, state } = partsWith([{ id: 't1', isNewTab: true, isInternal: false }, { id: 't2', url: 'https://news.example/', isNewTab: false, isInternal: false }], 't1', undefined, false)
     actions.openSiteInfo(anchor, 'tunnels')
     state.activeTabId = 't2'
