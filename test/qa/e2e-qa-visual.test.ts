@@ -180,6 +180,9 @@ for (const scheme of SCHEMES) {
         await chrome.click('#menu')
         expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
         const menuPage = app.windows().find((page) => page.url().includes('overlay=menu')) as Page
+        // The popup counts as shown once its view is attached, and on a first open its page is still loading: until its stylesheet applies, the body has the browser's own 8px margin. Its rows are its first draw.
+        await menuPage.waitForLoadState('load')
+        await menuPage.waitForSelector('.menu-row')
         check('the menu card fills its view to the right edge', await menuPage.evaluate(() => document.documentElement.clientWidth - document.body.getBoundingClientRect().right) === 0)
         await state(check, app, `menu-popup-${scheme}`, {
           expected: 'The main menu is open as a popup under the menu button at the top right: a list of labelled entries, none cut off or overlapping, inside the window.',

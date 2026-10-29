@@ -247,6 +247,10 @@ export function findViewShowing (app, chrome, url) {
  * so `app.windows()` still lists it long after it closed. Reads the e2e-only
  * hook (shell/view-background-test-hook.ts's `recordPopoverShown`), present
  * only in a dev-grant-enabled build (`npm run test:e2e`'s own build step).
+ *
+ * True means the view is attached, not that its page has loaded: a popup opened for the first time shows while its
+ * page is still loading, and until its stylesheet applies the page lays out with the browser's default margins. A
+ * spec that measures the popup waits for its page's `load` and its first draw (a selector it shows) before it reads.
  */
 export async function popoverShown (app, urlPart) {
   const shown = await app.evaluate(({ webContents }, part) => {
