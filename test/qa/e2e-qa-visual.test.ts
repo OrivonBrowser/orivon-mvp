@@ -180,7 +180,7 @@ for (const scheme of SCHEMES) {
         await chrome.click('#menu')
         expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
         const menuPage = app.windows().find((page) => page.url().includes('overlay=menu')) as Page
-        // The popup counts as shown once its view is attached, and on a first open its page is still loading: until its stylesheet applies, the body has the browser's own 8px margin. Its rows are its first draw.
+        // The menu counts as shown once its view is attached, and this click follows the hover that builds the view by moments, so its page can still be loading: until its stylesheet applies, a layout read sees the browser's own 8px body margin.
         await menuPage.waitForLoadState('load')
         await menuPage.waitForSelector('.menu-row')
         check('the menu card fills its view to the right edge', await menuPage.evaluate(() => document.documentElement.clientWidth - document.body.getBoundingClientRect().right) === 0)
