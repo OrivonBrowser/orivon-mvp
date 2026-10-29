@@ -45,6 +45,8 @@ const dying = (): Worker => new Worker("require('node:worker_threads').parentPor
 const silent = (): Worker => new Worker("require('node:worker_threads').parentPort.on('message', () => {})", { eval: true })
 /** A thread that answers with something that is not an answer. */
 const garbled = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', (m) => p.postMessage({ id: m.id + 1000, ok: true }))", { eval: true })
+/** A thread that answers with nothing at all. */
+const nulled = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', () => p.postMessage(null))", { eval: true })
 
 /** `count` content-addressed chunks, each a different file, and their addresses. */
 function chunksOf (count: number): Array<{ address: string, chunk: Uint8Array }> {
@@ -208,6 +210,10 @@ describe('a chunk check pool whose thread fails', () => {
 
   it('sends an answer nobody asked for', async () => {
     await failsToCheckInThread(garbled, /an answer nobody asked for/)
+  })
+
+  it('sends an answer that is nothing', async () => {
+    await failsToCheckInThread(nulled, /an answer nobody asked for/)
   })
 
   it('never names the path an error carries', async () => {

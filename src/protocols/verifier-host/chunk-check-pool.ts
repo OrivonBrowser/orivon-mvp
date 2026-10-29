@@ -153,7 +153,7 @@ export class ChunkCheckPool implements ChunkChecker {
   }
 
   private answered (slot: Slot, answer: CheckAnswer): void {
-    const task = slot.inflight.get(answer.id)
+    const task = typeof answer === 'object' && answer !== null ? slot.inflight.get(answer.id) : undefined
     if (slot.ended || task === undefined || typeof answer.ok !== 'boolean') {
       if (!slot.ended) this.end('a thread sent an answer nobody asked for')
       return

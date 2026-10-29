@@ -101,7 +101,10 @@ another caller of `ChunkSource`) each chunk is checked in the thread that asks, 
 file's carry `checked on N threads`, or `checked in the host`. The pool is **durable**: it takes the thread's starter as an argument and
 imports no Electron. [`chunk-check-worker.ts`](chunk-check-worker.ts) is the thread; `scripts/chunk-check-worker-bundle.ts` builds it
 into one script that loads nothing but `node:worker_threads`, `electron.vite.config.ts` puts that script into [`entry.ts`](entry.ts) as a
-string, and `entry.ts` starts each thread from it with `new Worker(code, { eval: true })`. WORKERLOAD
+string, and `entry.ts` starts each thread from it with `new Worker(code, { eval: true })`. A string is what a package can always start: it names no file inside `app.asar`, needs no
+unpacked copy beside it, and holds no import of its own to resolve there, and it travels inside `verifier-host.js`, which the asar integrity
+check already covers. (Electron 44's utility process also starts a thread from a file inside the archive, so the string is a choice, not a
+limit.) The script is built from the same source the unit test runs, so a thread that cannot hash fails there before it fails in a package.
 
 **Opening, remaking and sweeping.** The file is opened at the first Swarm mount with a partition. A file SQLite reports as damaged, at
 open or in use, is deleted and made again, once in a run, and so is one whose `user_version` is not this code's layout number (the file
