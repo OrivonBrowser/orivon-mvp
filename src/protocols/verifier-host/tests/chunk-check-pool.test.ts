@@ -1,11 +1,23 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { Worker } from 'node:worker_threads'
 import { bytesToHex } from 'viem'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { buildFile } from '../../../../test/apps/swarm-gateway/encode.mjs'
+import { GatewayPool } from '../../gateways/gateways.js'
 import { cacAddress } from '../../swarm/chunk.js'
+import { ChunkSource } from '../../swarm/chunk-fetch.js'
+import type { SubtreeLeaf } from '../../swarm/chunk-fetch.js'
+import { DEFAULT_LIMITS } from '../../swarm/limits.js'
+import { A, fakeSwarm } from '../../swarm/tests/swarm.test-helpers.js'
 import { SWARM_ETH } from '../../swarm/tests/live-vectors.js'
 import type { CheckedOn } from '../../swarm/chunk-check.js'
 import { ChunkCheckPool, defaultPoolSize } from '../chunk-check-pool.js'
+import { SwarmChunkDatabase } from '../swarm-chunk-database.js'
+import { swarmChunkFile } from '../swarm-chunk-files.js'
+import { KeptChunkMemory } from '../swarm-chunk-memory.js'
 import type { ChunkCheckPoolOptions } from '../chunk-check-pool.js'
 import { builtChunkCheckWorker } from './chunk-check-worker.test-helpers.js'
 
@@ -220,5 +232,51 @@ describe('a chunk check pool whose thread fails', () => {
     await answers
     spinning = false
     expect(turns).toBeGreaterThanOrEqual(20)
+  })
+})
+
+describe('a Swarm file read back through the pool, with real threads', () => {
+  const SALT = 'cd'.repeat(32)
+  const SITE = 'https://one.example'
+  const signal = new AbortController().signal
+
+  it('refuses the rows altered on disk, deletes them, and fetches those leaves again, while the others are checked on threads', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-chunk-check-'))
+    const databases: SwarmChunkDatabase[] = []
+    const database = (): SwarmChunkDatabase => {
+      const made = new SwarmChunkDatabase({ dir, salt: SALT })
+      databases.push(made)
+      return made
+    }
+    try {
+      const store = new Map<string, Uint8Array>()
+      const content = Uint8Array.from({ length: 12 * 4096 }, (_, i) => Math.imul(i ^ (i >>> 5), 2_246_822_519) >>> 24)
+      const parent = buildFile(content, store).ref
+      const refs = store.get(parent)!.subarray(8)
+      const leaves: SubtreeLeaf[] = Array.from({ length: 12 }, (_, i) => ({ address: bytesToHex(refs.subarray(i * 32, (i + 1) * 32)).slice(2), size: 4096, offset: i * 4096 }))
+      const pool = poolOf(real)
+      const sourceOver = (disk: SwarmChunkDatabase) => {
+        const swarm = fakeSwarm(store)
+        const deps = { fetch: swarm.fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS, checker: pool }
+        return { source: new ChunkSource(deps, new KeptChunkMemory(disk, '', pool), SITE), requests: swarm.requests }
+      }
+      const first = database()
+      await Promise.all(sourceOver(first).source.leaves(parent, leaves, signal, () => {}))
+      first.close()
+      const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      for (const at of [2, 7]) raw.prepare('UPDATE chunk SET bytes = zeroblob(length(bytes)) WHERE address = ?').run(Buffer.from(leaves[at]!.address, 'hex'))
+      raw.close()
+
+      const second = database()
+      const { source, requests } = sourceOver(second)
+      expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+      expect(requests).toEqual([`${A}/bytes/${parent}`])
+      expect(second.refused).toBe(2)
+      expect(second.fromDisk).toBe(10)
+      expect(pool.threads).toBeGreaterThan(0)
+    } finally {
+      for (const database of databases) database.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

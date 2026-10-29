@@ -72,7 +72,7 @@ function main (): void {
         outside: { send: createOutsideFetch(createDirectFetch({ allowPost: true }), resolveOutside), resolveHost: resolveOutside },
         // A server the person runs on this computer or their home network, at an address they typed in: Node sockets straight to it, never `net`, which a proxy or the tunnel's front would carry elsewhere.
         localFetch: createLocalRpcFetch(),
-        // The hashing of Swarm chunks, off the thread every protocol is served on. Started from a string: a thread cannot read a file from inside app.asar.
+        // The hashing of Swarm chunks, off the thread every protocol is served on. A thread runs the self-contained script the main build puts here as a string.
         chunkChecks: new ChunkCheckPool({ spawn: () => new Worker(__ORIVON_CHUNK_CHECK_WORKER__, { eval: true, name: 'orivon chunk check' }), log: (line) => { console.error(`[verifier] ${line}`) } })
       })
       host.then(
