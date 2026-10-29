@@ -27,7 +27,7 @@ interface Hosted { port: number, hits: () => number, close: () => Promise<void> 
 
 async function host (title: string): Promise<Hosted> {
   let hits = 0
-  const server: Server = createServer((_request, response) => { hits += 1; response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(`<!doctype html><title>${title}</title><body>${title}<button id="blank" onclick="window.open('about:blank')">blank</button><a id="out" target="_blank" href="about:blank">out</a></body>`) })
+  const server: Server = createServer((_request, response) => { hits += 1; response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end(`<!doctype html><title>${title}</title><body>${title}<button id="blank" onclick="window.open('about:blank')">blank</button><button id="sized" onclick="window.open(this.dataset.target, '', 'width=420,height=320')">sized</button><button id="sizedCut" onclick="const w = window.open(this.dataset.target, '', 'width=420,height=320'); w.opener = null">sized, link cut</button><a id="out" target="_blank" href="about:blank">out</a></body>`) })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   return { port: (server.address() as AddressInfo).port, hits: () => hits, close: async () => { await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections() }) } }
 }
@@ -375,6 +375,72 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press o
     expect(findPopup(app) !== undefined, 'the tab\'s list stays open when the page arrives').toBe(true)
     expect(await list.locator('.site-claim').textContent(), 'it is still the tab\'s').toBe('This tab')
     await closeList(app, chrome)
+  } finally {
+    held.release()
+    await closeElectron(app)
+  }
+}, 6 * QA_TEST_TIMEOUT_MS)
+
+it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press on a tab that showed a website with a tunnel of its own, once an address has been typed in it that has not answered, opens the list of that address', async () => {
+  const { app, chrome } = await start()
+  try {
+    // The website gets a tunnel of its own, so the tab shows it in the session that tunnel calls for: typing another address leaves that session.
+    await clickAddressBarRetrying(chrome, url())
+    expect((await waitForTab(chrome, { address: url(), title: 'direct' }, 60_000)).ok).toBe(true)
+    const popover = await openList(app, chrome)
+    await popover.click('#tunnel-switch-nym')
+    await popover.waitForSelector('.tunnel-notice')
+    await popover.click('#tunnel-notice-confirm')
+    expect((await waitForTab(chrome, { address: url(), title: 'tunnelled' }, 60_000)).ok, 'the website came through Nym').toBe(true)
+    if (findPopup(app) !== undefined) await chrome.click('#tunnel-btn')
+    expect(await waitFor(() => findPopup(app) === undefined)).toBe(true)
+    await delay(300)
+
+    // The view in that session is put away on a blank page as the new address starts to load: that page's end is not the end of the load.
+    const before = held.requests()
+    await clickAddressBarRetrying(chrome, heldUrl())
+    expect(await waitFor(() => held.requests() > before), 'the new address was asked for and has not answered').toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await loadingPages(app), 'a page is loading').toBeGreaterThan(0)
+    expect(await chrome.locator('#tunnel-btn').isVisible(), 'the tab draws the button while its page has not committed').toBe(true)
+    const list = await openList(app, chrome)
+    expect(await list.locator('.site-claim').textContent(), 'the list is the one of the address being opened').toContain(`${NAME}:${String(held.port)}`)
+    expect(await list.locator('#tunnel-switch-nym').getAttribute('aria-label')).toBe('Use Nym for this site')
+    held.release()
+    expect((await waitForTab(chrome, { address: heldUrl(), title: 'held' }, 60_000)).ok).toBe(true)
+    await closeList(app, chrome)
+  } finally {
+    held.release()
+    await closeElectron(app)
+  }
+}, 6 * QA_TEST_TIMEOUT_MS)
+
+it('[app:tab-tunnel-button-opens-before-the-first-page-commits] a popup a page opened onto a website that has not answered has no tunnel button, whether or not the page cut its link to the popup, and has the button once its page has come', async () => {
+  const { app, chrome } = await start()
+  try {
+    await clickAddressBarRetrying(chrome, url())
+    expect((await waitForTab(chrome, { address: url(), title: 'direct' }, 60_000)).ok).toBe(true)
+    expect(await waitFor(() => findViewShowing(app, chrome, url()) !== undefined)).toBe(true)
+    const first = await activeId(chrome)
+    for (const button of ['sized', 'sizedCut']) {
+      // The page writes into the popup's empty document as freely as into its own until the website answers, so the button is not drawn: a press could only be about what the page says it loads.
+      held.release()
+      await delay(ABSENCE_SETTLE_MS)
+      const before = held.requests()
+      const page = findViewShowing(app, chrome, url()) as Page
+      await page.evaluate(([id, target]) => { (document.querySelector(`#${String(id)}`) as HTMLElement).dataset.target = target }, [button, heldUrl()])
+      await page.click(`#${button}`)
+      expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) !== first), `${button}: the popup is the tab in front`).toBe(true)
+      expect(await waitFor(() => held.requests() > before), `${button}: the popup asked the website, which has not answered`).toBe(true)
+      expect(await waitFor(async () => !(await chrome.locator('#tunnel-btn').isVisible())), `${button}: the popup has no button while its page has not come`).toBe(true)
+
+      held.release()
+      expect((await waitForTab(chrome, { address: heldUrl(), title: 'held' }, 60_000)).ok, `${button}: the page came`).toBe(true)
+      expect(await waitFor(async () => await chrome.locator('#tunnel-btn').isVisible()), `${button}: the button comes with the page`).toBe(true)
+      const popup = await activeId(chrome)
+      await chrome.evaluate((tab) => { (window as unknown as { orivonShell: { closeTab: (id: string) => void } }).orivonShell.closeTab(tab) }, popup)
+      expect(await waitFor(async () => (await tabIds(chrome)).length === 1 && await activeId(chrome) === first)).toBe(true)
+    }
   } finally {
     held.release()
     await closeElectron(app)

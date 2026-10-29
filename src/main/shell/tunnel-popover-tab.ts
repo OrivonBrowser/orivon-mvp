@@ -8,20 +8,23 @@ export type OpeningAddress = (id: string) => string | undefined
 
 /** What `openingAddressOf` reads of a window's tabs. */
 export interface OpeningTabs {
-  readonly record: (id: string) => Pick<TabRecord, 'inflightTarget'> | undefined
+  readonly record: (id: string) => Pick<TabRecord, 'inflightTarget' | 'view' | 'popupView'> | undefined
   readonly liveWebContents: (id: string) => { readonly opener?: unknown } | undefined
 }
 
 /**
- * Where the first navigation of a tab leads now (`TabRecord.inflightTarget`, after its redirects), by tab id. Not for a tab whose page
- * has an opener: a popup shows its initial empty document until the website answers, and the page that opened it writes into that
- * document as freely as into its own, so what the tab was told it loads cannot speak for what it shows.
+ * Where the first navigation of a tab leads now (`TabRecord.inflightTarget`, after its redirects), by tab id. Not for a popup a page
+ * opened: it shows its initial empty document until the website answers, and the page that opened it writes into that document as
+ * freely as into its own, so what the tab was told it loads cannot speak for what it shows. That is read from the record (the view the
+ * popup was made in is still the tab's), since the opening page can cut `opener` and keep writing; a live opener counts as well.
  */
 export function openingAddressOf (tabs: OpeningTabs): OpeningAddress {
   return (id) => {
     const contents = tabs.liveWebContents(id)
-    if (contents === undefined || (contents.opener ?? null) !== null) return undefined
-    return tabs.record(id)?.inflightTarget
+    const record = tabs.record(id)
+    if (contents === undefined || record === undefined || (contents.opener ?? null) !== null) return undefined
+    if (record.popupView !== undefined && record.popupView === record.view) return undefined
+    return record.inflightTarget
   }
 }
 
@@ -46,8 +49,8 @@ export function addressOfFrontTab (state: TabsSnapshot, opening: OpeningAddress)
  */
 export function tabForTunnelPopover (state: TabsSnapshot, partitionOf: (id: string) => string | undefined, isApp: (origin: string) => boolean, opening: OpeningAddress): string | undefined {
   const active = state.tabs.find((tab) => tab.id === state.activeTabId)
-  if (active === undefined || active.isInternal) return undefined
-  if (active.isNewTab) return active.blankPage === true ? undefined : active.id
+  if (active === undefined || active.isInternal || active.blankPage === true) return undefined
+  if (active.isNewTab) return active.id
   if (active.tunnelChoice === undefined) return undefined
   const address = active.url === '' ? opening(active.id) : active.url
   const origin = address === undefined ? null : originFromUrl(address)

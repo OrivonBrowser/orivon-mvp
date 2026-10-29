@@ -198,7 +198,7 @@ export class TabFactory {
    * session (./popups.ts). It navigates itself; nothing is loaded. */
   popup (view: WebContentsView, partition: string | undefined, tunnelChoice?: TabTunnelChoice): BuiltTab {
     const id = makeTabId()
-    const record = this.recordFor(view, partition, choiceOf(tunnelChoice))
+    const record = this.recordFor(view, partition, { popupView: view, ...choiceOf(tunnelChoice) })
     wireView(id, record)
     this.host.tabLifecycle?.tabCreated(view.webContents, this.host.window)
     return { id, record }

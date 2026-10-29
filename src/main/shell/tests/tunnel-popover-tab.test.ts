@@ -48,6 +48,12 @@ describe('which tab the tunnel button\'s popover is about', () => {
     }
   })
 
+  it('is no tab for a popup that has committed nothing yet, which has no tunnel button, whatever choice the tab carries', () => {
+    for (const session of [inPartition('persist:tunnel-profile'), shared]) {
+      expect(forTab(snapshot(tab({ url: '', blankPage: true, tunnelChoice: 'nym' })), session, notApp)).toBeUndefined()
+    }
+  })
+
   it('reads the page from the tab\'s record, not from anything the chrome sent', () => {
     // A website that navigated to an installed app is the app's page, whatever address the chrome last drew.
     expect(forTab(snapshot(tab({ tunnelChoice: 'nym', url: 'https://app.example/' })), shared, (origin) => origin === 'https://app.example')).toBeUndefined()
@@ -111,7 +117,9 @@ describe('the address a tab in front is opening', () => {
 })
 
 describe('where a tab\'s first navigation leads', () => {
-  const tabs = (record: { inflightTarget?: string } | undefined, contents: { opener?: unknown } | undefined) => openingAddressOf({ record: () => record, liveWebContents: () => contents })
+  const view = { webContents: {} }
+  type Record = { inflightTarget?: string, view?: object, popupView?: object }
+  const tabs = (record: Record | undefined, contents: { opener?: unknown } | undefined) => openingAddressOf({ record: () => record, liveWebContents: () => contents })
 
   it('is the address the navigation has been redirected to, which the record keeps beside the one it started at', () => {
     expect(tabs({ inflightTarget: 'https://news.example/a' }, { opener: null })('t1')).toBe('https://news.example/a')
@@ -120,6 +128,14 @@ describe('where a tab\'s first navigation leads', () => {
 
   it('is nothing for a tab whose page has an opener, which writes into the empty document the tab shows until the website answers', () => {
     expect(tabs({ inflightTarget: 'https://news.example/a' }, { opener: { url: 'https://other.example/' } })('t1')).toBeUndefined()
+  })
+
+  it('is nothing for a tab that started as a popup, however the opener reads later: the page that opened it can cut the link and still write into the document', () => {
+    expect(tabs({ inflightTarget: 'https://news.example/a', view, popupView: view }, { opener: null })('t1')).toBeUndefined()
+  })
+
+  it('is the address once the tab shows another view than the popup it started as, which the browser itself is loading', () => {
+    expect(tabs({ inflightTarget: 'https://news.example/a', view: { webContents: {} }, popupView: view }, { opener: null })('t1')).toBe('https://news.example/a')
   })
 
   it('is nothing with nothing in flight, no record or no live page', () => {

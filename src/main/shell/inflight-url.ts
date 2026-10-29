@@ -4,7 +4,8 @@ import type { TabRecord } from './tab-types.js'
 /** Keeps `record.inflightUrl` at the address the main frame is loading and has not yet committed. A reload during
  * that load restarts it (tab-navigation.ts's reloadTab), and `wc.reload()` alone would reload the page already shown.
  * `record.inflightTarget` follows the same load through its redirects, so it names the website the tab is about to show.
- * `shown` is false while the view is swapped out or parked, whose navigations are not the tab's.
+ * `shown` is false while the view is swapped out or parked, whose navigations are not the tab's: not their start, their
+ * redirects nor their end, since a parked view's own about:blank commit comes after the view in front has started loading.
  *
  * Only the navigation's own end clears it: a commit, a stop, or a failure at one of its addresses (the first, or
  * where a redirect led). `did-finish-load` is no end, since the page being left fires it for its own onload while
@@ -14,9 +15,10 @@ import type { TabRecord } from './tab-types.js'
 export function trackInflightUrl (wc: WebContents, record: Pick<TabRecord, 'inflightUrl' | 'inflightTarget'>, shown: () => boolean): void {
   const addresses = new Set<string>()
   const clear = (): void => {
+    addresses.clear()
+    if (!shown()) return
     delete record.inflightUrl
     delete record.inflightTarget
-    addresses.clear()
   }
   wc.on('did-start-navigation', (details) => {
     if (!details.isMainFrame || details.isSameDocument || !shown()) return
@@ -26,7 +28,7 @@ export function trackInflightUrl (wc: WebContents, record: Pick<TabRecord, 'infl
     record.inflightTarget = details.url
   })
   wc.on('did-redirect-navigation', (details) => {
-    if (!details.isMainFrame || record.inflightUrl === undefined) return
+    if (!details.isMainFrame || !shown() || record.inflightUrl === undefined) return
     addresses.add(details.url)
     record.inflightTarget = details.url
   })

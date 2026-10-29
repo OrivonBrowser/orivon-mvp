@@ -37,7 +37,7 @@ function fakes (unreadable = false, settledFails = false, committed = 'https://n
     }
   }
   const services = {
-    windows: { all: () => [window], liveTabOrigins: () => ['https://news.example'] },
+    windows: { all: () => [window] },
     settings: { onChange: (listener: (change: { key: string }) => void) => { onSetting = listener; return () => {} } }
   }
   return {
@@ -148,6 +148,15 @@ describe('a tab whose first page has not committed', () => {
     world.changeHub('https://t.example')
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(repartitionView).not.toHaveBeenCalled()
+  })
+
+  it('moves into that session when the tunnel is set while the list of settings cannot be read, as a tab showing the website does', async () => {
+    const world = fakes(true, false, '')
+    Object.assign(world.records.get('t1') as object, { inflightTarget: 'https://news.example/a' })
+    world.install()
+    world.settle()
+    world.changeSetting('network.route.proxy')
+    await vi.waitFor(() => { expect(repartitionView).toHaveBeenCalledWith('t1', world.records.get('t1'), 'https://news.example/a', 'persist:site-x') })
   })
 
   it('has its load stopped when the sessions could not follow the switch, as the loads of a tab showing the website are', async () => {

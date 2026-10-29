@@ -34,6 +34,19 @@ export const installSiteSessions: ShellInstaller = {
         }
       }
     }
+    // The origins the tabs are on for their session (`addressOfTab`), which a tab with no page yet counts as the website it is opening. Not `windows.liveTabOrigins()`, which reads only committed pages.
+    const openOrigins = (): string[] => {
+      const origins = new Set<string>()
+      for (const window of services.windows.all()) {
+        for (const id of window.tabs.ids()) {
+          const contents = window.tabs.liveWebContents(id)
+          const record = window.tabs.record(id)
+          const origin = contents === undefined || record === undefined ? null : originFromUrl(addressOfTab(contents.getURL(), record))
+          if (origin !== null) origins.add(origin)
+        }
+      }
+      return [...origins]
+    }
     // The sessions could not be made to follow a switch: what is open on the website is stopped rather than left sending as the session it is in does.
     const stopLoads = (origin: string): void => {
       for (const window of services.windows.all()) {
@@ -47,7 +60,7 @@ export const installSiteSessions: ShellInstaller = {
     // While the list of tunnel settings cannot be read, setting or clearing the proxy, or choosing the other tunnel, changes which websites are routed and in which profile without any of them changing.
     services.settings.onChange((change) => {
       if ((change.key !== 'network.route.proxy' && change.key !== 'network.route.kind') || !routes.hub.unreadable()) return
-      routes.controller.settled().then(() => { for (const origin of services.windows.liveTabOrigins()) move(origin) }, (error: unknown) => { console.error('[route] moving tabs after the tunnel changed failed:', error) })
+      routes.controller.settled().then(() => { for (const origin of openOrigins()) move(origin) }, (error: unknown) => { console.error('[route] moving tabs after the tunnel changed failed:', error) })
     })
     routes.hub.onChange((origin) => {
       routes.controller.settled().then(() => { move(origin) }, (error: unknown) => {

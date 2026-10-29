@@ -590,6 +590,21 @@ describe('a blank page that is no new tab', () => {
     expect(stateOf('about:blank', { isDashboardTab: false, tunnelChoice: 'nym' })).toMatchObject({ isNewTab: true, blankPage: true, tunnelChoice: 'nym' })
   })
 
+  it('is flagged on a popup a page opened that has committed nothing yet, which shows the empty document its opener writes into though it is no new tab', () => {
+    const view = {}
+    for (const partition of [undefined, 'persist:tunnel-profile']) {
+      const state = stateOf('', { partition, view, popupView: view, tunnelChoice: 'nym' })
+      expect(state, String(partition)).toMatchObject({ isNewTab: false, blankPage: true, tunnelChoice: 'nym' })
+    }
+  })
+
+  it('is not flagged on a popup once it shows a page, nor on a tab that began as one and now shows another view, nor on a tab the browser opened', () => {
+    const view = {}
+    expect(stateOf('https://news.example/', { view, popupView: view })).not.toHaveProperty('blankPage')
+    expect(stateOf('', { view: {}, popupView: view })).not.toHaveProperty('blankPage')
+    expect(stateOf('', { view })).not.toHaveProperty('blankPage')
+  })
+
   it('is not flagged on the dashboard tab while it shows the dashboard', () => {
     expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).toMatchObject({ isNewTab: true })
     expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).not.toHaveProperty('blankPage')
