@@ -4,7 +4,7 @@
 import { resolve } from 'node:path'
 import { build } from 'vite'
 
-const WORKER_SOURCE = 'src/protocols/verifier-host/chunk-check-worker.ts'
+export const CHUNK_CHECK_WORKER_SOURCE = 'src/protocols/verifier-host/chunk-check-worker.ts'
 
 export async function chunkCheckWorkerCode (root: string): Promise<string> {
   const result = await build({
@@ -13,7 +13,7 @@ export async function chunkCheckWorkerCode (root: string): Promise<string> {
     logLevel: 'warn',
     ssr: { target: 'node', noExternal: true },
     build: {
-      ssr: resolve(root, WORKER_SOURCE),
+      ssr: resolve(root, CHUNK_CHECK_WORKER_SOURCE),
       write: false,
       minify: false,
       target: 'node22',
@@ -23,5 +23,6 @@ export async function chunkCheckWorkerCode (root: string): Promise<string> {
   const chunks = [result].flat().flatMap((out) => 'output' in out ? out.output : []).filter((output) => output.type === 'chunk')
   const [chunk] = chunks
   if (chunks.length !== 1 || chunk === undefined) throw new Error(`bundling the chunk check thread produced ${String(chunks.length)} chunks, not one`)
+  if (!chunk.code.includes('node:worker_threads')) throw new Error('the chunk check thread was bundled without the code that answers the host')
   return chunk.code
 }

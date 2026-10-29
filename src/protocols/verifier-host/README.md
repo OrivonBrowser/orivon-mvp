@@ -94,10 +94,12 @@ worked out when the file opens, and a file SQLite reports as damaged is deleted 
 it runs. [`chunk-check-pool.ts`](chunk-check-pool.ts) answers what `verifyCac` answers on at most `min(3, cores - 1)` threads (at least
 one). A thread starts when a check first waits, another only while every thread already has some, and all end after 30 s with nothing to
 check, so an idle browser holds none. A chunk goes to a thread as a copy that is transferred, and the pool queues what its callers wait
-on, never more and never fewer: it drops no check. A thread that cannot start, dies, sends an answer nobody asked for or goes five
-seconds without answering ends the pool for the run: every check waiting is made in the host's own thread, one to a turn of the event
+on, never more and never fewer: it drops no check. Each new thread is first asked about a chunk known to be genuine and the same
+chunk with one byte changed, and a thread's "not genuine" is checked again in the host before a row is deleted or a node blamed. A
+thread that cannot start, dies, answers either known chunk wrongly, refuses a chunk the host finds genuine, sends an answer nobody
+asked for or goes five seconds without answering ends the pool for the run: every check waiting is made in the host's own thread, one to a turn of the event
 loop, as is every later one, and one line says why (never a path or an address). Where the pool is not given (the unit tests,
-another caller of `ChunkSource`) each chunk is checked in the thread that asks, as before. The log says where: a mount's line and a large
+another caller of `ChunkSource`) each chunk is checked in the thread that asks. The log says where: a mount's line and a large
 file's carry `checked on N threads`, or `checked in the host`. The pool is **durable**: it takes the thread's starter as an argument and
 imports no Electron. [`chunk-check-worker.ts`](chunk-check-worker.ts) is the thread; `scripts/chunk-check-worker-bundle.ts` builds it
 into one script that loads nothing but `node:worker_threads`, `electron.vite.config.ts` puts that script into [`entry.ts`](entry.ts) as a

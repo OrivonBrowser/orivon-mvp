@@ -9,7 +9,8 @@ import { builtChunkCheckWorker } from './chunk-check-worker.test-helpers.js'
 
 const ENTRY = new URL('../entry.ts', import.meta.url).pathname
 
-describe('the code of the chunk check thread', () => {
+// The first test pays for bundling the thread, viem and the hash library included.
+describe('the code of the chunk check thread', { timeout: 120_000 }, () => {
   it('loads nothing but the thread module, so it starts from a string wherever the host\'s own files are', async () => {
     const code = await builtChunkCheckWorker()
     const loads = [...code.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)].map((match) => match[1])

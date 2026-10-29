@@ -7,7 +7,7 @@ import { verifyCac } from './chunk.js'
 export type CheckedOn = number | 'host'
 
 export interface ChunkChecker {
-  /** Answers what `verifyCac` answers, and never rejects. `ran` is told where the check ran, once it has. */
+  /** Answers what `verifyCac` answers, and never rejects. `ran` is told where the check ran, once it has. The caller leaves `chunk` as it is until the answer. */
   readonly verify: (address: string, chunk: Uint8Array, ran?: (on: CheckedOn) => void) => Promise<boolean>
 }
 
@@ -20,7 +20,7 @@ export function checkHere (address: string, chunk: Uint8Array): boolean {
   }
 }
 
-/** The check in the thread that asks, as every check was made before a checker could be given. */
+/** The check in the thread that asks: what a protocol uses when its host gives no other checker. */
 export const CHECK_HERE: ChunkChecker = {
   verify: async (address, chunk, ran) => {
     ran?.('host')

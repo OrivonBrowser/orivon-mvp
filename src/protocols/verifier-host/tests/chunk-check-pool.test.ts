@@ -45,6 +45,10 @@ const dying = (): Worker => new Worker("require('node:worker_threads').parentPor
 const silent = (): Worker => new Worker("require('node:worker_threads').parentPort.on('message', () => {})", { eval: true })
 /** A thread that answers with something that is not an answer. */
 const garbled = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', (m) => p.postMessage({ id: m.id + 1000, ok: true }))", { eval: true })
+/** A thread that answers every chunk "not genuine". */
+const refusing = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', (m) => p.postMessage({ id: m.id, ok: false }))", { eval: true })
+/** A thread that answers every chunk "genuine". */
+const approving = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', (m) => p.postMessage({ id: m.id, ok: true }))", { eval: true })
 /** A thread that answers with nothing at all. */
 const nulled = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', () => p.postMessage(null))", { eval: true })
 
@@ -151,6 +155,21 @@ describe('where the chunk check pool runs its checks', () => {
     expect(pool.threads).toBe(0)
   })
 
+  it('keeps a thread whose answer waited behind the host\'s own busy thread past the stall limit', async () => {
+    const lines: string[] = []
+    const pool = poolOf(real, { stallMs: 50, log: (line) => { lines.push(line) } })
+    await pool.verify(FIRST.address, FIRST.chunk)
+    const where: CheckedOn[] = []
+    const answer = pool.verify(FIRST.address, FIRST.chunk, (on) => { where.push(on) })
+    // The host's thread held by something else, while the thread answers and the stall timer comes due.
+    const until = Date.now() + 200
+    while (Date.now() < until) { /* busy */ }
+    expect(await answer).toBe(true)
+    expect(where).toEqual([1])
+    expect(lines).toEqual([])
+    expect(pool.threads).toBe(1)
+  })
+
   it('settles the checks waiting when it is closed, in the calling thread', async () => {
     const pool = poolOf(silent)
     const chunks = chunksOf(10)
@@ -210,6 +229,14 @@ describe('a chunk check pool whose thread fails', () => {
 
   it('sends an answer nobody asked for', async () => {
     await failsToCheckInThread(garbled, /an answer nobody asked for/)
+  })
+
+  it('refuses every chunk: a refusal the calling thread does not confirm ends the pool before any answer is used', async () => {
+    await failsToCheckInThread(refusing, /refused a chunk the host found genuine/)
+  })
+
+  it('takes every chunk as genuine: the altered chunk it is first asked about ends the pool before any answer is used', async () => {
+    await failsToCheckInThread(approving, /answered a known chunk wrongly/)
   })
 
   it('sends an answer that is nothing', async () => {
@@ -282,6 +309,30 @@ describe('a Swarm file read back through the pool, with real threads', () => {
       expect(pool.threads).toBeGreaterThan(0)
     } finally {
       for (const database of databases) database.close()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('drops a refused row only while it still holds the bytes refused, so a late refusal leaves the chunk fetched again', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orivon-chunk-check-'))
+    const disk = new SwarmChunkDatabase({ dir, salt: SALT })
+    try {
+      disk.put(SITE, FIRST.address, FIRST.chunk)
+      disk.flush()
+      const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      raw.prepare('UPDATE chunk SET bytes = zeroblob(length(bytes)) WHERE address = ?').run(Buffer.from(FIRST.address, 'hex'))
+      raw.close()
+      // Two reads of the altered row, whose checks settle one after the other with the chunk fetched again between them.
+      const early = disk.read(SITE, FIRST.address)!
+      const late = disk.read(SITE, FIRST.address)!
+      expect(disk.settle(early, false)).toBeUndefined()
+      disk.put(SITE, FIRST.address, FIRST.chunk)
+      disk.flush()
+      expect(disk.settle(late, false)).toBeUndefined()
+      expect(disk.get(SITE, FIRST.address)).toEqual(FIRST.chunk)
+      expect(disk.refused).toBe(1)
+    } finally {
+      disk.close()
       rmSync(dir, { recursive: true, force: true })
     }
   })

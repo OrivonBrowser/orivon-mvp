@@ -225,7 +225,8 @@ export class SwarmChunkDatabase {
 
   /**
    * What the check of a row `read` gave says: the bytes when they are the chunk at the row's address, undefined, and the row
-   * deleted, when they are not. The row is looked up again first, so one the file has since replaced is never the one dropped.
+   * deleted, when they are not. The row is looked up again first and dropped only while it still holds the bytes refused, so
+   * one the file has since replaced (a later read refused the same row and fetched the chunk again) is never the one dropped.
    */
   settle (row: KeptRow, genuine: boolean): Uint8Array | undefined {
     if (row.site === undefined || row.statements === undefined) return genuine ? row.bytes : undefined
@@ -237,7 +238,7 @@ export class SwarmChunkDatabase {
     if (this.statements !== row.statements) return undefined
     try {
       const again = row.statements.find.get(row.site, Buffer.from(row.address, 'hex')) as Found | undefined
-      if (again !== undefined) this.refuse(row.statements, again)
+      if (again !== undefined && again.bytes instanceof Uint8Array && Buffer.compare(again.bytes, row.bytes) === 0) this.refuse(row.statements, again)
     } catch (error) {
       this.fail('read', error)
     }
