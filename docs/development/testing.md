@@ -401,6 +401,8 @@ that never fires. A spec pins the cause it can see (the structure of the window'
 shell with nothing driving the pages and reads them through the main process's own inspector, as
 `test/window/e2e-chrome-shown.test.ts` does for the chrome left hidden by a full-width overlay over a resized window.
 
+**Press a key in a popup once it has drawn, not as soon as its bridge answers.** A popup's bridge (`window.orivonSiteInfo`) exists from the page's first moment, but its Escape listener is registered only when its script runs, so an Escape pressed on the bridge alone can reach a page that is not listening yet, and nothing presses it again. The popup's first draw follows its listener: `pressEscapeOnceDrawn` in `test/shell-pages/e2e-shell-scheme.test.ts` is the worked example.
+
 `scripts/probe-view-visibility.mjs` is that recipe for every view put into a window, with no Playwright: it launches
 the built shell (build it first) on a throwaway profile with `--inspect` on the main process alone, which does
 not touch any page, drives tab switches, splits (the shortcut and the tab menu), navigations in a split pane, sleep and
