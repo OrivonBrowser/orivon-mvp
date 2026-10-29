@@ -649,7 +649,8 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
           action: 'Chose the entire screen in the picker and pressed Share.',
           ignore: [FIXTURE_ADDRESS, { x: 330, y: 100, width: 340, height: 30 }]
         })
-        await (bar as Page).click('text=Stop sharing')
+        // Stop sharing closes the bar's own page, so the click can end with the page gone; the wait below is what proves it stopped.
+        await (bar as Page).click('text=Stop sharing').catch((error: unknown) => { if (!/Target page, context or browser has been closed/.test(String(error))) throw error })
         expect(await waitFor(() => app.windows().every((page) => !page.url().includes('overlay=sharing-bar')))).toBe(true)
       })
     } finally {
