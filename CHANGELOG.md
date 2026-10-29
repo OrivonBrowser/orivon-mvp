@@ -17,6 +17,9 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+### Added
+
+- **A tunnel for one tab, chosen before the first address**: the tunnel button is now on the new tab. Turn on Nym or your proxy there and the address you type, and every site that tab opens until it closes, goes through it from its first request; on a website that goes through the tab's tunnel the button says "Set for this tab". The new-tab page is not kept in the saved session until it navigates. In a window 640 pixels wide or less the toolbar's navigation buttons and the address bar's padding are 2 to 4 pixels tighter, so the address field keeps its room beside the new button.
 ### Changed
 
 - **Swarm sites opened before load faster**: their chunks are checked on several threads, so the rest of the browser keeps answering while a large page is read back.
