@@ -35,6 +35,11 @@ describe('snapshotOf', () => {
     }
   })
 
+  it('does not record a new-tab page that holds a tunnel choice and has not navigated, and keeps the choice of a tab that has', () => {
+    expect(snapshotOf(recordOf({ isDashboardTab: true, tunnelChoice: 'nym' }), wcOf({ url: 'https://localhost:5173/newtab/' }))).toBeNull()
+    expect(snapshotOf(recordOf({ tunnelChoice: 'nym' }), wcOf({ url: 'https://a.example/x', title: 'A page' }))).toEqual({ url: 'https://a.example/x', title: 'A page', pinned: false, tunnelChoice: 'nym' })
+  })
+
   it('keeps a restored tab on the address it was opened from until its page commits, then follows the page', () => {
     const record = recordOf({ pinned: true })
     rememberOpenedFrom(record, { url: 'https://slow.example/a', title: 'Saved title', pinned: false })
