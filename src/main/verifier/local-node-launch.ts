@@ -4,8 +4,10 @@
 // which port it listens on and when a test build serves it otherwise.
 
 import { join } from 'node:path'
-import { app, utilityProcess } from 'electron'
+import { app } from 'electron'
 import type { NodeIdentity } from '../../protocols/local-node/kind.js'
+import { envName } from '../../protocols/local-node/protocol.js'
+import { hostForker } from '../diagnostics/host-fork.js'
 import { LocalNodeController } from './local-node-controller.js'
 import { locateArtifact } from './local-node-artifact.js'
 import type { LocalNodeManifest } from './local-node-artifact.js'
@@ -32,7 +34,7 @@ export interface LocalNodeSpec {
 export function createLocalNodeController (spec: LocalNodeSpec): LocalNodeController {
   const made = new LocalNodeController({
     kind: spec.kind,
-    fork: () => utilityProcess.fork(join(__dirname, 'local-node-host.js'), [], { serviceName: `Orivon ${spec.kind.noun}` }),
+    fork: hostForker({ module: join(__dirname, 'local-node-host.js'), serviceName: `Orivon ${spec.kind.noun}`, prefix: `[${spec.kind.name}]`, unlimited: process.env[envName(spec.kind.name, 'LOG')] === '1' }),
     artifact: async () => await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, spec.manifest, spec.kind),
     // A node that dials around a proxy would show a person's address to its peers that the proxy was set to hide (T20).
     // While the whole browser is on the tunnel the default session answers with the tunnel's own front, so the question goes to the

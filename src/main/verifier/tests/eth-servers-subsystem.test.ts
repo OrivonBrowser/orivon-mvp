@@ -14,6 +14,9 @@ const RPC = 'https://rpc.example.com'
 
 class FakeProcess extends EventEmitter {
   readonly sent: unknown[] = []
+  readonly stdout = new EventEmitter()
+  readonly stderr = new EventEmitter()
+  options: unknown
   killed = false
   postMessage (message: unknown): void { this.sent.push(message) }
   kill (): boolean { this.killed = true; return true }
@@ -26,7 +29,7 @@ const remove = vi.hoisted(() => vi.fn())
 vi.mock('electron', () => ({
   app: { on: vi.fn(), getPath: () => electron.userData, resolveProxy: async () => 'DIRECT', commandLine: { getSwitchValue: () => '', appendSwitch: vi.fn() } },
   session: { defaultSession: { setCertificateVerifyProc: vi.fn() } },
-  utilityProcess: { fork: () => { const host = new FakeProcess(); electron.forks.push(host); return host } }
+  utilityProcess: { fork: (_module: string, _args: string[], options: unknown) => { const host = new FakeProcess(); host.options = options; electron.forks.push(host); return host } }
 }))
 
 vi.mock('../../sessions/web-request-owner.js', () => ({
@@ -108,5 +111,18 @@ describe('the Ethereum servers the person named, as the verifier subsystem appli
     expect(forks()[0]?.killed).toBe(true)
     await startAgain(subsystem)
     expect(started(1)?.config?.lightClient?.executionRpcs).toEqual([RPC])
+  })
+
+  it('forks the host with piped output, and what it prints becomes lines of main\'s own log', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await launched(() => true)
+      expect(forks()[0]?.options).toMatchObject({ serviceName: 'Orivon verifier', stdio: 'pipe' })
+      forks()[0]?.stderr.emit('data', Buffer.from('[verifier] swarm: a site mounted in 12 ms\nan uncaught thing\n'))
+      expect(warn).toHaveBeenCalledWith('[verifier] swarm: a site mounted in 12 ms')
+      expect(warn).toHaveBeenCalledWith('[verifier] an uncaught thing')
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

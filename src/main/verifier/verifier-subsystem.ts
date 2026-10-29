@@ -6,7 +6,7 @@
 // every such load fails closed and nothing else changes.
 
 import { join } from 'node:path'
-import { app, session, utilityProcess } from 'electron'
+import { app, session } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames, isDevEthName } from '../dev/eth-resolver.js'
@@ -24,6 +24,7 @@ import { contentAddressOf } from './content-address.js'
 import { CheckpointRenewal } from './checkpoint-renewal.js'
 import { DEFAULT_ENDPOINTS } from './endpoints.js'
 import { HostSupervisor } from './host-supervisor.js'
+import { hostForker } from '../diagnostics/host-fork.js'
 import { TrafficLedger } from './traffic-ledger.js'
 import type { ProcessInfo } from './process-supervisor.js'
 import { loopbackPort } from './loopback-port.js'
@@ -373,7 +374,7 @@ export const verifierSubsystem: Subsystem = {
     // The shared session and each session of its own a website gets: any of them can load a `.eth` page.
     forEachWebsiteSession((target, tunnel) => { installPartitionStamp(target, tunnel); installFileFailureWatch(target); installListeningGate(target) })
     const host = new HostSupervisor({
-      fork: () => utilityProcess.fork(join(__dirname, 'verifier-host.js'), [], { serviceName: 'Orivon verifier' }),
+      fork: hostForker({ module: join(__dirname, 'verifier-host.js'), serviceName: 'Orivon verifier', prefix: '[verifier]' }),
       config: hostConfig,
       events: {
         starting: () => {

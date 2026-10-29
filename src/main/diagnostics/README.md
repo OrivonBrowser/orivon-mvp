@@ -2,7 +2,8 @@
 
 **What lives here.** What Orivon keeps on this computer about its own crashes, and the report a person may send
 about one. `log-ring.ts` and `log-file.ts` keep the main process's console output (newest 1000 lines in memory,
-`logs/current.log` on disk); `crash-records.ts` and `crash-store.ts` the crash records (`crashes.json`, newest 30,
+`logs/current.log` on disk), and with it every line Orivon's utility processes print: `host-output.ts` turns a host's
+piped output into console lines and `host-fork.ts` forks every host that way; `crash-records.ts` and `crash-store.ts` the crash records (`crashes.json`, newest 30,
 dropped after 30 days) and the run marker (`running.json`) that says whether the last run ended in an orderly quit;
 `dumps.ts` and `dump-files.ts` the native crash dumps Crashpad leaves; `diagnostics-service.ts` composes them for one
 run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `report-payload.ts` builds the body and cuts
@@ -12,7 +13,7 @@ every field to the length the server accepts, `report-text.ts` writes the Markdo
 `report-runner.ts` connect all of it to Electron. Everything is under `<userData>/diagnostics/`, so a private
 session's copy is removed with its directory.
 
-**Tied to Electron, in the two runners.** `diagnostics-runner.ts` and `report-runner.ts` import `electron`; the rest
+**Tied to Electron, in the two runners and `host-fork.ts`.** `diagnostics-runner.ts`, `report-runner.ts` and `host-fork.ts` import `electron`; the rest
 is pure, or reads and writes plain files, and runs under plain vitest.
 
 **What it depends on.** `electron` (the runners); [`../pages/`](../pages/) (the internal-domain type, the page ids);
@@ -26,6 +27,25 @@ files, passwords or browsing: a report is built from the facts passed to it, nev
 **Owner stream.** `shell`.
 
 ## Design notes
+
+**What a utility process prints is main's log.** A host forked with Electron's default output would print past main, to the app's own
+stderr: in a terminal that is seen, but a packaged Windows app has none, and no report could hold it. `hostForker` forks the
+verifier host, each local node's host and the Nym tunnel's host with `stdio: 'pipe'` and `HostLog` writes each line to main's
+console as it arrives, so it passes through the same `scrub`, ring, file and redaction as any line of main's, and from a terminal it
+still appears once, written by main. A host's stdout is written at `log` and its stderr at `warn`, so a `console.error` of a host
+reads as a `WARN` line; a line that does not begin with the host's own tag (`[verifier]`, `[ipfs-node]`, `[nym-tunnel]`) gets it put
+in front, a line is cut at the length the ring keeps, an indented line stays under the line before it, and a last line with no
+newline is written when the stream ends. The pipe is always read to its end: a host whose pipe nobody empties stops. A host's
+lines tell no more than main's: the light client's are cleaned in the host of the servers the person typed, the scrub covers
+any key main has noted, the home folder becomes `~` in a report, and the rest are counts, durations, sizes, the host names of
+Orivon's own gateways, or the text of an unexpected failure, which can name a page or a file, as the report says of any line
+(main's name origins and host names too). A private session's log, with them, goes with its directory.
+
+**A host keeps at most 60 lines a minute in the log.** The allowance is shared by its two streams and by every process it is forked
+as, and one line says how many were left out when the minute ends. It bounds the 1000-line ring against a host that loops, so a
+few minutes of main's own lines are not pushed out by one host. An entry (a stack) is never cut, and the allowance is not applied
+to a host whose `ORIVON_<NAME>_LOG` switch is on, which asks for all of its output. The number is *provisional*: a measured
+session's volume per host settles it.
 
 **A report leaves only when the person presses Send.** Nothing here sends on its own, and `ORIVON_TELEMETRY=off` and
 the telemetry consent do not govern it: it is the person's own act, with its own preview. The page never assembles

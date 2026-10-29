@@ -5,7 +5,7 @@
 // machine. A `.eth` name is shown under the scheme of the network its content
 // is on: `bzz://` for Swarm, `ipfs://` for IPFS. On a first visit the loading
 // screen and the address bar never name a network the name is not on.
-import { mkdirSync, readdirSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { Page } from 'playwright'
@@ -127,15 +127,21 @@ it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// a
       check(`it is a secure context, and its verified script ran (${JSON.stringify(loaded)})`, loaded.secure && loaded.ran === 'ran')
       check(`the node was asked for chunks (${String(node.requests.length)} requests)`, node.requests.some((r) => r.startsWith('/chunks/')))
       check('the script\'s leaves were asked for together', node.requests.some((r) => r.startsWith('/bytes/')))
-      // The host says where it checked the chunks of a large file: on worker threads, which is the real path in a source tree. A Windows
-      // utility process's stderr does not reach the pipe this test reads (not one `[verifier]` line of the host arrives there), so the line is read where it does.
-      if (process.platform !== 'win32') {
-        const onThreads = await waitFor(() => /swarm: a file read, \d+ bytes in \d+ ms.*, checked on [1-3] threads?(,|$)/m.test(mainOutput(running)), 20_000)
-        check(`the host checked the script\'s chunks on worker threads (${mainOutput(running).split('\n').filter((line) => line.includes('swarm: ')).join(' | ')})`, onThreads)
-        expect(onThreads).toBe(true)
+      // The host says where it checked the chunks of a large file: on worker threads, which is the real path in a source tree. Main writes
+      // every line the host prints to its own console, so the line is in main's output and in the log a bug report carries, on every system.
+      const hostLine = /swarm: a file read, \d+ bytes in \d+ ms.*, checked on [1-3] threads?(,|$)/m
+      const onThreads = await waitFor(() => hostLine.test(mainOutput(running)), 20_000)
+      check(`the host checked the script\'s chunks on worker threads (${mainOutput(running).split('\n').filter((line) => line.includes('swarm: ')).join(' | ')})`, onThreads)
+      expect(onThreads).toBe(true)
+      const userData = await running.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+      const logged = (): string => {
+        try { return readFileSync(join(userData, 'diagnostics', 'logs', 'current.log'), 'utf8') } catch { return '' }
       }
+      const inLog = await waitFor(() => new RegExp(`WARN \\[verifier\\] ${hostLine.source}`, 'm').test(logged()), 20_000)
+      check(`that line is in the log file a bug report reads, tagged with the host (${logged().split('\n').filter((line) => line.includes('swarm: ')).join(' | ')})`, inLog)
+      expect(inLog).toBe(true)
 
-      const verifierDir = join(await running.evaluate(({ app: electronApp }) => electronApp.getPath('userData')), 'verifier')
+      const verifierDir = join(userData, 'verifier')
       const kept = await waitFor(() => keptChunks(verifierDir) > 0)
       check(`the verifier host kept the verified chunks of the page in its Swarm chunk file (${String(keptChunks(verifierDir))} rows)`, kept)
       expect(kept).toBe(true)

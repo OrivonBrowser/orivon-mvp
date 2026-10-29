@@ -6,7 +6,7 @@ certificate check each session applies, starting and restarting the verifier hos
 ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), the light client's
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)) and its renewal at run time from two beacon servers that agree ([`ADR-0092`](../../../docs/decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)), what the
 host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
-wording of the status and a name's evidence for Settings and the site-info popover, and the light client's failures and syncs as lines of the main process's log, where a bug report finds them.
+wording of the status and a name's evidence for Settings and the site-info popover, and the light client's failures and syncs as lines of the main process's log, where a bug report finds them. Every line a host prints (the verifier host, a local node's host) reaches that log too: the hosts are forked through [`../diagnostics/host-fork.ts`](../diagnostics/host-fork.ts).
 Which Ethereum servers the light client asks is decided here: Orivon's ([`endpoints.ts`](endpoints.ts)), or the ones the person named in Settings > Web3 ([`eth-servers.ts`](eth-servers.ts) reads the three settings; [`eth-servers-source.ts`](eth-servers-source.ts) remembers what the running host was started with, so only a change to the servers restarts it; [`light-client-config.ts`](light-client-config.ts) builds the light client's part of the host's configuration from them, and the one log line that says the person's servers are asked).
 The person can switch the light client off in Settings or from the Available networks popup (`web3.lightClient`, read at each
 start of the host through `configureVerifier` and applied at once: see below); the environment switch still forces it off
@@ -17,7 +17,7 @@ start of the host through `configureVerifier` and applied at once: see below); t
 [`local-node-launch.ts`](local-node-launch.ts) and [`checkpoint-fetch-net.ts`](checkpoint-fetch-net.ts) are the files that
 import `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../README.md)).
 
-**What it depends on.** [`../../protocols/`](../../protocols/) (`verifier-host/protocol.ts`,
+**What it depends on.** [`../diagnostics/host-fork.ts`](../diagnostics/host-fork.ts) (how a utility process is forked, with its output piped to the log), [`../../protocols/`](../../protocols/) (`verifier-host/protocol.ts`,
 `verifier-host/swarm-chunk-files.ts`, `builtin.ts`, `resolution/`), [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts),
 [`../../broker/`](../../broker/) (`grants/node-ledger-storage.ts`'s atomic write,
 `policy/pin.ts`), [`../../loader/fetch/`](../../loader/fetch/) (`verifier-origin.ts`,
