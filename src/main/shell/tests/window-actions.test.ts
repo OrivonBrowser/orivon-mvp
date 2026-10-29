@@ -76,8 +76,8 @@ describe('shellActions press', () => {
 describe('shellActions openSiteInfo for the tunnel button', () => {
   const anchor = { x: 900, y: 40, width: 30, height: 30 }
   /** `keyboardPlaced` false is a tab opened on the start page whose keyboard is still moving: what waits on it runs when `place()` is called. */
-  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string, keyboardPlaced = true, inflightUrl?: string): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn>, place: () => void, state: { tabs: unknown[], activeTabId: string | null } } {
-    const sitePanel = { close: vi.fn(), toggle: vi.fn(), toggleTab: vi.fn() }
+  function partsWith (tabs: unknown[], activeTabId: string | null, partition?: string, keyboardPlaced = true, inflightUrl?: string): { actions: ReturnType<typeof shellActions>, sitePanel: { close: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn>, toggleTab: ReturnType<typeof vi.fn>, holdAgainstArrival: ReturnType<typeof vi.fn> }, closeOverlays: ReturnType<typeof vi.fn>, place: () => void, state: { tabs: unknown[], activeTabId: string | null } } {
+    const sitePanel = { close: vi.fn(), toggle: vi.fn(), toggleTab: vi.fn(), holdAgainstArrival: vi.fn() }
     const parts = makeParts({})
     const state = { tabs, activeTabId }
     const waiting: Array<() => void> = []
@@ -89,7 +89,7 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
       waiting.push(run)
       return () => { waiting.splice(waiting.indexOf(run), 1) }
     }
-    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, record: () => ({ inflightUrl }), keyboard: { whenPlaced } }
+    ;(parts.entry as unknown as { tabs: unknown }).tabs = { getState: () => state, partitionOf: () => partition, record: () => ({ inflightUrl }), liveWebContents: (id: string) => ({ id }), keyboard: { whenPlaced } }
     ;(parts.panels as unknown as { siteInfo: unknown }).siteInfo = sitePanel
     return { actions: shellActions(parts), sitePanel, closeOverlays: parts.closeOverlays as unknown as ReturnType<typeof vi.fn>, place: () => { for (const run of waiting.splice(0)) run() }, state }
   }
@@ -129,10 +129,12 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     plain.actions.openSiteInfo(anchor, 'tunnels', '')
     expect(plain.sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
     expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(plain.sitePanel.holdAgainstArrival, 'the list stays open when the page takes the keyboard as it commits').toHaveBeenCalledExactlyOnceWith({ id: 't1' })
     const withChoice = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1', 'persist:tunnel-profile', true, 'https://news.example/a')
     withChoice.actions.openSiteInfo(anchor, 'tunnels', '')
     expect(withChoice.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
     expect(withChoice.sitePanel.toggle).not.toHaveBeenCalled()
+    expect(withChoice.sitePanel.holdAgainstArrival).toHaveBeenCalledExactlyOnceWith({ id: 't1' })
   })
 
   it('opens the tab\'s list when a tab shows no page and opens none, as on a new tab, instead of nothing', () => {
@@ -140,6 +142,13 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     actions.openSiteInfo(anchor, 'tunnels', '')
     expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
     expect(sitePanel.toggle).not.toHaveBeenCalled()
+  })
+
+  it('holds the list against no arrival when the page is already there', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1')
+    actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
+    expect(sitePanel.toggleTab).toHaveBeenCalledTimes(1)
+    expect(sitePanel.holdAgainstArrival).not.toHaveBeenCalled()
   })
 
   it('does not read the address a tab is opening for the shield or the key, which are about the page', () => {

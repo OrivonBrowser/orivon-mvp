@@ -56,6 +56,13 @@ export function shellActions (parts: WindowParts): ShellActions {
   /** A press of the tunnel button that waits for its tab's keyboard (`TabManager.keyboard`). No list is drawn while it waits, so a second press of the button in that time is the same press again, not a close. */
   let waitingList: { readonly tabId: string, readonly cancel: (() => void) | undefined } | undefined
   const openingAddress = (id: string): string | undefined => tabs.record(id)?.inflightUrl
+  /** A popup opened on a tab whose first page has not committed keeps the keyboard when that page takes it as it commits. */
+  const holdForArrival = (): void => {
+    const state = tabs.getState()
+    const front = state.tabs.find((tab) => tab.id === state.activeTabId)
+    const contents = front?.url === '' ? tabs.liveWebContents(front.id) : undefined
+    if (contents !== undefined) panels.siteInfo.holdAgainstArrival(contents)
+  }
   const aboutTab = (): string | undefined => tabForTunnelPopover(tabs.getState(), (id) => tabs.partitionOf(id), isOriginServedFromCacheSync, openingAddress)
 
   const showTabMenuFor = (id: string): void => {
@@ -121,6 +128,7 @@ export function shellActions (parts: WindowParts): ShellActions {
           panels.networks.close()
           closeOverlays()
           panels.siteInfo.toggleTab(anchor, tabId, pressedAt)
+          holdForArrival()
         })
         if (cancel !== undefined) waitingList = { tabId, cancel }
         return
@@ -132,6 +140,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       panels.networks.close()
       closeOverlays()
       panels.siteInfo.toggle(anchor, origin, page, pressedAt)
+      if (page === 'tunnels') holdForArrival()
     },
     runCommand: (id) => { services.commands.run(id, entry) },
     act: (name, payload) => runChromeAction(name, payload, { window: entry, services, takePress: (button) => presses.take(button) }),

@@ -39,6 +39,8 @@ export interface SiteInfoPanel {
   close: () => void
   /** Closes the popup unless it is about what `arrived` names: the first page its tab committed, or the tab. A list the tunnel button opened while a tab's page was loading is still right when the page comes; any other change of origin leaves it stale. */
   closeUnlessAbout: (arrived: FirstPage | null) => void
+  /** The popup was just opened while `contents`, a tab's page, had not committed: the page taking the keyboard as it commits does not close it (`PopoverView.holdAgainstArrival`). */
+  holdAgainstArrival: (contents: WebContents) => void
   isOpen: () => boolean
   restack: () => void
 }
@@ -101,6 +103,7 @@ export function createSiteInfoPanel (
       const about = arrived !== null && (openTab !== null ? openTab === arrived.tabId : arrived.origin !== null && openOrigin === arrived.origin)
       if (!about || !popover.isOpen()) popover.close()
     },
+    holdAgainstArrival: popover.holdAgainstArrival,
     isOpen: popover.isOpen,
     restack: popover.restack
   }
