@@ -11,6 +11,7 @@ import type { BaseWindow, View, WebContents } from 'electron'
 import type { SiteInfoController } from './site-info-controller.js'
 import { registerSiteInfoIpc } from '../ipc/site-info-ipc.js'
 import { registerSiteInfoTabIpc } from '../ipc/site-info-tab-ipc.js'
+import { popupIsAbout } from './popover-arrival.js'
 import { createPopoverView } from './popover-view.js'
 import type { PopoverAnchor } from './popover-view.js'
 import { PANEL_POPOVER_BACKGROUND } from '../shell/theme-colors.js'
@@ -100,8 +101,7 @@ export function createSiteInfoPanel (
     },
     close: popover.close,
     closeUnlessAbout (arrived) {
-      const about = arrived !== null && (openTab !== null ? openTab === arrived.tabId : arrived.origin !== null && openOrigin === arrived.origin)
-      if (!about || !popover.isOpen()) popover.close()
+      if (!popover.isOpen() || !popupIsAbout({ tab: openTab, origin: openOrigin }, arrived)) popover.close()
     },
     holdAgainstArrival: popover.holdAgainstArrival,
     isOpen: popover.isOpen,

@@ -367,6 +367,13 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press o
     const list = await openList(app, chrome)
     expect(await list.locator('.site-claim').textContent(), 'the list is the tab\'s').toBe('This tab')
     expect(await list.locator('#tunnel-switch-nym').getAttribute('aria-checked'), 'the tab it was opened from handed it its choice').toBe('true')
+
+    // The page comes while the tab's list is open: it is about the tab, so the arrival does not close it.
+    held.release()
+    expect((await waitForTab(chrome, { address: heldUrl(), title: 'held' }, 60_000)).ok).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(findPopup(app) !== undefined, 'the tab\'s list stays open when the page arrives').toBe(true)
+    expect(await list.locator('.site-claim').textContent(), 'it is still the tab\'s').toBe('This tab')
     await closeList(app, chrome)
   } finally {
     held.release()

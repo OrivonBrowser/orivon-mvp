@@ -4,9 +4,9 @@ import type { WindowContext } from '../window-context.js'
 
 type Look = { mark: string | null, via: string | null }
 
-function ctx (lookOf: (url: string, partition: string | undefined, choice?: string) => Look, active: { url: string, partition?: string | undefined } | null, newTabLookOf: (choice: string | undefined) => Look = () => ({ mark: null, via: null }), isApp: (origin: string) => boolean = () => false) {
+function ctx (lookOf: (url: string, partition: string | undefined, choice?: string) => Look, active: { url: string, partition?: string | undefined } | null, newTabLookOf: (choice: string | undefined) => Look = () => ({ mark: null, via: null }), isApp: (origin: string) => boolean = () => false, inflightTarget?: string) {
   return {
-    window: { tabs: { liveWebContents: () => active === null ? undefined : { getURL: () => active.url }, partitionOf: () => active?.partition } },
+    window: { tabs: { liveWebContents: () => active === null ? undefined : { getURL: () => active.url }, partitionOf: () => active?.partition, record: () => ({ inflightTarget }) } },
     services: { tunnel: { lookOf, newTabLookOf, isApp, onChange: vi.fn(() => () => {}) } }
   } as unknown as WindowContext
 }
@@ -55,13 +55,19 @@ describe('the tunnel part of the chrome state', () => {
 
   describe('whether the button is about the tab, which the popover picks its list by', () => {
     const website = (over: Record<string, unknown> = {}) => ({ tabs: [{ id: 't1', isNewTab: false, isInternal: false, url: 'https://news.example/a', tunnelChoice: 'nym', ...over }], activeTabId: 't1' } as never)
-    const read = (tabs: never, partition: string | undefined, isApp: (origin: string) => boolean = () => false) =>
-      tunnelStatePart.read(ctx(() => ({ mark: 'on', via: 'nym' }), { url: 'https://news.example/a', partition }, undefined, isApp), tabs)
+    const read = (tabs: never, partition: string | undefined, isApp: (origin: string) => boolean = () => false, inflightTarget?: string) =>
+      tunnelStatePart.read(ctx(() => ({ mark: 'on', via: 'nym' }), { url: 'https://news.example/a', partition }, undefined, isApp, inflightTarget), tabs)
 
     it('is so for a website in a tab with a choice, in the shared session or a tunnel profile\'s, and for a new tab', () => {
       expect(read(website(), undefined)).toMatchObject({ tunnelByTab: true })
       expect(read(website(), 'persist:tunnel-profile')).toMatchObject({ tunnelByTab: true })
       expect(read(website({ isNewTab: true, url: 'about:blank' }), undefined)).toMatchObject({ tunnelByTab: true })
+    })
+
+    it('is so for a tab with a choice whose first page has not committed, by the address it is opening, and not so when that is an installed app', () => {
+      const uncommitted = website({ url: '' })
+      expect(read(uncommitted, undefined, () => false, 'https://news.example/a')).toMatchObject({ tunnelByTab: true })
+      expect(read(uncommitted, undefined, (origin) => origin === 'https://app.example', 'https://app.example/')).toMatchObject({ tunnelByTab: false })
     })
 
     it('is not so for an installed app in a tab with a choice, whose own route decides, though the app\'s tunnel is the one the tab chose', () => {

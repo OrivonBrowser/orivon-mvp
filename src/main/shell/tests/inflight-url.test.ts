@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import { trackInflightUrl } from '../inflight-url.js'
 import type { TabRecord } from '../tab-types.js'
 
-function setup (shown = true): { wc: EventEmitter, record: Pick<TabRecord, 'inflightUrl'> } {
+function setup (shown = true): { wc: EventEmitter, record: Pick<TabRecord, 'inflightUrl' | 'inflightTarget'> } {
   const wc = new EventEmitter()
-  const record: Pick<TabRecord, 'inflightUrl'> = {}
+  const record: Pick<TabRecord, 'inflightUrl' | 'inflightTarget'> = {}
   trackInflightUrl(wc as never, record, () => shown)
   return { wc, record }
 }
@@ -61,6 +61,18 @@ describe('the address a tab is loading but has not committed', () => {
     expect(record.inflightUrl).toBe('https://a.example/')
     wc.emit('did-fail-load', {}, -105, 'x', 'https://b.example/', true)
     expect(record.inflightUrl).toBeUndefined()
+  })
+
+  it('follows the load through its redirects as its target, while the address it started at stays what Reload restarts', () => {
+    const { wc, record } = setup()
+    wc.emit('did-start-navigation', start('https://t.example/x'))
+    expect(record.inflightTarget).toBe('https://t.example/x')
+    wc.emit('did-redirect-navigation', { url: 'https://news.example/a', isMainFrame: true })
+    wc.emit('did-redirect-navigation', { url: 'https://frame.example/', isMainFrame: false })
+    expect(record.inflightUrl).toBe('https://t.example/x')
+    expect(record.inflightTarget).toBe('https://news.example/a')
+    wc.emit('did-navigate', {}, 'https://news.example/a')
+    expect(record.inflightTarget).toBeUndefined()
   })
 
   it('keeps it when only a subframe fails', () => {

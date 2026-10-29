@@ -627,14 +627,14 @@ describe('a new tab before its page has loaded', () => {
   })
 
   it('is a tab the tunnel button\'s popover is about, for the button is shown from that state on and a press must open something', () => {
-    const popoverTab = (record: Record<string, unknown>, url = ''): string | undefined => tabForTunnelPopover({ tabs: [loading(record, url)], activeTabId: 't1' }, () => undefined, () => false)
+    const popoverTab = (record: Record<string, unknown>, url = ''): string | undefined => tabForTunnelPopover({ tabs: [loading(record, url)], activeTabId: 't1' }, () => undefined, () => false, () => undefined)
     expect(popoverTab({ isDashboardTab: true })).toBe('t1')
     expect(popoverTab({ isDashboardTab: true, tunnelChoice: 'nym' })).toBe('t1')
     expect(popoverTab({ isDashboardTab: true }, env.dashboardUrl)).toBe('t1')
   })
 
   it('is no tab for the popover when it is a blank page that is no dashboard, with no address yet or about:blank', () => {
-    const popoverTab = (url: string): string | undefined => tabForTunnelPopover({ tabs: [loading({ isDashboardTab: false }, url)], activeTabId: 't1' }, () => undefined, () => false)
+    const popoverTab = (url: string): string | undefined => tabForTunnelPopover({ tabs: [loading({ isDashboardTab: false }, url)], activeTabId: 't1' }, () => undefined, () => false, () => undefined)
     expect(popoverTab('about:blank')).toBeUndefined()
     expect(popoverTab('')).toBeUndefined()
   })

@@ -232,6 +232,7 @@ export function createPopoverView (win: BaseWindow, contentView: View, spec: Pop
     // toolbar popup rather than a stuck overlay. After the native call, never
     // inside it: Chromium blurs a view a window resize leaves outside from
     // within `setSize`, and removing the view there ends the main process.
+    popup.webContents.on('focus', () => { arrival?.popupHoldsKeyboard() })
     popup.webContents.on('blur', () => {
       setImmediate(() => {
         if (shown !== popup) return

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { tabMovesFor } from '../site-session-move.js'
+import { addressOfTab, tabMovesFor } from '../site-session-move.js'
 import type { TabInSession } from '../site-session-move.js'
 
 const SITE = 'https://news.example'
@@ -36,5 +36,18 @@ describe('which tabs move when a website\'s tunnel changes', () => {
     const moves = tabMovesFor(SITE, tabs, (url, choice) => { asked.push([url, choice]); return choice === 'socks5' ? PROXY : OWN })
     expect(asked).toEqual([[`${SITE}/a`, 'socks5'], [`${SITE}/a`, undefined], [`${SITE}/a`, 'direct']])
     expect(moves).toEqual([{ id: '2', url: `${SITE}/a`, to: OWN }, { id: '3', url: `${SITE}/a`, to: OWN }])
+  })
+})
+
+describe('the address a tab is on for its session', () => {
+  it('is the page\'s, or while the tab has none the address its first navigation leads to', () => {
+    expect(addressOfTab(`${SITE}/a`, { inflightTarget: 'https://other.example/' })).toBe(`${SITE}/a`)
+    expect(addressOfTab('', { inflightTarget: `${SITE}/b` })).toBe(`${SITE}/b`)
+    expect(addressOfTab('', {})).toBe('')
+  })
+
+  it('puts a tab that is opening the website among the tabs on it', () => {
+    const opening = tab({ id: '1', url: addressOfTab('', { inflightTarget: `${SITE}/b` }) })
+    expect(tabMovesFor(SITE, [opening], () => OWN)).toEqual([{ id: '1', url: `${SITE}/b`, to: OWN }])
   })
 })

@@ -1,18 +1,38 @@
 // Which tab the tunnel button's popover is about, when it is about a tab and not a website (ADR-0101). Pure.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isProfilePartition } from '../route/site-partition.js'
-import type { TabsSnapshot } from './tab-types.js'
+import type { TabRecord, TabsSnapshot } from './tab-types.js'
 
-/** The address a tab with no page yet is opening, by tab id: its `url` is '' until the first page commits, and main holds the address in flight (`TabRecord.inflightUrl`). */
+/** The address a tab with no page yet is opening, by tab id: its `url` is '' until the first page commits, and main holds the address in flight. */
 export type OpeningAddress = (id: string) => string | undefined
 
+/** What `openingAddressOf` reads of a window's tabs. */
+export interface OpeningTabs {
+  readonly record: (id: string) => Pick<TabRecord, 'inflightTarget'> | undefined
+  readonly liveWebContents: (id: string) => { readonly opener?: unknown } | undefined
+}
+
 /**
- * The address the tab in front is opening and has not committed, or undefined when it shows a page (which answers for itself), opens
- * nothing, or no tab is in front. The tunnel button of a tab with no page sends the chrome no address, so main reads it off the tab.
+ * Where the first navigation of a tab leads now (`TabRecord.inflightTarget`, after its redirects), by tab id. Not for a tab whose page
+ * has an opener: a popup shows its initial empty document until the website answers, and the page that opened it writes into that
+ * document as freely as into its own, so what the tab was told it loads cannot speak for what it shows.
  */
-export function addressBeingOpened (state: TabsSnapshot, opening: OpeningAddress): string | undefined {
+export function openingAddressOf (tabs: OpeningTabs): OpeningAddress {
+  return (id) => {
+    const contents = tabs.liveWebContents(id)
+    if (contents === undefined || (contents.opener ?? null) !== null) return undefined
+    return tabs.record(id)?.inflightTarget
+  }
+}
+
+/**
+ * The address of the tab in front for a press the chrome sent no address with: its page's, which can have committed since the chrome
+ * last drew, else the one it is opening. Undefined when it has neither, or no tab is in front.
+ */
+export function addressOfFrontTab (state: TabsSnapshot, opening: OpeningAddress): string | undefined {
   const active = state.tabs.find((tab) => tab.id === state.activeTabId)
-  return active?.url === '' ? opening(active.id) : undefined
+  if (active === undefined) return undefined
+  return active.url === '' ? opening(active.id) : active.url
 }
 
 /**
@@ -24,7 +44,7 @@ export function addressBeingOpened (state: TabsSnapshot, opening: OpeningAddress
  * no new tab, nor a page of the shell's own, which has no button. Everything is read from the tab's record (`state`, `partitionOf`,
  * `opening`), never from what the chrome says it shows.
  */
-export function tabForTunnelPopover (state: TabsSnapshot, partitionOf: (id: string) => string | undefined, isApp: (origin: string) => boolean, opening: OpeningAddress = () => undefined): string | undefined {
+export function tabForTunnelPopover (state: TabsSnapshot, partitionOf: (id: string) => string | undefined, isApp: (origin: string) => boolean, opening: OpeningAddress): string | undefined {
   const active = state.tabs.find((tab) => tab.id === state.activeTabId)
   if (active === undefined || active.isInternal) return undefined
   if (active.isNewTab) return active.blankPage === true ? undefined : active.id

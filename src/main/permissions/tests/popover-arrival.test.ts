@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { watchArrival } from '../popover-arrival.js'
+import { popupIsAbout, watchArrival } from '../popover-arrival.js'
 
 function page (): EventEmitter {
   return new EventEmitter()
@@ -21,6 +21,26 @@ describe('watching a page that is still arriving', () => {
     tab.emit('input-event', {}, { type: 'mouseDown' })
     tab.emit('focus')
     expect(hold.arrivedWithKeyboard()).toBe(false)
+  })
+
+  it('reads a tap in the page before it took the keyboard as the person clicking away, as it reads a click', () => {
+    for (const type of ['touchStart', 'gestureTapDown', 'gestureTap', 'pointerDown']) {
+      const tab = page()
+      const hold = watchArrival(tab as never, vi.fn())
+      tab.emit('input-event', {}, { type })
+      tab.emit('focus')
+      expect(hold.arrivedWithKeyboard(), type).toBe(false)
+    }
+  })
+
+  it('does not count the page taking the keyboard from the chrome while the popup was still loading, only from the popup', () => {
+    const tab = page()
+    const hold = watchArrival(tab as never, vi.fn())
+    tab.emit('focus')
+    hold.popupHoldsKeyboard()
+    expect(hold.arrivedWithKeyboard()).toBe(false)
+    tab.emit('focus')
+    expect(hold.arrivedWithKeyboard()).toBe(true)
   })
 
   it('does not take a key or a move of the pointer in the page for a press', () => {
@@ -47,5 +67,31 @@ describe('watching a page that is still arriving', () => {
       tab.emit('focus')
       expect(hold.arrivedWithKeyboard(), ending).toBe(false)
     }
+  })
+})
+
+describe('whether a popup is still about the first page a tab committed', () => {
+  const tabPopup = { tab: 't1', origin: '' }
+  const sitePopup = { tab: null, origin: 'https://news.example' }
+
+  it('is so for a popup opened for the tab that arrived, whatever its origin', () => {
+    expect(popupIsAbout(tabPopup, { tabId: 't1', origin: 'https://news.example' })).toBe(true)
+    expect(popupIsAbout(tabPopup, { tabId: 't1', origin: null })).toBe(true)
+  })
+
+  it('is not so for a popup opened for another tab', () => {
+    expect(popupIsAbout(tabPopup, { tabId: 't2', origin: 'https://news.example' })).toBe(false)
+  })
+
+  it('is so for a popup opened for the website that arrived, on any tab', () => {
+    expect(popupIsAbout(sitePopup, { tabId: 't1', origin: 'https://news.example' })).toBe(true)
+    expect(popupIsAbout(sitePopup, { tabId: 't2', origin: 'https://news.example' })).toBe(true)
+  })
+
+  it('is not so for another website, nor for an arrival with no origin, nor for any change that is no first page', () => {
+    expect(popupIsAbout(sitePopup, { tabId: 't1', origin: 'https://other.example' })).toBe(false)
+    expect(popupIsAbout({ tab: null, origin: '' }, { tabId: 't1', origin: null })).toBe(false)
+    expect(popupIsAbout(sitePopup, null)).toBe(false)
+    expect(popupIsAbout(tabPopup, null)).toBe(false)
   })
 })

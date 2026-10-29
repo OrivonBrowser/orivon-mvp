@@ -3,7 +3,7 @@
 // is not yet pointed. The moving itself is `repartitionView`, the same cross-session move Back across sessions uses.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellInstaller } from './shell-installers.js'
-import { tabMovesFor } from './site-session-move.js'
+import { addressOfTab, tabMovesFor } from './site-session-move.js'
 import { repartitionView } from './tab-parking.js'
 import { partitionForTab } from './tab-partition.js'
 
@@ -19,7 +19,7 @@ export const installSiteSessions: ShellInstaller = {
           const record = tabs.record(id)
           const contents = tabs.liveWebContents(id)
           if (record === undefined || contents === undefined) return []
-          return [{ id, url: contents.getURL(), partition: record.partition, showsPage: !record.isDashboardTab && record.internalPage === null && (record.sleeping ?? null) === null, ...(record.tunnelChoice === undefined ? {} : { tunnelChoice: record.tunnelChoice }) }]
+          return [{ id, url: addressOfTab(contents.getURL(), record), partition: record.partition, showsPage: !record.isDashboardTab && record.internalPage === null && (record.sleeping ?? null) === null, ...(record.tunnelChoice === undefined ? {} : { tunnelChoice: record.tunnelChoice }) }]
         })
         for (const { id, url, to } of tabMovesFor(origin, inWindow, partitionForTab)) {
           const record = tabs.record(id)
@@ -39,7 +39,8 @@ export const installSiteSessions: ShellInstaller = {
       for (const window of services.windows.all()) {
         for (const id of window.tabs.ids()) {
           const contents = window.tabs.liveWebContents(id)
-          if (contents !== undefined && originFromUrl(contents.getURL()) === origin) contents.stop()
+          const record = window.tabs.record(id)
+          if (contents !== undefined && record !== undefined && originFromUrl(addressOfTab(contents.getURL(), record)) === origin) contents.stop()
         }
       }
     }

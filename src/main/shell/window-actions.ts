@@ -14,7 +14,7 @@ import { runChromeAction } from './chrome-actions.js'
 import { createPressStamps } from './press-stamps.js'
 import type { ShellServices } from './shell-services.js'
 import { tabDragActions } from './tab-drag-actions.js'
-import { addressBeingOpened, tabForTunnelPopover } from './tunnel-popover-tab.js'
+import { addressOfFrontTab, openingAddressOf, tabForTunnelPopover } from './tunnel-popover-tab.js'
 import { moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
@@ -55,7 +55,7 @@ export function shellActions (parts: WindowParts): ShellActions {
   const presses = createPressStamps()
   /** A press of the tunnel button that waits for its tab's keyboard (`TabManager.keyboard`). No list is drawn while it waits, so a second press of the button in that time is the same press again, not a close. */
   let waitingList: { readonly tabId: string, readonly cancel: (() => void) | undefined } | undefined
-  const openingAddress = (id: string): string | undefined => tabs.record(id)?.inflightUrl
+  const openingAddress = openingAddressOf(tabs)
   /** A popup opened on a tab whose first page has not committed keeps the keyboard when that page takes it as it commits. */
   const holdForArrival = (): void => {
     const state = tabs.getState()
@@ -115,7 +115,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     },
     openSiteInfo: (anchor, page, url) => {
       const pressedAt = presses.take(page)
-      // The tunnel button of a new tab, of a tab that carries a tunnel choice, and of a tab with no page that opens no website, is about the tab: no website has an origin to be about.
+      // The tunnel button of a new tab, and of a tab that carries a tunnel choice, is about the tab: no website has an origin to be about.
       const tabId = page === 'tunnels' ? aboutTab() : undefined
       if (tabId !== undefined) {
         if (waitingList?.tabId === tabId) return
@@ -134,7 +134,7 @@ export function shellActions (parts: WindowParts): ShellActions {
         return
       }
       // A tab whose first page has not committed has no address to send: the button is about the one it is opening, as it is once the page has come.
-      const address = url !== undefined && url !== '' ? url : page === 'tunnels' ? addressBeingOpened(tabs.getState(), openingAddress) : undefined
+      const address = url !== undefined && url !== '' ? url : page === 'tunnels' ? addressOfFrontTab(tabs.getState(), openingAddress) : undefined
       const origin = address === undefined ? undefined : isolationKeyFromUrl(address) ?? undefined
       if (origin === undefined) return // no canonical origin -- nothing this popup can show
       panels.networks.close()

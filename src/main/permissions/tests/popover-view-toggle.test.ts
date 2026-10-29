@@ -112,6 +112,7 @@ describe('a popup opened while a tab\'s first page was loading', () => {
     popover.toggle(ANCHOR, ['--page=tunnels'], 'tunnels')
     const tab = page()
     popover.holdAgainstArrival(tab.contents)
+    last().handlers.get('focus')?.()
     last().focus.mockClear()
 
     tab.emit('focus')
@@ -124,6 +125,21 @@ describe('a popup opened while a tab\'s first page was loading', () => {
     last().handlers.get('blur')?.()
     await afterNativeCall()
     expect(attached()).toBe(0)
+  })
+
+  it('closes on a click away once the popup has the keyboard, though the page took it from the chrome while the popup was still loading', async () => {
+    const { popover, attached } = setup()
+    popover.toggle(ANCHOR, ['--page=tunnels'], 'tunnels')
+    const tab = page()
+    popover.holdAgainstArrival(tab.contents)
+    tab.emit('focus')
+    last().handlers.get('focus')?.()
+    last().focus.mockClear()
+
+    last().handlers.get('blur')?.()
+    await afterNativeCall()
+    expect(attached()).toBe(0)
+    expect(last().focus, 'the popup does not take the keyboard from the person who clicked away').not.toHaveBeenCalled()
   })
 
   it('closes on a blur that no page caused, or that a press in the page caused', async () => {

@@ -356,6 +356,8 @@ export interface TabRecord {
   reader?: { source: string, address?: string } | null
   /** The main frame's address while a navigation has started and not yet committed, failed or stopped (inflight-url.ts). Absent when none is in flight. */
   inflightUrl?: string
+  /** Where that navigation leads now: `inflightUrl`, or the address a redirect of it has led to. Absent when none is in flight. */
+  inflightTarget?: string
   /** The temporary routed session this tab last left an app for, so Forward onto that page opens it in the same session and never directly (leaving-route.ts). */
   routedAway?: string
   /** The pages of the tab's history that its view does not hold (tab-outer-history.ts). Absent reads as none. */
