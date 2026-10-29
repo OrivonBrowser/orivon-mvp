@@ -374,7 +374,7 @@ export const verifierSubsystem: Subsystem = {
     // The shared session and each session of its own a website gets: any of them can load a `.eth` page.
     forEachWebsiteSession((target, tunnel) => { installPartitionStamp(target, tunnel); installFileFailureWatch(target); installListeningGate(target) })
     const host = new HostSupervisor({
-      fork: hostForker({ module: join(__dirname, 'verifier-host.js'), serviceName: 'Orivon verifier', prefix: '[verifier]' }),
+      fork: hostForker({ module: join(__dirname, 'verifier-host.js'), serviceName: 'Orivon verifier', prefix: '[verifier]', unlimited: process.env['ORIVON_VERIFIER_LOG'] === '1' }),
       config: hostConfig,
       events: {
         starting: () => {

@@ -2,7 +2,7 @@
 // console, so what a host prints reaches the log a bug report carries (and, from a terminal, still appears once).
 // A host forked any other way prints past main, to the app's own stderr, and a packaged Windows app has none.
 // `host-fork.test.ts` fails a `utilityProcess.fork` anywhere else in `src/main/`.
-import { utilityProcess } from 'electron'
+import { app, utilityProcess } from 'electron'
 import type { UtilityProcess } from 'electron'
 import { HOST_LINES_PER_MINUTE, HostLog } from './host-output.js'
 
@@ -13,8 +13,10 @@ export interface HostForkSpec {
   readonly serviceName: string
   /** How the host's own log lines begin, `[verifier]` for one that starts so. */
   readonly prefix: string
-  /** The host's whole output is wanted (its `LOG` switch is on): nothing is left out for the log's sake. */
+  /** The host's whole output is wanted (its `LOG` switch is on): nothing is left out or collapsed for the log's sake. */
   readonly unlimited?: boolean
+  /** For a host whose process also runs a library that prints what it likes: only a line that begins with `prefix` is written, and the rest is counted as coming from this (`the Nym library`). `unlimited` writes it all. */
+  readonly onlyTagged?: string
 }
 
 /**
@@ -26,9 +28,17 @@ export function hostForker (spec: HostForkSpec): () => UtilityProcess {
     prefix: spec.prefix,
     // Looked up at each line: the log is captured by replacing the console's methods, after this is made.
     write: (level, text) => { console[level](text) },
-    linesPerMinute: spec.unlimited === true ? undefined : HOST_LINES_PER_MINUTE
+    linesPerMinute: spec.unlimited === true ? undefined : HOST_LINES_PER_MINUTE,
+    onlyTagged: spec.unlimited === true ? undefined : spec.onlyTagged
   })
+  let quitWatched = false
   return () => {
+    if (!quitWatched) {
+      quitWatched = true
+      // Ahead of the diagnostics' own listener, which writes the log file out and ends the run: what the host
+      // held back for the minute's end is then in that file, not lost with the process.
+      app.prependListener('will-quit', () => { log.flush() })
+    }
     const child = utilityProcess.fork(spec.module, [], { serviceName: spec.serviceName, stdio: 'pipe' })
     log.attach(child)
     return child

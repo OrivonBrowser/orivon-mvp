@@ -27,7 +27,7 @@ export function createNym (privacy: NymPrivacy, enabled = true): NymSubsystem {
   const seam = nymTestModule(process.env)
   const logging = process.env[envName(NYM_TUNNEL_IDENTITY.name, 'LOG')] === '1'
   const made = createNymSubsystem({
-    fork: hostForker({ module: join(__dirname, 'nym-tunnel-host.js'), serviceName: `Orivon ${NYM_TUNNEL_IDENTITY.noun}`, prefix: '[nym-tunnel]', unlimited: logging }),
+    fork: hostForker({ module: join(__dirname, 'nym-tunnel-host.js'), serviceName: `Orivon ${NYM_TUNNEL_IDENTITY.noun}`, prefix: '[nym-tunnel]', unlimited: logging, onlyTagged: 'the Nym library' }),
     artifact: async () => seam !== undefined
       ? { ok: true, directory: seam.directory }
       : await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, MANIFEST, NYM_TUNNEL_IDENTITY),

@@ -27,7 +27,7 @@ const electron = vi.hoisted(() => ({ forks: [] as unknown[], userData: '' }))
 const remove = vi.hoisted(() => vi.fn())
 
 vi.mock('electron', () => ({
-  app: { on: vi.fn(), getPath: () => electron.userData, resolveProxy: async () => 'DIRECT', commandLine: { getSwitchValue: () => '', appendSwitch: vi.fn() } },
+  app: { on: vi.fn(), prependListener: vi.fn(), getPath: () => electron.userData, resolveProxy: async () => 'DIRECT', commandLine: { getSwitchValue: () => '', appendSwitch: vi.fn() } },
   session: { defaultSession: { setCertificateVerifyProc: vi.fn() } },
   utilityProcess: { fork: (_module: string, _args: string[], options: unknown) => { const host = new FakeProcess(); host.options = options; electron.forks.push(host); return host } }
 }))
@@ -84,7 +84,7 @@ describe('the Ethereum servers the person named, as the verifier subsystem appli
     delete process.env['ORIVON_ETH_LIGHT_CLIENT']
     delete process.env['ORIVON_TEST_ETH_FIXTURES']
   })
-  afterEach(() => { vi.useRealTimers() })
+  afterEach(() => { vi.useRealTimers(); delete process.env['ORIVON_VERIFIER_LOG'] })
 
   it('puts the host to sleep when the servers asked change, and its next start asks the new ones', async () => {
     const { subsystem, name } = await launched(() => true)
@@ -121,6 +121,33 @@ describe('the Ethereum servers the person named, as the verifier subsystem appli
       forks()[0]?.stderr.emit('data', Buffer.from('[verifier] swarm: a site mounted in 12 ms\nan uncaught thing\n'))
       expect(warn).toHaveBeenCalledWith('[verifier] swarm: a site mounted in 12 ms')
       expect(warn).toHaveBeenCalledWith('[verifier] an uncaught thing')
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('writes a failure the host prints every few seconds once, with the number of times it came again', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await launched(() => true)
+      forks()[0]?.stderr.emit('data', Buffer.from('[verifier] light client refresh failed: timeout\n'.repeat(100) + '[verifier] light client synced\n'))
+      expect(warn.mock.calls.map(([text]) => String(text)).filter((text) => text.includes('light client') || text.includes('repeated'))).toEqual([
+        '[verifier] light client refresh failed: timeout',
+        '[verifier] the line above repeated 99 times',
+        '[verifier] light client synced'
+      ])
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('writes every line the host prints, repeats included, when ORIVON_VERIFIER_LOG=1', async () => {
+    process.env['ORIVON_VERIFIER_LOG'] = '1'
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      await launched(() => true)
+      forks()[0]?.stderr.emit('data', Buffer.from('[verifier] light client refresh failed: timeout\n'.repeat(100)))
+      expect(warn.mock.calls.filter(([text]) => String(text).includes('refresh failed'))).toHaveLength(100)
     } finally {
       warn.mockRestore()
     }

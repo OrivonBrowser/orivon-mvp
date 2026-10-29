@@ -33,19 +33,40 @@ stderr: in a terminal that is seen, but a packaged Windows app has none, and no 
 verifier host, each local node's host and the Nym tunnel's host with `stdio: 'pipe'` and `HostLog` writes each line to main's
 console as it arrives, so it passes through the same `scrub`, ring, file and redaction as any line of main's, and from a terminal it
 still appears once, written by main. A host's stdout is written at `log` and its stderr at `warn`, so a `console.error` of a host
-reads as a `WARN` line; a line that does not begin with the host's own tag (`[verifier]`, `[ipfs-node]`, `[nym-tunnel]`) gets it put
-in front, a line is cut at the length the ring keeps, an indented line stays under the line before it, and a last line with no
-newline is written when the stream ends. The pipe is always read to its end: a host whose pipe nobody empties stops. A host's
-lines tell no more than main's: the light client's are cleaned in the host of the servers the person typed, the scrub covers
-any key main has noted, the home folder becomes `~` in a report, and the rest are counts, durations, sizes, the host names of
-Orivon's own gateways, or the text of an unexpected failure, which can name a page or a file, as the report says of any line
-(main's name origins and host names too). A private session's log, with them, goes with its directory.
+reads as a `WARN` line; a line that does not begin with the host's own tag (`[verifier]`, `[ipfs-node]`, `[swarm-node]`,
+`[nym-tunnel]`) gets it put in front, and an indented line stays under the line before it. A line is not cut before the scrub: a
+key main has noted can straddle the length the ring keeps, so the scrub sees the whole line and `logLines` cuts after it (only a
+line that never ends is written in pieces, at four times that length, so memory does not grow). A last line with no newline is
+written when its stream ends, not when the process exits: Electron ends the streams itself and output can still be in the pipe at
+`exit`, so a crash line split across reads stays one line; a stream still open 2 s after the exit is read as ended. The pipe is
+always read to its end: a host whose pipe nobody empties stops. A host's lines tell no more than main's: the light client's are
+cleaned in the host of the servers the person typed, the scrub covers any key main has noted, the home folder becomes `~` in a
+report, and the rest are counts, durations, sizes, the host names of Orivon's own gateways, or the text of an unexpected failure,
+which can name a page or a file, as the report says of any line (main's name origins and host names too). The Nym tunnel's host is
+the one that also runs code that prints what it likes, and is treated apart (below). A private session's log, with them, goes with
+its directory.
 
-**A host keeps at most 60 lines a minute in the log.** The allowance is shared by its two streams and by every process it is forked
-as, and one line says how many were left out when the minute ends. It bounds the 1000-line ring against a host that loops, so a
-few minutes of main's own lines are not pushed out by one host. An entry (a stack) is never cut, and the allowance is not applied
-to a host whose `ORIVON_<NAME>_LOG` switch is on, which asks for all of its output. The number is *provisional*: a measured
-session's volume per host settles it.
+**A host's lines are collapsed and capped for the log's sake.** A line a host prints again and again, such as the light client's
+refresh failure at every retry, is written once; the identical lines after it (same stream, same text, a stack counting as one) are
+counted, and one line says "the line above repeated N times" when a different line comes, when the minute ends or when the app
+quits, so a failure that never changes costs two lines a minute instead of twelve. Repeats do not count against the allowance; the
+line that counts them does, and is never refused. A host keeps at most 60 lines a minute written as they come, shared by its two
+streams and by every process it is forked as. At the first line past that, one marker line says so at once ("more than 60 lines this
+minute"); the rest are counted, the last 5 entries of them are kept, and when the minute ends they are written with the count, so
+the lines nearest a failure are in the log even when a flood came before them. It bounds the 1000-line ring against a host that
+loops, so a few minutes of main's own lines are not pushed out by one host. An entry (a stack) is never cut. `hostForker` has
+`HostLog.flush()` run on `will-quit`, from a listener placed ahead of this folder's own, which writes the log file out and ends the
+run: what a host held back is then in the file, not lost with the process. A host whose switch (`ORIVON_VERIFIER_LOG`,
+`ORIVON_IPFS_NODE_LOG`, `ORIVON_SWARM_NODE_LOG`, `ORIVON_NYM_TUNNEL_LOG`, each `=1`) is on is neither collapsed, capped nor
+filtered: a developer running from a terminal sees everything the host prints. The 60 is *provisional*: a measured session's
+volume per host settles it.
+
+**The Nym tunnel's host writes only its own lines to the log.** The WebAssembly library the host runs passes its own strings to
+`console.error` and `console.warn`, and they can name where a Nym-routed app connects, which is what Nym exists to hide. Every line
+the host's own code writes begins with `[nym-tunnel]`, its unhandled-rejection handler included; `HostLog`'s `onlyTagged` counts
+the others and leaves them out, and one line a minute says how many came "from the Nym library". What Node prints itself when the
+host crashes carries no tag and is left out as well: the supervisor reports the exit and its code. This is a `HostLog` option, not
+Nym code here, so another host that runs a library can ask for it.
 
 **A report leaves only when the person presses Send.** Nothing here sends on its own, and `ORIVON_TELEMETRY=off` and
 the telemetry consent do not govern it: it is the person's own act, with its own preview. The page never assembles

@@ -28,6 +28,7 @@ const registered = vi.hoisted(() => ({ beforeRequest: [] as Array<(details: unkn
 vi.mock('electron', () => ({
   app: {
     on: vi.fn(),
+    prependListener: vi.fn(),
     getPath: () => electron.userData,
     resolveProxy: async () => 'DIRECT',
     commandLine: { getSwitchValue: () => '', appendSwitch: vi.fn() }
