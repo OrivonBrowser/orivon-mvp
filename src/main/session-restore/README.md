@@ -37,6 +37,9 @@ escaping only.
 **Only addresses and titles are kept.** A snapshot holds no form state and no scroll position: the back and
 forward list is reduced to address and title before it leaves `tab-snapshot.ts`. A new-tab page, a private
 start page, a `view-source:` page, a blob and `about:blank` are not recorded, because a tab would not open them.
+A new-tab page is not recorded even when its tunnel button holds a choice: nothing has been loaded through the
+tunnel yet, and a restart shows a new tab whose button says no tunnel is chosen. The choice is written
+with the tab once it has navigated, and a restored tab starts with it.
 
 **A window is built into the file when the file is written, not when it changes.** Windows and tabs change
 many times a second while a page loads; the store asks the recorder for the current state at write time, and
