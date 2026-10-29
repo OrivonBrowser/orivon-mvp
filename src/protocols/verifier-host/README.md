@@ -62,7 +62,7 @@ carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-p
 ## Design notes
 
 **Verified Swarm chunks are kept on disk here, per site, and nowhere else.** [`swarm-chunk-database.ts`](swarm-chunk-database.ts) is one
-SQLite database (`node:sqlite`, no native module) at `<profile>/verifier/swarm-chunks-<id>.db`, where `<id>` is the first 16 hex
+SQLite database (`node:sqlite`, no native module; its tables, layout number and pragmas are in [`swarm-chunk-schema.ts`](swarm-chunk-schema.ts)) at `<profile>/verifier/swarm-chunks-<id>.db`, where `<id>` is the first 16 hex
 characters of sha256 of the profile's partition salt; main hands the host the directory and the salt as `HostConfig.swarmChunks`, even
 when the IPFS node is off, and leaves it out when the profile cannot hold a salt. Rows are keyed by `partitionStoreKey(salt, partition)`
 (`partition-key.ts`, the key the IPFS node's store uses) and the chunk address, so the file holds no origin in plain text and one site's

@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
-import { activeTabInfo, findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startSwarmFixture } from '../apps/swarm-gateway/gateway.mjs'
 
@@ -17,6 +17,7 @@ const FEED_KEY = `0x${'44'.repeat(32)}` as const
 const FEED_TOPIC = 'ef'.repeat(32)
 
 const page = (title: string): string => `<!doctype html><meta charset="utf-8"><title>${title}</title><body>${title}</body>`
+const files = (version: string): Record<string, string> => ({ 'index.html': page(`feed update ${version}`), 'data.txt': `data ${version}` })
 
 /** The index of the feed update the verifier host has kept in its Swarm chunk file in `dir`; undefined while there is none. */
 function keptIndex (dir: string): string | undefined {
@@ -43,8 +44,9 @@ it('[app:swarm-url-opens] opens a visited Swarm feed site with a node that answe
     // The same feed twice: the first node holds the first update only, and the second holds both but answers no chunk until released.
     const first = await startSwarmFixture()
     const second = await startSwarmFixture({ holdChunks: true })
-    const one = first.addSite({ 'index.html': page('feed update one') })
-    const two = second.addSite({ 'index.html': page('feed update two') })
+    const one = first.addSite(files('one'))
+    const two = second.addSite(files('two'))
+    second.addSite(files('one'))
     const feed = first.addFeed({ privateKey: FEED_KEY, topic: FEED_TOPIC })
     await feed.publish(one)
     const later = second.addFeed({ privateKey: FEED_KEY, topic: FEED_TOPIC })
@@ -96,14 +98,21 @@ it('[app:swarm-url-opens] opens a visited Swarm feed site with a node that answe
       const found = await waitFor(() => keptIndex(verifierDir) === '1', 30_000)
       check(`the newer update is kept once it is found (${String(keptIndex(verifierDir))})`, found)
 
-      // Found, but not shown: the page being read keeps the version it opened with.
+      // Found, but not shown: the page being read keeps the version it opened with, and so do the files it asks for now.
       await new Promise((resolve) => setTimeout(resolve, 1_500))
-      const stillOne = (await activeTabInfo(chrome)).title === 'feed update one'
-      check('the page being read still shows the update it opened with', stillOne)
+      const view = findViewShowing(running, chrome, 'https://kept.eth/')
+      if (view === undefined) throw new Error('no view shows the name\'s origin')
+      const readData = async (): Promise<string> => await evaluateRetrying(view, async () => await (await fetch('/data.txt')).text())
+      const dataBefore = await readData()
+      const stillOne = (await activeTabInfo(chrome)).title === 'feed update one' && dataBefore === 'data one'
+      check(`the page being read still shows the update it opened with, and a file it asks for now comes from it (${dataBefore})`, stillOne)
 
       await clickAddressBarRetrying(chrome, 'kept.eth')
       const next = await waitForTab(chrome, { address: 'bzz://kept.eth/', title: 'feed update two' }, 60_000)
-      check(`the next page load shows the newer update (${JSON.stringify(next.info)})`, next.ok)
+      const reloaded = findViewShowing(running, chrome, 'https://kept.eth/')
+      const dataAfter = reloaded === undefined ? undefined : await evaluateRetrying(reloaded, async () => await (await fetch('/data.txt')).text())
+      check(`the next page load shows the newer update, files included (${JSON.stringify(next.info)}, ${String(dataAfter)})`, next.ok && dataAfter === 'data two')
+      expect(dataAfter).toBe('data two')
       expect(reopened.ok && second.answeredChunks() > 0 && found && stillOne && next.ok).toBe(true)
     } finally {
       if (app !== undefined) await closeElectronApp(app)
