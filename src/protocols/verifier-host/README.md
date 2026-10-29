@@ -23,6 +23,10 @@ classifier, all reused rather than copied; `@a16z/helios`.
 is the one file here that writes the profile, and only its own `swarm-chunks-*` files. For the threads that hash those chunks,
 `node:worker_threads` and `node:os`: [`chunk-check-pool.ts`](chunk-check-pool.ts) and [`chunk-check-worker.ts`](chunk-check-worker.ts).
 
+**What it prints.** Main pipes the host's output into its own log, so a bug report holds it: at most 60 lines a minute, a line it
+prints again and again once with a count ([`../../main/diagnostics/README.md`](../../main/diagnostics/README.md)). `ORIVON_VERIFIER_LOG=1`
+writes every line, as `ORIVON_<NAME>_LOG` does for the other hosts.
+
 **What it must never import.** [`src/main/`](../../main/) beyond type-only imports: main starts it
 and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
 [`../../main/verifier/`](../../main/verifier/) is its other side. The one exception runs the other way: four leaf files here

@@ -32,7 +32,8 @@ the person chose that a kind turns into arguments (the IPFS node's routing mode)
 `options`, plain strings that main reads at each start, so a changed choice reaches the next start.
 
 The environment variables `ORIVON_<NAME>_DIR` (a directory of files to run, still hash-checked) and
-`ORIVON_<NAME>_LOG` (`1` prints the node's log) follow from the name (`envName` in [`protocol.ts`](protocol.ts)).
+`ORIVON_<NAME>_LOG` (`1` prints the node's log, and writes all of the host's output to the browser's log, uncapped and uncollapsed:
+[`../../main/diagnostics/README.md`](../../main/diagnostics/README.md)) follow from the name (`envName` in [`protocol.ts`](protocol.ts)).
 
 **A page never reaches a node's port.** Main cancels every request from any tab, app or frame, in any session, to a
 loopback port a local node holds, whichever spelling of loopback it uses ([`../../main/sessions/local-node-port-gate.ts`](../../main/sessions/local-node-port-gate.ts)).

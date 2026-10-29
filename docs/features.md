@@ -85,7 +85,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 
 ## Reporting and distribution
 
-- **Bug reports**: a form that shows the report in full before Send, an opt-in crash dump, deletion from the server, and a local log.
+- **Bug reports**: a form that shows the report in full before Send, an opt-in crash dump, deletion from the server, and a local log of the main process and of what its background processes (the `.eth`, IPFS and Swarm host, the local nodes' hosts, the Nym tunnel) print.
 - **Telemetry**: opt-in, with a first-run choice, a Settings switch, a privacy notice and erasure.
 - **Packages for Linux, Windows and macOS** on every GitHub release (deb, AppImage, NSIS installer, dmg for Apple silicon and Intel), also published on IPFS. The macOS apps are signed with a Developer ID and notarized by Apple, and a one-line Terminal command installs or updates Orivon there with no Gatekeeper warning.
 - **A Microsoft Store package** built with every Windows build and kept for upload to Partner Center (not on the release); a Store install is updated by the Store and looks for no update itself.

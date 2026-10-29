@@ -222,7 +222,7 @@ function startEns (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { pro
   const route = ethereumRoute(config, deps, tunnel)
   const reach = lightClientFetch(config.lightClient, route.web, deps.localFetch, 'the light client')
   if ('off' in reach) {
-    // The main process logs a failed status and shows it on the status page and in a report; this host's own output reaches neither.
+    // Main logs a failed status once per reason, and shows it on the status page and in a report; the host prints nothing for this one.
     const reason = `the Ethereum servers set in Settings cannot be used: ${reach.off}`
     deps.post({ type: 'status', status: { state: 'failed', reason, retryAt: undefined } })
     resolvers.push(offResolver(reason))

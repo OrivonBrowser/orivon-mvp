@@ -122,4 +122,5 @@ tunnel costs about 45 MB (the compiled module's first instance) and each further
 **Test seam.** `LoaderSeams` lets a test import a glue its own way. A test build can run a stand-in module in place of the
 pinned one (`ORIVON_TEST_NYM_MODULE`, [`../../main/route/nym-test-seam.ts`](../../main/route/nym-test-seam.ts)), which an
 ordinary build does not carry. `ORIVON_NYM_TUNNEL_DIR` names a directory of the real module's files (still hash-checked),
-and `ORIVON_NYM_TUNNEL_LOG=1` leaves the module's own log lines in the process's output.
+and `ORIVON_NYM_TUNNEL_LOG=1` leaves the module's own log lines in the process's output and in the browser's log, which otherwise
+holds only the lines that begin `[nym-tunnel]` ([`../../main/diagnostics/README.md`](../../main/diagnostics/README.md)).

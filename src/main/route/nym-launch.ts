@@ -2,11 +2,12 @@
 // and the proxy check. nym-subsystem.ts holds the rest and runs under plain vitest.
 
 import { join } from 'node:path'
-import { app, utilityProcess } from 'electron'
+import { app } from 'electron'
 import manifest from '../../../resources/nym-tunnel/nym-tunnel.json'
 import { NYM_TUNNEL_IDENTITY } from '../../protocols/nym-tunnel/protocol.js'
 import type { NymPrivacy } from '../../protocols/nym-tunnel/protocol.js'
 import { envName } from '../../protocols/local-node/protocol.js'
+import { hostForker } from '../diagnostics/host-fork.js'
 import { nodePort, renewNodePort } from '../verifier/loopback-port.js'
 import { locateArtifact } from '../verifier/local-node-artifact.js'
 import type { LocalNodeManifest } from '../verifier/local-node-artifact.js'
@@ -24,8 +25,9 @@ export const MAX_NYM_TUNNELS = 6
 /** The Nym tunnel, stopped when the app quits. The process is forked the first time something asks for it; `privacy` is the saved level and `enabled` the saved switch, which the route service keeps current from then on. */
 export function createNym (privacy: NymPrivacy, enabled = true): NymSubsystem {
   const seam = nymTestModule(process.env)
+  const logging = process.env[envName(NYM_TUNNEL_IDENTITY.name, 'LOG')] === '1'
   const made = createNymSubsystem({
-    fork: () => utilityProcess.fork(join(__dirname, 'nym-tunnel-host.js'), [], { serviceName: `Orivon ${NYM_TUNNEL_IDENTITY.noun}` }),
+    fork: hostForker({ module: join(__dirname, 'nym-tunnel-host.js'), serviceName: `Orivon ${NYM_TUNNEL_IDENTITY.noun}`, prefix: '[nym-tunnel]', unlimited: logging, onlyTagged: 'the Nym library' }),
     artifact: async () => seam !== undefined
       ? { ok: true, directory: seam.directory }
       : await locateArtifact({ env: process.env, packaged: app.isPackaged, resourcesPath: process.resourcesPath, sourceRoot: app.getAppPath() }, MANIFEST, NYM_TUNNEL_IDENTITY),
@@ -35,7 +37,7 @@ export function createNym (privacy: NymPrivacy, enabled = true): NymSubsystem {
     freshPort: () => { renewNodePort(NYM_TUNNEL_IDENTITY.name); return nodePort(NYM_TUNNEL_IDENTITY.name) },
     maxInstances: MAX_NYM_TUNNELS,
     privacy,
-    log: process.env[envName(NYM_TUNNEL_IDENTITY.name, 'LOG')] === '1'
+    log: logging
   })
   made.setEnabled(enabled)
   app.on('will-quit', () => { made.stop() })

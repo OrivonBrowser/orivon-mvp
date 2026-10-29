@@ -26,6 +26,10 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **A Swarm site opened before opens at once after a restart, without waiting for the Swarm node**: when every chunk a page needs is kept on this computer, the page loads while the node is still starting or has failed; the node is waited for only where a chunk has to come from it. With Swarm switched off in Settings, a site on disk still does not open.
 - **A Swarm feed site opened before opens at once, even offline; a newer version is used from the next load**: the last update a feed was followed to is kept on this computer, checked against its signature each time, and the page opens from it without waiting for the Swarm node or the network; Orivon looks for a newer update in the background; a reload or a later visit shows it, and a page you are reading keeps the version it opened with for the next two minutes, unless another tab loads the same site.
 
+### Fixed
+
+- **Bug reports now include what Orivon's background processes log**: the lines the `.eth`, IPFS and Swarm host (page and file timings, name and gateway failures), the IPFS and Swarm node hosts and the Nym tunnel write, and what one prints as it crashes, went to the app's own stderr and past the log a report carries, and a packaged Windows app has no stderr at all. Main now writes each line to its own log, so the report's "Recent log" shows them: at most 60 a minute from each process, a line printed again and again once with a count, the last few of any overflow with the count, and from the Nym tunnel only its own lines, never the library's.
+
 ## [0.0.12] - 2026-10-28
 
 Pre-release, published 2026-10-28. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.12).

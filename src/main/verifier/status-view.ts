@@ -256,9 +256,9 @@ export interface LightClientLogLine {
 }
 
 /**
- * The main process's log lines for the light client's status, the only place a bug report finds them: the
- * verifier host's own output never reaches that log. A failure is logged once until its reason changes or a
- * sync succeeds, and a sync once until the next failure, so retries and refreshes add nothing.
+ * The main process's log lines for the light client's status. A failure is logged once until its reason changes or a
+ * sync succeeds, and a sync once until the next failure, so retries and refreshes add nothing. The host prints a line
+ * of its own for each retry; the log holds a run of identical ones once, with a count (diagnostics/host-output.ts).
  */
 export function lightClientLog (): (status: LightClientState) => LightClientLogLine | undefined {
   let failure: string | undefined
