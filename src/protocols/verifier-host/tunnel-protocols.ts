@@ -127,7 +127,8 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     route: nodeRouteOf(config, route),
     feedIndexes: stores.swarmFeedIndexes,
     log: (line) => { console.error(`[verifier] ${line}`) },
-    ...(stores.swarmChunks !== undefined && keptIn(stores.swarmChunks, tunnel)),
+    ...(stores.swarmChunks !== undefined && keptIn(stores.swarmChunks, tunnel, deps.chunkChecks)),
+    ...(deps.chunkChecks !== undefined && { checker: deps.chunkChecks }),
     beforeMount: node.ensure,
     ...(config.swarmSwitchedOff === true && { holdMounts: true })
   })

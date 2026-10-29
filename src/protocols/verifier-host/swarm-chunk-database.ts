@@ -12,7 +12,7 @@ import { feedUpdateAddress, MAX_CHUNK_BYTES, MAX_SOC_BYTES, verifyCac } from '..
 import type { FeedId } from '../swarm/feed.js'
 import { partitionStoreKey } from './partition-key.js'
 import { swarmChunkFile, swarmChunkFileSet, swarmChunkFilesIn } from './swarm-chunk-files.js'
-import { attach, OtherSchema } from './swarm-chunk-schema.js'
+import { attach, feedKey, indexOf, OtherSchema } from './swarm-chunk-schema.js'
 import type { Statements } from './swarm-chunk-schema.js'
 
 export interface SwarmChunkDatabaseOptions {
@@ -40,9 +40,6 @@ const MAX_NOTED = 32_768
 const EVICT_BATCH = 256
 const MINUTE_MS = 60_000
 const ADDRESS = /^[0-9a-f]{64}$/
-const DECIMAL = /^[0-9]{1,20}$/
-/** One past the largest index a feed update's address can name. */
-const INDEX_LIMIT = 2n ** 64n
 /** SQLite's primary result codes for a file that is not, or is no longer, a sound database (SQLITE_CORRUPT, SQLITE_NOTADB). */
 const DAMAGED = [11, 26]
 
@@ -52,23 +49,21 @@ interface Waiting {
   readonly bytes: Uint8Array
 }
 
+/** A chunk `SwarmChunkDatabase.read` found and `settle` is to be told about. */
+export interface KeptRow {
+  readonly bytes: Uint8Array
+  readonly address: string
+  /** True for a chunk still waiting to be written, which was checked on its way in. */
+  readonly checked: boolean
+  readonly site?: string
+  readonly statements?: Statements
+}
+
 interface Found {
   readonly id: number
   /** A blob in every row this writes; SQLite would hold any other value a hand-edited file puts there. */
   readonly bytes: unknown
   readonly size: number
-}
-
-/** The index a `feed_update` row holds, or undefined for a value that is not one an address can name (a hand-edited file's). */
-function indexOf (position: unknown): bigint | undefined {
-  if (typeof position !== 'string' || !DECIMAL.test(position)) return undefined
-  const index = BigInt(position)
-  return index < INDEX_LIMIT ? index : undefined
-}
-
-/** The key a feed is kept under: its owner's 20 bytes, then its topic's 32. */
-function feedKey (feed: FeedId): Buffer {
-  return Buffer.from(`${feed.owner}${feed.topic}`, 'hex')
 }
 
 /** Why an operation failed, without the paths or text an error may carry. */
@@ -117,10 +112,20 @@ export class SwarmChunkDatabase {
 
   /** The chunk `address` that `partition`'s pages kept, checked against its address again; undefined when there is none or it fails. */
   get (partition: string, address: string): Uint8Array | undefined {
+    const row = this.read(partition, address)
+    if (row === undefined) return undefined
+    return this.settle(row, row.checked || verifyCac(address, row.bytes))
+  }
+
+  /**
+   * The chunk `address` that `partition`'s pages kept, read and not yet checked: the check may be made anywhere, and
+   * `settle` is told its answer. A row that holds something other than bytes is dropped here.
+   */
+  read (partition: string, address: string): KeptRow | undefined {
     if (!ADDRESS.test(address)) return undefined
     const site = partitionStoreKey(this.options.salt, partition)
     const waiting = this.waiting.get(`${site}\n${address}`)
-    if (waiting !== undefined) return waiting.bytes
+    if (waiting !== undefined) return { bytes: waiting.bytes, address, checked: true }
     const statements = this.use()
     if (statements === undefined) return undefined
     let row: Found | undefined
@@ -131,13 +136,33 @@ export class SwarmChunkDatabase {
       return undefined
     }
     if (row === undefined) return undefined
-    if (!(row.bytes instanceof Uint8Array) || !verifyCac(address, row.bytes)) {
-      if (!this.isFeedUpdate(statements, row.id)) this.refuse(statements, row)
+    if (!(row.bytes instanceof Uint8Array)) {
+      this.refuse(statements, row)
       return undefined
     }
-    this.note(site, address)
-    this.fromDisk++
-    return row.bytes
+    return { bytes: row.bytes, address, checked: false, site, statements }
+  }
+
+  /**
+   * What the check of a row `read` gave says: the bytes when they are the chunk at the row's address, undefined, and the row
+   * deleted, when they are not. The row is looked up again first and dropped only while it still holds the bytes refused, so
+   * one the file has since replaced (a later read refused the same row and fetched the chunk again) is never the one dropped.
+   */
+  settle (row: KeptRow, genuine: boolean): Uint8Array | undefined {
+    if (row.site === undefined || row.statements === undefined) return genuine ? row.bytes : undefined
+    if (genuine) {
+      this.note(row.site, row.address)
+      this.fromDisk++
+      return row.bytes
+    }
+    if (this.statements !== row.statements) return undefined
+    try {
+      const again = row.statements.find.get(row.site, Buffer.from(row.address, 'hex')) as Found | undefined
+      if (again !== undefined && again.bytes instanceof Uint8Array && Buffer.compare(again.bytes, row.bytes) === 0 && !this.isFeedUpdate(row.statements, again.id)) this.refuse(row.statements, again)
+    } catch (error) {
+      this.fail('read', error)
+    }
+    return undefined
   }
 
   /**
@@ -342,11 +367,7 @@ export class SwarmChunkDatabase {
 
   /** Whether a feed update is kept in the chunk row `id`: a row of one is a single-owner chunk, which no content address matches. */
   private isFeedUpdate (statements: Statements, id: number): boolean {
-    try {
-      return statements.isUpdate.get(id) !== undefined
-    } catch {
-      return false
-    }
+    return statements.isUpdate.get(id) !== undefined
   }
 
   /** Deletes the least recently used rows until the file is under its cap with room to spare, and the feed rows whose chunk went with them; returns the bytes left. */

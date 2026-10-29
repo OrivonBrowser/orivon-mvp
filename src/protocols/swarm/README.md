@@ -51,14 +51,25 @@ against the node, and each leaf is shared with any other read of it, as a chunk 
 not one intermediate chunk at a time, and asks for each intermediate chunk's first child as soon
 as it arrives, since the others' sizes wait on it.
 
+**Where a chunk is checked is an option, so the process that runs this code chooses the thread.** [`chunk-check.ts`](chunk-check.ts)
+holds `ChunkChecker`, which answers what `verifyCac` answers and tells its caller where the check ran, and the default that checks in
+the thread that asks. `SwarmGathererOptions.checker` is the one `ChunkSource` uses for a chunk fetched alone and for the leaves of a
+`/bytes` answer, and `BlockMemory.recallKept` is passed the same notion for a row read back from the store behind it. The verifier host
+gives a pool of worker threads, so the one thread every protocol it serves runs on is not held for the hashing of a site
+([`../verifier-host/chunk-check-pool.ts`](../verifier-host/chunk-check-pool.ts)); this directory still imports nothing from `node:`. The
+leaves of a `/bytes` answer are all handed to the checker as soon as they are whole, answered in order, and the first that fails ends
+the read: the leaves before it are used and that one and every one after it are fetched alone, as when each was checked in turn. A
+single-owner chunk is checked where it was, since a feed update is one chunk. The mount's log line and a large file's say where the
+checks ran: `checked on N threads`, or `checked in the host` when no thread was used.
+
 **The gatherer keeps verified chunks through an option, and never touches a disk.** `SwarmGathererOptions.memory` is the
 `BlockMemory` ([`../gateways/cache.ts`](../gateways/cache.ts)) a gatherer keeps chunks in between mounts; unset, it is an in-memory
 `BlockCache`. The verifier host passes one that also keeps them on disk
 ([`../verifier-host/swarm-chunk-database.ts`](../verifier-host/swarm-chunk-database.ts), which says where, keyed how and cleared how):
 the content-addressed chunks (the ones `ChunkSource.get` and `ChunkSource.leaves` remember), and, apart from them, the one
 single-owner chunk of the update each feed was last followed to (`SwarmGathererOptions.keptUpdates`, below); any other single-owner
-chunk is asked for, because it may have changed. A chunk read back is hashed against its address again by the store, so
-nothing here trusts the disk. The disk is the optional `BlockMemory.recallKept`, a slower store behind the cache that answers on a turn
+chunk is asked for, because it may have changed. A chunk read back is hashed against its address again by the store (through
+the checker, above), so nothing here trusts the disk. The disk is the optional `BlockMemory.recallKept`, a slower store behind the cache that answers on a turn
 of the event loop of its own: `ChunkSource.get` asks it after the cache, and `ChunkSource.leaves` asks it for every leaf of a file
 before the rest go to the node in one `/bytes` request, so a file read from disk never holds the process, and this directory still
 imports nothing from `node:`. A mount with no partition keeps nothing in either place. The mount's log line, and a large file's,

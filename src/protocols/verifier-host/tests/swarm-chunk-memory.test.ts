@@ -9,6 +9,8 @@ import { GatewayPool } from '../../gateways/gateways.js'
 import type { NameRecord } from '../../resolution/records.js'
 import { ChunkSource } from '../../swarm/chunk-fetch.js'
 import type { SubtreeLeaf } from '../../swarm/chunk-fetch.js'
+import { checkHere } from '../../swarm/chunk-check.js'
+import type { CheckedOn, ChunkChecker } from '../../swarm/chunk-check.js'
 import { DEFAULT_LIMITS } from '../../swarm/limits.js'
 import { createSwarmGatherer } from '../../swarm/gatherer.js'
 import type { FeedIndexStore } from '../../swarm/feed.js'
@@ -131,10 +133,10 @@ describe('a chunk source over the chunk database', () => {
     const parent = buildFile(content, store).ref
     const refs = store.get(parent)!.subarray(8)
     const leaves: SubtreeLeaf[] = Array.from({ length: 6 }, (_, i) => ({ address: bytesToHex(refs.subarray(i * 32, (i + 1) * 32)).slice(2), size: 4096, offset: i * 4096 }))
-    const sourceOver = (disk: SwarmChunkDatabase): { source: ChunkSource, requests: string[] } => {
+    const sourceOver = (disk: SwarmChunkDatabase, checker?: ChunkChecker): { source: ChunkSource, requests: string[] } => {
       const swarm = fakeSwarm(store)
-      const deps = { fetch: swarm.fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS }
-      return { source: new ChunkSource(deps, new KeptChunkMemory(disk), SITE), requests: swarm.requests }
+      const deps = { fetch: swarm.fetch, pool: new GatewayPool([A], 6), limits: DEFAULT_LIMITS, ...(checker !== undefined && { checker }) }
+      return { source: new ChunkSource(deps, new KeptChunkMemory(disk, '', checker), SITE), requests: swarm.requests }
     }
     return { store, parent, leaves, sourceOver }
   }
@@ -152,6 +154,24 @@ describe('a chunk source over the chunk database', () => {
     expect(second.fromDisk).toBe(6)
   })
 
+  it('fetches again the leaves whose rows fail their address, with a checker of its own in use, and serves the right bytes', async () => {
+    const { store, parent, leaves, sourceOver } = file()
+    const checker: ChunkChecker = { verify: async (address, chunk) => { await new Promise<void>((resolve) => { setTimeout(resolve, 2) }); return checkHere(address, chunk) } }
+    const first = database()
+    await Promise.all(sourceOver(first, checker).source.leaves(parent, leaves, signal, () => {}))
+    first.close()
+    const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+    for (const at of [0, 3]) raw.prepare('UPDATE chunk SET bytes = zeroblob(length(bytes)) WHERE address = ?').run(Buffer.from(leaves[at]!.address, 'hex'))
+    raw.close()
+
+    const second = database()
+    const { source, requests } = sourceOver(second, checker)
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(requests).toEqual([`${A}/bytes/${parent}`])
+    expect(second.refused).toBe(2)
+    expect(second.fromDisk).toBe(4)
+  })
+
   it('fetches again the leaves whose rows fail their address, in one request, and serves the right bytes', async () => {
     const { store, parent, leaves, sourceOver } = file()
     const first = database()
@@ -167,6 +187,92 @@ describe('a chunk source over the chunk database', () => {
     expect(requests).toEqual([`${A}/bytes/${parent}`])
     expect(second.refused).toBe(2)
     expect(second.fromDisk).toBe(4)
+  })
+})
+
+/** A checker that holds each check until the test releases it, then makes the real one on "thread" 1. */
+function heldChecker () {
+  const held: Array<{ readonly address: string, readonly release: () => void }> = []
+  const checker: ChunkChecker = {
+    verify: async (address, chunk, ran) => {
+      await new Promise<void>((release) => { held.push({ address, release }) })
+      ran?.(1)
+      return checkHere(address, chunk)
+    }
+  }
+  return { checker, held }
+}
+
+describe('the memory in front of the chunk database, with a checker of its own', () => {
+  function kept (count: number) {
+    const store = new Map<string, Uint8Array>()
+    const refs = Array.from({ length: count }, (_, i) => buildFile(new Uint8Array(4096).fill(i + 1), store).ref)
+    const first = database()
+    for (const ref of refs) first.put(SITE, ref, store.get(ref)!)
+    first.close()
+    return { store, refs }
+  }
+
+  it('has a row read back checked there, tells where, and answers it from the cache after', async () => {
+    const { store, refs } = kept(1)
+    const { checker, held } = heldChecker()
+    const disk = database()
+    const memory = new KeptChunkMemory(disk, '', checker)
+    const where: CheckedOn[] = []
+    const answer = memory.recallKept(SITE, refs[0]!, (on) => { where.push(on) })
+    await vi.waitFor(() => { expect(held).toHaveLength(1) })
+    expect(disk.fromDisk).toBe(0)
+    held[0]!.release()
+    expect(await answer).toEqual(store.get(refs[0]!))
+    expect(where).toEqual([1])
+    expect(disk.fromDisk).toBe(1)
+    expect(memory.recall(SITE, refs[0]!)).toEqual(store.get(refs[0]!))
+  })
+
+  it('reads the next rows while earlier ones are being checked', async () => {
+    const { store, refs } = kept(5)
+    const { checker, held } = heldChecker()
+    const memory = new KeptChunkMemory(database(), '', checker)
+    const answers = refs.map(async (ref) => await memory.recallKept(SITE, ref))
+    await vi.waitFor(() => { expect(held.map((check) => check.address)).toEqual(refs) })
+    for (const check of [...held].reverse()) check.release()
+    expect(await Promise.all(answers)).toEqual(refs.map((ref) => store.get(ref)))
+  })
+
+  it('refuses a row altered on disk, deletes it, and keeps the ones around it', async () => {
+    const { store, refs } = kept(3)
+    const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+    raw.prepare('UPDATE chunk SET bytes = zeroblob(length(bytes)) WHERE address = ?').run(Buffer.from(refs[1]!, 'hex'))
+    raw.close()
+    const { checker, held } = heldChecker()
+    const disk = database()
+    const memory = new KeptChunkMemory(disk, '', checker)
+    const answers = refs.map(async (ref) => await memory.recallKept(SITE, ref))
+    await vi.waitFor(() => { expect(held).toHaveLength(3) })
+    for (const check of held) check.release()
+    expect(await Promise.all(answers)).toEqual([store.get(refs[0]!), undefined, store.get(refs[2]!)])
+    expect(disk.refused).toBe(1)
+    expect(disk.fromDisk).toBe(2)
+    disk.close()
+    const check = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+    expect((check.prepare('SELECT count(*) AS n FROM chunk').get() as { n: number }).n).toBe(2)
+    check.close()
+  })
+
+  it('drops nothing when the file was closed while the check of an altered row was out, and still refuses the row', async () => {
+    const { refs } = kept(1)
+    const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+    raw.prepare('UPDATE chunk SET bytes = zeroblob(length(bytes))').run()
+    raw.close()
+    const { checker, held } = heldChecker()
+    const disk = database()
+    const memory = new KeptChunkMemory(disk, '', checker)
+    const answer = memory.recallKept(SITE, refs[0]!)
+    await vi.waitFor(() => { expect(held).toHaveLength(1) })
+    disk.close()
+    held[0]!.release()
+    expect(await answer).toBeUndefined()
+    expect(disk.refused).toBe(0)
   })
 })
 

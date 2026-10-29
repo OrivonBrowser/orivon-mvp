@@ -8,6 +8,8 @@ import type { Refusal } from '../../resolution/providers.js'
 import { bytesToHex } from 'viem'
 import { ChunkSource, QUARANTINE_MS, fetchVerifiedSoc, lookUpSoc } from '../chunk-fetch.js'
 import type { ChunkDeps, SubtreeLeaf } from '../chunk-fetch.js'
+import { checkHere } from '../chunk-check.js'
+import type { ChunkChecker } from '../chunk-check.js'
 import { DEFAULT_LIMITS } from '../limits.js'
 import { buildFile, legacyUpdate, makeChunk, signFeedUpdate, spanBytes } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { A, B, TEST_KEY, TOPIC, bytes, fakeSwarm, asWebFetch } from './swarm.test-helpers.js'
@@ -443,5 +445,59 @@ describe('fetchVerifiedSoc', () => {
     swarm.tamper(update.address, [A])
     expect((await fetchVerifiedSoc(update.address, deps, signal, onRefusal)).owner).toBe(update.owner)
     expect(refusals).toEqual([{ source: A, resource: update.address }])
+  })
+})
+
+/** A checker that makes the real check after a delay of `delayOf(call)` ms, remembers each address it was given, in which order they answered, and how many had been asked when the first did. */
+function delayedChecker (delayOf: (call: number) => number = () => 0) {
+  const asked: string[] = []
+  const answered: string[] = []
+  const first: { askedBeforeAnswer?: number } = {}
+  const checker: ChunkChecker = {
+    verify: async (address, chunk, ran) => {
+      const call = asked.push(address) - 1
+      await new Promise<void>((resolve) => { setTimeout(resolve, delayOf(call)) })
+      first.askedBeforeAnswer ??= asked.length
+      answered.push(address)
+      ran?.(1)
+      return checkHere(address, chunk)
+    }
+  }
+  return { checker, asked, answered, first }
+}
+
+describe('ChunkSource with a checker of its own', () => {
+  function checked (count: number, checker: ChunkChecker) {
+    const made = subtree(count)
+    const source = new ChunkSource({ fetch: made.swarm.fetch, pool: made.pool, limits: DEFAULT_LIMITS, log: (line) => { made.logged.push(line) }, checker }, new BlockCache(), 'https://one.example')
+    return { ...made, source }
+  }
+
+  it('has every chunk it fetches checked there, a single chunk and the leaves of a bulk answer alike', async () => {
+    const { checker, asked } = delayedChecker()
+    const { store, parent, leaves, source } = checked(5, checker)
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(asked).toEqual(leaves.map((leaf) => leaf.address))
+    asked.length = 0
+    const one = buildFile(bytes('another'), store).ref
+    expect(await source.get(one, signal, () => {})).toEqual(store.get(one))
+    expect(asked).toEqual([one])
+  })
+
+  it('starts the checks of the leaves it has whole together, and answers each leaf in order whichever check ends first', async () => {
+    const { checker, answered, first } = delayedChecker((call) => Math.max(0, 6 - call) * 15)
+    const { store, parent, leaves, source } = checked(6, checker)
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(first.askedBeforeAnswer).toBe(6)
+    expect(answered).toEqual([...leaves].reverse().map((leaf) => leaf.address))
+  })
+
+  it('uses the leaves before a wrong one and fetches that leaf and the ones after it alone, however the checks end', async () => {
+    const { checker } = delayedChecker((call) => Math.max(0, 6 - call) * 10)
+    const { store, parent, leaves, swarm, source, logged } = checked(6, checker)
+    swarm.tamperedBytes.add(parent)
+    expect(await Promise.all(source.leaves(parent, leaves, signal, () => {}))).toEqual(leaves.map((leaf) => store.get(leaf.address)))
+    expect(swarm.requests).toEqual([`${A}/bytes/${parent}`, ...leaves.slice(1).map((leaf) => `${A}/chunks/${leaf.address}`)])
+    expect(logged).toEqual(['swarm: a bulk read gave 1 of 6 leaves (a leaf that failed its address); the rest are read one by one'])
   })
 })

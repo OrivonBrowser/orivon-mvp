@@ -13,6 +13,8 @@ import { net } from 'electron'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { createDirectFetch } from './direct-fetch.js'
 import { lookup } from 'node:dns/promises'
+import { Worker } from 'node:worker_threads'
+import { ChunkCheckPool } from './chunk-check-pool.js'
 import { createOutsideFetch } from './outside-fetch.js'
 import { createLocalRpcFetch } from './local-rpc-fetch.js'
 import { createRoutedFetch } from './routed-fetch.js'
@@ -23,6 +25,8 @@ import { startHost } from './service.js'
 import type { RunningHost } from './service.js'
 
 declare const __ORIVON_DEV_GRANT_ENABLED__: boolean | undefined
+/** The code of the chunk check thread as a string; the main build replaces this name with it, and fails if it cannot. */
+declare const __ORIVON_CHUNK_CHECK_WORKER__: string
 const FIXTURES_ALLOWED = typeof __ORIVON_DEV_GRANT_ENABLED__ !== 'undefined' && __ORIVON_DEV_GRANT_ENABLED__ === true
 
 function post (message: FromHost): void {
@@ -67,7 +71,9 @@ function main (): void {
         // What the person asked to run outside the tunnel leaves on Node's own sockets, to addresses this process resolves and checks.
         outside: { send: createOutsideFetch(createDirectFetch({ allowPost: true }), resolveOutside), resolveHost: resolveOutside },
         // A server the person runs on this computer or their home network, at an address they typed in: Node sockets straight to it, never `net`, which a proxy or the tunnel's front would carry elsewhere.
-        localFetch: createLocalRpcFetch()
+        localFetch: createLocalRpcFetch(),
+        // The hashing of Swarm chunks, off the thread every protocol is served on. A thread runs the self-contained script the main build puts here as a string.
+        chunkChecks: new ChunkCheckPool({ spawn: () => new Worker(__ORIVON_CHUNK_CHECK_WORKER__, { eval: true, name: 'orivon chunk check' }), log: (line) => { console.error(`[verifier] ${line}`) } })
       })
       host.then(
         (running) => { post({ type: 'listening', fingerprint: running.fingerprint }) },

@@ -3,6 +3,7 @@
 
 import { DatabaseSync } from 'node:sqlite'
 import type { StatementSync } from 'node:sqlite'
+import type { FeedId } from '../swarm/feed.js'
 
 /** A 4 KB chunk row is a little over 4 KB: a smaller page would give each row two, and 32 KB holds seven. */
 const PAGE_BYTES = 32768
@@ -31,6 +32,22 @@ CREATE TABLE feed_update (
 ) WITHOUT ROWID;
 PRAGMA user_version = ${String(SCHEMA_VERSION)};
 `
+
+const DECIMAL = /^[0-9]{1,20}$/
+/** One past the largest index a feed update's address can name. */
+const INDEX_LIMIT = 2n ** 64n
+
+/** The index a `feed_update` row holds, or undefined for a value that is not one an address can name (a hand-edited file's). */
+export function indexOf (position: unknown): bigint | undefined {
+  if (typeof position !== 'string' || !DECIMAL.test(position)) return undefined
+  const index = BigInt(position)
+  return index < INDEX_LIMIT ? index : undefined
+}
+
+/** The key a feed is kept under: its owner's 20 bytes, then its topic's 32. */
+export function feedKey (feed: FeedId): Buffer {
+  return Buffer.from(`${feed.owner}${feed.topic}`, 'hex')
+}
 
 export interface Statements {
   readonly find: StatementSync
