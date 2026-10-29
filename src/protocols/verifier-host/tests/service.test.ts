@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { request } from 'node:https'
 import { buildDag, fakeGateways } from '../../ipfs/tests/dag.test-helpers.js'
 import type { FromHost, HostConfig } from '../protocol.js'
@@ -156,6 +159,53 @@ describe('startHost with Swarm', () => {
       expect(answered.status).toBe(502)
       expect(answered.body).toContain('the Swarm node is not installed')
       expect(swarm.requests).toEqual([])
+    })
+
+    describe('a site kept on disk by an earlier run', () => {
+      const SALT = 'cd'.repeat(32)
+      let dir: string
+      beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'orivon-kept-site-')) })
+      afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+
+      /** Loads a site once, with the node ready, and gives the store time to write what it read. */
+      async function keptOnce () {
+        const { site, swarm } = await swarmWorld()
+        const world = deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })
+        const host = await startHost(config({ swarmEndpoints: [ENDPOINT], swarmNode: true, swarmChunks: { dir, salt: SALT } }), world)
+        running.push(host)
+        const page = get(host.port, `${referenceCid(site)}.bzz.orivon`)
+        await vi.waitFor(() => { expect(world.posted).toContainEqual({ type: 'node-wanted', node: 'swarm-node' }) })
+        host.node({ type: 'node', node: 'swarm-node', state: 'ready' })
+        expect(await page).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
+        await new Promise((resolve) => setTimeout(resolve, 600))
+        swarm.requests.length = 0
+        return { site, swarm }
+      }
+
+      it('opens after a restart while the node has not answered, asking main for the node and no endpoint for a chunk', async () => {
+        const { site, swarm } = await keptOnce()
+        const world = deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })
+        const host = await startHost(config({ swarmEndpoints: [ENDPOINT], swarmNode: true, swarmChunks: { dir, salt: SALT } }), world)
+        running.push(host)
+        expect(await get(host.port, `${referenceCid(site)}.bzz.orivon`)).toEqual({ status: 200, body: '<h1>on swarm</h1>' })
+        expect(world.posted).toContainEqual({ type: 'node-wanted', node: 'swarm-node' })
+        expect(swarm.requests).toEqual([])
+      })
+
+      it('is held for the node\'s answer when the person has switched Swarm off, and refused with its words', async () => {
+        const { site, swarm } = await keptOnce()
+        const world = deps({ fetch: async (url, init) => await swarm.fetch(url, { headers: {}, signal: init?.signal ?? new AbortController().signal }) })
+        const host = await startHost(config({ swarmEndpoints: [ENDPOINT], swarmNode: true, swarmSwitchedOff: true, swarmChunks: { dir, salt: SALT } }), world)
+        running.push(host)
+        const page = get(host.port, `${referenceCid(site)}.bzz.orivon`)
+        await vi.waitFor(() => { expect(world.posted).toContainEqual({ type: 'node-wanted', node: 'swarm-node' }) })
+        expect(await Promise.race([page.then(() => 'answered'), new Promise((resolve) => setTimeout(() => { resolve('held') }, 200))])).toBe('held')
+        host.node({ type: 'node', node: 'swarm-node', state: 'off', reason: 'Swarm is switched off' })
+        const answered = await page
+        expect(answered.status).toBe(502)
+        expect(answered.body).toContain('Swarm is switched off')
+        expect(swarm.requests).toEqual([])
+      })
     })
 
     it('never asks main for a node when the endpoint is not one', async () => {

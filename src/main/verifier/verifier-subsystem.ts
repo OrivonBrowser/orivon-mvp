@@ -48,7 +48,7 @@ import { mountCeilingMs } from '../../protocols/verifier-host/pace.js'
 import { anyTabOnVerifiedOrigin } from './tab-on-verified-origin.js'
 import type { TabsOfWindow } from './tab-on-verified-origin.js'
 import { provideVerifierAccess } from './verifier-access.js'
-import { configureSwarmNode, swarmNode, swarmNodeState } from './swarm-node-subsystem.js'
+import { configureSwarmNode, swarmNode, swarmNodeState, swarmSwitchedOff } from './swarm-node-subsystem.js'
 import { configureIpfsNode, ipfsNode, ipfsNodeEndpoint, ipfsNodeState } from './ipfs-node-subsystem.js'
 import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
@@ -248,6 +248,7 @@ async function hostConfig (): Promise<HostConfig> {
     ipnsSequences: stored.ipnsSequences(),
     swarmEndpoints: swarmEndpoints(seam),
     ...(seam === undefined && { swarmNode: true }),
+    ...(swarmSwitchedOff() && { swarmSwitchedOff: true }),
     tunnelSitesReadNodes: { nym: nodesMayServeTunnelSites('nym'), socks5: nodesMayServeTunnelSites('socks5') }, ...(nodesRunThroughTunnel() && { nodesRouted: true }), ...(await ethereumOutsideTunnel(front !== undefined) && { ethereumOutside: true }),
     ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice(), ...(seam?.ipfsNode?.retryWaitMs !== undefined && { retryWaitMs: seam.ipfsNode.retryWaitMs }) } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),

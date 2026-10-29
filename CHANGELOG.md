@@ -17,6 +17,10 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+### Changed
+
+- **A Swarm site opened before opens at once after a restart, without waiting for the Swarm node**: when every chunk a page needs is kept on this computer, the page loads while the node is still starting or has failed; the node is waited for only where a chunk has to come from it. With Swarm switched off in Settings, a site on disk still does not open.
+
 ## [0.0.12] - 2026-10-28
 
 Pre-release, published 2026-10-28. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.12).

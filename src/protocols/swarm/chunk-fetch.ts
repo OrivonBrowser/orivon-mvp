@@ -14,6 +14,7 @@ import type { AttemptOutcome } from '../gateways/race.js'
 import { MAX_CHUNK_BYTES, MAX_SOC_BYTES, SPAN_BYTES, verifyCac, verifySoc } from './chunk.js'
 import type { VerifiedSoc } from './chunk.js'
 import type { SwarmLimits } from './limits.js'
+import type { NodeWait } from './node-wait.js'
 
 export interface ChunkDeps {
   readonly fetch: Fetch
@@ -124,16 +125,19 @@ function leafChunk (bytes: Uint8Array, size: number): Uint8Array {
 
 /**
  * Verified content-addressed chunks, kept per partition and fetched once for
- * every caller that asks at the same time.
+ * every caller that asks at the same time. `ready` is waited on before anything
+ * is asked of an endpoint and before its timers start, so a chunk the memory or
+ * the store holds never waits, and a wait never counts against a request.
  */
 export class ChunkSource {
   constructor (
     private readonly deps: ChunkDeps,
     private readonly memory: BlockMemory = new BlockCache(),
-    private readonly partition = ''
+    private readonly partition = '',
+    private readonly ready?: NodeWait
   ) {}
 
-  /** Throws a ResolutionError: `unverifiable` once an endpoint has lied, `unavailable` when none answered. */
+  /** Throws a ResolutionError: `unverifiable` once an endpoint has lied, `unavailable` when none answered or `ready` says the node will not serve. */
   async get (address: string, signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Promise<Uint8Array> {
     if (!ADDRESS.test(address)) throw new ResolutionError('unverifiable', `${address} is not a chunk address`)
     const cached = this.memory.recall(this.partition, address)
@@ -144,6 +148,8 @@ export class ChunkSource {
     }
     // A shared fetch starts as it is made, and a caller already gone never joins it to stop it again.
     if (signal.aborted) throw signal.reason
+    // Not `await this.ready?.(...)`: without a wait the fetch must still start on this turn, so a read made next joins it.
+    if (this.ready !== undefined) await this.ready(signal)
     const shared = this.memory.share(this.partition, address, async (sharedSignal, sharedOnRefusal) => {
       const bytes = await fetchChunk(address, CAC, this.deps, sharedSignal, sharedOnRefusal)
       this.memory.remember(this.partition, address, bytes)
@@ -192,7 +198,8 @@ export class ChunkSource {
    * fetches it, so a node that cannot or will not answer in bulk costs time, never a byte. The `/bytes` request ends
    * only once no read wants a leaf it has still to give, so a read that leaves never sends one that joined it to fetch
    * every leaf alone. Whether to send it is decided once every leaf this call owns is collected, which happens as the
-   * call is made, so it is given the leaves that need fetching all together and never one at a time.
+   * call is made, so it is given the leaves that need fetching all together and never one at a time. The `/bytes`
+   * request, and each leaf fetched alone, are sent only once `ready` has resolved.
    */
   private fetchLeaves (parent: string, leaves: readonly SubtreeLeaf[], signal: AbortSignal, onRefusal: (refusal: Refusal) => void): Array<Promise<Uint8Array>> {
     if (signal.aborted || !ADDRESS.test(parent)) return leaves.map(async (leaf) => await this.get(leaf.address, signal, onRefusal))
@@ -207,6 +214,7 @@ export class ChunkSource {
         owned.push({ leaf, answer, wanted: sharedSignal })
         const fromBulk = await answer.promise
         if (fromBulk === undefined && sharedSignal.aborted) throw sharedSignal.reason
+        if (fromBulk === undefined && this.ready !== undefined) await this.ready(sharedSignal)
         const bytes = fromBulk ?? await fetchChunk(leaf.address, CAC, this.deps, sharedSignal, sharedOnRefusal)
         this.memory.remember(this.partition, leaf.address, bytes)
         return bytes
@@ -231,43 +239,47 @@ export class ChunkSource {
     const from = owned[0]!.leaf.offset
     const last = owned[owned.length - 1]!.leaf
     const body = new Uint8Array(last.offset + last.size - from)
-    void askGateway(
-      this.deps.pool, this.deps.fetch, endpoint,
-      { url: `${endpoint}/bytes/${parent}`, accept: 'application/octet-stream', timeoutMs: this.deps.limits.chunkTimeoutMs, maxBytes: from + body.length, unnoted: true },
-      async (response, progress) => {
-        let skip = from
-        stopped = 'the answer ended early'
-        if (response.body === null) return
-        const reader = response.body.getReader()
-        let filled = 0
-        try {
-          while (filled < body.length) {
-            const { done, value } = await reader.read()
-            if (done) return
-            progress()
-            const used = Math.min(skip, value.length)
-            skip -= used
-            const take = Math.min(value.length - used, body.length - filled)
-            body.set(value.subarray(used, used + take), filled)
-            filled += take
-            for (; next < owned.length; next++) {
-              const { leaf, answer } = owned[next]!
-              const end = leaf.offset - from + leaf.size
-              if (end > filled) break
-              const chunk = leafChunk(body.subarray(leaf.offset - from, end), leaf.size)
-              if (!verifyCac(leaf.address, chunk)) {
-                stopped = 'a leaf that failed its address'
-                return
+    const bulkRead = async (): Promise<void> => {
+      await askGateway(
+        this.deps.pool, this.deps.fetch, endpoint,
+        { url: `${endpoint}/bytes/${parent}`, accept: 'application/octet-stream', timeoutMs: this.deps.limits.chunkTimeoutMs, maxBytes: from + body.length, unnoted: true },
+        async (response, progress) => {
+          let skip = from
+          stopped = 'the answer ended early'
+          if (response.body === null) return
+          const reader = response.body.getReader()
+          let filled = 0
+          try {
+            while (filled < body.length) {
+              const { done, value } = await reader.read()
+              if (done) return
+              progress()
+              const used = Math.min(skip, value.length)
+              skip -= used
+              const take = Math.min(value.length - used, body.length - filled)
+              body.set(value.subarray(used, used + take), filled)
+              filled += take
+              for (; next < owned.length; next++) {
+                const { leaf, answer } = owned[next]!
+                const end = leaf.offset - from + leaf.size
+                if (end > filled) break
+                const chunk = leafChunk(body.subarray(leaf.offset - from, end), leaf.size)
+                if (!verifyCac(leaf.address, chunk)) {
+                  stopped = 'a leaf that failed its address'
+                  return
+                }
+                answer.resolve(chunk)
               }
-              answer.resolve(chunk)
             }
+          } finally {
+            await reader.cancel().catch(() => {})
           }
-        } finally {
-          await reader.cancel().catch(() => {})
-        }
-      },
-      bulk.signal
-    ).catch((error: unknown) => { stopped = error instanceof Error ? error.message : String(error) }).finally(alone)
+        },
+        bulk.signal
+      )
+    }
+    // A node that will not serve fails each leaf's own fetch above, in its words: no bulk read went wrong, so none is logged.
+    void (this.ready === undefined ? bulkRead() : this.ready(bulk.signal).then(bulkRead, () => {})).catch((error: unknown) => { stopped = error instanceof Error ? error.message : String(error) }).finally(alone)
     return answers
   }
 }

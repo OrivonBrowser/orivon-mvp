@@ -28,12 +28,18 @@ and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
 (`light-client/endpoint-mask.ts`, `light-client/server-address.ts`, `local-rpc-fetch.ts`, `swarm-chunk-files.ts`) are imported by main, and the first two by the
 Settings page, because each holds a rule main and the host must apply alike.
 
-**A local node is asked for before each mount that reads from it.** [`node-link.ts`](node-link.ts) serves any
+**A local node is asked for as each mount that reads from it begins.** [`node-link.ts`](node-link.ts) serves any
 kind of node by its name (`NodeLinks.to`). When `HostConfig.swarmNode` is set, the Swarm endpoint is the node
 Orivon runs ([`../swarm-node/`](../swarm-node/)): the link posts `node-wanted` to main on every mount (which
-keeps the node's ten-minute idle wait from running out under use) and holds the mount up to twenty seconds for
-main's `node` notice, then fails it `unavailable` in plain words: off or failed with the reason, or still
-finding peers. A state other than ready is main's answer to this ask, never an earlier one.
+keeps the node's ten-minute idle wait from running out under use). A state other than ready is main's answer to
+this ask, never an earlier one: a wait lasts up to twenty seconds for main's `node` notice, then ends `unavailable` in
+plain words, off or failed with the reason, or still finding peers. A Swarm mount does not wait for that answer: its
+reads wait for it only where a chunk has to come from the node, so a site whose every chunk is in memory or on disk
+opens while the node is starting, slow or failed ([`../swarm/README.md`](../swarm/README.md) section Design notes). The one
+exception is `HostConfig.swarmSwitchedOff`, set when the person has switched Swarm off: the Swarm gatherer then holds each mount for
+the answer first, which is the refusal, so a site on disk does not open against the switch. Any other reason the node is off
+(a proxy, a tunnel that cannot carry it, files that are missing) stops only a read that needs the node. The IPFS mount waits
+for its node first, as it must choose between the node and gateways.
 
 **IPFS reads the node, and a gateway only with the person's yes for this load.** When `HostConfig.ipfsNode` is set, `startIpfs` builds two
 gatherers over the same protocol, one over the node's endpoint and one over `gateways`
