@@ -379,6 +379,12 @@ screenshot of each view (measured behaviour in the `orivon-electron` skill). An 
 in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to
 `window.orivon.*` are not covered yet.
 
+**A popup counts as shown once its view is attached, not once its page has loaded.** A popup opened for the first
+time (the main menu with no hover before the click) is attached while its page is still loading, and until the page's
+stylesheet applies it lays out with the browser's default 8px body margin. `popoverShown` answers for the
+attachment, so a spec that measures a popup waits for the page's `load` and for something the popup draws first (the
+menu's `.menu-row`) before it reads, as `e2e-qa-visual` does before it checks the menu card's width.
+
 **Real pointer input, when a spec's synthetic input is not enough.** Playwright's mouse is a debugger
 call: it sends no window-manager focus change and never meets the window's own hit test, so a bug that
 depends on what a real press does to focus (the main menu's hold-the-button reopen is one), or on a
