@@ -15,7 +15,8 @@ import type { ChunkDeps } from './chunk-fetch.js'
 import { CHECK_HERE, CheckTally, tallied } from './chunk-check.js'
 import type { ChunkChecker } from './chunk-check.js'
 import { feedOf, resolveFeed } from './feed.js'
-import type { FeedIndexStore } from './feed.js'
+import type { FeedId, FeedIndexStore, KeptFeedUpdates, ResolvedFeed } from './feed.js'
+import { KeptFeeds } from './kept-feeds.js'
 import { openFile, readWhole } from './joiner.js'
 import { decodeNode, lookup } from './mantaray.js'
 import type { ManifestNode } from './mantaray.js'
@@ -31,6 +32,12 @@ export interface SwarmGathererOptions {
   /** Bee-API origins asked for `/chunks`, in order of preference; none means Swarm content cannot be opened. A local node is the intended one. */
   readonly endpoints: readonly string[]
   readonly feedIndexes: FeedIndexStore
+  /**
+   * Where the update a mount followed a feed to is kept between runs, for a mount that has a partition. A feed followed before is
+   * then followed again at once, from that update checked afresh, while a look for a newer one runs in the background and
+   * is used from the next mount. Unset, every mount of a feed asks the network.
+   */
+  readonly keptUpdates?: KeptFeedUpdates
   /**
    * Asks for the node the endpoints name, which may need starting, when a mount begins. The mount does not wait for it: a read
    * waits only where a chunk has to come from an endpoint, before any request is sent, and a rejection fails that read as it is.
@@ -66,6 +73,11 @@ interface Tally extends Held {
 
 function newTally (): Tally {
   return { chunks: 0, checks: new CheckTally() }
+}
+
+/** ", N from a kept update" for a log line, and nothing when every feed was asked of the network. */
+function keptNote (feeds: number): string {
+  return feeds > 0 ? `, ${String(feeds)} from a kept update` : ''
 }
 
 /** ", N chunks from disk" for a log line, and nothing when none came from disk. */
@@ -124,6 +136,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
     ? undefined
     : { fetch: options.fetch, pool: new GatewayPool(options.endpoints, limits.perEndpointConcurrency, Date.now, options.route === undefined ? {} : { route: options.route }), limits, ...(options.log !== undefined && { log: options.log }) }
   const memory: BlockMemory = options.memory ?? new BlockCache()
+  const keeping = deps === undefined || options.keptUpdates === undefined ? undefined : new KeptFeeds(deps, options.feedIndexes, options.keptUpdates, () => options.route?.firstWait(limits.feedCheckTimeoutMs) ?? limits.feedCheckTimeoutMs, options.log)
 
   return {
     id: 'swarm',
@@ -156,6 +169,25 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
         return node
       }
 
+      let newerKept = false
+      let fromKept = 0
+      /** Follows `feed` to its newest update: the one kept for this partition when it still checks out, otherwise the network's, which is then kept. */
+      const followFeed = async (feed: FeedId): Promise<ResolvedFeed> => {
+        if (keeping !== undefined && partition !== undefined) {
+          const kept = await keeping.follow(feed, partition)
+          if (kept !== undefined) {
+            fromKept++
+            void keeping.newest(feed, partition, kept.index, async (reader) => { await node.again().ready(reader) }).then((found) => { if (found !== undefined && found > kept.index) newerKept = true })
+            return kept
+          }
+        }
+        // Nothing usable is kept, so the answer is the network's, and the node has to be there to give it.
+        await node.ready(signal, fromDisk)
+        const resolved = await resolveFeed(feed, deps, options.feedIndexes, signal, onRefusal)
+        if (keeping !== undefined && partition !== undefined) keeping.keep(feed, partition, resolved)
+        return resolved
+      }
+
       let root = rootOf(record)
       const pointers: PointerStep[] = [{ step: 'contenthash', name, pointer: record.pointer, provenance: record.provenance }]
       let indexDocument = DEFAULT_INDEX_DOCUMENT
@@ -167,13 +199,11 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
           break
         }
         if (hops >= limits.maxPointerHops) throw new ResolutionError('unverifiable', `more than ${String(limits.maxPointerHops)} feeds between a name and its content`)
-        // A feed's newest update is mutable, so asking for it always reaches the node.
-        await node.ready(signal, fromDisk)
-        const resolved = await resolveFeed(feed, deps, options.feedIndexes, signal, onRefusal)
+        const resolved = await followFeed(feed)
         pointers.push(resolved.step)
         root = resolved.root
       }
-      options.log?.(`swarm: a site mounted in ${String(Date.now() - startedAt)} ms (${nodeNote(fromDisk)}, ${String(pointers.length - 1)} feeds followed${fromDisk.checks.describe()}${diskNote(fromDisk.chunks)})`)
+      options.log?.(`swarm: a site mounted in ${String(Date.now() - startedAt)} ms (${nodeNote(fromDisk)}, ${String(pointers.length - 1)} feeds followed${keptNote(fromKept)}${fromDisk.checks.describe()}${diskNote(fromDisk.chunks)})`)
       let failedResource: string | undefined
 
       /** Only a lie or a broken limit fails DDOC; nobody answering, or a missing path, does not. */
@@ -211,6 +241,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
         gatherer: 'swarm',
         root: { kind: 'swarm', cid: referenceCid(root) },
         pointers,
+        hasNewer: () => newerKept,
         async open (path, range, openSignal = signal) {
           let file: GatheredFile
           const fileDisk = newTally()

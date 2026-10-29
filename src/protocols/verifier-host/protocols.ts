@@ -34,7 +34,7 @@ import type { RoutePace } from '../route-pace.js'
 import { GatewayConsent } from './gateway-consent.js'
 import { lightClientFetch } from './light-client/lane-fetch.js'
 import { SwarmChunkDatabase } from './swarm-chunk-database.js'
-import { KeptChunkMemory } from './swarm-chunk-memory.js'
+import { keptIn } from './swarm-chunk-memory.js'
 
 export interface RunningProtocols {
   /** In the order their providers are tried. */
@@ -196,7 +196,7 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     route: config.swarmNode === true && node !== undefined ? nodeRouteOf(config, route) : route,
     feedIndexes: stores.swarmFeedIndexes,
     log: (line) => { console.error(`[verifier] ${line}`) },
-    ...(stores.swarmChunks !== undefined && { memory: new KeptChunkMemory(stores.swarmChunks, '', deps.chunkChecks) }),
+    ...(stores.swarmChunks !== undefined && keptIn(stores.swarmChunks, '', deps.chunkChecks)),
     ...(deps.chunkChecks !== undefined && { checker: deps.chunkChecks }),
     ...(config.swarmNode === true && node !== undefined && { beforeMount: node.ensure, ...(config.swarmSwitchedOff === true && { holdMounts: true }) })
   })

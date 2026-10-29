@@ -18,9 +18,9 @@ export function returnPathOf (target: string | null): string {
   return target
 }
 
-/** A page load the person started in a tab (its document), not a frame's or a file's. */
+/** A page load the person started in a tab (its document), not a frame's or a file's, and not one the browser makes ahead of time (a prefetch or a prerender carries `Sec-Purpose`). */
 export function isDocumentLoad (req: IncomingMessage): boolean {
-  return req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document'
+  return req.headers['sec-fetch-mode'] === 'navigate' && req.headers['sec-fetch-dest'] === 'document' && req.headers['sec-purpose'] === undefined
 }
 
 /**

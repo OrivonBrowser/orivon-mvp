@@ -1,15 +1,19 @@
 // Verified Swarm chunks kept on disk between runs, one SQLite file per salt. A chunk is stored under the
 // partition key of the site that fetched it and is hashed against its address again when it is read back, so the
-// disk is trusted no more than the node. Everything here is an optimisation: an error is logged once and the
-// chunk is fetched again. README.md's Design notes say why the file is shaped as it is.
+// disk is trusted no more than the node. The update a site's feed was last followed to is kept the same way, as a
+// row of the chunk table under its single-owner address, and handed back unchecked for the caller to verify.
+// Everything here is an optimisation: an error is logged once and the chunk is fetched again. README.md's Design
+// notes say why the file is shaped as it is.
 
 import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
-import type { StatementSync } from 'node:sqlite'
-import { MAX_CHUNK_BYTES, verifyCac } from '../swarm/chunk.js'
+import type { DatabaseSync } from 'node:sqlite'
+import { feedUpdateAddress, MAX_CHUNK_BYTES, MAX_SOC_BYTES, verifyCac } from '../swarm/chunk.js'
+import type { FeedId } from '../swarm/feed.js'
 import { partitionStoreKey } from './partition-key.js'
 import { swarmChunkFile, swarmChunkFileSet, swarmChunkFilesIn } from './swarm-chunk-files.js'
+import { attach, feedKey, indexOf, OtherSchema } from './swarm-chunk-schema.js'
+import type { Statements } from './swarm-chunk-schema.js'
 
 export interface SwarmChunkDatabaseOptions {
   /** The verifier's directory in the profile. */
@@ -34,40 +38,10 @@ const MAX_TOUCHES = 512
 /** The most keys remembered as marked this minute; past it the memory is cleared and a few marks are written twice. */
 const MAX_NOTED = 32_768
 const EVICT_BATCH = 256
-/** A 4 KB chunk row is a little over 4 KB: a smaller page would give each row two, and 32 KB holds seven. */
-const PAGE_BYTES = 32768
-const CACHE_KIB = 8192
-/** After a checkpoint the `-wal` is cut back to this size, instead of staying as large as it once grew. */
-const WAL_LIMIT_BYTES = 8 * 1024 * 1024
-/** The layout `SCHEMA` makes, kept in the file's own `user_version`: a file of any other number is not this code's. */
-const SCHEMA_VERSION = 1
 const MINUTE_MS = 60_000
 const ADDRESS = /^[0-9a-f]{64}$/
 /** SQLite's primary result codes for a file that is not, or is no longer, a sound database (SQLITE_CORRUPT, SQLITE_NOTADB). */
 const DAMAGED = [11, 26]
-
-const SCHEMA = `
-CREATE TABLE chunk (
-  id INTEGER PRIMARY KEY,
-  site TEXT NOT NULL,
-  address BLOB NOT NULL,
-  bytes BLOB NOT NULL
-);
-CREATE UNIQUE INDEX chunk_key ON chunk (site, address);
-CREATE TABLE age (id INTEGER PRIMARY KEY, used INTEGER NOT NULL, size INTEGER NOT NULL);
-CREATE INDEX age_used ON age (used, size);
-PRAGMA user_version = ${String(SCHEMA_VERSION)};
-`
-
-export interface Statements {
-  readonly find: StatementSync
-  readonly insert: StatementSync
-  readonly insertAge: StatementSync
-  readonly touchKey: StatementSync
-  readonly removeChunk: StatementSync
-  readonly removeAge: StatementSync
-  readonly oldest: StatementSync
-}
 
 interface Waiting {
   readonly site: string
@@ -106,60 +80,6 @@ function reasonOf (error: unknown): string {
 function isDamage (error: unknown): boolean {
   const code = (error as { errcode?: unknown } | null)?.errcode
   return typeof code === 'number' && DAMAGED.includes(code & 0xff)
-}
-
-/** A file that holds some other layout than `SCHEMA`: not damaged, but not this code's to use. */
-class OtherSchema extends Error {}
-
-/** Makes the tables in a new file, and sets the layout number in the same transaction, so a file has both or neither. */
-function create (db: DatabaseSync): void {
-  db.exec('BEGIN IMMEDIATE')
-  try {
-    db.exec(SCHEMA)
-    db.exec('COMMIT')
-  } catch (error) {
-    try { db.exec('ROLLBACK') } catch { /* the failure being reported is the first */ }
-    throw error
-  }
-}
-
-/**
- * What the file holds, counted from the rows of `age` (one for each chunk, with its size): neither number is trusted from
- * an earlier run, whatever stopped it. Counting the chunks themselves would read the whole file (40 to 120 ms for 256 MB
- * on the host's event loop, more on a slow disk); this reads a few dozen pages (2.5 ms).
- */
-function counters (db: DatabaseSync): { bytes: number, clock: number } {
-  const { total } = db.prepare('SELECT coalesce(sum(size), 0) AS total FROM age').get() as { total: number }
-  const { newest } = db.prepare('SELECT coalesce(max(used), 0) AS newest FROM age').get() as { newest: number }
-  return { bytes: Number(total), clock: Number(newest) }
-}
-
-function attach (path: string): { db: DatabaseSync, statements: Statements, bytes: number, clock: number } {
-  const db = new DatabaseSync(path)
-  try {
-    db.exec(`PRAGMA page_size = ${String(PAGE_BYTES)}`)
-    db.exec('PRAGMA journal_mode = WAL')
-    db.exec('PRAGMA synchronous = OFF')
-    db.exec(`PRAGMA journal_size_limit = ${String(WAL_LIMIT_BYTES)}`)
-    db.exec(`PRAGMA cache_size = -${String(CACHE_KIB)}`)
-    const { user_version: version } = db.prepare('PRAGMA user_version').get() as { user_version: number }
-    const { tables } = db.prepare('SELECT count(*) AS tables FROM sqlite_master').get() as { tables: number }
-    if (version === 0 && Number(tables) === 0) create(db)
-    else if (version !== SCHEMA_VERSION) throw new OtherSchema()
-    const statements: Statements = {
-      find: db.prepare('SELECT id, bytes, length(bytes) AS size FROM chunk WHERE site = ? AND address = ?'),
-      insert: db.prepare('INSERT OR IGNORE INTO chunk (site, address, bytes) VALUES (?, ?, ?)'),
-      insertAge: db.prepare('INSERT OR REPLACE INTO age (id, used, size) VALUES (?, ?, ?)'),
-      touchKey: db.prepare('UPDATE age SET used = ? WHERE id = (SELECT id FROM chunk WHERE site = ? AND address = ?)'),
-      removeChunk: db.prepare('DELETE FROM chunk WHERE id = ?'),
-      removeAge: db.prepare('DELETE FROM age WHERE id = ?'),
-      oldest: db.prepare('SELECT id, size FROM age ORDER BY used, id LIMIT ?')
-    }
-    return { db, statements, ...counters(db) }
-  } catch (error) {
-    db.close()
-    throw error
-  }
 }
 
 export class SwarmChunkDatabase {
@@ -238,11 +158,102 @@ export class SwarmChunkDatabase {
     if (this.statements !== row.statements) return undefined
     try {
       const again = row.statements.find.get(row.site, Buffer.from(row.address, 'hex')) as Found | undefined
-      if (again !== undefined && again.bytes instanceof Uint8Array && Buffer.compare(again.bytes, row.bytes) === 0) this.refuse(row.statements, again)
+      if (again !== undefined && again.bytes instanceof Uint8Array && Buffer.compare(again.bytes, row.bytes) === 0 && !this.isFeedUpdate(row.statements, again.id)) this.refuse(row.statements, again)
     } catch (error) {
       this.fail('read', error)
     }
     return undefined
+  }
+
+  /**
+   * The update `partition`'s page last followed `feed` to: its index and its single-owner chunk, as stored and not checked, since
+   * checking it is the caller's. Undefined when none is kept, when its chunk has been evicted, or when its row cannot be read.
+   */
+  getFeedUpdate (partition: string, feed: FeedId): { index: bigint, chunk: Uint8Array } | undefined {
+    const statements = this.use()
+    if (statements === undefined) return undefined
+    const site = partitionStoreKey(this.options.salt, partition)
+    const key = feedKey(feed)
+    let row: Found | undefined
+    let index: bigint | undefined
+    try {
+      const at = statements.findFeed.get(site, key) as { position: unknown } | undefined
+      if (at === undefined) return undefined
+      index = indexOf(at.position)
+      if (index !== undefined) row = statements.find.get(site, Buffer.from(feedUpdateAddress(feed.owner, feed.topic, index), 'hex')) as Found | undefined
+    } catch (error) {
+      this.fail('read', error)
+      return undefined
+    }
+    if (index === undefined || row === undefined || !(row.bytes instanceof Uint8Array)) {
+      this.dropFeedUpdate(partition, feed)
+      return undefined
+    }
+    this.note(site, feedUpdateAddress(feed.owner, feed.topic, index))
+    return { index, chunk: row.bytes }
+  }
+
+  /**
+   * Keeps `chunk`, the single-owner chunk of update `index` of `feed` that the caller checked, for `partition`, in place of the
+   * update kept before and never below it. It counts toward the cap like a chunk, and is written at once: it is rare, and a
+   * restart straight after must find it.
+   */
+  putFeedUpdate (partition: string, feed: FeedId, index: bigint, chunk: Uint8Array): void {
+    if (chunk.length > MAX_SOC_BYTES || index < 0n || index >= 2n ** 64n) return
+    const statements = this.use()
+    if (statements === undefined) return
+    const site = partitionStoreKey(this.options.salt, partition)
+    const key = feedKey(feed)
+    try {
+      this.bytes = this.write(() => {
+        const before = statements.findFeed.get(site, key) as { position: unknown } | undefined
+        const old = indexOf(before?.position)
+        if (old !== undefined && old > index) return this.bytes
+        let bytes = this.bytes
+        if (old !== undefined && old !== index) bytes = this.removeUpdate(statements, site, feed, old, bytes)
+        const address = Buffer.from(feedUpdateAddress(feed.owner, feed.topic, index), 'hex')
+        const inserted = statements.insert.run(site, address, chunk)
+        if (Number(inserted.changes) === 1) {
+          statements.insertAge.run(Number(inserted.lastInsertRowid), this.stamp(), chunk.length)
+          bytes += chunk.length
+        } else {
+          statements.touchKey.run(this.stamp(), site, address)
+        }
+        const stored = statements.find.get(site, address) as Found | undefined
+        if (stored !== undefined) statements.setFeed.run(site, key, index.toString(), stored.id)
+        return this.evict(statements, bytes)
+      })
+    } catch (error) {
+      this.fail('write', error)
+    }
+  }
+
+  /** Forgets what is kept for `feed` in `partition`: the update's row and its chunk; with `only`, just while that is the update kept. */
+  dropFeedUpdate (partition: string, feed: FeedId, only?: bigint): void {
+    const statements = this.use()
+    if (statements === undefined) return
+    const site = partitionStoreKey(this.options.salt, partition)
+    try {
+      this.bytes = this.write(() => {
+        const at = statements.findFeed.get(site, feedKey(feed)) as { position: unknown } | undefined
+        const index = indexOf(at?.position)
+        if (only !== undefined && index !== undefined && index !== only) return this.bytes
+        const bytes = index === undefined ? this.bytes : this.removeUpdate(statements, site, feed, index, this.bytes)
+        statements.removeFeed.run(site, feedKey(feed))
+        return bytes
+      })
+    } catch (error) {
+      this.fail('write', error)
+    }
+  }
+
+  /** Deletes the chunk of update `index` of `feed` from the table, if it is there; returns the bytes kept after. */
+  private removeUpdate (statements: Statements, site: string, feed: FeedId, index: bigint, bytes: number): number {
+    const row = statements.find.get(site, Buffer.from(feedUpdateAddress(feed.owner, feed.topic, index), 'hex')) as Found | undefined
+    if (row === undefined) return bytes
+    statements.removeChunk.run(row.id)
+    statements.removeAge.run(row.id)
+    return Math.max(0, bytes - row.size)
   }
 
   /** Marks a chunk the memory above answered as used now, so what a person uses all day is not what eviction takes first. */
@@ -354,9 +365,20 @@ export class SwarmChunkDatabase {
     this.timer.unref()
   }
 
-  /** Deletes the least recently used rows until the file is under its cap with room to spare; returns the bytes left. */
+  /** Whether a feed update is kept in the chunk row `id`: a row of one is a single-owner chunk, which no content address matches. */
+  private isFeedUpdate (statements: Statements, id: number): boolean {
+    return statements.isUpdate.get(id) !== undefined
+  }
+
+  /** Deletes the least recently used rows until the file is under its cap with room to spare, and the feed rows whose chunk went with them; returns the bytes left. */
   private evict (statements: Statements, bytes: number): number {
     if (bytes <= this.maxBytes) return bytes
+    const left = this.evictOldest(statements, bytes)
+    statements.removeOrphanFeeds.run()
+    return left
+  }
+
+  private evictOldest (statements: Statements, bytes: number): number {
     const target = Math.floor(this.maxBytes * KEPT_AFTER_EVICTION)
     let left = bytes
     while (left > target) {

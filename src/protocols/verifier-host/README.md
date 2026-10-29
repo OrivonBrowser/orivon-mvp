@@ -63,13 +63,15 @@ carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-p
 ## Design notes
 
 **Verified Swarm chunks are kept on disk here, per site, and nowhere else.** [`swarm-chunk-database.ts`](swarm-chunk-database.ts) is one
-SQLite database (`node:sqlite`, no native module) at `<profile>/verifier/swarm-chunks-<id>.db`, where `<id>` is the first 16 hex
+SQLite database (`node:sqlite`, no native module; its tables, layout number and pragmas are in [`swarm-chunk-schema.ts`](swarm-chunk-schema.ts)) at `<profile>/verifier/swarm-chunks-<id>.db`, where `<id>` is the first 16 hex
 characters of sha256 of the profile's partition salt; main hands the host the directory and the salt as `HostConfig.swarmChunks`, even
 when the IPFS node is off, and leaves it out when the profile cannot hold a salt. Rows are keyed by `partitionStoreKey(salt, partition)`
 (`partition-key.ts`, the key the IPFS node's store uses) and the chunk address, so the file holds no origin in plain text and one site's
 chunks are never another's hits; a site read through a tunnel is kept under the tunnel's name too ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts)'s
-namespace), as the routes' in-memory caches are kept apart. Only content-addressed chunks are kept, never a single-owner chunk or a feed
-update. At most 256 MB of chunk bytes are kept in all, least recently used first; the file is about a sixth larger (32 KB pages hold
+namespace), as the routes' in-memory caches are kept apart. What is kept is the content-addressed chunks, and for each feed a site
+followed, the one single-owner chunk of the update it was last followed to, under its own address in the same table and with its
+index in a small table of its own ([`ADR-0103`](../../../docs/decisions/ADR-0103-a-swarm-feed-site-opens-from-the-update-it-last-followed.md)):
+the database hands that chunk back unchecked, and the gatherer verifies its signature again on every use. At most 256 MB of chunk bytes are kept in all, least recently used first; the file is about a sixth larger (32 KB pages hold
 seven rows each, and the indexes), and its `-wal` is cut back to 8 MB after each checkpoint (`journal_size_limit`). Use is a count in
 the file that goes up once for each minute of use and once at the start of a run, so a clock that is wrong cannot age rows; it lives in
 a table of its own beside each row's size, and a row is marked at most once a minute, also when the memory in front answered it, so a
@@ -88,6 +90,14 @@ auto-checkpoint (1000 pages, 32 MB) runs the checkpoint's `fsync` inside that ca
 dozen writes (1.9 s at worst), where `OFF` keeps every commit under ten milliseconds. What `OFF` risks is a file damaged by a crash of the
 computer, not of the process, and nothing here needs the file to survive that: each row is hashed on its way out, the counters are
 worked out when the file opens, and a file SQLite reports as damaged is deleted and made again.
+
+**A page load the person starts mounts a site again when a check found a newer version of it.** `Sites.get` is told which request is a
+page load (`Sec-Fetch-Mode: navigate` with `Sec-Fetch-Dest: document`, which Chromium sets and a page cannot forge) and drops a mounted
+site that answers `MountedSite.hasNewer`, as it does one the gateway consent names; any other request, a subresource or a frame
+included, is served from the mount in hand, so the check itself never swaps a version under an open page. The entry is the one the host
+keeps for the partition and host and uses for `SITE_TTL_MS` (2 minutes), so in this build an open page's later requests can read the
+newer version once the entry is mounted again (after those 2 minutes, in the stale window or after a drop for room), and after a page
+load of the same site in another tab, which replaces the entry. The Swarm gatherer is the one that sets it ([`../swarm/README.md`](../swarm/README.md)).
 
 **Swarm chunks are hashed on a few worker threads, and in the host's own thread when they cannot be.** The hash of a 4 KB chunk is about
 0.7 ms, so the 2,191 chunks of an 8.9 MB page are 1.9 to 2.3 s of work, and on the host's one thread no other protocol is served while
