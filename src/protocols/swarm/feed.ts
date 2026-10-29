@@ -34,8 +34,8 @@ export interface KeptFeedUpdates {
   recallUpdate: (partition: string, feed: FeedId) => Promise<KeptUpdate | undefined>
   /** Keeps `chunk`, the verified single-owner chunk of update `index`, in place of any older one. Never throws. */
   rememberUpdate: (partition: string, feed: FeedId, index: bigint, chunk: Uint8Array) => void
-  /** Deletes what is kept for `feed`: it failed its check. Never throws. */
-  forgetUpdate: (partition: string, feed: FeedId) => void
+  /** Deletes what is kept for `feed` while it is still update `index`, the one that failed its check; a newer one stored since stays. Never throws. */
+  forgetUpdate: (partition: string, feed: FeedId, index: bigint) => void
 }
 
 export interface FeedId {
@@ -199,8 +199,11 @@ export async function resolveFeed (feed: FeedId, deps: ChunkDeps, store: FeedInd
 export async function followKept (feed: FeedId, partition: string, kept: KeptFeedUpdates, store: FeedIndexStore): Promise<ResolvedFeed | undefined> {
   const found = await kept.recallUpdate(partition, feed)
   if (found === undefined) return undefined
-  const seen = store.highest(feed.owner, feed.topic)
-  if (seen !== undefined && found.index < seen) return undefined
+  const olderThanSeen = (): boolean => {
+    const seen = store.highest(feed.owner, feed.topic)
+    return seen !== undefined && found.index < seen
+  }
+  if (olderThanSeen()) return undefined
   const soc = await verifySoc(feedUpdateAddress(feed.owner, feed.topic, found.index), found.chunk)
   let root: string | undefined
   try {
@@ -209,9 +212,11 @@ export async function followKept (feed: FeedId, partition: string, kept: KeptFee
     if (!(error instanceof ResolutionError)) throw error
   }
   if (soc === undefined || root === undefined) {
-    kept.forgetUpdate(partition, feed)
+    kept.forgetUpdate(partition, feed, found.index)
     return undefined
   }
+  // The check awaited: another partition's look may have recorded a higher index meanwhile.
+  if (olderThanSeen()) return undefined
   store.record(feed.owner, feed.topic, found.index)
   return { root, step: { step: 'swarm-feed', owner: feed.owner, topic: feed.topic, index: found.index, target: referenceCid(root) }, index: found.index, chunk: found.chunk }
 }

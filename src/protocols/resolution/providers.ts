@@ -78,8 +78,9 @@ export interface MountedSite {
   readonly pointers: readonly PointerStep[]
   /**
    * True once a check made after this mount found a newer version of the content than the one it was mounted from, and kept
-   * it. A page load the person starts then mounts again; every other request is still served from this mount, so a page that
-   * is open never changes under its reader.
+   * it. A page load the person starts then mounts again; every other request is served from this mount for as long as the host
+   * holds it as the site's entry (2 minutes), so the check does not swap a version under an open page. Once the entry is mounted
+   * again, or another tab's page load of the site replaces it, an open page's later requests read the newer version.
    */
   hasNewer?: () => boolean
   /** `/` and a directory serve its `index.html` (a protocol may list a directory that has none). Throws a ResolutionError; `not-found` for a missing path. */

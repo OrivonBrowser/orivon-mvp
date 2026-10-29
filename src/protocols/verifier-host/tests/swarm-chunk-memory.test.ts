@@ -363,7 +363,9 @@ describe('a Swarm feed site over the chunk database', () => {
     expect(await memory.recallUpdate(SITE, feed)).toEqual({ index: 4n, chunk: new Uint8Array(145).fill(7) })
     expect(await memory.recallUpdate('https://two.example', feed)).toBeUndefined()
     expect(await new KeptChunkMemory(databases[0]!, 'socks5').recallUpdate(SITE, feed)).toBeUndefined()
-    memory.forgetUpdate(SITE, feed)
+    memory.forgetUpdate(SITE, feed, 3n)
+    expect(await memory.recallUpdate(SITE, feed)).toEqual({ index: 4n, chunk: new Uint8Array(145).fill(7) })
+    memory.forgetUpdate(SITE, feed, 4n)
     expect(await memory.recallUpdate(SITE, feed)).toBeUndefined()
   })
 

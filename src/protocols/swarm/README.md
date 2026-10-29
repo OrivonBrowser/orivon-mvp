@@ -89,7 +89,10 @@ one look for a newer update ([`kept-feeds.ts`](kept-feeds.ts)): it waits for the
 (`feedCheckTimeoutMs`), and cannot fail or hold the mount. At most one runs for a feed in a partition. An update it finds is
 recorded and kept in place of the old one, and the mount that opened from the old one answers `hasNewer`, which the host reads when
 the person starts a page load (`serve/sites.ts`): that load mounts again and opens the newer update at once, while every other
-request is served from the mount in hand, so what is being read never changes under it. The first visit, a partition-less mount,
+request is served from the mount in hand, so the look itself never swaps a version under an open page. In this build the entry is
+the host's one for the partition and site, used for 2 minutes: when it is mounted again after that (or in the stale window, or after a
+drop for room) the mount follows the newer update and an open page's later requests read it, and a page load of the same site in
+another tab replaces the entry the same way. The first visit, a partition-less mount,
 an update that fails its check, and a person who has switched Swarm off (`holdMounts` makes every mount wait for the node first)
 behave as if nothing were kept. The mount's log line says how many feeds came from a kept update; the look logs one line when it
 finds a newer one and one, with a reason and no address, when it fails.

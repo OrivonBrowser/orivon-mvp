@@ -41,6 +41,8 @@ const EVICT_BATCH = 256
 const MINUTE_MS = 60_000
 const ADDRESS = /^[0-9a-f]{64}$/
 const DECIMAL = /^[0-9]{1,20}$/
+/** One past the largest index a feed update's address can name. */
+const INDEX_LIMIT = 2n ** 64n
 /** SQLite's primary result codes for a file that is not, or is no longer, a sound database (SQLITE_CORRUPT, SQLITE_NOTADB). */
 const DAMAGED = [11, 26]
 
@@ -55,6 +57,13 @@ interface Found {
   /** A blob in every row this writes; SQLite would hold any other value a hand-edited file puts there. */
   readonly bytes: unknown
   readonly size: number
+}
+
+/** The index a `feed_update` row holds, or undefined for a value that is not one an address can name (a hand-edited file's). */
+function indexOf (position: unknown): bigint | undefined {
+  if (typeof position !== 'string' || !DECIMAL.test(position)) return undefined
+  const index = BigInt(position)
+  return index < INDEX_LIMIT ? index : undefined
 }
 
 /** The key a feed is kept under: its owner's 20 bytes, then its topic's 32. */
@@ -123,7 +132,7 @@ export class SwarmChunkDatabase {
     }
     if (row === undefined) return undefined
     if (!(row.bytes instanceof Uint8Array) || !verifyCac(address, row.bytes)) {
-      this.refuse(statements, row)
+      if (!this.isFeedUpdate(statements, row.id)) this.refuse(statements, row)
       return undefined
     }
     this.note(site, address)
@@ -145,7 +154,7 @@ export class SwarmChunkDatabase {
     try {
       const at = statements.findFeed.get(site, key) as { position: unknown } | undefined
       if (at === undefined) return undefined
-      index = typeof at.position === 'string' && DECIMAL.test(at.position) ? BigInt(at.position) : undefined
+      index = indexOf(at.position)
       if (index !== undefined) row = statements.find.get(site, Buffer.from(feedUpdateAddress(feed.owner, feed.topic, index), 'hex')) as Found | undefined
     } catch (error) {
       this.fail('read', error)
@@ -173,7 +182,7 @@ export class SwarmChunkDatabase {
     try {
       this.bytes = this.write(() => {
         const before = statements.findFeed.get(site, key) as { position: unknown } | undefined
-        const old = typeof before?.position === 'string' && DECIMAL.test(before.position) ? BigInt(before.position) : undefined
+        const old = indexOf(before?.position)
         if (old !== undefined && old > index) return this.bytes
         let bytes = this.bytes
         if (old !== undefined && old !== index) bytes = this.removeUpdate(statements, site, feed, old, bytes)
@@ -185,7 +194,8 @@ export class SwarmChunkDatabase {
         } else {
           statements.touchKey.run(this.stamp(), site, address)
         }
-        statements.setFeed.run(site, key, index.toString())
+        const stored = statements.find.get(site, address) as Found | undefined
+        if (stored !== undefined) statements.setFeed.run(site, key, index.toString(), stored.id)
         return this.evict(statements, bytes)
       })
     } catch (error) {
@@ -193,15 +203,16 @@ export class SwarmChunkDatabase {
     }
   }
 
-  /** Forgets what is kept for `feed` in `partition`: the update's row and its chunk. */
-  dropFeedUpdate (partition: string, feed: FeedId): void {
+  /** Forgets what is kept for `feed` in `partition`: the update's row and its chunk; with `only`, just while that is the update kept. */
+  dropFeedUpdate (partition: string, feed: FeedId, only?: bigint): void {
     const statements = this.use()
     if (statements === undefined) return
     const site = partitionStoreKey(this.options.salt, partition)
     try {
       this.bytes = this.write(() => {
         const at = statements.findFeed.get(site, feedKey(feed)) as { position: unknown } | undefined
-        const index = typeof at?.position === 'string' && DECIMAL.test(at.position) ? BigInt(at.position) : undefined
+        const index = indexOf(at?.position)
+        if (only !== undefined && index !== undefined && index !== only) return this.bytes
         const bytes = index === undefined ? this.bytes : this.removeUpdate(statements, site, feed, index, this.bytes)
         statements.removeFeed.run(site, feedKey(feed))
         return bytes
@@ -329,9 +340,24 @@ export class SwarmChunkDatabase {
     this.timer.unref()
   }
 
-  /** Deletes the least recently used rows until the file is under its cap with room to spare; returns the bytes left. */
+  /** Whether a feed update is kept in the chunk row `id`: a row of one is a single-owner chunk, which no content address matches. */
+  private isFeedUpdate (statements: Statements, id: number): boolean {
+    try {
+      return statements.isUpdate.get(id) !== undefined
+    } catch {
+      return false
+    }
+  }
+
+  /** Deletes the least recently used rows until the file is under its cap with room to spare, and the feed rows whose chunk went with them; returns the bytes left. */
   private evict (statements: Statements, bytes: number): number {
     if (bytes <= this.maxBytes) return bytes
+    const left = this.evictOldest(statements, bytes)
+    statements.removeOrphanFeeds.run()
+    return left
+  }
+
+  private evictOldest (statements: Statements, bytes: number): number {
     const target = Math.floor(this.maxBytes * KEPT_AFTER_EVICTION)
     let left = bytes
     while (left > target) {

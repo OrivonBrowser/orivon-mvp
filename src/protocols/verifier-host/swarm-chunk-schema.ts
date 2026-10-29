@@ -26,6 +26,7 @@ CREATE TABLE feed_update (
   site TEXT NOT NULL,
   feed BLOB NOT NULL,
   position TEXT NOT NULL,
+  chunk INTEGER NOT NULL,
   PRIMARY KEY (site, feed)
 ) WITHOUT ROWID;
 PRAGMA user_version = ${String(SCHEMA_VERSION)};
@@ -42,6 +43,10 @@ export interface Statements {
   readonly findFeed: StatementSync
   readonly setFeed: StatementSync
   readonly removeFeed: StatementSync
+  /** Whether a feed update points at the chunk row. */
+  readonly isUpdate: StatementSync
+  /** Deletes the feed rows whose chunk is gone. */
+  readonly removeOrphanFeeds: StatementSync
 }
 
 /** A file that holds some other layout than `SCHEMA`: not damaged, but not this code's to use. */
@@ -91,8 +96,10 @@ export function attach (path: string): { db: DatabaseSync, statements: Statement
       removeAge: db.prepare('DELETE FROM age WHERE id = ?'),
       oldest: db.prepare('SELECT id, size FROM age ORDER BY used, id LIMIT ?'),
       findFeed: db.prepare('SELECT position FROM feed_update WHERE site = ? AND feed = ?'),
-      setFeed: db.prepare('INSERT OR REPLACE INTO feed_update (site, feed, position) VALUES (?, ?, ?)'),
-      removeFeed: db.prepare('DELETE FROM feed_update WHERE site = ? AND feed = ?')
+      setFeed: db.prepare('INSERT OR REPLACE INTO feed_update (site, feed, position, chunk) VALUES (?, ?, ?, ?)'),
+      removeFeed: db.prepare('DELETE FROM feed_update WHERE site = ? AND feed = ?'),
+      isUpdate: db.prepare('SELECT 1 AS yes FROM feed_update WHERE chunk = ?'),
+      removeOrphanFeeds: db.prepare('DELETE FROM feed_update WHERE NOT EXISTS (SELECT 1 FROM chunk WHERE chunk.id = feed_update.chunk)')
     }
     return { db, statements, ...counters(db) }
   } catch (error) {

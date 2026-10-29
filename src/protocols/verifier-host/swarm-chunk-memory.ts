@@ -64,8 +64,8 @@ export class KeptChunkMemory implements BlockMemory, KeptFeedUpdates {
     try { this.database.putFeedUpdate(this.site(partition), feed, index, chunk) } catch { /* the store says so itself, once */ }
   }
 
-  forgetUpdate (partition: string, feed: FeedId): void {
-    try { this.database.dropFeedUpdate(this.site(partition), feed) } catch { /* the store says so itself, once */ }
+  forgetUpdate (partition: string, feed: FeedId, index: bigint): void {
+    try { this.database.dropFeedUpdate(this.site(partition), feed, index) } catch { /* the store says so itself, once */ }
   }
 
   private readKept (partition: string, key: string): Uint8Array | undefined {

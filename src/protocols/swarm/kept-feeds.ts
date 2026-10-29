@@ -23,7 +23,8 @@ export class KeptFeeds {
     private readonly deps: ChunkDeps,
     private readonly store: FeedIndexStore,
     private readonly kept: KeptFeedUpdates,
-    private readonly timeoutMs: number,
+    /** The look's time limit, asked for each look: a route's pace moves as it is measured. */
+    private readonly timeoutMs: () => number,
     private readonly log: ((line: string) => void) | undefined
   ) {}
 
@@ -53,7 +54,7 @@ export class KeptFeeds {
   }
 
   private async run (feed: FeedId, partition: string, from: bigint, wait: NodeWait): Promise<bigint | undefined> {
-    const limit = AbortSignal.timeout(this.timeoutMs)
+    const limit = AbortSignal.timeout(this.timeoutMs())
     try {
       await wait(limit)
       const found = await resolveFeed(feed, this.deps, this.store, limit, () => {})

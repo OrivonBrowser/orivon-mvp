@@ -42,7 +42,10 @@ function keptRows (): KeptFeedUpdates & { rows: Map<string, KeptUpdate>, forgott
     forgotten,
     recallUpdate: async (partition, feed) => rows.get(key(partition, feed)),
     rememberUpdate: (partition, feed, index, chunk) => { rows.set(key(partition, feed), { index, chunk }) },
-    forgetUpdate: (partition, feed) => { rows.delete(key(partition, feed)); forgotten.push(key(partition, feed)) }
+    forgetUpdate: (partition, feed, index) => {
+      forgotten.push(`${key(partition, feed)}@${String(index)}`)
+      if (rows.get(key(partition, feed))?.index === index) rows.delete(key(partition, feed))
+    }
   }
 }
 
@@ -160,7 +163,7 @@ describe('a Swarm mount through a feed that it kept the last update of', () => {
     kept.rows.set(`${PARTITION}\n${OWNER}/${TOPIC}`, { index: 1n, chunk: flipped })
     const mounted = gathererFor({ store, kept })
     const site = await mounted.gatherer.mount('swarm.eth', [recordFor(feedRoot)], undefined, PARTITION)
-    expect(kept.forgotten).toEqual([`${PARTITION}\n${OWNER}/${TOPIC}`])
+    expect(kept.forgotten).toEqual([`${PARTITION}\n${OWNER}/${TOPIC}@1`])
     expect(site.root).toEqual({ kind: 'swarm', cid: referenceCid(roots[1]!) })
     expect(asked(mounted.swarm.requests, feedUpdateAddress(OWNER, TOPIC, 1n))).toBe(1)
     expect(kept.rows.get(`${PARTITION}\n${OWNER}/${TOPIC}`)?.chunk).toEqual(socs[1]!.chunk)
@@ -198,6 +201,20 @@ describe('a Swarm mount through a feed that it kept the last update of', () => {
     expect(asked(mounted.swarm.requests, feedUpdateAddress(OWNER, TOPIC, 2n))).toBe(1)
     expect(kept.forgotten).toEqual([])
     expect(kept.rows.get(`${PARTITION}\n${OWNER}/${TOPIC}`)?.index).toBe(2n)
+  })
+
+  it('does not use a kept update that another partition\'s look has been overtaken by while it was checked', async () => {
+    const { store, feedRoot, roots, socs } = await feedSite(3)
+    const kept = keptRows()
+    kept.rows.set(`${PARTITION}\n${OWNER}/${TOPIC}`, { index: 1n, chunk: socs[1]!.chunk })
+    const feeds = memoryFeeds({ [`${OWNER}/${TOPIC}`]: 1n })
+    const reads = vi.spyOn(feeds, 'highest')
+    reads.mockImplementationOnce(() => 1n).mockImplementation(() => 2n)
+    const mounted = gathererFor({ store, kept, feeds })
+    const site = await mounted.gatherer.mount('swarm.eth', [recordFor(feedRoot)], undefined, PARTITION)
+    expect(site.root).toEqual({ kind: 'swarm', cid: referenceCid(roots[2]!) })
+    expect(asked(mounted.swarm.requests, feedUpdateAddress(OWNER, TOPIC, 2n))).toBe(1)
+    expect(kept.forgotten).toEqual([])
   })
 
   it('uses a kept update at the highest index seen, and a higher one than the store has recorded raises the store', async () => {
@@ -289,6 +306,29 @@ describe('a Swarm mount through a feed that it kept the last update of', () => {
     expect(site.hasNewer?.()).toBe(false)
     expect(mounted.swarm.requests).toEqual([])
     expect(kept.rows.get(`${PARTITION}\n${OWNER}/${TOPIC}`)?.index).toBe(1n)
+  })
+
+  it('gives the look as much longer as the route is slower, as a mount\'s own wait is', async () => {
+    const { store, feedRoot, socs } = await feedSite(2)
+    const slowRoute = { id: 'tunnel', scale: () => 20, wait: (ms: number) => ms * 20, firstWait: (ms: number) => ms * 20, stallMs: () => 1000, transferMs: () => 1000, observeFirstByte: () => {}, slow: () => true }
+    const outcome = async (route: SwarmGathererOptions['route']) => {
+      const kept = keptRows()
+      kept.rows.set(`${PARTITION}\n${OWNER}/${TOPIC}`, { index: 0n, chunk: socs[0]!.chunk })
+      const mounted = gathererFor({
+        store,
+        kept,
+        feeds: memoryFeeds({ [`${OWNER}/${TOPIC}`]: 0n }),
+        beforeMount: async () => { await new Promise<void>((resolve) => setTimeout(resolve, 80)) },
+        options: { limits: { feedCheckTimeoutMs: 30 }, ...(route !== undefined && { route }) }
+      })
+      const site = await mounted.gatherer.mount('swarm.eth', [recordFor(feedRoot)], undefined, PARTITION)
+      await vi.waitFor(() => { expect(mounted.lines.some((line) => line.includes('newer version'))).toBe(true) })
+      return { line: mounted.lines.find((line) => line.includes('newer version')), newer: site.hasNewer?.() }
+    }
+    expect((await outcome(undefined)).line).toMatch(/failed \(timed out\)/)
+    const slow = await outcome(slowRoute)
+    expect(slow.line).toMatch(/was found/)
+    expect(slow.newer).toBe(true)
   })
 
   it('does not fail the mount, and logs the reason alone, when the check finds the node without the feed', async () => {

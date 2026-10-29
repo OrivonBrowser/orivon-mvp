@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildFile } from '../../../../test/apps/swarm-gateway/encode.mjs'
+import { feedUpdateAddress } from '../../swarm/chunk.js'
 import { SwarmChunkDatabase } from '../swarm-chunk-database.js'
 import type { SwarmChunkDatabaseOptions } from '../swarm-chunk-database.js'
 import { swarmChunkFile } from '../swarm-chunk-files.js'
@@ -525,8 +526,8 @@ describe('the Swarm chunk database', () => {
       minute += 5
       for (const chunk of chunks(8)) store.put(SITE, chunk.address, chunk.bytes)
       store.flush()
-      expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
       expect(rowCount('feed_update')).toBe(0)
+      expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
       const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
       expect(Number((raw.prepare('SELECT coalesce(sum(size), 0) AS n FROM age').get() as { n: number }).n)).toBeLessThanOrEqual(6 * CHUNK)
       raw.close()
@@ -555,6 +556,47 @@ describe('the Swarm chunk database', () => {
       store.putFeedUpdate(SITE, FEED, 1n, update(1, 4300))
       expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
       expect(rowCount('chunk')).toBe(0)
+    })
+
+    it('takes an index past what an address can name for a row it cannot read, drops it, and keeps the next update', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 1n, update(1))
+      store.close()
+      const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      raw.exec("UPDATE feed_update SET position = '99999999999999999999'")
+      raw.close()
+      const second = database()
+      expect(second.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(rowCount('feed_update')).toBe(0)
+      second.putFeedUpdate(SITE, FEED, 1n, update(1))
+      second.close()
+      const tampered = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      tampered.exec("UPDATE feed_update SET position = '18446744073709551616'")
+      tampered.close()
+      const third = database()
+      third.putFeedUpdate(SITE, FEED, 2n, update(2))
+      expect(third.getFeedUpdate(SITE, FEED)).toEqual({ index: 2n, chunk: update(2) })
+      expect(lines.join('\n')).not.toMatch(/range|RangeError/i)
+    })
+
+    it('forgets an update only while it is the one that was refused, so a newer one stored since is not lost', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 3n, update(3))
+      store.putFeedUpdate(SITE, FEED, 4n, update(4))
+      store.dropFeedUpdate(SITE, FEED, 3n)
+      expect(store.getFeedUpdate(SITE, FEED)).toEqual({ index: 4n, chunk: update(4) })
+      store.dropFeedUpdate(SITE, FEED, 4n)
+      expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(rowCount('chunk')).toBe(0)
+    })
+
+    it('does not delete a kept update when a page names its address as an ordinary chunk', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 1n, update(1))
+      expect(store.get(SITE, feedUpdateAddress(FEED.owner, FEED.topic, 1n))).toBeUndefined()
+      expect(store.refused).toBe(0)
+      expect(lines.join('\n')).not.toMatch(/failed its address/)
+      expect(store.getFeedUpdate(SITE, FEED)).toEqual({ index: 1n, chunk: update(1) })
     })
 
     it('forgets a row it cannot read as an index, or one whose chunk is gone, and says nothing of it', () => {

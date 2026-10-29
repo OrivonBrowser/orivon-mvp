@@ -124,7 +124,7 @@ export function createSwarmGatherer (options: SwarmGathererOptions): DataGathere
     ? undefined
     : { fetch: options.fetch, pool: new GatewayPool(options.endpoints, limits.perEndpointConcurrency, Date.now, options.route === undefined ? {} : { route: options.route }), limits, ...(options.log !== undefined && { log: options.log }) }
   const memory: BlockMemory = options.memory ?? new BlockCache()
-  const keeping = deps === undefined || options.keptUpdates === undefined ? undefined : new KeptFeeds(deps, options.feedIndexes, options.keptUpdates, limits.feedCheckTimeoutMs, options.log)
+  const keeping = deps === undefined || options.keptUpdates === undefined ? undefined : new KeptFeeds(deps, options.feedIndexes, options.keptUpdates, () => options.route?.firstWait(limits.feedCheckTimeoutMs) ?? limits.feedCheckTimeoutMs, options.log)
 
   return {
     id: 'swarm',

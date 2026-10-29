@@ -23,7 +23,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 ### Changed
 
 - **A Swarm site opened before opens at once after a restart, without waiting for the Swarm node**: when every chunk a page needs is kept on this computer, the page loads while the node is still starting or has failed; the node is waited for only where a chunk has to come from it. With Swarm switched off in Settings, a site on disk still does not open.
-- **A Swarm feed site opened before opens at once, even offline; a newer version is used from the next load**: the last update a feed was followed to is kept on this computer, checked against its signature each time, and the page opens from it without waiting for the Swarm node or the network; Orivon looks for a newer update in the background, and a reload or a later visit shows it, while a page you are reading never changes under you.
+- **A Swarm feed site opened before opens at once, even offline; a newer version is used from the next load**: the last update a feed was followed to is kept on this computer, checked against its signature each time, and the page opens from it without waiting for the Swarm node or the network; Orivon looks for a newer update in the background; a reload or a later visit shows it, and a page you are reading keeps the version it opened with for the next two minutes, unless another tab loads the same site.
 
 ## [0.0.12] - 2026-10-28
 

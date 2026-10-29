@@ -16,7 +16,7 @@ export interface SwarmLimits {
   readonly chunkTimeoutMs: number
   /** How long an optional `/feeds` answer is waited for: it is only a first guess, never worth a pause. */
   readonly feedGuessTimeoutMs: number
-  /** How long the look for a newer update of a feed, made after a mount that opened from a kept one, may take in all: the node's start included. */
+  /** How long the look for a newer update of a feed, made after a mount that opened from a kept one, may take in all on a direct connection, the node's start included; a slower route stretches it as it does a mount's wait. */
   readonly feedCheckTimeoutMs: number
   /**
    * Per endpoint, so a hung one cannot starve the others of their own slots. The endpoint is the node on this

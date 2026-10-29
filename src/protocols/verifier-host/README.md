@@ -92,8 +92,10 @@ worked out when the file opens, and a file SQLite reports as damaged is deleted 
 **A page load the person starts mounts a site again when a check found a newer version of it.** `Sites.get` is told which request is a
 page load (`Sec-Fetch-Mode: navigate` with `Sec-Fetch-Dest: document`, which Chromium sets and a page cannot forge) and drops a mounted
 site that answers `MountedSite.hasNewer`, as it does one the gateway consent names; any other request, a subresource or a frame
-included, is served from the mount in hand, so a page that is open never changes version under its reader. The Swarm gatherer is the
-one that sets it ([`../swarm/README.md`](../swarm/README.md)).
+included, is served from the mount in hand, so the check itself never swaps a version under an open page. The entry is the one the host
+keeps for the partition and host and uses for `SITE_TTL_MS` (2 minutes), so in this build an open page's later requests can read the
+newer version once the entry is mounted again (after those 2 minutes, in the stale window or after a drop for room), and after a page
+load of the same site in another tab, which replaces the entry. The Swarm gatherer is the one that sets it ([`../swarm/README.md`](../swarm/README.md)).
 
 **Opening, remaking and sweeping.** The file is opened at the first Swarm mount with a partition. A file SQLite reports as damaged, at
 open or in use, is deleted and made again, once in a run, and so is one whose `user_version` is not this code's layout number (the file
