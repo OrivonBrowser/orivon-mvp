@@ -1,0 +1,224 @@
+import { Worker } from 'node:worker_threads'
+import { bytesToHex } from 'viem'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { buildFile } from '../../../../test/apps/swarm-gateway/encode.mjs'
+import { cacAddress } from '../../swarm/chunk.js'
+import { SWARM_ETH } from '../../swarm/tests/live-vectors.js'
+import type { CheckedOn } from '../../swarm/chunk-check.js'
+import { ChunkCheckPool, defaultPoolSize } from '../chunk-check-pool.js'
+import type { ChunkCheckPoolOptions } from '../chunk-check-pool.js'
+import { builtChunkCheckWorker } from './chunk-check-worker.test-helpers.js'
+
+let code: string
+const pools: ChunkCheckPool[] = []
+
+beforeAll(async () => {
+  code = await builtChunkCheckWorker()
+}, 120_000)
+
+afterEach(() => {
+  for (const pool of pools.splice(0)) pool.close()
+})
+
+function poolOf (spawn: () => Worker, options: Partial<ChunkCheckPoolOptions> = {}): ChunkCheckPool {
+  const made = new ChunkCheckPool({ spawn, ...options })
+  pools.push(made)
+  return made
+}
+
+const real = (): Worker => new Worker(code, { eval: true })
+/** A thread that reads a request and ends the thread without answering it. */
+const dying = (): Worker => new Worker("require('node:worker_threads').parentPort.on('message', () => process.exit(3))", { eval: true })
+/** A thread that takes requests and never answers. */
+const silent = (): Worker => new Worker("require('node:worker_threads').parentPort.on('message', () => {})", { eval: true })
+/** A thread that answers with something that is not an answer. */
+const garbled = (): Worker => new Worker("const p = require('node:worker_threads').parentPort; p.on('message', (m) => p.postMessage({ id: m.id + 1000, ok: true }))", { eval: true })
+
+/** `count` content-addressed chunks, each a different file, and their addresses. */
+function chunksOf (count: number): Array<{ address: string, chunk: Uint8Array }> {
+  const store = new Map<string, Uint8Array>()
+  return Array.from({ length: count }, (_, i) => {
+    const { ref } = buildFile(Uint8Array.from({ length: 1 + (i % 4096) }, (_unused, at) => (at * 31 + i) & 255), store)
+    return { address: ref, chunk: store.get(ref)! }
+  })
+}
+
+const FIRST = chunksOf(1)[0]!
+
+describe('the answers of the chunk check pool', () => {
+  it('says true for a valid chunk and false for one with a bit flipped, a short one and an empty one, with real threads', async () => {
+    const pool = poolOf(real)
+    const live = Uint8Array.from(Buffer.from(SWARM_ETH.chunks[SWARM_ETH.feedManifestRoot]!, 'hex'))
+    const flipped = new Uint8Array(live)
+    flipped[100] = flipped[100]! ^ 1
+    expect(await pool.verify(SWARM_ETH.feedManifestRoot, live)).toBe(true)
+    expect(await pool.verify(SWARM_ETH.feedManifestRoot, flipped)).toBe(false)
+    expect(await pool.verify(SWARM_ETH.feedManifestRoot, live.subarray(0, live.length - 1))).toBe(false)
+    expect(await pool.verify(SWARM_ETH.feedManifestRoot, live.subarray(0, 7))).toBe(false)
+    expect(await pool.verify(SWARM_ETH.feedManifestRoot, new Uint8Array())).toBe(false)
+    expect(await pool.verify(SWARM_ETH.feedManifestRoot, new Uint8Array(4105))).toBe(false)
+    expect(pool.threads).toBe(1)
+  })
+
+  it('says what the check in place says for hundreds of chunks at once, wrong ones among them, and leaves its callers\' bytes alone', async () => {
+    const pool = poolOf(real)
+    const chunks = chunksOf(300)
+    const wrong = new Set([3, 40, 41, 299])
+    const sent = chunks.map(({ chunk }, i) => {
+      if (!wrong.has(i)) return chunk
+      const copy = new Uint8Array(chunk)
+      copy[copy.length - 1] = copy[copy.length - 1]! ^ 1
+      return copy
+    })
+    const before = sent.map((chunk) => new Uint8Array(chunk))
+    const answers = await Promise.all(chunks.map(async ({ address }, i) => await pool.verify(address, sent[i]!)))
+    expect(answers).toEqual(chunks.map((_chunk, i) => !wrong.has(i)))
+    expect(sent).toEqual(before)
+    expect(chunks.every(({ address, chunk }) => bytesToHex(cacAddress(chunk)).slice(2) === address)).toBe(true)
+  })
+
+  it('checks a view into a larger buffer, as a leaf cut from a bulk answer is', async () => {
+    const pool = poolOf(real)
+    const backing = new Uint8Array(100 + FIRST.chunk.length + 100).fill(7)
+    backing.set(FIRST.chunk, 100)
+    expect(await pool.verify(FIRST.address, backing.subarray(100, 100 + FIRST.chunk.length))).toBe(true)
+  })
+})
+
+describe('where the chunk check pool runs its checks', () => {
+  it('starts no thread until a check waits, and another only while every thread has a check', async () => {
+    const pool = poolOf(real, { size: 3 })
+    expect(pool.threads).toBe(0)
+    const where: CheckedOn[] = []
+    await pool.verify(FIRST.address, FIRST.chunk, (on) => { where.push(on) })
+    expect(pool.threads).toBe(1)
+    expect(where).toEqual([1])
+    await pool.verify(FIRST.address, FIRST.chunk)
+    expect(pool.threads).toBe(1)
+    const many = chunksOf(60)
+    const seen = new Set<CheckedOn>()
+    await Promise.all(many.map(async ({ address, chunk }) => await pool.verify(address, chunk, (on) => { seen.add(on) })))
+    expect(pool.threads).toBe(3)
+    expect(seen.size).toBeGreaterThan(1)
+    expect([...seen].every((on) => typeof on === 'number' && on >= 1 && on <= 3)).toBe(true)
+  })
+
+  it('runs at most as many threads as the cores leave to it, three at the most', () => {
+    expect(defaultPoolSize()).toBeGreaterThanOrEqual(1)
+    expect(defaultPoolSize()).toBeLessThanOrEqual(3)
+  })
+
+  it('ends its threads after a quiet while, and starts others for the next check', async () => {
+    const pool = poolOf(real, { idleMs: 60 })
+    await pool.verify(FIRST.address, FIRST.chunk)
+    expect(pool.threads).toBe(1)
+    await vi.waitFor(() => { expect(pool.threads).toBe(0) })
+    expect(await pool.verify(FIRST.address, FIRST.chunk)).toBe(true)
+    expect(pool.threads).toBe(1)
+  })
+
+  it('keeps its threads while a check is still out', async () => {
+    const pool = poolOf(real, { idleMs: 40 })
+    await pool.verify(FIRST.address, FIRST.chunk)
+    const many = chunksOf(200)
+    const answers = Promise.all(many.map(async ({ address, chunk }) => await pool.verify(address, chunk)))
+    expect(pool.threads).toBeGreaterThan(0)
+    expect((await answers).every(Boolean)).toBe(true)
+  })
+
+  it('ends its threads when it is closed, and checks later chunks in the calling thread', async () => {
+    const pool = poolOf(real)
+    await pool.verify(FIRST.address, FIRST.chunk)
+    pool.close()
+    expect(pool.threads).toBe(0)
+    const where: CheckedOn[] = []
+    expect(await pool.verify(FIRST.address, FIRST.chunk, (on) => { where.push(on) })).toBe(true)
+    expect(where).toEqual(['host'])
+    expect(pool.threads).toBe(0)
+  })
+
+  it('settles the checks waiting when it is closed, in the calling thread', async () => {
+    const pool = poolOf(silent)
+    const chunks = chunksOf(10)
+    const where: CheckedOn[] = []
+    const answers = Promise.all(chunks.map(async ({ address, chunk }) => await pool.verify(address, chunk, (on) => { where.push(on) })))
+    pool.close()
+    expect(await answers).toEqual(chunks.map(() => true))
+    expect(where).toEqual(chunks.map(() => 'host'))
+  })
+})
+
+describe('a chunk check pool whose thread fails', () => {
+  async function failsToCheckInThread (spawn: () => Worker, why: RegExp, options: Partial<ChunkCheckPoolOptions> = {}): Promise<void> {
+    const lines: string[] = []
+    const unhandled: unknown[] = []
+    const watch = (reason: unknown): void => { unhandled.push(reason) }
+    process.on('unhandledRejection', watch)
+    try {
+      const pool = poolOf(spawn, { log: (line) => { lines.push(line) }, ...options })
+      const chunks = chunksOf(12)
+      const flipped = new Uint8Array(chunks[5]!.chunk)
+      flipped[10] = flipped[10]! ^ 1
+      const where: CheckedOn[] = []
+      const answers = await Promise.all(chunks.map(async ({ address, chunk }, i) => await pool.verify(address, i === 5 ? flipped : chunk, (on) => { where.push(on) })))
+      expect(answers).toEqual(chunks.map((_chunk, i) => i !== 5))
+      expect(where).toEqual(chunks.map(() => 'host'))
+      expect(pool.threads).toBe(0)
+      // Checks after the failure are made in the calling thread, with no second line.
+      const later: CheckedOn[] = []
+      expect(await pool.verify(FIRST.address, FIRST.chunk, (on) => { later.push(on) })).toBe(true)
+      expect(later).toEqual(['host'])
+      expect(lines).toHaveLength(1)
+      expect(lines[0]).toMatch(why)
+      expect(lines[0]).not.toContain(FIRST.address)
+      await new Promise<void>((resolve) => { setTimeout(resolve, 20) })
+      expect(unhandled).toEqual([])
+    } finally {
+      process.off('unhandledRejection', watch)
+    }
+  }
+
+  it('dies in the middle of the checks: every check waiting settles in the calling thread, with one line and no unhandled rejection', async () => {
+    await failsToCheckInThread(dying, /a thread exited/)
+  })
+
+  it('cannot start: the checks are made in the calling thread', async () => {
+    await failsToCheckInThread(() => { throw Object.assign(new Error('/secret/path/worker.js'), { code: 'ERR_WORKER_PATH' }) }, /could not start \(ERR_WORKER_PATH\)/)
+  })
+
+  it('has code that does not run: the line names the failure and no path', async () => {
+    await failsToCheckInThread(() => new Worker("throw Object.assign(new Error('/secret/path/worker.js'), { code: 'MODULE_NOT_FOUND' })", { eval: true }), /a thread failed/)
+  })
+
+  it('goes without answering for too long', async () => {
+    await failsToCheckInThread(silent, /no answer in 0\.05 s/, { stallMs: 50 })
+  })
+
+  it('sends an answer nobody asked for', async () => {
+    await failsToCheckInThread(garbled, /an answer nobody asked for/)
+  })
+
+  it('never names the path an error carries', async () => {
+    const lines: string[] = []
+    const pool = poolOf(() => { throw new Error('/secret/path/worker.js') }, { log: (line) => { lines.push(line) } })
+    await pool.verify(FIRST.address, FIRST.chunk)
+    expect(lines.join('')).not.toContain('/secret')
+  })
+
+  it('takes each check waiting one to a turn of the event loop, so the host is not held for all of them', async () => {
+    const pool = poolOf(silent)
+    const chunks = chunksOf(40)
+    let turns = 0
+    let spinning = true
+    const spin = (): void => {
+      turns++
+      if (spinning) setImmediate(spin)
+    }
+    setImmediate(spin)
+    const answers = Promise.all(chunks.map(async ({ address, chunk }) => await pool.verify(address, chunk)))
+    pool.close()
+    await answers
+    spinning = false
+    expect(turns).toBeGreaterThanOrEqual(20)
+  })
+})

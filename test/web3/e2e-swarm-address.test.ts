@@ -11,7 +11,7 @@ import { DatabaseSync } from 'node:sqlite'
 import type { Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { referenceCid } from '../../src/protocols/swarm/reference.js'
-import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
+import { assertNoElectronSurvivors, launchElectron, mainOutput, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { activeTabInfo, evaluateRetrying, findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { overlayShown, waitOverlay } from '../support/auth-support.js'
 import { QA_ROOT } from '../support/qa-evidence.mjs'
@@ -127,6 +127,10 @@ it('[app:swarm-url-opens] [app:eth-name-shown-by-network] loads a typed bzz:// a
       check(`it is a secure context, and its verified script ran (${JSON.stringify(loaded)})`, loaded.secure && loaded.ran === 'ran')
       check(`the node was asked for chunks (${String(node.requests.length)} requests)`, node.requests.some((r) => r.startsWith('/chunks/')))
       check('the script\'s leaves were asked for together', node.requests.some((r) => r.startsWith('/bytes/')))
+      // The host says where it checked the chunks of a large file: on worker threads, which is the real path in a source tree and in a package alike.
+      const onThreads = await waitFor(() => /swarm: a file read, \d+ bytes in \d+ ms.*, checked on [1-3] threads?(,|$)/m.test(mainOutput(running)), 20_000)
+      check(`the host checked the script\'s chunks on worker threads (${mainOutput(running).split('\n').filter((line) => line.includes('swarm: ')).join(' | ')})`, onThreads)
+      expect(onThreads).toBe(true)
 
       const verifierDir = join(await running.evaluate(({ app: electronApp }) => electronApp.getPath('userData')), 'verifier')
       const kept = await waitFor(() => keptChunks(verifierDir) > 0)

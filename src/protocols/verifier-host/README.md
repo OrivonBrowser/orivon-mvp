@@ -20,7 +20,8 @@ map and the redirect rule, and from [`../../broker/policy/`](../../broker/policy
 classifier, all reused rather than copied; `@a16z/helios`.
 
 **What it also depends on, for the chunk store.** `node:sqlite`, `node:fs`, `node:path` and `node:crypto`: [`swarm-chunk-database.ts`](swarm-chunk-database.ts)
-is the one file here that writes the profile, and only its own `swarm-chunks-*` files.
+is the one file here that writes the profile, and only its own `swarm-chunks-*` files. For the threads that hash those chunks,
+`node:worker_threads` and `node:os`: [`chunk-check-pool.ts`](chunk-check-pool.ts) and [`chunk-check-worker.ts`](chunk-check-worker.ts).
 
 **What it must never import.** [`src/main/`](../../main/) beyond type-only imports: main starts it
 and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
@@ -75,17 +76,32 @@ a table of its own beside each row's size, and a row is marked at most once a mi
 mark never rewrites a 4 KB row. The bytes kept and the count are worked out from that table each time the file opens, never read from a
 figure an earlier run left, so a run that was cut short cannot leave either wrong.
 
-**The disk is read one chunk at a time, and written without waiting for the disk.** A row read back is hashed against its address
-again, on the host's event loop (about a millisecond and a half for 4 KB); a row that fails is deleted and the chunk fetched anew.
+**The disk is read one chunk at a time, checked on other threads, and written without waiting for the disk.** A row read back is hashed
+against its address again (below); a row that fails is deleted and the chunk fetched anew.
 `BlockMemory.recall` stays the cache alone, and `recallKept` is the disk behind it ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts)):
-each read waits for the one before and for a turn of the event loop of its own, and `ChunkSource.leaves` asks for every leaf of a file
+each SQLite read waits for the one before and for a turn of the event loop of its own, and `ChunkSource.leaves` asks for every leaf of a file
 that way before it fetches the rest, so a file of a thousand chunks read from disk lets every other request through between two
-chunks instead of holding the host for a second and a half. Writes wait for 64 chunks or 250 ms and go in one transaction (WAL, 32 KB
+chunks. The hash is not part of that chain: a row is handed to the checker as soon as it is read, so the next row is read while earlier
+ones are checked, and a row is deleted only if the file still holds that row when its check says no. Writes wait for 64 chunks or 250 ms and go in one transaction (WAL, 32 KB
 pages, since a chunk row is a little over 4 KB) with `synchronous = OFF`: with `NORMAL`, the commit that crosses SQLite's
 auto-checkpoint (1000 pages, 32 MB) runs the checkpoint's `fsync` inside that call, a stall of half a second every few
 dozen writes (1.9 s at worst), where `OFF` keeps every commit under ten milliseconds. What `OFF` risks is a file damaged by a crash of the
 computer, not of the process, and nothing here needs the file to survive that: each row is hashed on its way out, the counters are
 worked out when the file opens, and a file SQLite reports as damaged is deleted and made again.
+
+**Swarm chunks are hashed on a few worker threads, and in the host's own thread when they cannot be.** The hash of a 4 KB chunk is about
+0.7 ms, so the 2,191 chunks of a revisited 8.9 MB page held the host's one thread for 1.9 to 2.3 s, during which no other protocol was
+served. [`chunk-check-pool.ts`](chunk-check-pool.ts) answers what `verifyCac` answers on at most `min(3, cores - 1)` threads (at least
+one). A thread starts when a check first waits, another only while every thread already has some, and all end after 30 s with nothing to
+check, so an idle browser holds none. A chunk goes to a thread as a copy that is transferred, and the pool queues what its callers wait
+on, never more and never fewer: it drops no check. A thread that cannot start, dies, sends an answer nobody asked for or goes five
+seconds without answering ends the pool for the run: every check waiting is made in the host's own thread, one to a turn of the event
+loop, as is every later one, and one line says why (never a path or an address). Where the pool is not given (the unit tests,
+another caller of `ChunkSource`) each chunk is checked in the thread that asks, as before. The log says where: a mount's line and a large
+file's carry `checked on N threads`, or `checked in the host`. The pool is **durable**: it takes the thread's starter as an argument and
+imports no Electron. [`chunk-check-worker.ts`](chunk-check-worker.ts) is the thread; `scripts/chunk-check-worker-bundle.ts` builds it
+into one script that loads nothing but `node:worker_threads`, `electron.vite.config.ts` puts that script into [`entry.ts`](entry.ts) as a
+string, and `entry.ts` starts each thread from it with `new Worker(code, { eval: true })`. WORKERLOAD
 
 **Opening, remaking and sweeping.** The file is opened at the first Swarm mount with a partition. A file SQLite reports as damaged, at
 open or in use, is deleted and made again, once in a run, and so is one whose `user_version` is not this code's layout number (the file

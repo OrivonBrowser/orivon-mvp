@@ -59,7 +59,7 @@ CREATE INDEX age_used ON age (used, size);
 PRAGMA user_version = ${String(SCHEMA_VERSION)};
 `
 
-interface Statements {
+export interface Statements {
   readonly find: StatementSync
   readonly insert: StatementSync
   readonly insertAge: StatementSync
@@ -73,6 +73,16 @@ interface Waiting {
   readonly site: string
   readonly address: string
   readonly bytes: Uint8Array
+}
+
+/** A chunk `SwarmChunkDatabase.read` found and `settle` is to be told about. */
+export interface KeptRow {
+  readonly bytes: Uint8Array
+  readonly address: string
+  /** True for a chunk still waiting to be written, which was checked on its way in. */
+  readonly checked: boolean
+  readonly site?: string
+  readonly statements?: Statements
 }
 
 interface Found {
@@ -182,10 +192,20 @@ export class SwarmChunkDatabase {
 
   /** The chunk `address` that `partition`'s pages kept, checked against its address again; undefined when there is none or it fails. */
   get (partition: string, address: string): Uint8Array | undefined {
+    const row = this.read(partition, address)
+    if (row === undefined) return undefined
+    return this.settle(row, row.checked || verifyCac(address, row.bytes))
+  }
+
+  /**
+   * The chunk `address` that `partition`'s pages kept, read and not yet checked: the check may be made anywhere, and
+   * `settle` is told its answer. A row that holds something other than bytes is dropped here.
+   */
+  read (partition: string, address: string): KeptRow | undefined {
     if (!ADDRESS.test(address)) return undefined
     const site = partitionStoreKey(this.options.salt, partition)
     const waiting = this.waiting.get(`${site}\n${address}`)
-    if (waiting !== undefined) return waiting.bytes
+    if (waiting !== undefined) return { bytes: waiting.bytes, address, checked: true }
     const statements = this.use()
     if (statements === undefined) return undefined
     let row: Found | undefined
@@ -196,13 +216,32 @@ export class SwarmChunkDatabase {
       return undefined
     }
     if (row === undefined) return undefined
-    if (!(row.bytes instanceof Uint8Array) || !verifyCac(address, row.bytes)) {
+    if (!(row.bytes instanceof Uint8Array)) {
       this.refuse(statements, row)
       return undefined
     }
-    this.note(site, address)
-    this.fromDisk++
-    return row.bytes
+    return { bytes: row.bytes, address, checked: false, site, statements }
+  }
+
+  /**
+   * What the check of a row `read` gave says: the bytes when they are the chunk at the row's address, undefined, and the row
+   * deleted, when they are not. The row is looked up again first, so one the file has since replaced is never the one dropped.
+   */
+  settle (row: KeptRow, genuine: boolean): Uint8Array | undefined {
+    if (row.site === undefined || row.statements === undefined) return genuine ? row.bytes : undefined
+    if (genuine) {
+      this.note(row.site, row.address)
+      this.fromDisk++
+      return row.bytes
+    }
+    if (this.statements !== row.statements) return undefined
+    try {
+      const again = row.statements.find.get(row.site, Buffer.from(row.address, 'hex')) as Found | undefined
+      if (again !== undefined) this.refuse(row.statements, again)
+    } catch (error) {
+      this.fail('read', error)
+    }
+    return undefined
   }
 
   /** Marks a chunk the memory above answered as used now, so what a person uses all day is not what eviction takes first. */

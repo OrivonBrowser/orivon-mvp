@@ -8,6 +8,7 @@ import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 import { isShimSource } from './src/shim/is-shim-source.js'
 import { privacyNotice } from './scripts/privacy-notice-plugin.js'
 import { buildCommit } from './scripts/build-commit.js'
+import { chunkCheckWorkerCode } from './scripts/chunk-check-worker-bundle.js'
 import { releaseNotes } from './src/main/info/release-notes.js'
 
 export const root = dirname(fileURLToPath(import.meta.url))
@@ -154,6 +155,30 @@ export function pageBufferPackage (): Plugin {
   }
 }
 
+/** The name the verifier host's entry gives the code of its chunk check thread, which the main build replaces with that code as a string. */
+export const CHUNK_CHECK_WORKER_PLACEHOLDER = '__ORIVON_CHUNK_CHECK_WORKER__'
+const VERIFIER_HOST_ENTRY = normalizePath(resolve(root, 'src/protocols/verifier-host/entry.ts'))
+
+/**
+ * Inlines the chunk check thread's code into the verifier host's entry, which starts the thread from the string: a file beside
+ * the host could not be read by a thread from inside app.asar. Fails the build rather than ship the placeholder.
+ */
+export function chunkCheckWorker (): Plugin {
+  let code: Promise<string> | undefined
+  return {
+    name: 'orivon:chunk-check-worker',
+    enforce: 'post',
+    async transform (source, id) {
+      if (normalizePath(id.split('?')[0] ?? id) !== VERIFIER_HOST_ENTRY) return null
+      const uses = source.split(CHUNK_CHECK_WORKER_PLACEHOLDER).length - 1
+      if (uses !== 1) throw new Error(`${VERIFIER_HOST_ENTRY} must name ${CHUNK_CHECK_WORKER_PLACEHOLDER} exactly once, not ${String(uses)} times`)
+      code ??= chunkCheckWorkerCode(root)
+      const inlined = JSON.stringify(await code)
+      return { code: source.replace(CHUNK_CHECK_WORKER_PLACEHOLDER, () => inlined), map: null }
+    }
+  }
+}
+
 // electron-vite 5's isolatedEntries reporter (preload, below) calls
 // process.stdout.clearLine()/cursorTo()/moveCursor() unconditionally, and
 // they exist only on a TTY, so every piped build (CI, `npm run smoke`)
@@ -181,6 +206,7 @@ function bundledReleaseNotes (): ReturnType<typeof releaseNotes> {
 
 export default defineConfig({
   main: {
+    plugins: [chunkCheckWorker()],
     // Maps the virtual specifiers electron-chrome-extensions-lib.d.ts
     // declares to the real vendored files, for BUNDLING only -- tsc never
     // sees this file, so it resolves those specifiers through the .d.ts's
