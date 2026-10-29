@@ -90,8 +90,8 @@ computer, not of the process, and nothing here needs the file to survive that: e
 worked out when the file opens, and a file SQLite reports as damaged is deleted and made again.
 
 **Swarm chunks are hashed on a few worker threads, and in the host's own thread when they cannot be.** The hash of a 4 KB chunk is about
-0.7 ms, so the 2,191 chunks of a revisited 8.9 MB page held the host's one thread for 1.9 to 2.3 s, during which no other protocol was
-served. [`chunk-check-pool.ts`](chunk-check-pool.ts) answers what `verifyCac` answers on at most `min(3, cores - 1)` threads (at least
+0.7 ms, so the 2,191 chunks of an 8.9 MB page are 1.9 to 2.3 s of work, and on the host's one thread no other protocol is served while
+it runs. [`chunk-check-pool.ts`](chunk-check-pool.ts) answers what `verifyCac` answers on at most `min(3, cores - 1)` threads (at least
 one). A thread starts when a check first waits, another only while every thread already has some, and all end after 30 s with nothing to
 check, so an idle browser holds none. A chunk goes to a thread as a copy that is transferred, and the pool queues what its callers wait
 on, never more and never fewer: it drops no check. A thread that cannot start, dies, sends an answer nobody asked for or goes five
