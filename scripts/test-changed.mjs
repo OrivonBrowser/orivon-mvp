@@ -19,7 +19,8 @@ const UNIT_TESTS = ['src/**/*.test.ts', 'scripts/**/*.test.ts']
 /** Tests that bundle a source tree from disk and compare it with a committed artifact: no import
  * edge reaches them, so vitest related never selects them for a change inside that tree. */
 const BUNDLED_FROM = [
-  { under: ['src/shim/', 'src/contracts/'], test: 'src/shim/worker/tests/runtime-bundle.test.ts' }
+  { under: ['src/shim/', 'src/contracts/'], test: 'src/shim/worker/tests/runtime-bundle.test.ts' },
+  { under: ['src/protocols/verifier-host/chunk-check-worker.ts'], test: 'src/protocols/verifier-host/tests/chunk-check-worker.test.ts' }
 ]
 
 /**

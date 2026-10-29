@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildFile } from '../../../../test/apps/swarm-gateway/encode.mjs'
+import { feedUpdateAddress } from '../../swarm/chunk.js'
 import { SwarmChunkDatabase } from '../swarm-chunk-database.js'
 import type { SwarmChunkDatabaseOptions } from '../swarm-chunk-database.js'
 import { swarmChunkFile } from '../swarm-chunk-files.js'
@@ -455,5 +456,201 @@ describe('the Swarm chunk database', () => {
     database()
     mkdirSync(join(dir, 'untouched'))
     expect(readdirSync(dir)).toEqual(['untouched'])
+  })
+
+  describe('feed updates', () => {
+    const FEED = { owner: 'ab'.repeat(20), topic: 'cd'.repeat(32) }
+    /** A stand-in for a single-owner chunk: the database keeps the bytes it is given and leaves checking them to the caller. */
+    const update = (fill: number, length = 4000): Uint8Array => new Uint8Array(length).fill(fill)
+    const rowCount = (table: string): number => {
+      const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      try {
+        return Number((raw.prepare(`SELECT count(*) AS n FROM ${table}`).get() as { n: number }).n)
+      } finally {
+        raw.close()
+      }
+    }
+
+    it('gives the update kept for a feed back after the store is closed and opened again, for that site alone', () => {
+      const first = database()
+      first.putFeedUpdate(SITE, FEED, 7n, update(1))
+      first.close()
+      const second = database()
+      expect(second.getFeedUpdate(SITE, FEED)).toEqual({ index: 7n, chunk: update(1) })
+      expect(second.getFeedUpdate('https://two.example', FEED)).toBeUndefined()
+      expect(second.getFeedUpdate(SITE, { ...FEED, topic: 'ee'.repeat(32) })).toBeUndefined()
+      expect(database({ salt: OTHER_SALT }).getFeedUpdate(SITE, FEED)).toBeUndefined()
+    })
+
+    it('keeps the largest index a feed is given, in place of the update before it and never below it', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 3n, update(3))
+      store.putFeedUpdate(SITE, FEED, 4n, update(4))
+      expect(store.getFeedUpdate(SITE, FEED)).toEqual({ index: 4n, chunk: update(4) })
+      expect(rowCount('chunk')).toBe(1)
+      store.putFeedUpdate(SITE, FEED, 3n, update(3))
+      expect(store.getFeedUpdate(SITE, FEED)).toEqual({ index: 4n, chunk: update(4) })
+      store.putFeedUpdate(SITE, FEED, 4n, update(4))
+      expect(rowCount('chunk')).toBe(1)
+      expect(rowCount('feed_update')).toBe(1)
+    })
+
+    it('keeps an index past what a double holds exactly', () => {
+      const store = database()
+      const far = 2n ** 63n + 12_345n
+      store.putFeedUpdate(SITE, FEED, far, update(5))
+      store.close()
+      expect(database().getFeedUpdate(SITE, FEED)?.index).toBe(far)
+    })
+
+    it('drops what is kept for a feed, and nothing else', () => {
+      const [chunk] = chunks(1)
+      const store = database()
+      store.put(SITE, chunk!.address, chunk!.bytes)
+      store.putFeedUpdate(SITE, FEED, 1n, update(1))
+      store.putFeedUpdate(SITE, { ...FEED, topic: 'ee'.repeat(32) }, 1n, update(2))
+      store.dropFeedUpdate(SITE, FEED)
+      expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(store.getFeedUpdate(SITE, { ...FEED, topic: 'ee'.repeat(32) })).toEqual({ index: 1n, chunk: update(2) })
+      store.flush()
+      expect(store.get(SITE, chunk!.address)).toEqual(chunk!.bytes)
+      expect(rowCount('chunk')).toBe(2)
+    })
+
+    it('counts an update toward the cap like a chunk, and gives nothing back once it has been dropped to make room', () => {
+      let minute = 1000
+      const options = { maxBytes: 6 * CHUNK, now: () => minute * 60_000 }
+      const store = database(options)
+      store.putFeedUpdate(SITE, FEED, 1n, update(1, 4200))
+      store.flush()
+      minute += 5
+      for (const chunk of chunks(8)) store.put(SITE, chunk.address, chunk.bytes)
+      store.flush()
+      expect(rowCount('feed_update')).toBe(0)
+      expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      expect(Number((raw.prepare('SELECT coalesce(sum(size), 0) AS n FROM age').get() as { n: number }).n)).toBeLessThanOrEqual(6 * CHUNK)
+      raw.close()
+    })
+
+    it('keeps an update that is read often over chunks nobody asked for', () => {
+      let minute = 1000
+      const options = { maxBytes: 6 * CHUNK, now: () => minute * 60_000 }
+      const store = database(options)
+      store.putFeedUpdate(SITE, FEED, 1n, update(1, 4200))
+      store.flush()
+      const others = chunks(8)
+      for (const chunk of others.slice(0, 4)) store.put(SITE, chunk.address, chunk.bytes)
+      store.flush()
+      minute += 5
+      expect(store.getFeedUpdate(SITE, FEED)).toBeDefined()
+      store.flush()
+      minute += 5
+      for (const chunk of others.slice(4)) store.put(SITE, chunk.address, chunk.bytes)
+      store.flush()
+      expect(store.getFeedUpdate(SITE, FEED)).toEqual({ index: 1n, chunk: update(1, 4200) })
+    })
+
+    it('refuses an update larger than a single-owner chunk can be', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 1n, update(1, 4300))
+      expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(rowCount('chunk')).toBe(0)
+    })
+
+    it('takes an index past what an address can name for a row it cannot read, drops it, and keeps the next update', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 1n, update(1))
+      store.close()
+      const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      raw.exec("UPDATE feed_update SET position = '99999999999999999999'")
+      raw.close()
+      const second = database()
+      expect(second.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(rowCount('feed_update')).toBe(0)
+      second.putFeedUpdate(SITE, FEED, 1n, update(1))
+      second.close()
+      const tampered = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      tampered.exec("UPDATE feed_update SET position = '18446744073709551616'")
+      tampered.close()
+      const third = database()
+      third.putFeedUpdate(SITE, FEED, 2n, update(2))
+      expect(third.getFeedUpdate(SITE, FEED)).toEqual({ index: 2n, chunk: update(2) })
+      expect(lines.join('\n')).not.toMatch(/range|RangeError/i)
+    })
+
+    it('forgets an update only while it is the one that was refused, so a newer one stored since is not lost', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 3n, update(3))
+      store.putFeedUpdate(SITE, FEED, 4n, update(4))
+      store.dropFeedUpdate(SITE, FEED, 3n)
+      expect(store.getFeedUpdate(SITE, FEED)).toEqual({ index: 4n, chunk: update(4) })
+      store.dropFeedUpdate(SITE, FEED, 4n)
+      expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(rowCount('chunk')).toBe(0)
+    })
+
+    it('does not delete a kept update when a page names its address as an ordinary chunk', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 1n, update(1))
+      expect(store.get(SITE, feedUpdateAddress(FEED.owner, FEED.topic, 1n))).toBeUndefined()
+      expect(store.refused).toBe(0)
+      expect(lines.join('\n')).not.toMatch(/failed its address/)
+      expect(store.getFeedUpdate(SITE, FEED)).toEqual({ index: 1n, chunk: update(1) })
+    })
+
+    it('forgets a row it cannot read as an index, or one whose chunk is gone, and says nothing of it', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 1n, update(1))
+      store.close()
+      const raw = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      raw.exec("UPDATE feed_update SET position = 'not a number'")
+      raw.close()
+      const second = database()
+      expect(second.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(rowCount('feed_update')).toBe(0)
+
+      second.putFeedUpdate(SITE, FEED, 2n, update(2))
+      second.close()
+      const gone = new DatabaseSync(join(dir, swarmChunkFile(SALT)))
+      gone.exec('DELETE FROM chunk')
+      gone.close()
+      expect(database().getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(lines.join('\n')).not.toMatch(/not a number|abab/)
+    })
+
+    it('keeps no feed and no site in plain text', () => {
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 1n, update(1))
+      store.close()
+      const file = readFileSync(join(dir, swarmChunkFile(SALT)))
+      expect(file.includes(Buffer.from('one.example'))).toBe(false)
+    })
+
+    it('makes again a file of the layout before feed updates, and keeps them in it after', () => {
+      const path = join(dir, swarmChunkFile(SALT))
+      const old = new DatabaseSync(path)
+      old.exec(`
+        CREATE TABLE chunk (id INTEGER PRIMARY KEY, site TEXT NOT NULL, address BLOB NOT NULL, bytes BLOB NOT NULL);
+        CREATE UNIQUE INDEX chunk_key ON chunk (site, address);
+        CREATE TABLE age (id INTEGER PRIMARY KEY, used INTEGER NOT NULL, size INTEGER NOT NULL);
+        CREATE INDEX age_used ON age (used, size);
+        PRAGMA user_version = 1;
+      `)
+      old.close()
+      const store = database()
+      store.putFeedUpdate(SITE, FEED, 1n, update(1))
+      store.close()
+      expect(database().getFeedUpdate(SITE, FEED)).toEqual({ index: 1n, chunk: update(1) })
+      expect(lines.filter((line) => line.includes('another layout'))).toHaveLength(1)
+    })
+
+    it('runs without it, never throwing, when the file cannot be used', () => {
+      writeFileSync(join(dir, 'blocked'), 'a file where the directory should be')
+      const store = database({ dir: join(dir, 'blocked', 'inside') })
+      expect(() => { store.putFeedUpdate(SITE, FEED, 1n, update(1)) }).not.toThrow()
+      expect(store.getFeedUpdate(SITE, FEED)).toBeUndefined()
+      expect(() => { store.dropFeedUpdate(SITE, FEED) }).not.toThrow()
+    })
   })
 })

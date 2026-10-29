@@ -20,7 +20,8 @@ map and the redirect rule, and from [`../../broker/policy/`](../../broker/policy
 classifier, all reused rather than copied; `@a16z/helios`.
 
 **What it also depends on, for the chunk store.** `node:sqlite`, `node:fs`, `node:path` and `node:crypto`: [`swarm-chunk-database.ts`](swarm-chunk-database.ts)
-is the one file here that writes the profile, and only its own `swarm-chunks-*` files.
+is the one file here that writes the profile, and only its own `swarm-chunks-*` files. For the threads that hash those chunks,
+`node:worker_threads` and `node:os`: [`chunk-check-pool.ts`](chunk-check-pool.ts) and [`chunk-check-worker.ts`](chunk-check-worker.ts).
 
 **What it must never import.** [`src/main/`](../../main/) beyond type-only imports: main starts it
 and talks to it over [`protocol.ts`](protocol.ts), and nothing else.
@@ -62,30 +63,60 @@ carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-p
 ## Design notes
 
 **Verified Swarm chunks are kept on disk here, per site, and nowhere else.** [`swarm-chunk-database.ts`](swarm-chunk-database.ts) is one
-SQLite database (`node:sqlite`, no native module) at `<profile>/verifier/swarm-chunks-<id>.db`, where `<id>` is the first 16 hex
+SQLite database (`node:sqlite`, no native module; its tables, layout number and pragmas are in [`swarm-chunk-schema.ts`](swarm-chunk-schema.ts)) at `<profile>/verifier/swarm-chunks-<id>.db`, where `<id>` is the first 16 hex
 characters of sha256 of the profile's partition salt; main hands the host the directory and the salt as `HostConfig.swarmChunks`, even
 when the IPFS node is off, and leaves it out when the profile cannot hold a salt. Rows are keyed by `partitionStoreKey(salt, partition)`
 (`partition-key.ts`, the key the IPFS node's store uses) and the chunk address, so the file holds no origin in plain text and one site's
 chunks are never another's hits; a site read through a tunnel is kept under the tunnel's name too ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts)'s
-namespace), as the routes' in-memory caches are kept apart. Only content-addressed chunks are kept, never a single-owner chunk or a feed
-update. At most 256 MB of chunk bytes are kept in all, least recently used first; the file is about a sixth larger (32 KB pages hold
+namespace), as the routes' in-memory caches are kept apart. What is kept is the content-addressed chunks, and for each feed a site
+followed, the one single-owner chunk of the update it was last followed to, under its own address in the same table and with its
+index in a small table of its own ([`ADR-0103`](../../../docs/decisions/ADR-0103-a-swarm-feed-site-opens-from-the-update-it-last-followed.md)):
+the database hands that chunk back unchecked, and the gatherer verifies its signature again on every use. At most 256 MB of chunk bytes are kept in all, least recently used first; the file is about a sixth larger (32 KB pages hold
 seven rows each, and the indexes), and its `-wal` is cut back to 8 MB after each checkpoint (`journal_size_limit`). Use is a count in
 the file that goes up once for each minute of use and once at the start of a run, so a clock that is wrong cannot age rows; it lives in
 a table of its own beside each row's size, and a row is marked at most once a minute, also when the memory in front answered it, so a
 mark never rewrites a 4 KB row. The bytes kept and the count are worked out from that table each time the file opens, never read from a
 figure an earlier run left, so a run that was cut short cannot leave either wrong.
 
-**The disk is read one chunk at a time, and written without waiting for the disk.** A row read back is hashed against its address
-again, on the host's event loop (about a millisecond and a half for 4 KB); a row that fails is deleted and the chunk fetched anew.
+**The disk is read one chunk at a time, checked on other threads, and written without waiting for the disk.** A row read back is hashed
+against its address again (below); a row that fails is deleted and the chunk fetched anew.
 `BlockMemory.recall` stays the cache alone, and `recallKept` is the disk behind it ([`swarm-chunk-memory.ts`](swarm-chunk-memory.ts)):
-each read waits for the one before and for a turn of the event loop of its own, and `ChunkSource.leaves` asks for every leaf of a file
+each SQLite read waits for the one before and for a turn of the event loop of its own, and `ChunkSource.leaves` asks for every leaf of a file
 that way before it fetches the rest, so a file of a thousand chunks read from disk lets every other request through between two
-chunks instead of holding the host for a second and a half. Writes wait for 64 chunks or 250 ms and go in one transaction (WAL, 32 KB
+chunks. The hash is not part of that chain: a row is handed to the checker as soon as it is read, so the next row is read while earlier
+ones are checked, and a row is deleted only if the file still holds that row when its check says no. Writes wait for 64 chunks or 250 ms and go in one transaction (WAL, 32 KB
 pages, since a chunk row is a little over 4 KB) with `synchronous = OFF`: with `NORMAL`, the commit that crosses SQLite's
 auto-checkpoint (1000 pages, 32 MB) runs the checkpoint's `fsync` inside that call, a stall of half a second every few
 dozen writes (1.9 s at worst), where `OFF` keeps every commit under ten milliseconds. What `OFF` risks is a file damaged by a crash of the
 computer, not of the process, and nothing here needs the file to survive that: each row is hashed on its way out, the counters are
 worked out when the file opens, and a file SQLite reports as damaged is deleted and made again.
+
+**A page load the person starts mounts a site again when a check found a newer version of it.** `Sites.get` is told which request is a
+page load (`Sec-Fetch-Mode: navigate` with `Sec-Fetch-Dest: document`, which Chromium sets and a page cannot forge) and drops a mounted
+site that answers `MountedSite.hasNewer`, as it does one the gateway consent names; any other request, a subresource or a frame
+included, is served from the mount in hand, so the check itself never swaps a version under an open page. The entry is the one the host
+keeps for the partition and host and uses for `SITE_TTL_MS` (2 minutes), so in this build an open page's later requests can read the
+newer version once the entry is mounted again (after those 2 minutes, in the stale window or after a drop for room), and after a page
+load of the same site in another tab, which replaces the entry. The Swarm gatherer is the one that sets it ([`../swarm/README.md`](../swarm/README.md)).
+
+**Swarm chunks are hashed on a few worker threads, and in the host's own thread when they cannot be.** The hash of a 4 KB chunk is about
+0.7 ms, so the 2,191 chunks of an 8.9 MB page are 1.9 to 2.3 s of work, and on the host's one thread no other protocol is served while
+it runs. [`chunk-check-pool.ts`](chunk-check-pool.ts) answers what `verifyCac` answers on at most `min(3, cores - 1)` threads (at least
+one). A thread starts when a check first waits, another only while every thread already has some, and all end after 30 s with nothing to
+check, so an idle browser holds none. A chunk goes to a thread as a copy that is transferred, and the pool queues what its callers wait
+on, never more and never fewer: it drops no check. Each new thread is first asked about a chunk known to be genuine and the same
+chunk with one byte changed, and a thread's "not genuine" is checked again in the host before a row is deleted or a node blamed. A
+thread that cannot start, dies, answers either known chunk wrongly, refuses a chunk the host finds genuine, sends an answer nobody
+asked for or goes five seconds without answering ends the pool for the run: every check waiting is made in the host's own thread, one to a turn of the event
+loop, as is every later one, and one line says why (never a path or an address). Where the pool is not given (the unit tests,
+another caller of `ChunkSource`) each chunk is checked in the thread that asks. The log says where: a mount's line and a large
+file's carry `checked on N threads`, or `checked in the host`. The pool is **durable**: it takes the thread's starter as an argument and
+imports no Electron. [`chunk-check-worker.ts`](chunk-check-worker.ts) is the thread; `scripts/chunk-check-worker-bundle.ts` builds it
+into one script that loads nothing but `node:worker_threads`, `electron.vite.config.ts` puts that script into [`entry.ts`](entry.ts) as a
+string, and `entry.ts` starts each thread from it with `new Worker(code, { eval: true })`. A string is what a package can always start: it names no file inside `app.asar`, needs no
+unpacked copy beside it, and holds no import of its own to resolve there, and it travels inside `verifier-host.js`, which the asar integrity
+check already covers. (Electron 44's utility process also starts a thread from a file inside the archive, so the string is a choice, not a
+limit.) The script is built from the same source the unit test runs, so a thread that cannot hash fails there before it fails in a package.
 
 **Opening, remaking and sweeping.** The file is opened at the first Swarm mount with a partition. A file SQLite reports as damaged, at
 open or in use, is deleted and made again, once in a run, and so is one whose `user_version` is not this code's layout number (the file

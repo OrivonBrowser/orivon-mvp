@@ -94,13 +94,13 @@ export class Sites {
    * `retry` is a person's own request for the page (a reload, a click on Try again): it does not replay a
    * remembered failure, and starts the mount again. A mount still running is joined, never restarted.
    * `fresh` is a page load the person started (a tab's document navigation, not a frame's or a file's): it does not reuse a site
-   * that `remount` names.
+   * that `remount` names, nor one that says it holds a newer version (`MountedSite.hasNewer`).
    */
   async get (host: string, partition: string | undefined, retry = false, fresh = false): Promise<SiteRecord> {
     if (partition === undefined) return await this.mount(host, undefined)
     const key = `${partition} ${host}`
     let current = this.entries.get(key)
-    if (fresh && current?.good !== undefined && this.remount(current.good.site, partition)) {
+    if (fresh && current?.good !== undefined && (current.good.site.hasNewer?.() === true || this.remount(current.good.site, partition))) {
       this.entries.delete(key)
       current = undefined
     }

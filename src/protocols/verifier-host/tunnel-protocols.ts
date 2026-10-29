@@ -30,7 +30,7 @@ import type { Fetch } from '../gateways/gateways.js'
 import { lightClientFetch } from './light-client/lane-fetch.js'
 import { paceOn, routeFor } from './pace.js'
 import type { RoutePace } from '../route-pace.js'
-import { KeptChunkMemory } from './swarm-chunk-memory.js'
+import { keptIn } from './swarm-chunk-memory.js'
 
 /** What the person is told when a Swarm site is opened with the tunnel on for it, and "Use tunnel to run network nodes" is on. */
 export const SWARM_NOT_TUNNELLED = 'Swarm content loads only from the Swarm node Orivon runs on this computer. "Use tunnel to run network nodes" is on in Settings under Tunnels, and the node cannot send its traffic through the tunnel for one site, so this site is not opened while the tunnel is on for it. Turn the tunnel off for it, or turn that setting off, to open it.'
@@ -127,7 +127,8 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
     route: nodeRouteOf(config, route),
     feedIndexes: stores.swarmFeedIndexes,
     log: (line) => { console.error(`[verifier] ${line}`) },
-    ...(stores.swarmChunks !== undefined && { memory: new KeptChunkMemory(stores.swarmChunks, tunnel) }),
+    ...(stores.swarmChunks !== undefined && keptIn(stores.swarmChunks, tunnel, deps.chunkChecks)),
+    ...(deps.chunkChecks !== undefined && { checker: deps.chunkChecks }),
     beforeMount: node.ensure,
     ...(config.swarmSwitchedOff === true && { holdMounts: true })
   })

@@ -19,6 +19,37 @@ function registry (resolve: () => Promise<NameRecord[]>): { registry: ProtocolRe
 }
 
 describe('Sites', () => {
+  it('mounts again for a page load the person starts once the site holds a newer version, and keeps serving the one it has to every other request', async () => {
+    let newer = false
+    const mounted: MountedSite[] = []
+    const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+    const gatherer: DataGatherer = {
+      id: 'stub',
+      supports: () => true,
+      mount: async () => {
+        const made: MountedSite = { ...site, hasNewer: () => newer }
+        mounted.push(made)
+        return made
+      }
+    }
+    const sites = new Sites(new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]))
+    const first = (await sites.get('a.eth', P)).site
+    newer = true
+    expect((await sites.get('a.eth', P)).site).toBe(first)
+    expect((await sites.get('a.eth', P, true)).site).toBe(first)
+    expect((await sites.get('a.eth', P, false, false)).site).toBe(first)
+    expect(mounted).toHaveLength(1)
+    newer = false
+    expect((await sites.get('a.eth', P, true, true)).site).toBe(first)
+    newer = true
+    const second = (await sites.get('a.eth', P, true, true)).site
+    expect(second).not.toBe(first)
+    expect(mounted).toHaveLength(2)
+    newer = false
+    expect((await sites.get('a.eth', P, true, true)).site).toBe(second)
+    expect(mounted).toHaveLength(2)
+  })
+
   it('mounts a host once while it is fresh, and again once it is stale', async () => {
     const clock = { now: 0 }
     const { registry: r, calls } = registry(async () => [record])

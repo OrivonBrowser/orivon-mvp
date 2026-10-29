@@ -78,9 +78,10 @@ export interface BlockMemory {
    * For a memory with a slower store behind its cache (the verifier host's Swarm chunks on disk): the block the store
    * holds for `key`, checked against its address, or undefined. Asked after `recall` found nothing. It reads the store
    * on a turn of the event loop of its own, so a caller that asks for hundreds at once does not hold the process while
-   * they are read. Never rejects.
+   * they are read. Never rejects. `ran` is told where the check of the block ran, when the store made one: a worker
+   * thread's number, or `host` for the thread that asked.
    */
-  recallKept?: (partition: string, key: string) => Promise<Uint8Array | undefined>
+  recallKept?: (partition: string, key: string, ran?: (on: number | 'host') => void) => Promise<Uint8Array | undefined>
   /** The in-flight fetch for `key` in `partition`, starting one with
    * `start` if none is already running. */
   share: (partition: string, key: string, start: (signal: AbortSignal, onRefusal: (refusal: Refusal) => void) => Promise<Uint8Array>) => SharedFetch

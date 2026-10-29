@@ -99,6 +99,8 @@ export interface VerifiedSoc {
   readonly owner: string
   /** The wrapped content-addressed chunk, span and payload. */
   readonly wrapped: Uint8Array
+  /** The whole single-owner chunk as it was checked, which is what is kept to check again. */
+  readonly chunk: Uint8Array
 }
 
 /**
@@ -121,7 +123,7 @@ export async function verifySoc (address: string, chunk: Uint8Array): Promise<Ve
   }
   const signer = owner.slice(2).toLowerCase()
   if (bytesToHex(keccak(concatBytes([id, hexToBytes(`0x${signer}`)]))).slice(2) !== address) return undefined
-  return { owner: signer, wrapped }
+  return { owner: signer, wrapped, chunk }
 }
 
 /** The address of update `index` of a feed, as lowercase hex: keccak256(id, owner) for id = keccak256(topic, index as eight big-endian bytes). */
