@@ -10,6 +10,7 @@
 import type { BaseWindow, View, WebContents } from 'electron'
 import type { SiteInfoController } from './site-info-controller.js'
 import { registerSiteInfoIpc } from '../ipc/site-info-ipc.js'
+import { registerSiteInfoTabIpc } from '../ipc/site-info-tab-ipc.js'
 import { createPopoverView } from './popover-view.js'
 import type { PopoverAnchor } from './popover-view.js'
 import { PANEL_POPOVER_BACKGROUND } from '../shell/theme-colors.js'
@@ -32,6 +33,8 @@ export interface SiteInfoPanel {
    * (`../shell/window.ts`), so a toggle call always either opens fresh or
    * closes what is already showing the origin it was opened for. */
   toggle: (anchor: PopoverAnchor, origin: string, page: SiteInfoPage, pressedAt?: number) => void
+  /** The tunnels page for the tab `tabId` rather than for a website: the tab is fixed for the popup's life, as an origin is. The tunnel button of a new tab, and of a tab with a choice, opens it. */
+  toggleTab: (anchor: PopoverAnchor, tabId: string, pressedAt?: number) => void
   close: () => void
   isOpen: () => boolean
   restack: () => void
@@ -58,6 +61,8 @@ export function createSiteInfoPanel (
   // it can possibly send already has the right origin to act on. Never
   // read from anything the popup's own page sends (this file's own header).
   let openOrigin = ''
+  /** Set instead of `openOrigin` on an open for a tab; the same rule applies to it. */
+  let openTab: string | null = null
 
   const popover = createPopoverView(win, contentView, {
     dirname,
@@ -69,6 +74,10 @@ export function createSiteInfoPanel (
     background: PANEL_POPOVER_BACKGROUND,
     activeContents: activeWebContents,
     registerIpc: (webContents, url, onContentHeight) => {
+      if (openTab !== null) {
+        registerSiteInfoTabIpc(webContents, url, controller, openTab, openSettings, onContentHeight, () => { popover.close() })
+        return () => {}
+      }
       registerSiteInfoIpc(webContents, url, controller, openOrigin, userDataPath, activeWebContents, reloadActiveTab, openSettings, openExtensions, onContentHeight, openCertificate, sitePermissions, () => { popover.close() }, openHome, openScoreHelp, openSupport)
       return () => {}
     }
@@ -77,7 +86,12 @@ export function createSiteInfoPanel (
   return {
     toggle (anchor, origin, page, pressedAt) {
       openOrigin = origin
+      openTab = null
       popover.toggle(anchor, [`--orivon-site-info-page=${page}`, `--orivon-site-info-origin=${origin}`], page, pressedAt)
+    },
+    toggleTab (anchor, tabId, pressedAt) {
+      openTab = tabId
+      popover.toggle(anchor, ['--orivon-site-info-page=tunnels'], 'tunnels', pressedAt)
     },
     close: popover.close,
     isOpen: popover.isOpen,

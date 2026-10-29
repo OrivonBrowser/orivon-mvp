@@ -55,6 +55,16 @@ async function waitForPage (app: ElectronApplication, part: string): Promise<Pag
 const bridgeOf = async (page: Page, name: string): Promise<string> =>
   await page.evaluate((key) => typeof (window as unknown as Record<string, unknown>)[key], name)
 
+/**
+ * Presses Escape in a popover once it has drawn something under `selector`. A popover's page registers its Escape listener
+ * when its script runs, before its first draw, while its bridge exists from the page's start: a key pressed on the bridge
+ * alone can reach a page that is not listening yet, and nothing presses it again.
+ */
+async function pressEscapeOnceDrawn (page: Page, selector: string): Promise<void> {
+  expect(await waitFor(async () => await page.evaluate((target) => (document.querySelector(target)?.childElementCount ?? 0) > 0, selector).catch(() => false))).toBe(true)
+  await page.keyboard.press('Escape').catch(() => undefined)
+}
+
 it('loads the chrome, the dashboard and the welcome screen from the shell scheme, each with its bridge', async () => {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], env: { ORIVON_INTRO: 'once' } })
   try {
@@ -95,7 +105,7 @@ it('loads the menu overlay, both popovers and the split frame from the shell sch
     const info = pageWith(app, '/site-info/index.html') as Page
     expect(info.url().startsWith(`${SHELL}site-info/index.html`)).toBe(true)
     expect(await bridgeOf(info, 'orivonSiteInfo')).toBe('object')
-    await info.keyboard.press('Escape').catch(() => undefined)
+    await pressEscapeOnceDrawn(info, '#main-page')
     expect(await waitFor(() => pageWith(app, '/site-info/index.html') === undefined)).toBe(true)
 
     await chrome.click('#networks-btn')
@@ -103,7 +113,7 @@ it('loads the menu overlay, both popovers and the split frame from the shell sch
     const networks = pageWith(app, '/networks/index.html') as Page
     expect(networks.url().startsWith(`${SHELL}networks/index.html`)).toBe(true)
     expect(await bridgeOf(networks, 'orivonNetworks')).toBe('object')
-    await networks.keyboard.press('Escape').catch(() => undefined)
+    await pressEscapeOnceDrawn(networks, '#cards')
     expect(await waitFor(() => pageWith(app, '/networks/index.html') === undefined)).toBe(true)
 
     await chrome.click('#new-tab')

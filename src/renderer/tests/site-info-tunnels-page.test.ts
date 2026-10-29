@@ -160,3 +160,16 @@ describe('the Test', () => {
     expect(rows.find((row) => row.kind.id === 'nym')?.testLine).toBeNull()
   })
 })
+
+describe('the switches of a tab', () => {
+  it('are taken at once, with no storage question, and the lit one turned off asks for none', async () => {
+    const { bridge, flush } = setup(infoWith({ subject: 'tab', via: 'nym', following: false, tabChoice: 'nym' }))
+    expect(rows.find((row) => row.kind.id === 'nym')?.on).toBe(true)
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(bridge.setTunnel).toHaveBeenLastCalledWith('socks5')
+    callbacks.onToggle('socks5', false)
+    await flush()
+    expect(bridge.setTunnel).toHaveBeenLastCalledWith(null)
+  })
+})

@@ -400,6 +400,8 @@ a short probe, read the outcome with `popoverShown`, and finish with `assertNoEl
 page's own coordinates become screen coordinates by adding the window's content bounds and the view's
 bounds. Nothing reaches the owner's screen.
 
+**Press a key in a popup once it has drawn, not as soon as its bridge answers.** A popup's bridge (`window.orivonSiteInfo`) exists from the page's first moment, but its Escape listener is registered only when its script runs, so an Escape pressed on the bridge alone can reach a page that is not listening yet, and nothing presses it again. The popup's first draw follows its listener: `pressEscapeOnceDrawn` in `test/shell-pages/e2e-shell-scheme.test.ts` is the worked example.
+
 **A page under Playwright is never hidden.** A debugger attached to a page keeps it shown, so a bug in whether a
 view's page is visible (a view removed from its window and added back stays hidden) cannot fail an ordinary spec, and `document.visibilityState` read through Playwright answers `visible`. Such a
 bug is seen by launching `electron-vite dev` itself under `openbox` (or a private `gnome-shell --headless` on its

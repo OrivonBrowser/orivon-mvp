@@ -51,7 +51,10 @@ export interface TabState {
    * redirect) and get "new tab" treatment on content that was never the
    * dashboard. Gated on TabRecord.isDashboardTab too (tabs.ts) -- set at
    * creation, and only ever flipped false, one-way, by a real navigation
-   * (repartitionView()), never from a URL a page can influence. */
+   * (repartitionView()), never from a URL a page can influence. That flag
+   * also makes the tab the new tab before the dashboard has committed an
+   * address (`url` is still empty), so the chrome never draws a tab it
+   * cannot tell is the new tab. */
   isNewTab: boolean
   /** The tab shown beside this one in a split, or null. */
   splitWith: string | null
@@ -79,6 +82,8 @@ export interface TabState {
   sharing?: DisplaySurfaceKind
   /** Another page is showing this tab's contents. Absent reads as false. */
   shared?: boolean
+  /** The page is a blank one in a tab that is not the dashboard's, in whatever session: a popup a page opened with no address, which the page writes into, or a tab whose address was refused. It is not the new tab the tunnel button is about. Absent reads as false. */
+  blankPage?: boolean
   /** The tunnel the tab was told to send every website it opens through (`nym`, `socks5`), or `direct`. Absent when it has none. */
   tunnelChoice?: TabTunnelChoice
 }
@@ -127,6 +132,8 @@ export interface ShellState extends TabsSnapshot {
   tunnel: TunnelMark | null
   /** The tunnel the active page goes through, when it is on one: what the tunnel button names. */
   tunnelVia: TunnelKind | null
+  /** Whether the tab in front is the one the tunnel button is about: its own tunnel choice decides where its sites go and the button opens the tab's list (`tunnel-popover-tab.ts`). Not so for an installed app, nor a page in a session an app or a temporary route made. */
+  tunnelByTab: boolean
   /** The dot on the Available networks button: green while a node runs, amber while one starts or syncs, red when one the person switched on failed, none when nothing runs. */
   networksDot: 'green' | 'amber' | 'red' | 'none'
   /** Which profile this window is, for the chip beside the menu. */

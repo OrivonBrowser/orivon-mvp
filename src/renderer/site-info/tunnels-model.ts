@@ -3,6 +3,7 @@ import { nymTestingWords, nymTestWords } from '../pages/shared/nym-words.js'
 import { proxyTestWords } from '../pages/shared/proxy-words.js'
 import type { ProxyTestResult } from '../pages/shared/proxy-words.js'
 import { routeLineWords } from './route-line.js'
+import { tabNotes } from './tab-words.js'
 import { extensionsHint, tunnelHint } from './tunnel-view.js'
 
 // What the tunnel list of the site-info popup shows, as data: one row for each tunnel a website or an installed app can go
@@ -120,7 +121,7 @@ export function addressChangeWords (users: SiteTunnel['proxy']['users']): string
 }
 
 /** What the tunnel in use is doing for the page, as one line. */
-function inUseLine (info: SiteInfo, subject: 'app' | 'site'): TunnelLine {
+function inUseLine (info: SiteInfo, subject: 'app' | 'site' | 'tab'): TunnelLine {
   const route = info.route ?? 'idle'
   return { text: routeLineWords(route, subject, info.nym), down: route === 'down' || route === 'no-proxy' || route === 'moving' || info.nym?.state === 'failed' || info.nym?.state === 'unavailable' }
 }
@@ -180,11 +181,13 @@ export function tunnelListModel (info: SiteInfo, view: TunnelView): TunnelListMo
     }
   })
   const hintText = tunnelHint(tunnel)
+  const forTab = tunnel.subject === 'tab' ? tabNotes(tunnel, everywhere, fixed) : []
   const reach = tunnel.subject === 'site' ? extensionsHint(info.extensionsOnSite, tunnel.profile) : undefined
   const notes: TunnelLine[] = [
     ...(held ? [{ text: HELD_LINE, down: false }] : []),
     ...(tunnel.fixed === 'opened' && tunnel.via !== null ? [{ text: openedLine(tunnel.via), down: false }] : []),
     ...(hintText === undefined ? [] : [{ text: hintText, down: tunnel.unreadable }]),
+    ...forTab.map((text) => ({ text, down: false })),
     ...(reach === undefined ? [] : [{ text: reach, down: false }]),
     ...(tunnel.subject === 'app' && shown !== null && !held ? [{ text: APP_UPDATES_NOTE, down: false }] : [])
   ]
