@@ -51,7 +51,10 @@ export interface TabState {
    * redirect) and get "new tab" treatment on content that was never the
    * dashboard. Gated on TabRecord.isDashboardTab too (tabs.ts) -- set at
    * creation, and only ever flipped false, one-way, by a real navigation
-   * (repartitionView()), never from a URL a page can influence. */
+   * (repartitionView()), never from a URL a page can influence. That flag
+   * also makes the tab the new tab before the dashboard has committed an
+   * address (`url` is still empty), so the chrome never draws a tab it
+   * cannot tell is the new tab. */
   isNewTab: boolean
   /** The tab shown beside this one in a split, or null. */
   splitWith: string | null

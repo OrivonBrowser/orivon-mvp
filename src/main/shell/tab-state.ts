@@ -28,7 +28,8 @@ export function buildTabState (id: string, record: TabRecord | undefined, wc: We
     loading: wc?.isLoading() ?? false,
     // The shell's own page carries the shell's icon for it, whatever the page declares.
     favicon: record?.internalPage != null ? internalPageIcon(record.internalPage) : record?.favicon ?? null,
-    isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && url === env.dashboardUrl),
+    // The dashboard's tab is the new tab from the moment it exists: its page has no address until the dashboard commits, and the chrome draws the tab (and the tunnel button on it) before that.
+    isNewTab: url === BLANK_URL || (record?.isDashboardTab === true && (url === '' || url === env.dashboardUrl)),
     splitWith: env.partnerOf(id),
     isInternal: record?.internalPage != null,
     connection: 'none',

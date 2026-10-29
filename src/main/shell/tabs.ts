@@ -205,7 +205,7 @@ export class TabManager {
     watchNewTab(contents, {
       input: () => ({
         active: this.activeId === id,
-        // Still the start page: the flag is cleared by the tab's first navigation, and `isNewTab` would read false before it loads.
+        // Still the start page: the record's flag, which the tab's first navigation clears.
         freshNewTab: this.tabs.get(id)?.isDashboardTab === true,
         windowFocused: !shell.window.isDestroyed() && shell.window.isFocused(),
         coveredByIntro: shell.coveredByIntro?.() === true
