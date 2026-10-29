@@ -116,7 +116,7 @@ export type SiteInfoCommand =
  * ./networks-ipc.ts's own `isFromNetworksPanel` checks the URL too --
  * see that function's doc. `popupUrl` is the address this popup was created
  * with, which `lock-navigation.ts` refuses to ever change. */
-function isFromSiteInfoWindow (event: IpcMainInvokeEvent, siteInfoWebContents: WebContents, popupUrl: string): boolean {
+export function isFromSiteInfoWindow (event: IpcMainInvokeEvent, siteInfoWebContents: WebContents, popupUrl: string): boolean {
   return event.senderFrame !== null && event.senderFrame === siteInfoWebContents.mainFrame && event.senderFrame.url === popupUrl
 }
 

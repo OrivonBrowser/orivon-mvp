@@ -44,6 +44,31 @@ export function profileForTab (choice: TabTunnelChoice | undefined, origin: stri
   return ownProfile === 'nym' || ownProfile === 'socks5' ? ownProfile : 'direct'
 }
 
+/** The tunnel a page at `origin` leaves by in a tab with `choice` (`profileForTab` over the website's own profile), or undefined when it leaves by none. */
+export function tunnelForTab (choice: TabTunnelChoice | undefined, origin: string, ownProfile: Profile | undefined): TunnelKind | undefined {
+  const profile = profileForTab(choice, origin, ownProfile)
+  return profile === undefined || profile === 'direct' ? undefined : profile
+}
+
+/**
+ * The tunnel the websites of a tab with `choice` go through when none has an entry of its own: a tunnel choice wins; otherwise
+ * `unreadable` (`unreadableTunnel` in `route-hub.ts`), which a direct choice yields to as it does to a website's own tunnel; otherwise `browser`, the
+ * tunnel the whole browser is on (undefined when it is not on one), which a direct choice leaves. Undefined means no tunnel.
+ */
+export function tabWebsitesTunnel (choice: TabTunnelChoice | undefined, browser: TunnelKind | undefined, unreadable: TunnelKind | undefined): TunnelKind | undefined {
+  return tunnelOfChoice(choice) ?? unreadable ?? (choice === 'direct' ? undefined : browser)
+}
+
+/**
+ * The choice a tab takes when the tunnel switch of its popover is moved to `kind` (null: the lit switch was turned off), or
+ * null for a tab that is given back none. While the whole browser is on a tunnel a tab with no choice follows it, so turning the
+ * tunnel off for the tab has to be a choice of its own: `direct`. Otherwise a tab with no choice already goes direct.
+ */
+export function choiceForSwitch (kind: TunnelKind | null, everywhere: boolean): TabTunnelChoice | null {
+  if (kind !== null) return kind
+  return everywhere ? 'direct' : null
+}
+
 /** What the shell knows of its tabs, for the parts of the routes that decide per request. */
 export interface TabTunnelSource {
   /** The choice of the tab whose page is the web contents `webContentsId`; undefined for a tab with none and for a contents that is no tab. */

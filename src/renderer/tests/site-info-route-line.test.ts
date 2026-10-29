@@ -27,3 +27,18 @@ describe('the route line for a website', () => {
   })
 
 })
+
+describe('routeLineWords for a tab', () => {
+  it('says the tab\'s traffic goes through the tunnel, and stops when it does not answer', () => {
+    expect(routeLineWords('ok', 'tab')).toBe('This tab\'s traffic goes through your tunnel.')
+    expect(routeLineWords('down', 'tab')).toBe('Your tunnel is not answering, so this tab\'s traffic is stopped.')
+    expect(routeLineWords('no-proxy', 'tab')).toBe('No tunnel is set, so this tab\'s traffic is stopped.')
+    expect(routeLineWords('moving', 'tab')).toContain('This tab is not on your tunnel yet')
+  })
+
+  it('says what Nym is doing for the tab through Nym', () => {
+    expect(routeLineWords('ok', 'tab', { state: 'off' })).toBe('This tab\'s traffic goes through Nym.')
+    expect(routeLineWords('down', 'tab', { state: 'off' })).toBe('Nym is not answering, so this tab\'s traffic is stopped.')
+  })
+})
+

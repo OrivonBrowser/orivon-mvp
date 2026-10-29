@@ -200,14 +200,19 @@ const toolbarRow = (chrome: Page) => chrome.evaluate(() => {
     widths: [...(root?.querySelectorAll('.action') ?? [])].map((node) => node.getBoundingClientRect().width),
     rights: [...(root?.querySelectorAll('.action') ?? [])].map((node) => node.getBoundingClientRect().right),
     extensionsButton: (document.querySelector<HTMLElement>('#extensions-menu-btn')?.getBoundingClientRect().width ?? 0) > 0,
+    tunnelButton: (document.querySelector<HTMLElement>('#tunnel-btn')?.getBoundingClientRect().width ?? 0) > 0,
     field: document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0
   }
 })
+
+/** The tunnel button starts hidden in index.html and is shown by the chrome's first state: the field's room is measured beside it, never before it. */
+const tunnelShown = async (chrome: Page): Promise<boolean> => (await toolbarRow(chrome)).tunnelButton
 
 it('stops the window at its minimum size, and the address field still has room there', async () => {
   const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true, 'toolbar.extensions': 'never' }) })
   try {
     expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
+    expect(await waitFor(async () => await tunnelShown(chrome)), 'the tunnel button is on the new tab').toBe(true)
     expect(await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getMinimumSize())).toEqual([MIN_WIDTH, 400])
     expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
     await app.evaluate(({ BaseWindow }) => { BaseWindow.getAllWindows()[0]?.setSize(300, 200) })
@@ -217,8 +222,9 @@ it('stops the window at its minimum size, and the address field still has room t
     expect(size[1]).toBeGreaterThanOrEqual(400)
     // The chrome view takes the new width a moment after the window does.
     expect(await waitFor(async () => (await chrome.evaluate(() => window.innerWidth)) <= 520)).toBe(true)
-    const field = await chrome.evaluate(() => document.querySelector<HTMLInputElement>('#address')?.getBoundingClientRect().width ?? 0)
-    expect(field).toBeGreaterThanOrEqual(120)
+    const atMinimum = await toolbarRow(chrome)
+    expect(atMinimum.tunnelButton, 'the tunnel button is still shown at the minimum size').toBe(true)
+    expect(atMinimum.field).toBeGreaterThanOrEqual(120)
 
     // Four extension buttons (the library's own element and class, built by hand since no extension is
     // installed): the list shows one whole button and clips the rest, instead of squeezing all four.
@@ -227,6 +233,7 @@ it('stops the window at its minimum size, and the address field still has room t
     expect(buttons.widths).toEqual([32, 32, 32, 32])
     expect(buttons.rights[0] ?? 1e9).toBeLessThanOrEqual(buttons.listRight + 0.5)
     expect(buttons.rights[1] ?? 0).toBeGreaterThan(buttons.listRight + 0.5)
+    expect(buttons.tunnelButton, 'the tunnel button is shown beside the pinned button').toBe(true)
     expect(buttons.field).toBeGreaterThanOrEqual(96)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
@@ -238,16 +245,19 @@ it('with the Extensions button shown, the pinned buttons wait in its menu at the
   const { app, chrome } = await launchShell({ seedProfile: settingsJson({ 'toolbar.home': true }) })
   try {
     expect(await waitFor(async () => await homeShown(chrome))).toBe(true)
+    expect(await waitFor(async () => await tunnelShown(chrome)), 'the tunnel button is on the new tab').toBe(true)
     expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.isVisible() === true))).toBe(true)
     await setWidth(app, chrome, MIN_WIDTH)
     const atMinimum = await toolbarRow(chrome)
     expect(atMinimum.extensionsButton).toBe(true)
+    expect(atMinimum.tunnelButton, 'the tunnel button is shown beside the Extensions button').toBe(true)
     expect(atMinimum.field).toBeGreaterThanOrEqual(96)
 
     expect(await addActionButtons(chrome, 4)).toBe(true)
     const crowded = await toolbarRow(chrome)
     expect(crowded.listShown).toBe(false)
     expect(crowded.extensionsButton).toBe(true)
+    expect(crowded.tunnelButton).toBe(true)
     expect(crowded.field).toBeGreaterThanOrEqual(96)
 
     // Just above the width where the list gives way, one whole pinned button is back and the field still has room.
@@ -257,6 +267,7 @@ it('with the Extensions button shown, the pinned buttons wait in its menu at the
     expect(roomy.widths).toEqual([32, 32, 32, 32])
     expect(roomy.rights[0] ?? 1e9).toBeLessThanOrEqual(roomy.listRight + 0.5)
     expect(roomy.rights[1] ?? 0).toBeGreaterThan(roomy.listRight + 0.5)
+    expect(roomy.tunnelButton).toBe(true)
     expect(roomy.field).toBeGreaterThanOrEqual(96)
 
     // At the width itself the list is already gone.

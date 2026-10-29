@@ -86,8 +86,9 @@ async function openPopover (): Promise<Page> {
   return popover
 }
 
-it('is absent on the new tab and grey on a page that goes direct, and the key says nothing about the tunnel', async () => {
-  expect(await chrome.locator('#tunnel-btn').isVisible(), 'no button on the new tab').toBe(false)
+it('is plain on the new tab and grey on a page that goes direct, and the key says nothing about the tunnel', async () => {
+  expect(await chrome.locator('#tunnel-btn').isVisible(), 'the button is on the new tab, about the tab').toBe(true)
+  expect(await chrome.getAttribute('#tunnel-btn', 'data-tunnel'), 'and plain while the tab\'s sites will go direct').toBeNull()
   await clickAddressBarRetrying(chrome, url())
   expect((await waitForTab(chrome, { address: url(), title: 'direct' })).ok).toBe(true)
   expect(await waitFor(async () => await chrome.locator('#tunnel-btn').isVisible())).toBe(true)

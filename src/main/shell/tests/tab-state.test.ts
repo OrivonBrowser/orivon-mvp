@@ -60,6 +60,8 @@ const { TabManager } = await import('../tabs.js')
 const { provideVerifierAccess } = await import('../../verifier/verifier-access.js')
 const { setPinned } = await import('../tab-pin.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
+const { buildTabState } = await import('../tab-state.js')
+const { tabForTunnelPopover } = await import('../tunnel-popover-tab.js')
 const { closeOthers, closeToRight, duplicateTab, newTabToRight, othersToClose, rightToClose, tabMenuFlags, toggleMute, togglePin } = await import('../tab-commands.js')
 
 beforeEach(() => { createdViews.length = 0 })
@@ -564,5 +566,138 @@ describe('a tab with a tunnel choice', () => {
     expect(manager.record(a)).not.toHaveProperty('tunnelChoice')
     expect(() => { manager.setTunnelChoice('missing', 'nym') }).not.toThrow()
     expect(manager.activeTunnelChoice()).toBeUndefined()
+  })
+})
+
+describe('a blank page that is no new tab', () => {
+  const env = { dashboardUrl: 'http://localhost:5999/newtab/', partnerOf: () => null }
+  const stateOf = (url: string, record: Record<string, unknown>) => {
+    const wc = { ...makeFakeWebContents(), getURL: () => url }
+    return buildTabState('t1', { isDashboardTab: false, ...record } as never, wc as never, env)
+  }
+
+  it('is flagged on a blank page that is not the dashboard, in whatever session: a popup a page opened with no address, or a tab whose address was refused', () => {
+    for (const partition of [undefined, 'persist:tunnel-profile', 'persist:app-3f9c', 'orivon-route-tab-1']) {
+      expect(stateOf('about:blank', { partition }), String(partition)).toMatchObject({ isNewTab: true, blankPage: true })
+    }
+  })
+
+  it('is flagged on a blank popup in the shared session, where a page writes into it as freely as into its own', () => {
+    expect(stateOf('about:blank', { partition: undefined, tunnelChoice: 'direct' })).toMatchObject({ isNewTab: true, blankPage: true, tunnelChoice: 'direct' })
+  })
+
+  it('is flagged on a tab whose typed address was refused, which keeps its tunnel choice: the dashboard\'s tab has left the dashboard for a plain blank page', () => {
+    expect(stateOf('about:blank', { isDashboardTab: false, tunnelChoice: 'nym' })).toMatchObject({ isNewTab: true, blankPage: true, tunnelChoice: 'nym' })
+  })
+
+  it('is not flagged on the dashboard tab while it shows the dashboard', () => {
+    expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).toMatchObject({ isNewTab: true })
+    expect(stateOf(env.dashboardUrl, { isDashboardTab: true })).not.toHaveProperty('blankPage')
+  })
+
+  it('is not flagged on a page that shows something', () => {
+    expect(stateOf('https://news.example/', { partition: 'persist:tunnel-profile' })).not.toHaveProperty('blankPage')
+    expect(stateOf('https://news.example/', {})).not.toHaveProperty('blankPage')
+  })
+})
+
+describe('a new tab before its page has loaded', () => {
+  const env = { dashboardUrl: 'http://localhost:5999/newtab/', partnerOf: () => null }
+  const loading = (record: Record<string, unknown>, url = '') => {
+    const wc = { ...makeFakeWebContents(), getURL: () => url, isLoading: () => true }
+    return buildTabState('t1', record as never, wc as never, env)
+  }
+
+  it('is the new tab from the first state that shows it: the page has no address until the dashboard commits, and the record already says it is the dashboard\'s', () => {
+    const state = loading({ isDashboardTab: true })
+    expect(state).toMatchObject({ url: '', isNewTab: true })
+    expect(state).not.toHaveProperty('blankPage')
+  })
+
+  it('is the new tab on a manager\'s fresh tab at the moment it is created, before loadURL has committed anything', () => {
+    const manager = newManager()
+    const id = manager.createTab()
+    ;(createdViews.at(-1) as RecordedView).webContents.getURL = () => ''
+    expect(manager.getState().tabs.find((tab) => tab.id === id)).toMatchObject({ url: '', isNewTab: true })
+  })
+
+  it('is no new tab once the tab has left the dashboard, though a refused or pending page has no address yet', () => {
+    expect(loading({ isDashboardTab: false })).toMatchObject({ url: '', isNewTab: false })
+    expect(loading({ isDashboardTab: false, tunnelChoice: 'nym' })).toMatchObject({ isNewTab: false })
+  })
+
+  it('is a tab the tunnel button\'s popover is about, for the button is shown from that state on and a press must open something', () => {
+    const popoverTab = (record: Record<string, unknown>, url = ''): string | undefined => tabForTunnelPopover({ tabs: [loading(record, url)], activeTabId: 't1' }, () => undefined, () => false)
+    expect(popoverTab({ isDashboardTab: true })).toBe('t1')
+    expect(popoverTab({ isDashboardTab: true, tunnelChoice: 'nym' })).toBe('t1')
+    expect(popoverTab({ isDashboardTab: true }, env.dashboardUrl)).toBe('t1')
+  })
+
+  it('is no tab for the popover when it is a blank page that is no dashboard, with no address yet or about:blank', () => {
+    const popoverTab = (url: string): string | undefined => tabForTunnelPopover({ tabs: [loading({ isDashboardTab: false }, url)], activeTabId: 't1' }, () => undefined, () => false)
+    expect(popoverTab('about:blank')).toBeUndefined()
+    expect(popoverTab('')).toBeUndefined()
+  })
+
+  it('keeps the dashboard\'s address for the new tab and a page that only looks like it for a page', () => {
+    expect(loading({ isDashboardTab: true }, env.dashboardUrl)).toMatchObject({ isNewTab: true })
+    expect(loading({ isDashboardTab: false }, env.dashboardUrl)).toMatchObject({ isNewTab: false })
+  })
+})
+
+describe('waiting for a new tab\'s keyboard', () => {
+  const turn = (): Promise<void> => new Promise((resolve) => { setImmediate(resolve) })
+  function shellManager (): InstanceType<typeof TabManager> {
+    const shell = { window: { isDestroyed: () => false, isFocused: () => true }, htmlFullscreenChanged: vi.fn(), runCommand: vi.fn(), focusChrome: vi.fn() }
+    return new TabManager({ children: [], addChildView: vi.fn(), removeChildView: vi.fn() } as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), 'http://localhost:5999/newtab/', {} as SubsystemContext, shell as never)
+  }
+
+  it('runs at once for a tab that is not on the start page, and says there is nothing to cancel', () => {
+    const manager = shellManager()
+    const id = manager.createTab('https://site.example/')
+    const run = vi.fn()
+    expect(manager.keyboard.whenPlaced(id, run)).toBeUndefined()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it('waits for a tab on the start page until its page has taken the keyboard and it has gone back, then runs once', async () => {
+    const manager = shellManager()
+    const id = manager.createTab()
+    const run = vi.fn()
+    expect(manager.keyboard.whenPlaced(id, run)).toBeTypeOf('function')
+    await turn()
+    expect(run).not.toHaveBeenCalled()
+    ;(createdViews.at(-1) as RecordedView).webContents.emit('focus')
+    expect(run).not.toHaveBeenCalled()
+    await turn()
+    expect(run).toHaveBeenCalledTimes(1)
+    const later = vi.fn()
+    expect(manager.keyboard.whenPlaced(id, later)).toBeUndefined()
+    expect(later).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not run what was cancelled', async () => {
+    const manager = shellManager()
+    const id = manager.createTab()
+    const run = vi.fn()
+    const kept = vi.fn()
+    const cancel = manager.keyboard.whenPlaced(id, run) as () => void
+    manager.keyboard.whenPlaced(id, kept)
+    cancel()
+    ;(createdViews.at(-1) as RecordedView).webContents.emit('did-finish-load')
+    await turn()
+    expect(run).not.toHaveBeenCalled()
+    expect(kept).toHaveBeenCalledTimes(1)
+  })
+
+  it('runs what waits when the tab closes first, for a caller that then finds no tab', () => {
+    const manager = shellManager()
+    const other = manager.createTab('https://site.example/')
+    const id = manager.createTab()
+    const run = vi.fn(() => { expect(manager.getState().tabs.some((tab) => tab.id === id)).toBe(false) })
+    manager.keyboard.whenPlaced(id, run)
+    manager.closeTab(id)
+    expect(run).toHaveBeenCalledTimes(1)
+    expect(manager.getState().tabs.map((tab) => tab.id)).toEqual([other])
   })
 })
