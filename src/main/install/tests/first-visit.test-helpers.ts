@@ -127,9 +127,30 @@ export const TAB = { id: 'the-tab' }
 
 export const present: DialogCaller = { window: () => undefined, stillOn: () => true }
 
-export function depsOf (h: Harness, backgroundDelayMs = SOON): FirstVisitDeps {
-  return { broker: h.broker, loader: h.loader as Loader, consent: h.consent, declined: h.declined, blocked: h.blocked, capabilityPrompt: h.capabilityPrompt, backgroundDelayMs }
+export function depsOf (h: Harness, backgroundDelayMs = SOON, firstPageHoldMs?: number): FirstVisitDeps {
+  return { broker: h.broker, loader: h.loader as Loader, consent: h.consent, declined: h.declined, blocked: h.blocked, capabilityPrompt: h.capabilityPrompt, backgroundDelayMs, ...(firstPageHoldMs === undefined ? {} : { firstPageHoldMs }) }
 }
+
+/** Makes the page the visit began on a loading one: it is reported loaded when `load` is called. */
+export function pageLoading (h: Harness): { load: () => void } {
+  let load = (): void => {}
+  const loaded = new Promise<void>((resolve) => { load = resolve })
+  h.host.pageLoaded = () => loaded
+  return { load }
+}
+
+/** Holds the question open until `answer` is called. */
+export function openQuestion (h: Harness): { answer: (yes: boolean) => void } {
+  let answer = (_yes: boolean): void => {}
+  h.consent.mockImplementation(async (_origin, _manifest, capabilities) => {
+    h.events.push('ask')
+    return (await new Promise<boolean>((resolve) => { answer = resolve })) ? capabilities : []
+  })
+  return { answer: (yes) => { answer(yes) } }
+}
+
+/** One turn of the event loop, for a test that must see something did not happen. */
+export const turn = async (): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, 0)) }
 
 /** The caching begins a moment after the question is asked, so by default the answer comes before it ends. */
 export const SOON = 30

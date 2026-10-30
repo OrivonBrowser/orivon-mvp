@@ -3,7 +3,7 @@ import type { Manifest } from '../../../contracts/index.js'
 import type { FirstManifest } from '../../../loader/index.js'
 import type { DialogCaller } from '../../consent/request-grant.js'
 import { MANIFEST_PROBE_MS, runFirstVisit } from '../first-visit.js'
-import { VERIFIED, MANIFEST, TREE, CONTENT, DECLARED, DIFFERENT, readOf, bundle, harness, TAB, present, depsOf, run, LATE, settled, grantsOf } from './first-visit.test-helpers.js'
+import { VERIFIED, MANIFEST, TREE, CONTENT, DECLARED, DIFFERENT, readOf, bundle, harness, TAB, present, depsOf, run, LATE, settled, grantsOf, pageLoading, openQuestion, turn } from './first-visit.test-helpers.js'
 import type { Harness } from './first-visit.test-helpers.js'
 
 
@@ -434,3 +434,68 @@ describe('runFirstVisit, for an app a verifier serves', () => {
   })
 })
 
+
+// The page of a first visit is the first thing to come down: the caching that starts beside the question waits for it.
+
+describe('runFirstVisit, with the first page still loading', () => {
+  /** Far longer than any test waits, so a caching that is still held back shows as a timeout, never as a pass. */
+  const LONG = 60_000
+
+  it('reads nothing of the app while the page is loading, and begins once it has loaded', async () => {
+    const h = harness()
+    const page = pageLoading(h)
+    const question = openQuestion(h)
+    const pending = runFirstVisit(depsOf(h, 0, LONG), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.consent).toHaveBeenCalled() })
+    await turn()
+    expect(h.loader.fetchForInstall).not.toHaveBeenCalled()
+    page.load()
+    await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
+    question.answer(true)
+    expect(await settled(await pending)).toBe('pinned')
+  })
+
+  it('begins at once when the person presses Allow before the page has loaded', async () => {
+    const h = harness()
+    pageLoading(h)
+    const question = openQuestion(h)
+    const pending = runFirstVisit(depsOf(h, 0, LONG), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.consent).toHaveBeenCalled() })
+    await turn()
+    expect(h.loader.fetchForInstall).not.toHaveBeenCalled()
+    question.answer(true)
+    expect(await settled(await pending)).toBe('pinned')
+    expect(h.loader.fetchForInstall).toHaveBeenCalledTimes(1)
+  })
+
+  it('begins after the ceiling when the page never stops loading', async () => {
+    const h = harness()
+    pageLoading(h)
+    const question = openQuestion(h)
+    const pending = runFirstVisit(depsOf(h, 0, 20), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
+    question.answer(true)
+    expect(await settled(await pending)).toBe('pinned')
+  })
+
+  it('never reads the app when the visit is cancelled during the wait', async () => {
+    const h = harness()
+    pageLoading(h)
+    const question = openQuestion(h)
+    const pending = runFirstVisit(depsOf(h, 0, LONG), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.consent).toHaveBeenCalled() })
+    await turn()
+    question.answer(false)
+    expect(await pending).toMatchObject({ outcome: 'plain', why: 'denied' })
+    expect(h.loader.fetchForInstall).not.toHaveBeenCalled()
+  })
+
+  it('does not wait when the host cannot say whether the page has loaded', async () => {
+    const h = harness()
+    const question = openQuestion(h)
+    const pending = runFirstVisit(depsOf(h, 0, LONG), h.origin, h.url, present, h.host)
+    await vi.waitFor(() => { expect(h.loader.fetchForInstall).toHaveBeenCalled() })
+    question.answer(true)
+    expect(await settled(await pending)).toBe('pinned')
+  })
+})

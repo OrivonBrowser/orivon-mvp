@@ -11,6 +11,7 @@ export function tabHost (screens: TabScreens, address: () => string): SetupHost 
     enter: () => { screens.navigate(address()) },
     plain: () => { screens.end() },
     end: () => { screens.end() },
-    tab: () => screens.tab()
+    tab: () => screens.tab(),
+    pageLoaded: () => screens.pageLoaded()
   }
 }
