@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { expandSpecs, jobLabel, logHighlights, matrixFor, parseShards, parseSystems, pickRun, smokeResult, summarize } from '../cross-os.mjs'
+import { describe, expect, it, vi } from 'vitest'
+import { expandSpecs, jobLabel, logHighlights, matrixFor, parseShards, parseSystems, pickRun, retryingServerErrors, smokeResult, summarize } from '../cross-os.mjs'
 
 describe('parseSystems', () => {
   it('reads a comma or space list once each', () => {
@@ -9,6 +9,34 @@ describe('parseSystems', () => {
   it('refuses an unknown system and an empty list, naming the ones it takes', () => {
     expect(() => parseSystems('windows,freebsd')).toThrow('unknown system freebsd: use windows, macos, linux')
     expect(() => parseSystems(' , ')).toThrow('no system named')
+  })
+})
+
+describe('retryingServerErrors', () => {
+  const failing = (message: string, stderr?: string): Error => Object.assign(new Error(message), { stderr })
+
+  it('asks again after a server error, and answers with what comes back', () => {
+    const errors = [failing('Command failed', 'HTTP 502: Server Error (https://api.github.com/x)')]
+    const pause = vi.fn()
+    const answer = retryingServerErrors(() => {
+      const error = errors.shift()
+      if (error !== undefined) throw error
+      return 'done'
+    }, pause)
+    expect(answer).toBe('done')
+    expect(pause).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws any other failure at once', () => {
+    const pause = vi.fn()
+    expect(() => retryingServerErrors(() => { throw failing('HTTP 404: Not Found') }, pause)).toThrow('HTTP 404')
+    expect(pause).not.toHaveBeenCalled()
+  })
+
+  it('gives up in the end, on the error GitHub last gave', () => {
+    const pause = vi.fn()
+    expect(() => retryingServerErrors(() => { throw failing('HTTP 503: Unavailable') }, pause)).toThrow('HTTP 503')
+    expect(pause).toHaveBeenCalledTimes(4)
   })
 })
 

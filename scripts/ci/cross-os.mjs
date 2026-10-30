@@ -149,8 +149,27 @@ export function summarize (run, evidence) {
   return out.join('\n')
 }
 
+const GH_ATTEMPTS = 5
+const GH_PAUSE_MS = 10_000
+
+function pauseThread (ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** `call`, again after a pause when GitHub answers with a server error: those pass, and a run watched for an hour goes on through one. */
+export function retryingServerErrors (call, pause = pauseThread) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return call()
+    } catch (error) {
+      if (attempt === GH_ATTEMPTS || !/HTTP 5\d\d/.test(`${error?.stderr ?? ''} ${error?.message ?? error}`)) throw error
+      pause(GH_PAUSE_MS)
+    }
+  }
+}
+
 function gh (...args) {
-  return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 })
+  return retryingServerErrors(() => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 256 * 1024 * 1024 }))
 }
 
 function git (...args) {
