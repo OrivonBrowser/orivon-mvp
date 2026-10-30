@@ -14,7 +14,7 @@ vi.mock('../site-info/tunnel-view.js', async (importOriginal) => ({
 
 const { createTunnelsPage } = await import('../site-info/tunnels-page.js')
 
-const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } } }
+const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, tabs: 0, everything: false } } }
 const browser: BrowserTunnel = { via: null, defaultKind: 'nym', nodes: false, blocked: {}, proxy: tunnel.proxy, unreadable: false, tabs: [] }
 const infoWith = (patch: Partial<SiteTunnel> = {}, rest: Partial<SiteInfo> = {}): SiteInfo => ({
   origin: 'https://example.com', displayOrigin: 'example.com', claimedName: undefined, homeDomain: undefined, update: undefined, asked: true,
@@ -116,7 +116,7 @@ describe('the address of the proxy', () => {
   })
 
   it('asks first, naming how many, when sites or apps go through the proxy, and saves only on Confirm', async () => {
-    const { bridge, flush } = setup(infoWith({ proxy: { address: '127.0.0.1:9050', users: { sites: 2, apps: 1, everything: false } } }))
+    const { bridge, flush } = setup(infoWith({ proxy: { address: '127.0.0.1:9050', users: { sites: 2, apps: 1, tabs: 0, everything: false } } }))
     callbacks.onChangeAddress()
     callbacks.onSaveAddress('127.0.0.1:9150')
     await flush()
@@ -132,8 +132,20 @@ describe('the address of the proxy', () => {
     expect(bridge.setProxyAddress).toHaveBeenCalledWith('127.0.0.1:9150')
   })
 
+  it('asks first when only tabs go through the proxy, as the ordinary tab on a website does', async () => {
+    const { bridge, flush } = setup(infoWith({ proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, tabs: 1, everything: false } } }))
+    callbacks.onChangeAddress()
+    callbacks.onSaveAddress('127.0.0.1:9150')
+    await flush()
+    expect(bridge.setProxyAddress).not.toHaveBeenCalled()
+    expect(rows.find((row) => row.kind.id === 'socks5')?.address?.confirm).toContain('1 tab goes through your proxy')
+    callbacks.onConfirmAddress()
+    await flush()
+    expect(bridge.setProxyAddress).toHaveBeenCalledWith('127.0.0.1:9150')
+  })
+
   it('does not ask, or save, when the address typed is the one saved', async () => {
-    const { bridge, flush } = setup(infoWith({ proxy: { address: '127.0.0.1:9050', users: { sites: 2, apps: 0, everything: false } } }))
+    const { bridge, flush } = setup(infoWith({ proxy: { address: '127.0.0.1:9050', users: { sites: 2, apps: 0, tabs: 0, everything: false } } }))
     callbacks.onChangeAddress()
     callbacks.onSaveAddress(' 127.0.0.1:9050 ')
     await flush()

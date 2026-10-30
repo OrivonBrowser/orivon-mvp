@@ -142,7 +142,7 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
     // The same address: nothing to save, and nobody to ask.
     if (text === proxy.address) { editor = null; if (thenUse) pick('socks5'); else deps.redraw(); return }
     const users = proxy.users
-    if (proxy.address !== '' && (users.sites + users.apps > 0 || users.everything)) {
+    if (proxy.address !== '' && (users.sites + users.apps + users.tabs > 0 || users.everything)) {
       editor = { text, error: null, confirm: true, thenUse }
       focus = '#tunnel-proxy-confirm'
       deps.redraw()

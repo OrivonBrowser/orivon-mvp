@@ -127,7 +127,7 @@ it('[app:tab-tunnel-button-first-address-leaves-through-the-chosen-tunnel] a tun
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-label')).toBe('Use Nym for this tab')
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('false')
     expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('false')
-    expect(await notesOf(popover)).toContain('Pick a tunnel and every site you open in this tab goes through it')
+    expect(await notesOf(popover)).toContain('Pick a tunnel for the sites you open in this tab, until it closes.')
     await shoot(app, chrome, popover, 'tab-tunnel-button-new-tab-list')
 
     await popover.click('#tunnel-switch-nym')
@@ -135,7 +135,7 @@ it('[app:tab-tunnel-button-first-address-leaves-through-the-chosen-tunnel] a tun
     expect(await waitFor(async () => await attribute(chrome, 'data-tunnel') === 'on')).toBe(true)
     expect(await attribute(chrome, 'aria-label')).toBe('Tunnels. Sites you open in this tab go through Nym')
     expect(await waitFor(async () => (await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')) === 'true')).toBe(true)
-    expect(await notesOf(popover)).toContain('Every site you open in this tab goes through Nym, until the tab is closed.')
+    expect(await notesOf(popover)).toContain('Sites in this tab go through Nym until the tab closes, with their sign-ins kept apart.')
     expect(await stateOf(popover, 'nym')).toContain('This tab\'s traffic goes through Nym')
     await closeList(app, chrome)
     await shoot(app, chrome, chrome, 'tab-tunnel-button-new-tab-on')
@@ -173,8 +173,7 @@ it('[app:tab-tunnel-button-lists-the-tab-on-a-website-and-turns-off] on a websit
     popover = await openList(app, chrome)
     expect(await popover.locator('#tunnel-tab-first').textContent()).toBe('This tab')
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
-    expect(await notesOf(popover)).toContain('Every site you open in this tab goes through Nym')
-    expect(await notesOf(popover)).toContain('sign-ins in your tunnel profile')
+    expect(await notesOf(popover)).toContain('Sites in this tab go through Nym until the tab closes, with their sign-ins kept apart.')
     await shoot(app, chrome, popover, 'tab-tunnel-button-website-list')
 
     // Turning the lit switch off sends the tab direct: the page reloads outside Nym, as the decoy.
@@ -208,13 +207,13 @@ it('[app:tab-tunnel-button-direct-for-this-tab-under-a-tunnelled-browser] with t
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
     await popover.click('#tunnel-tab-first')
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
-    expect(await notesOf(popover)).toContain('This tab follows the tunnel you set for all your browsing')
+    expect(await notesOf(popover)).toContain('This tab follows your browser-wide tunnel. Turn it off here for this tab only.')
 
     await popover.click('#tunnel-switch-nym')
     expect(await waitFor(async () => await attribute(chrome, 'data-tunnel') === null)).toBe(true)
     expect(await attribute(chrome, 'aria-label')).toBe('Tunnels. Sites you open in this tab go direct')
     expect(await waitFor(async () => (await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')) === 'false')).toBe(true)
-    expect(await notesOf(popover)).toContain('Direct for this tab: the sites you open here do not use a tunnel, while the rest of your browsing does.')
+    expect(await notesOf(popover)).toContain('Sites in this tab go direct. A site saved to a tunnel keeps it.')
     await shoot(app, chrome, popover, 'tab-tunnel-button-direct-for-this-tab')
     await closeList(app, chrome)
 

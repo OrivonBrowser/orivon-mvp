@@ -17,6 +17,10 @@
 
 **The switch names both tunnels when the tab goes another way than the entry.** A tab's choice beats the website's entry (ADR-0101), so the panel can show Nym lit while the website is saved for the proxy. Always is then on, and its line says what is saved and what the tab uses; turning it off removes the saved entry, and a row moved with it on replaces it. A switch that is held (a window held to Nym, settings that cannot be read) says nothing it cannot keep. Turning Always off leaves the page's service workers in the session the tab still runs it in.
 
+**Changing the proxy's address counts the tabs too.** The question asked before the address changes names everything that goes through the proxy: the whole browser when it is on the proxy, the tabs whose choice is the proxy (a tab with no website yet included, since its next page uses the new address), the websites with an entry and the apps. A tab that chose the proxy without "Always use for this site" is the ordinary case, so a question that left it out would let the address change under it unannounced.
+
+**The first panel says the normal case once.** Under its rows it gives at most one explanatory line: what the tab's choice means for the sites it opens, and that their sign-ins are kept apart when a tunnel is chosen. Only a warning or a reason a switch cannot move adds a line (Swarm, unreadable settings, a held window, Nym switched off, the extensions note, an app's updates). What the browser's tunnel does for everything else is the Browser-wide panel's to say, one press away.
+
 **Which panel opens.** A website with an entry of its own, or a tab with a choice, opens the first panel. With neither, the popup opens on Browser-wide while the whole browser is on a tunnel.
 
 **The tunnel button says the choice is the tab's only when it is.** "Set for this tab" is drawn only while the tab carries a choice equal to the tunnel the page goes through; a website that has an entry and a tab with no choice is lit for the page and says nothing about the tab.
@@ -42,7 +46,6 @@ The tab's choice already beats a website's entry (ADR-0101), so a row that sets 
 
 - A person who used the old list to give a website a tunnel for good presses one more switch. The ports that do so should turn Always on; the catalogue rows that stated the old behaviour say so.
 - A person who only looked at a website through a tunnel finds it listed in Settings for its storage, with no tunnel setting, until they clear it; that is ADR-0101's decision about visits and is unchanged.
-- **Provisional: the proxy's address change counts only websites with an entry.** Changing the proxy's address asks first, naming the sites and apps that use it; a tab that chose the proxy without Always is not counted. What would settle it is a person who changes the address and finds a tab closed without having been told; the answer is to count the tabs too.
 - **Provisional: the first panel names the website under the title for a tab on a website.** The tab alone has no name; a tab on a website is named by it. What would settle it is the owner finding the line redundant with the address bar.
 
 ## Reversibility

@@ -207,7 +207,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     return profile === undefined ? {} : { profile }
   }
 
-  /** What goes through the person's proxy now: the sites and apps that picked it, and the whole browser when it is on the proxy. */
+  /** What goes through the person's proxy now: the sites and apps that picked it, the tabs whose choice it is, and the whole browser when it is on the proxy. */
   function proxyUsers (routes: Routes): SiteTunnel['proxy']['users'] {
     let sites = 0
     let apps = 0
@@ -216,7 +216,8 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       if (trustSources.isOriginServedFromCacheSync(origin)) apps += 1
       else sites += 1
     }
-    return { sites, apps, everything: routes.hub.isEverywhere() && routes.defaultKind() === 'socks5' }
+    const tabs = browser.tabs().filter((tab) => tab.choice === 'socks5').length
+    return { sites, apps, tabs, everything: routes.hub.isEverywhere() && routes.defaultKind() === 'socks5' }
   }
 
   /** Why each tunnel cannot be chosen for a tab: the proxy has no address, Nym is switched off. */

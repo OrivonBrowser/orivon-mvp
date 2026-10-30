@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import { ALWAYS_LABEL, ALWAYS_LINE_HELD, ALWAYS_LINE_NOTHING, ALWAYS_LINE_OFF, ALWAYS_LINE_ON, SITE_OWN_DIRECT_NOTE, TAB_DIRECT_PROFILE_NOTE, TAB_FOLLOWING_NOTE, TAB_PICK_NOTE, TAB_TUNNEL_FAILED, TAB_TUNNEL_PROFILE_NOTE, alwaysLineOther, directTabNote, tabNotes } from '../site-info/tab-words.js'
+import { ALWAYS_LABEL, ALWAYS_LINE_HELD, ALWAYS_LINE_NOTHING, ALWAYS_LINE_OFF, ALWAYS_LINE_ON, TAB_TUNNEL_FAILED, alwaysLineOther, tabNotes } from '../site-info/tab-words.js'
 import { HELD_LINE, NYM_OFF_LINE, tunnelListModel } from '../site-info/tunnels-model.js'
 
 // The tunnels page when it is about a tab (ADR-0101): the same rows, the words of a tab, and no storage notice.
 
-const tunnel: SiteTunnel = { via: null, following: true, subject: 'tab', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } } }
+const tunnel: SiteTunnel = { via: null, following: true, subject: 'tab', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, tabs: 0, everything: false } } }
 const base: SiteInfo = {
   origin: '', displayOrigin: 'This tab', claimedName: undefined, homeDomain: undefined, update: undefined, asked: false,
   capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel, tunnelKind: 'nym', everywhere: false
@@ -41,18 +41,10 @@ describe('the tunnels page of a tab', () => {
     expect(direct.rows.map((one) => one.on)).toEqual([false, false])
   })
 
-  it('says direct for this tab under a browser on a tunnel, and names the direct profile its sites keep their sign-ins in', () => {
-    const list = notes(tab({ via: null, following: false, tabChoice: 'direct' }, { everywhere: true }))
-    expect(list).toContain(directTabNote(true))
-    expect(list).toContain(TAB_DIRECT_PROFILE_NOTE)
-    expect(directTabNote(true)).toBe('Direct for this tab: the sites you open here do not use a tunnel, while the rest of your browsing does.')
-    expect(directTabNote(false)).toBe('Direct for this tab: the sites you open here do not use a tunnel.')
-  })
-
-  it('says that a site with a tunnel of its own keeps it in a direct tab, which a direct choice leaves it', () => {
-    const list = notes(tab({ via: null, following: false, tabChoice: 'direct' }, { everywhere: true }))
-    expect(TAB_DIRECT_PROFILE_NOTE).toContain('A site that has a tunnel of its own keeps it.')
-    expect(list).toContain(TAB_DIRECT_PROFILE_NOTE)
+  it('says in one line that a direct tab goes direct and that a site saved to a tunnel keeps it, whether or not the browser is on a tunnel', () => {
+    const words = 'Sites in this tab go direct. A site saved to a tunnel keeps it.'
+    expect(notes(tab({ via: null, following: false, tabChoice: 'direct' }, { everywhere: true }))).toEqual([words])
+    expect(notes(tab({ via: null, following: false, tabChoice: 'direct' }, { everywhere: false }))).toEqual([words])
   })
 
   it('does not say direct for a direct tab while the settings cannot be read: its sites go through the one tunnel all sites take', () => {
@@ -60,20 +52,27 @@ describe('the tunnels page of a tab', () => {
     const model = tunnelListModel(info, noView)
     expect(row(model, 'socks5')).toMatchObject({ on: true, disabled: true })
     const text = model.notes.map((note) => note.text)
-    expect(text.join(' ')).not.toContain('Direct for this tab')
+    expect(text.join(' ')).not.toContain('go direct')
     expect(text.join(' ')).not.toContain('direct profile')
     expect(text.join(' ')).toContain('could not read your tunnel settings')
-    expect(tabNotes({ ...tunnel, tabChoice: 'direct', unreadable: true }, false, true)).toEqual([])
+    expect(tabNotes({ ...tunnel, tabChoice: 'direct', unreadable: true }, true)).toEqual([])
   })
 
-  it('names the choice, so a tab opened on a website still says what is set for every site in it', () => {
-    expect(notes(tab({ via: 'nym', following: false, tabChoice: 'nym' }))).toEqual(['Every site you open in this tab goes through Nym, until the tab is closed.', TAB_TUNNEL_PROFILE_NOTE])
-    expect(notes(tab({ via: 'socks5', following: false, tabChoice: 'socks5' }))).toContain('Every site you open in this tab goes through your tunnel, until the tab is closed.')
+  it('names the choice in one line, so a tab opened on a website still says what is set for every site in it', () => {
+    expect(notes(tab({ via: 'nym', following: false, tabChoice: 'nym' }))).toEqual(['Sites in this tab go through Nym until the tab closes, with their sign-ins kept apart.'])
+    expect(notes(tab({ via: 'socks5', following: false, tabChoice: 'socks5' }))).toEqual(['Sites in this tab go through your tunnel until the tab closes, with their sign-ins kept apart.'])
   })
 
-  it('asks the person to pick, or says the tab follows the browser', () => {
-    expect(notes(tab())).toEqual([TAB_PICK_NOTE])
-    expect(notes(tab({ via: 'nym' }, { everywhere: true }))).toEqual([TAB_FOLLOWING_NOTE])
+  it('asks the person to pick, or says the tab follows the browser, in one line', () => {
+    expect(notes(tab())).toEqual(['Pick a tunnel for the sites you open in this tab, until it closes.'])
+    expect(notes(tab({ via: 'nym' }, { everywhere: true }))).toEqual(['This tab follows your browser-wide tunnel. Turn it off here for this tab only.'])
+  })
+
+  it('names no profile: where the sign-ins are kept is said once, as kept apart', () => {
+    for (const choice of ['nym', 'socks5', 'direct'] as const) {
+      const joined = notes(tab({ via: choice === 'direct' ? null : choice, following: false, tabChoice: choice })).join(' ')
+      expect(joined).not.toContain('profile')
+    }
   })
 
   it('asks for no notice before a first move into a profile, and offers no storage line of a website', () => {
@@ -104,8 +103,17 @@ describe('the words about a tab', () => {
   })
 
   it('are nothing for a tab with no choice whose switches are fixed', () => {
-    expect(tabNotes(tunnel, false, true)).toEqual([])
-    expect(tabNotes({ ...tunnel, tabChoice: 'nym' }, false, true)).toHaveLength(2)
+    expect(tabNotes(tunnel, true)).toEqual([])
+    expect(tabNotes({ ...tunnel, tabChoice: 'nym' }, true)).toHaveLength(1)
+  })
+
+  it('are at most one line, in every state a tab can be in', () => {
+    const choices = [undefined, 'nym', 'socks5', 'direct'] as const
+    const vias = [null, 'nym', 'socks5'] as const
+    for (const tabChoice of choices) for (const via of vias) for (const on of [false, true]) for (const unreadable of [false, true]) for (const fixed of [false, true]) {
+      const state = { ...tunnel, via, unreadable, ...(tabChoice === undefined ? {} : { tabChoice }), always: { on, available: true } }
+      expect(tabNotes(state, fixed).length, JSON.stringify({ tabChoice, via, on, unreadable, fixed })).toBeLessThanOrEqual(1)
+    }
   })
 })
 
@@ -145,10 +153,11 @@ describe('the tunnels page of a tab showing a website', () => {
     expect(alwaysLineOther('nym', null)).toBe('Saved for this site: Nym. This tab goes direct.')
   })
 
-  it('says it is saved for the tab and every other while the tab goes where the website was saved to go', () => {
+  it('says it is saved for every tab while the tab goes where the website was saved to go', () => {
     const line = (entry: 'nym' | 'socks5' | null, via: 'nym' | 'socks5' | null): string | undefined =>
       tunnelListModel(site({ via, following: false, always: { on: true, available: true, entry } }), noView).always?.line
     expect(line('nym', 'nym')).toBe(ALWAYS_LINE_ON)
+    expect(ALWAYS_LINE_ON).toBe('Saved for this site, in every tab.')
     expect(line(null, null)).toBe(ALWAYS_LINE_ON)
     // An entry the panel does not name (a page built without one) keeps the plain line.
     expect(tunnelListModel(site({ via: 'nym', following: false, always: { on: true, available: true } }), noView).always?.line).toBe(ALWAYS_LINE_ON)
@@ -174,10 +183,10 @@ describe('the tunnels page of a tab showing a website', () => {
   })
 
   it('does not say the tab follows the browser for a website that has a tunnel of its own', () => {
-    expect(notes(site({ via: 'nym', following: false, always: { on: true, available: true } }))).toEqual(['This site goes through Nym in every tab, because you chose it for the site.'])
-    expect(notes(site({ via: 'socks5', following: false, always: { on: true, available: true } }))).toEqual(['This site goes through your tunnel in every tab, because you chose it for the site.'])
-    expect(notes(site({ via: null, following: false, always: { on: true, available: true } }))).toEqual([SITE_OWN_DIRECT_NOTE])
-    expect(notes(site({ via: 'nym', following: true }, { everywhere: true }))).toEqual([TAB_FOLLOWING_NOTE])
+    expect(notes(site({ via: 'nym', following: false, always: { on: true, available: true } }))).toEqual(['This site uses Nym in every tab.'])
+    expect(notes(site({ via: 'socks5', following: false, always: { on: true, available: true } }))).toEqual(['This site uses your tunnel in every tab.'])
+    expect(notes(site({ via: null, following: false, always: { on: true, available: true } }))).toEqual(['This site goes direct in every tab.'])
+    expect(notes(site({ via: 'nym', following: true }, { everywhere: true }))).toEqual(['This tab follows your browser-wide tunnel. Turn it off here for this tab only.'])
   })
 
   it('names the website, not the tab, in the line of a tunnel the website has but the tab did not choose', () => {
@@ -191,7 +200,7 @@ describe('the tunnels page of a tab showing a website', () => {
   })
 
   it('says what a tab\'s choice means for every site it opens, whether or not this one keeps it', () => {
-    expect(notes(site({ via: 'nym', following: false, tabChoice: 'nym', always: { on: true, available: true } }))).toEqual(['Every site you open in this tab goes through Nym, until the tab is closed.', TAB_TUNNEL_PROFILE_NOTE])
+    expect(notes(site({ via: 'nym', following: false, tabChoice: 'nym', always: { on: true, available: true } }))).toEqual(['Sites in this tab go through Nym until the tab closes, with their sign-ins kept apart.'])
   })
 
   it('keeps the Swarm hint and the storage notices of the website', () => {

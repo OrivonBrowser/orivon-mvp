@@ -142,7 +142,6 @@ hr {
 .tunnel-kept-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tunnel-kept-via { flex: none; color: var(--wink-dim); }
 .tunnel-hint { display: flex; flex-direction: column; gap: 4px; }
-.tunnel-hint .route-line { margin: 0; }
 .tunnel-section .route-line { margin: 0; }
 .tunnel-notice { display: flex; flex-direction: column; gap: 8px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--waccent) 12%, transparent); font-size: 12px; line-height: 1.5; }
 .tunnel-notice-text { margin: 0; }
