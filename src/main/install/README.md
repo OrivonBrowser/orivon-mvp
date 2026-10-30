@@ -53,7 +53,7 @@ reloaded the same way; a tab that navigated to another site loses its cover and 
 **[`first-visit.ts`](first-visit.ts) is the order of a first visit, and [`app-install.ts`](app-install.ts) is every visit after it
 (`ADR-0076`, on `ADR-0075`).** An origin Orivon has never held (no registration, pin or saved version, and not refused) loads at once as an ordinary
 website while it is asked about as soon as its manifest is read, and the app is cached beside the question (`first-visit-keeper.ts`: every file
-downloaded and judged against the tree its site declares, nothing granted or pinned before the answer). On Grant all, or Close with some switches on, it is served, registered, granted what was switched on and the
+downloaded and judged against the tree its site declares, nothing granted or pinned before the answer), once the first page has finished loading, at Allow if that comes first, and at the latest after `FIRST_PAGE_HOLD_MS`, so the page's own files are not queued behind the app's. On Grant all, or Close with some switches on, it is served, registered, granted what was switched on and the
 tab loads the address again as the app (`letIn`), the staged files are pinned (or, when the caching has not finished, the pin follows the live serving), and Close with every
 switch off or a pressed Escape drops what was cached (an Escape keeps it for the run: `askAgain` lets it go, and forgets the dismissal and the refusal, for the key popup's Review permissions). The loader's `readManifest`, `readDeclaration` and `serveLive` are the reads and the serving, `fetchForInstall` and
 `installFetched` the caching and the pin. Bad data from anywhere (a served file, the caching) takes the origin away whole through one function, once: before

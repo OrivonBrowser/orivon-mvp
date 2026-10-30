@@ -12,6 +12,7 @@ function rig (): { calls: string[], screens: TabScreens } {
     sheet: async () => 'retry',
     end: () => { calls.push('end') },
     moved: () => false,
+    pageLoaded: async () => { calls.push('pageLoaded') },
     signal: new AbortController().signal,
     tab: () => TAB,
     navigate: (url) => { calls.push(`navigate:${url}`) },
@@ -44,5 +45,12 @@ describe('tabHost: a first visit in the tab the page is already running in', () 
     const host = tabHost(screens, () => 'x')
     await expect(host.sheet({ kind: 'download-failed', name: 'L', reason: 'x' })).resolves.toBe('retry')
     expect(host.tab?.()).toBeDefined()
+  })
+
+  it('asks the tab\'s screens whether the page the visit began on has loaded', async () => {
+    const { calls, screens } = rig()
+    const host = tabHost(screens, () => 'x')
+    await host.pageLoaded?.()
+    expect(calls).toEqual(['pageLoaded'])
   })
 })

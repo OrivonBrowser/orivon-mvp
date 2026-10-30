@@ -27,6 +27,8 @@ export interface TabScreens {
   end: () => void
   /** The tab started another navigation or was destroyed: whatever was asked of it is no longer about this page. */
   moved: () => boolean
+  /** Resolves when the page the visit began on has finished loading, or can no longer finish (the tab moved on, was destroyed, or the screens ended); at once when it is not loading. Never rejects. */
+  pageLoaded: () => Promise<void>
   /** Aborts when the tab moves on: a download that nobody is waiting for stops. */
   readonly signal: AbortSignal
   /** Which tab this is, as a value that outlives its contents: entering an app swaps the contents for ones in the app's own session. */
@@ -89,6 +91,7 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
     let forgetAnswer: (() => void) | undefined
     let settleSheet: ((choice: SheetChoice) => void) | undefined
     let stopWatchingReload: (() => void) | undefined
+    const loadWaits = new Set<() => void>()
 
     const askCover = (state: CoverState): void => {
       if (ended) return
@@ -110,6 +113,7 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
       sheet = cover = undefined
       forgetAnswer?.()
       stopWatchingReload?.()
+      for (const finish of [...loadWaits]) finish()
       release?.()
     }
 
@@ -135,6 +139,18 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
       return still
     }
     const onDestroyed = (): void => { moveOn() }
+
+    /** `end` finishes every wait, and every way the tab moves on ends in `end`, so no wait outlives the visit. */
+    const pageLoaded = (): Promise<void> => new Promise<void>((resolve) => {
+      if (!live() || !contents.isLoading()) { resolve(); return }
+      const finish = (): void => {
+        contents.removeListener('did-stop-loading', finish)
+        loadWaits.delete(finish)
+        resolve()
+      }
+      contents.on('did-stop-loading', finish)
+      loadWaits.add(finish)
+    })
     contents.on('did-start-navigation', onNavigation as never)
     contents.on('destroyed', onDestroyed)
 
@@ -195,6 +211,7 @@ export function createTabSetup (deps: TabSetupDeps): TabSetup {
       },
       end,
       moved: () => moved || contents.isDestroyed(),
+      pageLoaded,
       signal: gone.signal,
       tab: () => ({ window, tabId }),
       navigate: (url) => { if (handOver()) deps.navigate(window, tabId, url) },

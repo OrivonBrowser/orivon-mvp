@@ -38,10 +38,11 @@ export interface Keeper {
   /** The live handler is serving the origin: a block has a handler and a registration to take away. */
   markServed: () => void
   /**
-   * From the moment the manifest is read, and before the question is answered: downloads the whole app, checks it against
-   * the tree it comes with, and keeps it staged. Nothing is granted, served or pinned by it. Once.
+   * Beside the question, before it is answered: downloads the whole app, checks it against the tree it comes with, and
+   * keeps it staged. Nothing is granted, served or pinned by it. Once. Nothing is read until `pageLoaded` settles, the
+   * answer is yes (`start`), the visit ends, or `FIRST_PAGE_HOLD_MS` has passed.
    */
-  cache: () => void
+  cache: (pageLoaded?: Promise<void>) => void
   /** The staged app is whole and waiting for the answer. */
   landed: () => boolean
   /** The caching ended in bad data, or the app was taken away: nothing more is to be done with this visit. */
@@ -79,6 +80,12 @@ const versionKey = (version: LiveVersion): string => JSON.stringify([version.con
 /** `decideUpdate` is asked about authority alone: the bundle is taken as the same, so only widening decides. */
 const SAME_BUNDLE = 'sha256:0'
 
+/**
+ * The longest the caching waits for the first page to finish loading. The page's small files share the connection with
+ * the app's blocks and arrive late behind them; the ceiling keeps a page that never stops loading from holding it back.
+ */
+export const FIRST_PAGE_HOLD_MS = 10_000
+
 /** How many times one download looks again for the version that is current before it gives up until the next visit. */
 const MAX_REFRESHES = 3
 
@@ -97,6 +104,8 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
   let served = false
   let precache: Promise<Step> | undefined
   let precached = false
+  /** Aborts on the answer yes, which ends the wait for the first page. */
+  const answeredYes = new AbortController()
 
   /** Everything the app held is taken away, and the origin is forgotten: its next visit is a first visit. Its data stays where it is. */
   const takeAway = async (): Promise<void> => {
@@ -224,10 +233,22 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
     return next !== undefined && await consider(next)
   }
 
+  /** Settles at the first of: `loaded`, the answer yes, the visit ending, the ceiling. No timer or listener outlives it. */
+  const holdForFirstPage = async (loaded: Promise<void> | undefined): Promise<void> => {
+    if (loaded === undefined) return
+    const over = new AbortController()
+    try {
+      await Promise.race([loaded, sleep(deps.firstPageHoldMs ?? FIRST_PAGE_HOLD_MS, AbortSignal.any([stopped.signal, answeredYes.signal, over.signal]))])
+    } finally {
+      over.abort()
+    }
+  }
+
   /** The whole app downloaded and judged, or why it was not. Never throws. */
-  const download = async (): Promise<Step> => {
+  const download = async (loaded?: Promise<void>): Promise<Step> => {
     try {
       await sleep(deps.backgroundDelayMs ?? 0, stopped.signal)
+      await holdForFirstPage(loaded)
       if (ended) return { kind: 'done', outcome: 'blocked' }
       if (cancelled) return { kind: 'done', outcome: 'unfinished' }
       if (await deps.loader.pinFor(origin) !== null) return { kind: 'done', outcome: 'pinned' }
@@ -284,6 +305,7 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
   /** The answer is yes: what caching staged is pinned, or the download is made now, with the app followed to its next version if it moved. */
   const run = async (): Promise<BackgroundOutcome> => {
     allowed = true
+    answeredYes.abort()
     const early = precache
     precache = undefined
     let step = early === undefined ? await download() : await early
@@ -302,8 +324,8 @@ export function createKeeper (deps: FirstVisitDeps, origin: string, hintedUrl: s
     return await pin(step.bundle)
   }
 
-  const cache = (): void => {
-    precache ??= download().then((step) => { precached = true; return step })
+  const cache = (loaded?: Promise<void>): void => {
+    precache ??= download(loaded).then((step) => { precached = true; return step })
   }
 
   const cancel = async (): Promise<void> => {
