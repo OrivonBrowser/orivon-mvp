@@ -14,6 +14,9 @@ import type { ProxyTestReply } from '../route/route-domain.js'
 import { isFromSiteInfoWindow } from './site-info-ipc.js'
 import type { ProxyAddressResult, SiteInfoCommand, TunnelResult } from './site-info-ipc.js'
 
+/** The commands whose answer is the popup's info as it is now: the others (closing, sizing, a test of the proxy) never wait for it. */
+const ANSWERS_WITH_INFO: ReadonlySet<string> = new Set(['get', 'setBrowserTunnel', 'setNodesTunnel', 'setProxyAddress'])
+
 export function registerSiteInfoTabIpc (
   siteInfoWebContents: WebContents,
   popupUrl: string,
@@ -33,23 +36,24 @@ export function registerSiteInfoTabIpc (
       const now = await controller.tabInfoFor(tabId)
       return now === undefined ? undefined : controller.withBrowserTunnel(now)
     }
-    const info = await infoNow()
+    // What the popup draws, read after the change the command made, whether it was made or not: the rows show what is true.
+    const answer = async (ok: boolean): Promise<TunnelResult | undefined> => {
+      const now = await infoNow()
+      return now === undefined ? undefined : { ok, info: now }
+    }
+    // The commands that change the tab act before anything is awaited, so two that arrive close together are carried out in the order they were sent.
+    if (command.type === 'setTunnel') {
+      if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return await answer(false)
+      return await answer(await controller.setTabTunnel(tabId, command.kind, typeof command.shownOrigin === 'string' ? command.shownOrigin : ''))
+    }
+    if (command.type === 'setSiteAlways') {
+      return await answer(typeof command.on === 'boolean' && typeof command.shownOrigin === 'string' && await controller.setSiteAlways(tabId, command.on, command.shownOrigin))
+    }
+    const info = ANSWERS_WITH_INFO.has(command.type) ? await infoNow() : undefined
 
     switch (command.type) {
       case 'get':
         return info
-      case 'setTunnel': {
-        if (info === undefined) return
-        if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return { ok: false, info } satisfies TunnelResult
-        const ok = await controller.setTabTunnel(tabId, command.kind, typeof command.shownOrigin === 'string' ? command.shownOrigin : '')
-        // Read again whether it was done or not: a move that could not be made gave the tab its choice back, and the rows show what is true.
-        return { ok, info: await infoNow() ?? info } satisfies TunnelResult
-      }
-      case 'setSiteAlways': {
-        if (info === undefined) return
-        const ok = typeof command.on === 'boolean' && typeof command.shownOrigin === 'string' && await controller.setSiteAlways(tabId, command.on, command.shownOrigin)
-        return { ok, info: await infoNow() ?? info } satisfies TunnelResult
-      }
       case 'setBrowserTunnel': {
         if (info === undefined) return
         if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return { ok: false, info } satisfies TunnelResult

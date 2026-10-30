@@ -81,7 +81,7 @@ describe('the tunnel button look on a new tab', () => {
   })
 })
 
-describe('the tunnel button look on a website, which the button is now about the tab of whatever the tab carries (ADR-0104)', () => {
+describe('the tunnel button look on a website, which the button opens the tab\'s list for whatever the tab carries (ADR-0104)', () => {
   it('says nothing of the tab for a website that has a tunnel of its own and a tab with no choice, which sets nothing for the tab', () => {
     for (const via of ['nym', 'socks5'] as const) {
       expect(tunnelButtonLook(site, 'on', via, true).label, via).not.toContain(TAB_CHOICE_NOTE)

@@ -192,12 +192,15 @@ function renderAlways (always: AlwaysModel, onToggle: (next: boolean) => void): 
   const name = document.createElement('span')
   name.className = 'tunnel-label'
   name.textContent = always.label
-  const line = document.createElement('span')
-  line.className = 'tunnel-state'
-  line.id = 'tunnel-always-line'
-  line.textContent = always.line
-  text.append(name, line)
-  control.setAttribute('aria-describedby', line.id)
+  text.append(name)
+  if (always.line !== '') {
+    const line = document.createElement('span')
+    line.className = 'tunnel-state'
+    line.id = 'tunnel-always-line'
+    line.textContent = always.line
+    text.append(line)
+    control.setAttribute('aria-describedby', line.id)
+  }
   el.append(text, control)
   return el
 }

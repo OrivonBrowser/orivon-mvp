@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import { ALWAYS_LABEL, ALWAYS_LINE_NOTHING, ALWAYS_LINE_OFF, ALWAYS_LINE_ON, SITE_OWN_DIRECT_NOTE, TAB_DIRECT_PROFILE_NOTE, TAB_FOLLOWING_NOTE, TAB_PICK_NOTE, TAB_TUNNEL_FAILED, TAB_TUNNEL_PROFILE_NOTE, directTabNote, tabNotes } from '../site-info/tab-words.js'
+import { ALWAYS_LABEL, ALWAYS_LINE_HELD, ALWAYS_LINE_NOTHING, ALWAYS_LINE_OFF, ALWAYS_LINE_ON, SITE_OWN_DIRECT_NOTE, TAB_DIRECT_PROFILE_NOTE, TAB_FOLLOWING_NOTE, TAB_PICK_NOTE, TAB_TUNNEL_FAILED, TAB_TUNNEL_PROFILE_NOTE, alwaysLineOther, directTabNote, tabNotes } from '../site-info/tab-words.js'
 import { HELD_LINE, NYM_OFF_LINE, tunnelListModel } from '../site-info/tunnels-model.js'
 
 // The tunnels page when it is about a tab (ADR-0101): the same rows, the words of a tab, and no storage notice.
@@ -135,9 +135,29 @@ describe('the tunnels page of a tab showing a website', () => {
     expect(always).toEqual({ label: ALWAYS_LABEL, line: ALWAYS_LINE_ON, on: true, disabled: false })
   })
 
-  it('is held with the rows: in a window held to a tunnel and while the settings cannot be read, still saying what it would do', () => {
-    const held = tunnelListModel(site({ always: { on: false, available: false } }, { tunnelHeld: 'nym' }), noView).always
-    expect(held).toMatchObject({ disabled: true, line: ALWAYS_LINE_OFF })
+  it('is on, and names both tunnels, while the tab goes another way than the one the website was saved with', () => {
+    const line = (entry: 'nym' | 'socks5' | null, via: 'nym' | 'socks5' | null, tabChoice?: 'nym' | 'socks5' | 'direct'): string | undefined =>
+      tunnelListModel(site({ via, following: false, ...(tabChoice === undefined ? {} : { tabChoice }), always: { on: true, available: true, entry } }), noView).always?.line
+    expect(line('socks5', 'nym', 'nym')).toBe('Saved for this site: your tunnel. This tab uses Nym.')
+    expect(line('nym', 'socks5', 'socks5')).toBe('Saved for this site: Nym. This tab uses your tunnel.')
+    expect(line(null, 'nym', 'nym')).toBe('Saved for this site: direct. This tab uses Nym.')
+    expect(line('nym', null, 'direct')).toBe('Saved for this site: Nym. This tab goes direct.')
+    expect(alwaysLineOther('nym', null)).toBe('Saved for this site: Nym. This tab goes direct.')
+  })
+
+  it('says it is saved for the tab and every other while the tab goes where the website was saved to go', () => {
+    const line = (entry: 'nym' | 'socks5' | null, via: 'nym' | 'socks5' | null): string | undefined =>
+      tunnelListModel(site({ via, following: false, always: { on: true, available: true, entry } }), noView).always?.line
+    expect(line('nym', 'nym')).toBe(ALWAYS_LINE_ON)
+    expect(line(null, null)).toBe(ALWAYS_LINE_ON)
+    // An entry the panel does not name (a page built without one) keeps the plain line.
+    expect(tunnelListModel(site({ via: 'nym', following: false, always: { on: true, available: true } }), noView).always?.line).toBe(ALWAYS_LINE_ON)
+  })
+
+  it('is held with the rows: in a window held to a tunnel and while the settings cannot be read, promising nothing it cannot keep', () => {
+    const held = tunnelListModel(site({ always: { on: false, available: true } }, { tunnelHeld: 'nym' }), noView).always
+    expect(held).toMatchObject({ disabled: true, line: ALWAYS_LINE_HELD })
+    expect(ALWAYS_LINE_HELD).toBe('')
     const unreadable = tunnelListModel(site({ unreadable: true, always: { on: true, available: true } }), noView).always
     expect(unreadable).toMatchObject({ on: true, disabled: true })
   })

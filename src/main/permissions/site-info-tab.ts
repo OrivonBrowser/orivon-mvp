@@ -94,6 +94,6 @@ export function tabSiteTunnel (facts: TabSiteFacts): SiteTunnel {
     subject: 'tab',
     ...(profile === undefined ? {} : { profile }),
     ...(choice === undefined ? {} : { tabChoice: choice }),
-    always: alwaysState({ choice, entry, everywhere: facts.everywhere })
+    always: { ...alwaysState({ choice, entry, everywhere: facts.everywhere }), ...(entry === undefined ? {} : { entry: entry === 'off' ? null : entry }) }
   }
 }

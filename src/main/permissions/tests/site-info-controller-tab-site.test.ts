@@ -39,6 +39,8 @@ interface Options {
   entries?: Record<string, TunnelEntry>
   /** `routeSwitch.choose` / `forget` throw: the entry cannot be saved. */
   entryFails?: boolean
+  /** `routeSwitch.choose` / `forget` save the entry and then fail (the sessions did not follow). */
+  entryFailsAfterSaving?: boolean
   /** The tab could not move to the session its new choice calls for: it keeps what it had. */
   tabStuck?: boolean
 }
@@ -53,6 +55,12 @@ function world (options: Options = {}) {
     const state = entries.get(origin) ?? (everywhere ? 'nym' : 'off')
     return state === 'off' ? undefined : state
   }
+  const forget = vi.fn(async (origin: string, _tabStays?: boolean) => {
+    calls.push(`forget:${origin}`)
+    if (options.entryFails === true) throw new Error('could not be saved')
+    entries.delete(origin)
+    if (options.entryFailsAfterSaving === true) throw new Error('the sessions did not follow')
+  })
   const routes = {
     hub: {
       state: () => 'ok',
@@ -74,12 +82,9 @@ function world (options: Options = {}) {
         const entry = entryFor(kind ?? 'off', everywhere)
         if (entry === undefined) entries.delete(origin)
         else entries.set(origin, entry)
+        if (options.entryFailsAfterSaving === true) throw new Error('the sessions did not follow')
       }),
-      forget: vi.fn(async (origin: string) => {
-        calls.push(`forget:${origin}`)
-        if (options.entryFails === true) throw new Error('could not be saved')
-        entries.delete(origin)
-      })
+      forget
     },
     defaultKind: () => 'nym',
     targetOf: (kind: 'nym' | 'socks5') => kind === 'socks5' && options.noProxy === true ? undefined : { host: '127.0.0.1', port: 9050 },
@@ -92,7 +97,7 @@ function world (options: Options = {}) {
   const tabTunnels = { choiceOf: (id: string) => id === 't1' ? { choice: tab.choice, ...(tab.address === undefined ? {} : { address: tab.address }) } : undefined, set }
   const controller = createSiteInfoController({ broker: createBroker(baseDeps()), routes, privateTunnel: options.privateTunnel ?? null, extensions: { list: () => [] } } as unknown as SubsystemContext, trust(), undefined, undefined, undefined, tabTunnels)
   const info = async () => await controller.tabInfoFor('t1')
-  return { controller, calls, entries, tab, info, routes }
+  return { controller, calls, entries, tab, info, routes, forget }
 }
 
 describe('what the popup says of a tab showing a website', () => {
@@ -261,6 +266,23 @@ describe('Always use for this site', () => {
     }
   })
 
+  describe('the workers of the page', () => {
+    it('stay in the session a tab still runs it in once the entry is gone', async () => {
+      const follows = world({ entries: { [SITE]: 'socks5' } })
+      await follows.controller.setSiteAlways('t1', false, SITE)
+      expect(follows.forget).toHaveBeenLastCalledWith(SITE, true)
+      const offEntry = world({ everywhere: true, choice: 'direct', entries: { [SITE]: 'off' } })
+      await offEntry.controller.setSiteAlways('t1', false, SITE)
+      expect(offEntry.forget).toHaveBeenLastCalledWith(SITE, true)
+    })
+
+    it('go from the session the entry put the page in when the tab runs it in another one', async () => {
+      const w = world({ choice: 'nym', entries: { [SITE]: 'socks5' } })
+      await w.controller.setSiteAlways('t1', false, SITE)
+      expect(w.forget).toHaveBeenLastCalledWith(SITE, false)
+    })
+  })
+
   describe('when the entry cannot be saved', () => {
     it('turning it on leaves the tab with its choice and the switch off', async () => {
       const w = world({ choice: 'nym', entryFails: true })
@@ -275,6 +297,21 @@ describe('Always use for this site', () => {
       expect(w.calls).toEqual(['tab:socks5', `forget:${SITE}`, 'tab:null'])
       expect(w.tab.choice).toBeUndefined()
       expect((await w.info())?.tunnel).toMatchObject({ via: 'socks5', following: false, always: { on: true } })
+    })
+
+    it('turning it off keeps the tab where the plan put it when the entry was already gone, so the page and the entry agree', async () => {
+      const w = world({ entries: { [SITE]: 'socks5' }, entryFailsAfterSaving: true })
+      expect(await w.controller.setSiteAlways('t1', false, SITE)).toBe(false)
+      expect(w.calls).toEqual(['tab:socks5', `forget:${SITE}`])
+      expect(w.tab.choice).toBe('socks5')
+      expect((await w.info())?.tunnel).toMatchObject({ via: 'socks5', tabChoice: 'socks5', always: { on: false } })
+    })
+
+    it('a move keeps the tab where it went when the entry was saved before the failure', async () => {
+      const w = world({ choice: 'nym', entries: { [SITE]: 'nym' }, entryFailsAfterSaving: true })
+      expect(await w.controller.setTabTunnel('t1', 'socks5', SITE)).toBe(false)
+      expect(w.tab.choice).toBe('socks5')
+      expect(w.entries.get(SITE)).toBe('socks5')
     })
 
     it('turning it off with the tab unable to take the choice leaves the entry alone', async () => {

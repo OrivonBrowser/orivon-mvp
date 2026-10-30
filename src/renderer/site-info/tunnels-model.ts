@@ -3,7 +3,7 @@ import { nymTestingWords, nymTestWords } from '../pages/shared/nym-words.js'
 import { proxyTestWords } from '../pages/shared/proxy-words.js'
 import type { ProxyTestResult } from '../pages/shared/proxy-words.js'
 import { routeLineWords } from './route-line.js'
-import { ALWAYS_LABEL, ALWAYS_LINE_NOTHING, ALWAYS_LINE_OFF, ALWAYS_LINE_ON, tabNotes } from './tab-words.js'
+import { ALWAYS_LABEL, ALWAYS_LINE_HELD, ALWAYS_LINE_NOTHING, ALWAYS_LINE_OFF, ALWAYS_LINE_ON, alwaysLineOther, tabNotes } from './tab-words.js'
 import { extensionsHint, tunnelHint } from './tunnel-view.js'
 import type { RouteSubject } from './route-line.js'
 import type { NymState } from '../../main/route/nym-status.js'
@@ -88,7 +88,7 @@ export interface NodesModel {
 /** The "Always use for this site" switch under the rows of a tab showing a website. */
 export interface AlwaysModel {
   readonly label: string
-  /** What it does, in the state it is in. */
+  /** What it does, in the state it is in; empty while the switch is held for a reason the notes give. */
   readonly line: string
   /** The website has an entry of its own. */
   readonly on: boolean
@@ -254,7 +254,8 @@ function lineSubject (tunnel: SiteTunnel): RouteSubject {
 function alwaysModel (tunnel: SiteTunnel, fixed: boolean, asking: boolean): AlwaysModel | null {
   const always = tunnel.always
   if (always === undefined) return null
-  // A switch held for a reason the notes already give (a held window, unreadable settings) still says what it would do.
-  const line = always.on ? ALWAYS_LINE_ON : always.available || fixed ? ALWAYS_LINE_OFF : ALWAYS_LINE_NOTHING
+  // A switch held for a reason the notes already give (a held window, unreadable settings) promises nothing; one that is on while the tab goes another way names both.
+  const other = always.on && always.entry !== undefined && always.entry !== tunnel.via
+  const line = always.on ? (other ? alwaysLineOther(always.entry ?? null, tunnel.via) : ALWAYS_LINE_ON) : fixed ? ALWAYS_LINE_HELD : always.available ? ALWAYS_LINE_OFF : ALWAYS_LINE_NOTHING
   return { label: ALWAYS_LABEL, line, on: always.on, disabled: fixed || asking || (!always.on && !always.available) }
 }

@@ -115,7 +115,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     },
     openSiteInfo: (anchor, page, url) => {
       const pressedAt = presses.take(page)
-      // The tunnel button of a new tab, and of a tab that carries a tunnel choice, is about the tab: no website has an origin to be about.
+      // The tunnel button of a new tab and of every website that can go through a tunnel is about the tab (an installed app, a page of this computer and a shell page are not).
       const tabId = page === 'tunnels' ? aboutTab() : undefined
       if (tabId !== undefined) {
         if (waitingList?.tabId === tabId) return

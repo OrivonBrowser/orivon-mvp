@@ -15,10 +15,18 @@ export const ALWAYS_FAILED = 'The choice for this site could not be changed.'
 export const ALWAYS_LINE_OFF = 'Keeps this choice after the tab closes.'
 export const ALWAYS_LINE_ON = 'Saved for this site, in this tab and every other.'
 export const ALWAYS_LINE_NOTHING = 'Pick a tunnel to keep it for this site.'
+/** A switch that cannot be moved keeps nothing to promise: the notes above it say why. */
+export const ALWAYS_LINE_HELD = ''
 
 /** The name of the tunnel in a sentence about the tab. */
 function tunnelWords (kind: 'nym' | 'socks5'): string {
   return kind === 'nym' ? 'Nym' : 'your tunnel'
+}
+
+/** The website keeps one tunnel and this tab goes through another (the tab's choice wins): the switch is on for the one saved, and the line names both. */
+export function alwaysLineOther (saved: 'nym' | 'socks5' | null, via: 'nym' | 'socks5' | null): string {
+  const kept = saved === null ? 'Saved for this site: direct.' : `Saved for this site: ${tunnelWords(saved)}.`
+  return via === null ? `${kept} This tab goes direct.` : `${kept} This tab uses ${tunnelWords(via)}.`
 }
 
 /** Direct for this tab: said instead of an empty list of lit switches, so a tab that left the tunnel does not look like one that never had it. */

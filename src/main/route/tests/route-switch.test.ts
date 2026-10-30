@@ -226,6 +226,19 @@ describe('a website that moves into a profile', () => {
     expect(dropServiceWorkers).toHaveBeenLastCalledWith(profilePartitionFor('direct', SITE), SITE)
   })
 
+  it('keeps its workers in the session a tab still runs it in when the entry is taken away, and drops them otherwise', async () => {
+    const dropServiceWorkers = vi.fn(async () => {})
+    const { routeSwitch } = setup({ world: { dropServiceWorkers } })
+    await routeSwitch.choose(SITE, 'nym')
+    dropServiceWorkers.mockClear()
+    await routeSwitch.forget(SITE, true)
+    expect(dropServiceWorkers, 'a tab holds the profile it was in').not.toHaveBeenCalled()
+    await routeSwitch.choose(SITE, 'nym')
+    dropServiceWorkers.mockClear()
+    await routeSwitch.forget(SITE)
+    expect(dropServiceWorkers).toHaveBeenCalledWith(profilePartitionFor('nym', SITE), SITE)
+  })
+
   it('is not undone by workers that cannot be unregistered', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { routeSwitch, store } = setup({ world: { dropServiceWorkers: async () => { throw new Error('busy') } } })

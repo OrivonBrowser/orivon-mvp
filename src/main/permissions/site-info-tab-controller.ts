@@ -6,11 +6,10 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { formatOriginForDisplay } from '../consent/grant-prompt-render.js'
 import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
 import { profileOrigin, SHARED_ORIGIN, unreadableTunnel } from '../route/route-hub.js'
-import { planAlwaysOff, planAlwaysOn, planMove } from '../route/site-always.js'
+import { planAlwaysOff, planAlwaysOn, planMove, tabKeepsSession } from '../route/site-always.js'
 import type { AlwaysFacts, RoutePlan } from '../route/site-always.js'
 import { canTunnel } from '../route/site-partition.js'
 import { tunnelOfPage } from '../route/tab-tunnel.js'
-import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import type { SubsystemContext } from '../registry.js'
 import { emptySiteInfo } from './site-info.js'
 import type { SiteInfo, SiteTunnel, SiteTunnelKind } from './site-info.js'
@@ -95,28 +94,32 @@ export function createTabTunnelController (parts: TabControllerParts): TabTunnel
     return websiteOf(tabTunnels.choiceOf(tabId)?.address) ?? ''
   }
 
-  /** Carries out a plan: the tab first, because moving it is what can fail, then the website's entry; an entry that cannot be changed gives the tab back what it had. */
-  async function carryOut (tabId: string, origin: string | undefined, plan: RoutePlan, before: TabTunnelChoice | undefined): Promise<boolean> {
+  /**
+   * Carries out a plan: the tab first, because moving it is what can fail, then the website's entry. An entry that could not be
+   * changed at all gives the tab back what it had; one that changed before the failure keeps the tab where the plan put it, so
+   * the page and the entry agree, and the answer is still a failure for the panel to redraw from what is true.
+   */
+  async function carryOut (tabId: string, origin: string | undefined, plan: RoutePlan, facts: AlwaysFacts): Promise<boolean> {
     const routes = ctx.routes
-    if (routes === undefined) return false
+    if (routes === undefined || (plan.entry !== undefined && origin === undefined)) return false
     if (plan.tab !== undefined) {
       tabTunnels.set(tabId, plan.tab)
       if (tabTunnels.choiceOf(tabId)?.choice !== (plan.tab ?? undefined)) return false
     }
-    if (plan.entry !== undefined) {
-      if (origin === undefined) return false
-      const done = plan.entry === 'forget' ? await forgetEntry(routes, origin) : await parts.setWebsiteTunnel(origin, plan.entry.choose)
+    if (plan.entry !== undefined && origin !== undefined) {
+      const after = plan.tab === undefined ? facts.choice : (plan.tab ?? undefined)
+      const done = plan.entry === 'forget' ? await forgetEntry(routes, origin, tabKeepsSession(after, facts.entry)) : await parts.setWebsiteTunnel(origin, plan.entry.choose)
       if (!done) {
-        if (plan.tab !== undefined) tabTunnels.set(tabId, before ?? null)
+        if (plan.tab !== undefined && routes.store.stateOf(origin) === facts.entry) tabTunnels.set(tabId, facts.choice ?? null)
         return false
       }
     }
     return true
   }
 
-  async function forgetEntry (routes: Routes, origin: string): Promise<boolean> {
+  async function forgetEntry (routes: Routes, origin: string, tabStays: boolean): Promise<boolean> {
     try {
-      await routes.routeSwitch.forget(origin)
+      await routes.routeSwitch.forget(origin, tabStays)
       return true
     } catch (error) {
       console.error('[site-info] the tunnel of a website could not be taken away:', error)
@@ -133,12 +136,12 @@ export function createTabTunnelController (parts: TabControllerParts): TabTunnel
   }
 
   /** What the command acts on, read from the tab now: its choice and the website it shows with that website's entry. */
-  function actingOn (routes: Routes, tabId: string): { readonly choice: TabTunnelChoice | undefined, readonly origin: string | undefined, readonly facts: AlwaysFacts } | undefined {
+  function actingOn (routes: Routes, tabId: string): { readonly origin: string | undefined, readonly facts: AlwaysFacts } | undefined {
     const tab = tabTunnels.choiceOf(tabId)
     if (tab === undefined) return undefined
     const origin = websiteOf(tab.address)
     const entry = origin === undefined ? undefined : routes.store.stateOf(origin)
-    return { choice: tab.choice, origin, facts: { choice: tab.choice, entry, everywhere: routes.hub.isEverywhere() } }
+    return { origin, facts: { choice: tab.choice, entry, everywhere: routes.hub.isEverywhere() } }
   }
 
   async function setTabTunnel (tabId: string, kind: SiteTunnelKind | null, shownOrigin = ''): Promise<boolean> {
@@ -148,7 +151,7 @@ export function createTabTunnelController (parts: TabControllerParts): TabTunnel
     if (now === undefined) return false
     // The popup stays open across a navigation: a move that would change the entry of a website the person was not shown fails closed.
     if (now.facts.entry !== undefined && shownOrigin !== now.origin) return false
-    return await carryOut(tabId, now.origin, planMove(now.facts, kind), now.choice)
+    return await carryOut(tabId, now.origin, planMove(now.facts, kind), now.facts)
   }
 
   async function setSiteAlways (tabId: string, on: boolean, shownOrigin: string): Promise<boolean> {
@@ -160,7 +163,7 @@ export function createTabTunnelController (parts: TabControllerParts): TabTunnel
     // Already as asked: nothing to do, and nothing wrong.
     if (on === (now.facts.entry !== undefined)) return true
     const plan = on ? planAlwaysOn(now.facts) : planAlwaysOff(now.facts)
-    return plan !== undefined && await carryOut(tabId, now.origin, plan, now.choice)
+    return plan !== undefined && await carryOut(tabId, now.origin, plan, now.facts)
   }
 
   return { tabInfoFor, tabShownOrigin, setTabTunnel, setSiteAlways }

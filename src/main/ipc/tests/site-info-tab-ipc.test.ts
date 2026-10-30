@@ -43,6 +43,17 @@ function fakeController (over: Partial<SiteInfoController> = {}): SiteInfoContro
   } as unknown as SiteInfoController
 }
 
+/** A controller whose info is `INFO` until `setTabTunnel` or `setSiteAlways` has run, and `NEXT` after: the answer must be read after the change, not before. */
+function changing (over: Partial<SiteInfoController> = {}, answers = true): SiteInfoController {
+  let changed = false
+  return fakeController({
+    tabInfoFor: vi.fn(async () => changed ? NEXT : INFO),
+    setTabTunnel: vi.fn(async () => { changed = true; return answers }),
+    setSiteAlways: vi.fn(async () => { changed = true; return answers }),
+    ...over
+  })
+}
+
 function register (controller: SiteInfoController): { openSettings: ReturnType<typeof vi.fn>, onContentHeight: ReturnType<typeof vi.fn>, closePopup: ReturnType<typeof vi.fn> } {
   const openSettings = vi.fn()
   const onContentHeight = vi.fn()
@@ -75,8 +86,7 @@ describe('registerSiteInfoTabIpc', () => {
   })
 
   it('gives the tab the tunnel asked for, or none, and returns the info after', async () => {
-    const tabInfoFor = vi.fn().mockReturnValueOnce(INFO).mockReturnValue(NEXT)
-    const controller = fakeController({ tabInfoFor })
+    const controller = changing()
     register(controller)
     expect(await dispatch({ type: 'setTunnel', kind: 'nym', tab: 'tab-9' })).toEqual({ ok: true, info: NEXT })
     expect(controller.setTabTunnel).toHaveBeenCalledWith(TAB, 'nym', '')
@@ -103,14 +113,12 @@ describe('registerSiteInfoTabIpc', () => {
   })
 
   it('answers with the info as it is after a move that was refused, so the rows show what is true', async () => {
-    const tabInfoFor = vi.fn().mockReturnValueOnce(INFO).mockReturnValue(NEXT)
-    register(fakeController({ tabInfoFor, setTabTunnel: vi.fn(async () => false) }))
+    register(changing({}, false))
     expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: false, info: NEXT })
   })
 
   it('keeps or lets go of the website\'s own choice for the tab it was built for, whatever tab or origin a command names, and returns the info after', async () => {
-    const tabInfoFor = vi.fn().mockReturnValueOnce(INFO).mockReturnValue(NEXT)
-    const controller = fakeController({ tabInfoFor })
+    const controller = changing()
     register(controller)
     expect(await dispatch({ type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example', tab: 'tab-9', origin: 'https://evil.example' })).toEqual({ ok: true, info: NEXT })
     expect(controller.setSiteAlways).toHaveBeenCalledWith(TAB, true, 'https://news.example')
@@ -130,6 +138,33 @@ describe('registerSiteInfoTabIpc', () => {
   it('says the switch did not move, with the info as it is, when the controller refused (a stale panel, a held window, settings that cannot be read)', async () => {
     register(fakeController({ setSiteAlways: vi.fn(async () => false) }))
     expect(await dispatch({ type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example' })).toEqual({ ok: false, info: INFO })
+  })
+
+  it('carries out the commands that change the tab in the order they were sent, however long the info takes', async () => {
+    let release: () => void = () => {}
+    const slow = new Promise<void>((resolve) => { release = resolve })
+    const controller = fakeController({ tabInfoFor: vi.fn(async () => { await slow; return INFO }) })
+    register(controller)
+    const sent = [
+      dispatch({ type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example' }),
+      dispatch({ type: 'setSiteAlways', on: false, shownOrigin: 'https://news.example' }),
+      dispatch({ type: 'setTunnel', kind: 'nym', shownOrigin: 'https://news.example' })
+    ]
+    expect(vi.mocked(controller.setSiteAlways).mock.calls.map((call) => call[1])).toEqual([true, false])
+    expect(controller.setTabTunnel).toHaveBeenCalledTimes(1)
+    release()
+    await Promise.all(sent)
+  })
+
+  it('sizes and closes without waiting for the info of the tab', async () => {
+    const controller = fakeController({ tabInfoFor: vi.fn(async () => { throw new Error('the info could not be built') }) })
+    const { onContentHeight, closePopup } = register(controller)
+    await dispatch({ type: 'contentHeight', height: 300 })
+    await dispatch({ type: 'close' })
+    await new Promise<void>((resolve) => { setImmediate(resolve) })
+    expect(onContentHeight).toHaveBeenCalledWith(300)
+    expect(closePopup).toHaveBeenCalledTimes(1)
+    expect(controller.tabInfoFor).not.toHaveBeenCalled()
   })
 
   it('answers nothing for the switch once the tab is gone', async () => {

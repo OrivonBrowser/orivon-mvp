@@ -171,8 +171,10 @@ it('[app:website-tunnel-always-keeps-the-tunnel-for-the-site] "Always use for th
 }, 6 * QA_TEST_TIMEOUT_MS)
 
 it('[app:website-tunnel-always-opens-on-for-a-site-with-an-entry] a website that has an entry opens with "Always use for this site" on and its tunnel lit, in a tab that has no choice of its own, and the button does not say the choice is the tab\'s', async () => {
-  expect(await chrome.getAttribute('#tunnel-btn', 'data-tunnel'), 'the button is lit for the page').toBe('on')
-  expect(await chrome.getAttribute('#tunnel-btn', 'aria-label'), 'and does not call the tunnel the tab\'s').not.toContain('Set for this tab')
+  expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'the button is lit for the page').toBe(true)
+  const labelled = async (): Promise<string> => await chrome.getAttribute('#tunnel-btn', 'aria-label') ?? ''
+  expect(await waitFor(async () => (await labelled()).startsWith('Tunnels. This page goes through your proxy')), 'the button says the page goes through the proxy').toBe(true)
+  expect(await labelled(), 'without calling the tunnel the tab\'s').not.toContain('Set for this tab')
   const list = await openTunnelList(app, chrome, 'socks5')
   expect(await list.locator('#tunnel-tab-first').getAttribute('aria-selected'), 'the list opens on the tab\'s panel').toBe('true')
   expect(await list.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('true')

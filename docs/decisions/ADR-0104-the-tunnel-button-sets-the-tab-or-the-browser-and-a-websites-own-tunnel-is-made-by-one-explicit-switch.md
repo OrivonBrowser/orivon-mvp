@@ -15,6 +15,8 @@
 
 **The tab is fixed at construction, and the popup can never name the website that acts.** The popup is opened for one tab. The website a command is about is read from that tab in the main process at the moment the command arrives; what the popup sends as the website it shows (`shownOrigin`) is only a check that it still shows it, and a command whose check fails is refused. "Always use for this site" is refused when the check fails, in a window held to Nym, while the settings cannot be read, and for an origin that cannot go through a tunnel; a row moved on a website that has an entry is refused when the check fails. A popup that shows a tab whose first page arrives is not closed by the arrival.
 
+**The switch names both tunnels when the tab goes another way than the entry.** A tab's choice beats the website's entry (ADR-0101), so the panel can show Nym lit while the website is saved for the proxy. Always is then on, and its line says what is saved and what the tab uses; turning it off removes the saved entry, and a row moved with it on replaces it. A switch that is held (a window held to Nym, settings that cannot be read) says nothing it cannot keep. Turning Always off leaves the page's service workers in the session the tab still runs it in.
+
 **Which panel opens.** A website with an entry of its own, or a tab with a choice, opens the first panel. With neither, the popup opens on Browser-wide while the whole browser is on a tunnel.
 
 **The tunnel button says the choice is the tab's only when it is.** "Set for this tab" is drawn only while the tab carries a choice equal to the tunnel the page goes through; a website that has an entry and a tab with no choice is lit for the page and says nothing about the tab.

@@ -6,6 +6,7 @@
 
 import { entryFor } from './route-state.js'
 import type { TunnelEntry, TunnelKind } from './route-state.js'
+import { profileOf } from './site-partition.js'
 import { choiceForSwitch } from './tab-tunnel.js'
 import type { TabTunnelChoice } from './tab-tunnel.js'
 
@@ -57,6 +58,11 @@ export function planAlwaysOff (facts: AlwaysFacts): RoutePlan | undefined {
   if (entry === undefined) return undefined
   const kept: TabTunnelChoice = choice !== undefined && choice !== 'direct' ? choice : entry === 'off' ? 'direct' : entry
   return kept === choice ? { entry: 'forget' } : { tab: kept, entry: 'forget' }
+}
+
+/** Whether a tab that takes `choice` once the website's `entry` is gone still runs the page in the session the entry put it in: a tab's choice names the profile it runs in, as an entry does. */
+export function tabKeepsSession (choice: TabTunnelChoice | undefined, entry: TunnelEntry | undefined): boolean {
+  return choice !== undefined && choice === profileOf(entry)
 }
 
 /** A row moved to `kind` (null: the lit row turned off): the tab takes it, and the entry too while the website has one, so the row really moves. */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { alwaysState, entryToSave, planAlwaysOff, planAlwaysOn, planMove } from '../site-always.js'
+import { alwaysState, entryToSave, planAlwaysOff, planAlwaysOn, planMove, tabKeepsSession } from '../site-always.js'
 import type { AlwaysFacts, RoutePlan } from '../site-always.js'
-import { tunnelOfPage } from '../tab-tunnel.js'
+import { profileForTab, tunnelOfPage } from '../tab-tunnel.js'
 import type { TabTunnelChoice } from '../tab-tunnel.js'
 import type { TunnelEntry } from '../route-state.js'
 import { profileOf } from '../site-partition.js'
@@ -152,6 +152,17 @@ describe('moving a row', () => {
       const after = applied(plan, choice, entry, everywhere)
       const wanted = kind ?? 'direct'
       expect(leavesBy(after.choice, after.entry, everywhere), `${String(choice)} ${String(entry)} ${String(everywhere)} ${String(kind)}`).toBe(wanted)
+    }
+  })
+})
+
+describe('the session a tab holds once the website\'s entry is gone', () => {
+  it('is the one the entry put the page in exactly when the tab\'s choice names the same profile', () => {
+    for (const choice of [undefined, 'nym', 'socks5', 'direct'] as const) {
+      for (const entry of [undefined, 'nym', 'socks5', 'off'] as const) {
+        const was = profileOf(entry)
+        expect(tabKeepsSession(choice, entry), `tab ${String(choice)}, entry ${String(entry)}`).toBe(was !== undefined && profileForTab(choice, 'https://news.example', undefined) === was)
+      }
     }
   })
 })
