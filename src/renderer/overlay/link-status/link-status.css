@@ -1,0 +1,43 @@
+/* One line in the corner of the page: the panel's own colour, the page-secondary ink and a hairline on the two edges
+   that face the page. The view is rounded by main on all four corners; the three that are not this one reach past
+   the window's edge (--inset-*), so only the corner away from the edge shows. */
+
+body[data-overlay='link-status']::after { display: none; }
+body[data-overlay='link-status'] #scroll { overflow: hidden; }
+
+body[data-overlay='link-status'] .link-status {
+  position: fixed;
+  top: 0;
+  left: var(--inset-left, 0);
+  right: var(--inset-right, 0);
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 10px;
+  border-top: 1px solid var(--wborder);
+  border-right: 1px solid var(--wborder);
+  border-top-right-radius: 6px;
+  color: var(--wink-dim);
+  font-size: 12px;
+  line-height: 22px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  user-select: none;
+  cursor: default;
+}
+
+body[data-overlay='link-status'][data-side='right'] .link-status {
+  border-right: none;
+  border-left: 1px solid var(--wborder);
+  border-top-right-radius: 0;
+  border-top-left-radius: 6px;
+}
+
+/* What the bubble would be at its own width: measured, never shown. */
+body[data-overlay='link-status'] .link-status-probe {
+  right: auto;
+  width: max-content;
+  overflow: visible;
+  visibility: hidden;
+  pointer-events: none;
+}

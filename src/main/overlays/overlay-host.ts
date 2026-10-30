@@ -71,6 +71,12 @@ interface Slot {
   idleTimer: ReturnType<typeof setTimeout> | null
 }
 
+/** A dock and a pane sit flush against the window, so they have no rounded corners; an exact place names its own. */
+function cornerRadius (placement: OverlayDef['placement']): number | undefined {
+  if (placement.kind === 'dock' || placement.kind === 'pane') return 0
+  return placement.kind === 'exact' ? placement.radius : undefined
+}
+
 async function showResult (handler: OverlayHandler, payload: unknown): Promise<OverlayReady> {
   try {
     return { shown: true, payload: await handler.show?.(payload) }
@@ -149,7 +155,7 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     mine = createOverlayView({
       dirname: deps.dirname,
       def: slot.def,
-      square: slot.def.placement.kind === 'dock' || slot.def.placement.kind === 'pane',
+      radius: cornerRadius(slot.def.placement),
       port: {
         ready: () => {
           if (!current()) return { shown: false }
@@ -173,8 +179,8 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
         },
         request: (command) => current() ? slot.handler?.request(command) : undefined,
         size: (height) => {
-          // A dock's or a pane's height is the window's, never its content's.
-          if (!current() || !slot.open || slot.def.placement.kind === 'dock' || slot.def.placement.kind === 'pane') return
+          // A dock's or a pane's height is the window's, an exact place's the feature's, never the content's.
+          if (!current() || !slot.open || slot.def.placement.kind === 'dock' || slot.def.placement.kind === 'pane' || slot.def.placement.kind === 'exact') return
           slot.height = height
           slot.view?.setBounds(boundsFor(slot))
         },

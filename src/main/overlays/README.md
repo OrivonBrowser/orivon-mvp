@@ -38,6 +38,12 @@ height reports for it and repositions it on every layout instead of closing it (
 handler's optional `moved` runs after each reposition, so a feature that lays something over the dock follows it.
 A dock has square corners. The side panel is the one dock.
 
+**An exact place is the feature's own rectangle.** `{ kind: 'exact', radius }` takes the rectangle `show` or `reanchor` was given, rounded
+to pixels and as it is, and the radius is the view's corner radius (a dock and a pane have none). The host ignores the page's
+height reports for it: the feature, which knows the text and the pane, decides the size. It is for an overlay that is placed
+at a width its content measures, such as the link bubble ([`../link-status/`](../link-status/)). A rectangle of no size is a
+view that is attached and shows nothing, and the view may reach past the window's edge, where it is clipped.
+
 **A pane is the page area, and a cover lies under everything else.** `{ kind: 'pane' }` takes the pane of the tab in
 front (`paneArea()`, else the whole tab area) exactly: the host ignores the page's height reports and repositions it
 on every layout, and its corners are square, like a dock. `layer: 'cover'` puts a view under every bar, adopted panel

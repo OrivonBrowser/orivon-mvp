@@ -51,6 +51,7 @@ rely on, row by row. A new feature adds its line here when it lands.
 
 - **Shell**: tabs, address bar, back and forward, and a main menu.
 - **Settings** at `orivon://settings`: every feature's controls in one place, with search.
+- **Link address**: pointing at a link, or moving the keyboard onto one, shows where it goes in a bubble in the bottom-left corner of the page it is in (the pane's, in a split window); it moves to the bottom-right corner when the pointer reaches it and hides a moment after the link is left. It shows for every tab page, installed apps included, and never during a page's fullscreen.
 - **Keyboard**: remappable shortcuts, F6 focus cycling, a focus ring on every control, and caret browsing.
 - **Tabs**: reorder, move between windows and tear off; pinned, muted and audible tabs; duplicate; reopen closed tabs and windows; tab search; split view.
 - **Tab groups and sleeping tabs**: named, coloured groups that survive a restart, and idle tabs that sleep.
