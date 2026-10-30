@@ -101,7 +101,7 @@ it('tells the person about an unverified version and keeps the old one, takes it
       await visit(app, `${ORIGIN}/`)
       const older = await waitQuestion(app, 40_000)
       const olderSaid = await readQuestion(older)
-      check(`an older build is a notice too (${olderSaid.message})`, olderSaid.message.includes('has not been verified yet') && olderSaid.detail.includes('not newer'))
+      check(`an older build is a notice too (${olderSaid.message})`, olderSaid.message.includes('has not been verified yet') && olderSaid.detail.includes('version number is not higher'))
       await older.check('.q-check input')
       await answerQuestion(app, 'OK')
       check('the tick is kept for that build, as an unverified offer', await eventually(() => JSON.stringify(quietOf(app, ORIGIN)) === JSON.stringify({ quiet: [{ cid: root('a2'), verified: false }] })))
