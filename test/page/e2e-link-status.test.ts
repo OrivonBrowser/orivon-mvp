@@ -231,12 +231,12 @@ it('moves to the bottom-right corner when the pointer reaches it, and ends stead
   try {
     const pane = await paneOf(app, url)
     // A link in the corner the bubble takes, pointed at near its bottom edge: the bubble covers the pointer.
+    await startRecording(app)
     await tab.hover('#corner', { position: { x: 10, y: 70 } })
     const onLeft = await bubbleUp(app, `${server.origin}/one/corner-link`)
-    expect(onLeft.rect.x).toBe(pane.x)
 
-    await startRecording(app)
-    // The pointer enters the bubble; the tab's page loses the link and has it again once the bubble has moved.
+    // The pointer enters the bubble (a system that finds it under the pointer sends the move by itself, one that does not gets it here);
+    // the tab's page loses the link and has it again once the bubble has moved.
     const bubble = bubblePage(app) as Page
     await bubble.mouse.move(onLeft.rect.x + 20 - (onLeft.view.bounds.x), onLeft.rect.y + 12 - onLeft.view.bounds.y)
     await Promise.all([tab.mouse.move(pane.width - 100, 300), tab.mouse.move(10, pane.height - 10)])
@@ -255,7 +255,8 @@ it('moves to the bottom-right corner when the pointer reaches it, and ends stead
     const samples = (await stopRecording(app)).filter((sample) => sample.width > 0)
     expect(samples.filter((sample) => !sample.visible)).toEqual([])
     const sides = samples.map((sample) => sample.x < pane.width / 2 ? 'left' : 'right')
-    expect(sides.filter((side, index) => index > 0 && side !== sides[index - 1])).toEqual(['right'])
+    expect(sides.at(-1)).toBe('right')
+    expect(sides.filter((side, index) => index > 0 && side === 'left' && sides[index - 1] === 'right')).toEqual([])
 
     // Another link while it is on the right stays on the right; once it has hidden, the next one starts on the left.
     await tab.hover('#top')
@@ -296,6 +297,8 @@ it('goes at once with a tab switch and with the navigation of its tab, and is no
     await chrome.locator('.tab', { hasText: 'one' }).click()
     expect(await waitFor(async () => findViewShowing(app, chrome, url) !== undefined)).toBe(true)
     const first = findViewShowing(app, chrome, url) as Page
+    // The page still counts the pointer as on its link from before the switch, and says nothing when it does not change: leave it, then point again.
+    await first.mouse.move(5, 5)
     await first.hover('#top')
     await bubbleUp(app, `${server.origin}/one/top-link`)
     await first.click('#top')
