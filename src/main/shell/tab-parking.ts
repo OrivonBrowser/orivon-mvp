@@ -12,7 +12,7 @@ import { isLocalPartition } from '../local-files/partition.js'
 import type { TabRecord } from './tab-types.js'
 import { applyTabSignals } from './tab-signals.js'
 import { carryHistory, listOf } from './tab-history.js'
-import { EMPTY_OUTER, leaveView } from './tab-outer-history.js'
+import { EMPTY_OUTER, keepBehind, leaveView } from './tab-outer-history.js'
 import { appTabArgsFor, appTabOrigins, appTabViews, dashboardViews, makeDashboardView, makeTabView, wireView } from './tab-view.js'
 import type { WebContentsView } from 'electron'
 
@@ -125,11 +125,12 @@ export function repartitionView (
   // address loads after them. Same session, so no cookie, storage or
   // partition boundary is crossed.
   const left = oldView.webContents.isDestroyed() ? null : listOf(oldView.webContents)
-  // A list that holds the new-tab page never carries: Back would reach it in a view that cannot show it.
-  const carried = !step && parked === undefined && oldPartition === nextPartition && !dashboardViews.has(oldView) && left !== null && carryHistory(oldView.webContents, newView.webContents, target)
+  // The new-tab page stays out of a carried list, because Back would reach it in a view that cannot show it.
+  const heldDashboard = dashboardViews.has(oldView) ? host.dashboardUrl : undefined
+  const carried = !step && parked === undefined && oldPartition === nextPartition && left !== null && carryHistory(oldView.webContents, newView.webContents, target, heldDashboard)
   // Whatever the new view does not hold stays with the tab. A step has already moved the pages it leaves.
   const outer = record.outer ?? EMPTY_OUTER
-  const kept = carried || step || left === null ? outer : leaveView(outer, left.entries, left.index, left.entries[left.index]?.url === target, host.dashboardUrl)
+  const kept = step || left === null ? outer : carried ? keepBehind(outer, left.entries, heldDashboard) : leaveView(outer, left.entries, left.index, left.entries[left.index]?.url === target, host.dashboardUrl)
   record.outer = { back: kept.back, forward: kept.forward, ...(parked !== undefined || kept.trimOnCommit === true ? { trimOnCommit: true } : {}) }
 
   // Only once the record shows the new view: the old one's handlers then

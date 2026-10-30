@@ -183,8 +183,8 @@ is fixed when a view is made, so `tab-view.ts`'s `makeDashboardView` is the one 
 `dashboardViews` remembers its views. `TabRecord.isDashboardTab` goes false when the tab shows anything
 else and comes back when such a view commits that address again, or when a step moves the tab into a new
 one (`stepOutOfView`). The address alone decides nothing: it is an http:// one in dev mode, and any other
-view that reaches it is an ordinary page. A list holding the page is never carried to another view,
-where Back would reach it with no preload. A new tab Back returned to still holds the pages it was left
+view that reaches it is an ordinary page. A list carried to another view leaves the page out, because
+Back would reach it there with no preload, and the page stays in the tab's outer history. A new tab Back returned to still holds the pages it was left
 for, in its own session, so a tunnel chosen there moves them to the outer history (`moveListOutOfView`),
 and a command that closes an empty new tab leaves this one open (`isEmptyNewTab`).
 

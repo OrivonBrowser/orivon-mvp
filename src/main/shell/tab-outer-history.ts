@@ -50,6 +50,12 @@ export function leaveOnlyShown (outer: OuterHistory, entries: readonly HistoryEn
   }
 }
 
+/** A list carried to another view left out the page at `address`, which stays with the tab, behind that view. */
+export function keepBehind (outer: OuterHistory, entries: readonly HistoryEntry[], address: string | undefined): OuterHistory {
+  const page = entries.find(({ url }) => url === address)
+  return page === undefined ? outer : { ...outer, back: [...outer.back, page].slice(-OUTER_HISTORY_LIMIT) }
+}
+
 export interface OuterStep { readonly target: HistoryEntry, readonly outer: OuterHistory }
 
 /** Back from the first page of the view: the page before it, with the view's pages now ahead. Null with none. */

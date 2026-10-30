@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_OUTER, keptInHistory, leaveOnlyShown, leaveView, noteCommit, OUTER_HISTORY_LIMIT, stepBack, stepForward } from '../tab-outer-history.js'
+import { EMPTY_OUTER, keepBehind, keptInHistory, leaveOnlyShown, leaveView, noteCommit, OUTER_HISTORY_LIMIT, stepBack, stepForward } from '../tab-outer-history.js'
 import type { OuterHistory } from '../tab-outer-history.js'
 
 const page = (name: string) => ({ url: `https://${name}.example/`, title: name })
@@ -50,6 +50,20 @@ describe('leaveView', () => {
     expect(outer.back).toHaveLength(OUTER_HISTORY_LIMIT)
     expect(outer.back.at(-1)?.url).toBe(page(`p${many.length - 1}`).url)
     expect(urls(outer.back)).not.toContain('about:blank')
+  })
+})
+
+describe('keepBehind', () => {
+  const dashboard = { url: DASHBOARD, title: '' }
+
+  it('puts the page a carried list left out behind what the tab keeps', () => {
+    expect(urls(keepBehind({ back: [page('w')], forward: [] }, [dashboard, page('a')], DASHBOARD).back)).toEqual([page('w').url, DASHBOARD])
+  })
+
+  it('changes nothing for a list that left nothing out', () => {
+    const outer = { back: [page('w')], forward: [] }
+    expect(keepBehind(outer, [page('a')], DASHBOARD)).toBe(outer)
+    expect(keepBehind(outer, [dashboard, page('a')], undefined)).toBe(outer)
   })
 })
 
