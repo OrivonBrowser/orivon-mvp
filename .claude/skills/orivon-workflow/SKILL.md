@@ -80,9 +80,9 @@ Skip routine sessions.
 - Edit a body: `gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@<file>`
   (`-F` reads the file; `-f` sends the literal string). `gh pr edit` fails the same way as
   `--label`.
-- Label: `gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>`, once the PR's checks have
-  appeared. A label added in the same second as the PR starts a run that can cancel the opening run (or be cancelled by
-  it), which leaves a red `e2e` behind a green suite; `gh run rerun <the cancelled run>` clears it.
+- Label: `gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>`. A `ci:` label starts a
+  run that cancels the one running, whenever it is added, and the cancelled run stays on the PR with a red `e2e` beside
+  the real one. It does not block a merge and `pr-watch.mjs` reads past it, so leave it: rerunning it repeats the suite.
 - Read CI: `gh pr view <n> --json mergeStateStatus,statusCheckRollup`. This `gh`'s `pr checks` has no
   `--json`, so a script built on it sees no checks and waits for ever. A failed shard's spec:
   `gh api repos/OrivonBrowser/orivon-mvp/actions/jobs/<job id>/logs`, then grep for ` FAIL `.
@@ -91,7 +91,7 @@ Skip routine sessions.
   ends only when the list is non-empty and nothing in it is pending.
 - Wait and merge: `node scripts/ai/pr-watch.mjs <n> --update <worktree> --stop '<your area's spec path>'`, in the
   background with a two-hour limit (`timeout: 7200000`: the default 30 minutes ends it while `main` keeps moving), never
-  behind a shell `&`; never hand-write the loop. A check that a later run of itself cancelled is not a failure. It reruns failed e2e shards and unacquired runners at most twice, except a
+  behind a shell `&`; never hand-write the loop. A run a later run on the same commit replaced is not a failure, whatever its jobs ended as. It reruns failed e2e shards and unacquired runners at most twice, except a
   spec matching `--stop`, and prints the failed specs, which the PR then names as flakes (Rule 12). Green but
   BEHIND, it merges `main` into the worktree's branch and pushes (six rounds at most); it merges when every check
   passed and the branch is CLEAN, and stops on any other failure, on a conflict and on a moved head. It merges with a
