@@ -59,6 +59,9 @@ export const BUNDLE_HASH_VERSION = 'orivon-bundle-v1'
  * loader hashes each leaf streamingly (src/loader/leaf-hash.ts over
  * `leafPrefix`), never holding an asset whole. `bundleTree` below still
  * digests whole buffers, one leaf at a time, for callers already holding them.
+ * MAX_ASSET_BYTES also sets how much the verifier holds for one read of a
+ * checked file (src/protocols/verifier-host/serve/buffer-budget.ts), so raise
+ * it knowingly.
  */
 export const MAX_ASSET_BYTES = 64 * 1024 * 1024
 export const MAX_BUNDLE_BYTES = 512 * 1024 * 1024

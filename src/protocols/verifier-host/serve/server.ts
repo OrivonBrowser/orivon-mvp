@@ -13,6 +13,7 @@ import type { GatheredFile } from '../../resolution/providers.js'
 import { MAX_ADDRESS_NAME } from '../../address.js'
 import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
+import { MAX_ASSET_BYTES } from '../../../broker/policy/bundle-hash.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
 import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
@@ -42,7 +43,7 @@ import type { RoutePace } from '../../route-pace.js'
  */
 export const BUFFERED_RESPONSE_DEADLINE_MS = 30_000
 
-/** How long each chunk of a file whose leaf is checked waits for room in the buffer budget before the file is refused: a page loads many files at once, and a refused script breaks the app. The wait is counted per chunk, not from the start of the request, because on a slow route the chunks arrive minutes apart. */
+/** How long the oldest read of a site, among those holding a checked file as its bytes arrive, waits for room in the buffer budget with nothing in the budget moving before its file is refused: a refused script breaks the app. Time spent waiting for the file's bytes is not counted, and the reads behind it wait their turn with no limit of their own. */
 const LEAF_CHECK_WAIT_MS = 10_000
 
 /**
@@ -217,13 +218,22 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
   }
 }
 
+/** A file that is not the one the declared tree names: nothing of it is sent, and the answer says it was the tree that failed. */
+function sendNotDeclared (res: ServerResponse, path: string): void {
+  res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': SERVED_CONTENT_CSP, [FAILURE_HEADER]: DDOC_MISMATCH }).end(`${path} is not the file the declared tree names`)
+}
+
 /**
  * A file whose leaf the caller named: read whole (and so verified against its address) and hashed before a byte is
- * sent. A file of any size is held, up to the largest an app may carry, because a leaf cannot be known from a
- * prefix. On a mismatch nothing of it is sent and the answer says it was the declared tree that failed, which the
- * caller treats as bad data.
+ * sent. A file of any size an app may carry is held, because a leaf cannot be known from a prefix; a larger one cannot
+ * be a declared file and is answered as a mismatch without being read. On a mismatch nothing of it is sent and the
+ * answer says it was the declared tree that failed, which the caller treats as bad data.
  */
 async function sendChecked (res: ServerResponse, host: string, target: string, expected: string, status: number, headers: Record<string, string>, file: GatheredFile, reopen: () => Promise<GatheredFile>, range: { readonly start: number, readonly end: number } | undefined, head: boolean, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, plan: ReadPlan): Promise<void> {
+  if (file.size > MAX_ASSET_BYTES) {
+    sendNotDeclared(res, target.split(/[?#]/, 1)[0] ?? target)
+    return
+  }
   // Held against the app's own origin, never the shared key, and taken as the bytes arrive: a large cold file must not
   // keep its whole size from the scripts the page asked for beside it.
   const key = partition ?? `https://${host}`
@@ -233,7 +243,7 @@ async function sendChecked (res: ServerResponse, host: string, target: string, e
   const gather = async (source: GatheredFile): Promise<Uint8Array[] | undefined> => {
     const chunks: Uint8Array[] = []
     for await (const chunk of source.body) {
-      if (!await budget.takeWithin(key, chunk.length, LEAF_CHECK_WAIT_MS, reader)) return undefined
+      if (!await budget.takeWithin(key, chunk.length, LEAF_CHECK_WAIT_MS, reader, plan.left)) return undefined
       held += chunk.length
       chunks.push(chunk)
     }
@@ -246,13 +256,15 @@ async function sendChecked (res: ServerResponse, host: string, target: string, e
       held = 0
       return await gather(n === 0 ? file : await reopen())
     }, plan.route, plan.left, plan.retries)
+    budget.leave(key, reader)
     if (chunks === undefined) {
+      if (!plan.left.aborted) console.error('[verifier] a checked file was refused for lack of room in the buffer budget of its site')
       res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
       return
     }
     const verdict = await checkLeaf(host, target, file.size, chunks, expected)
     if (!verdict.ok) {
-      res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': SERVED_CONTENT_CSP, [FAILURE_HEADER]: DDOC_MISMATCH }).end(`${verdict.path} is not the file the declared tree names`)
+      sendNotDeclared(res, verdict.path)
       return
     }
     if (head) {
