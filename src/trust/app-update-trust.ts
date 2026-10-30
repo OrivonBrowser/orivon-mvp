@@ -59,7 +59,7 @@ export function reasonText (reason: UnverifiedReason, newDomain: string | undefi
     case 'no-score': return 'The Web3 Score provider has no evaluation of this exact version.'
     case 'provider-unreachable': return 'The Web3 Score provider did not answer, so this version could not be checked.'
     case 'lower-level': return 'The provider rates this version lower than the one you are using.'
-    case 'not-newer': return 'This version is not newer than the newest one you have installed.'
+    case 'not-newer': return 'Its version number is not higher than the newest one you have installed.'
     case 'other-home': return newDomain === undefined ? 'This version\'s manifest names no home.' : `This version's manifest names ${newDomain} as its home, not this address.`
     case 'scheme-address': return 'This app is reached at an ipns:// address, which no manifest can name as its home, so an update here is never verified.'
     case 'unproven-name': return 'The name reached this version through a DNS record, which is not proven.'

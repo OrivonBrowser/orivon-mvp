@@ -14,7 +14,11 @@ export interface UpdateContent {
   readonly warning: boolean
 }
 
+/** The name moved to other content that carries the version number already in use. */
+const sameVersion = (offer: UpdateOffer): boolean => offer.fromVersion === offer.toVersion
+
 function versionLine (offer: UpdateOffer): string {
+  if (sameVersion(offer)) return `A new build of version ${offer.toVersion}.`
   return offer.fromVersion === undefined ? `Version ${offer.toVersion}.` : `Version ${offer.fromVersion} to ${offer.toVersion}.`
 }
 
@@ -35,7 +39,7 @@ export function describeVerifiedUpdate (offer: UpdateOffer): UpdateContent {
 
 export function describeUnverifiedUpdate (offer: UpdateOffer): UpdateContent {
   const origin = formatOriginForDisplay(offer.origin)
-  const what = offer.reasons.includes('not-newer') ? 'now points at another version of the app' : 'has updated the app to a new version'
+  const what = sameVersion(offer) ? 'now points at another build of this version of the app' : offer.reasons.includes('not-newer') ? 'now points at another version of the app' : 'has updated the app to a new version'
   return {
     title: origin,
     message: `${origin} ${what}. Its Web3 Score has not been verified yet. To switch, open the key icon and choose Trust & Force update.`,

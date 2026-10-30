@@ -2,8 +2,8 @@
 // no visit raises a hint for it, so every interval each origin that has a tab open is looked at
 // again. Electron-free: which origins are open and what one check does come in as functions.
 
-/** How often an origin with an open app tab is looked at. */
-export const OPEN_TAB_CHECK_MS = 30 * 60_000
+/** How often an origin with an open app tab is looked at: one proof of its name, and the manifest only when the name moved. */
+export const OPEN_TAB_CHECK_MS = 5 * 60_000
 
 export interface UpdateWatchDeps {
   /** The origins with a live tab, in any window; may repeat one. */
