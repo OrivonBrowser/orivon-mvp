@@ -30,7 +30,7 @@ function rig (options: { kind?: 'first' | 'declined' | 'known' | 'settling' | 'l
   const visit: FirstVisit = { kindOf: async () => options.kind ?? 'first', run: run as unknown as FirstVisit['run'], resume: async () => {}, notLetIn: () => undefined, askAgain: async () => true }
   const screens: TabScreens = {
     cover: vi.fn(), reloadFresh: vi.fn(),
-    blank: vi.fn(async () => {}), sheet: async () => 'leave', end: vi.fn(), moved: () => options.moved === true, signal: new AbortController().signal, tab: () => ({ window: {}, tabId: 't' }) as never,
+    blank: vi.fn(async () => {}), sheet: async () => 'leave', end: vi.fn(), moved: () => options.moved === true, pageLoaded: async () => {}, signal: new AbortController().signal, tab: () => ({ window: {}, tabId: 't' }) as never,
     navigate: vi.fn(), leavePage: vi.fn(), stop: vi.fn()
   }
   const visits: HintVisits = { firstVisit: () => options.wired === false ? undefined : visit, screensFor: () => options.screens === false ? undefined : screens }

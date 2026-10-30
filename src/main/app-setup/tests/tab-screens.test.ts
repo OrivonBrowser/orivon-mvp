@@ -10,8 +10,9 @@ import { createTabSetup, RELOAD_COVER_LIMIT_MS } from '../tab-screens.js'
 const WINDOW = {} as unknown as ShellWindow
 const ADDRESS = 'https://abc.ipfs.orivon/'
 
-function rig (options: { blankNavigates?: boolean } = {}): { contents: EventEmitter & { isDestroyed: () => boolean }, asks: SlotAsk[], cancels: Array<ReturnType<typeof vi.fn>>, navigated: string[], acted: string[], setup: ReturnType<typeof createTabSetup> } {
-  const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
+function rig (options: { blankNavigates?: boolean } = {}): { contents: EventEmitter & { isDestroyed: () => boolean, loading: boolean }, asks: SlotAsk[], cancels: Array<ReturnType<typeof vi.fn>>, navigated: string[], acted: string[], setup: ReturnType<typeof createTabSetup> } {
+  const state = Object.assign(new EventEmitter(), { isDestroyed: () => false, loading: false })
+  const contents = Object.assign(state, { isLoading: () => state.loading })
   const acted: string[] = []
   const asks: SlotAsk[] = []
   const cancels: Array<ReturnType<typeof vi.fn>> = []
@@ -44,6 +45,77 @@ function rig (options: { blankNavigates?: boolean } = {}): { contents: EventEmit
 const asContents = (contents: EventEmitter): WebContents => contents as unknown as WebContents
 
 describe('createTabSetup', () => {
+  describe('pageLoaded', () => {
+    const settledNow = async (waiting: Promise<void>): Promise<boolean> => {
+      let done = false
+      void waiting.then(() => { done = true })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      return done
+    }
+
+    it('resolves at once for a page that is not loading, and listens to nothing', async () => {
+      const { contents, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      expect(await settledNow(screens.pageLoaded())).toBe(true)
+      expect(contents.listenerCount('did-stop-loading')).toBe(0)
+    })
+
+    it('waits for a page that is loading until it stops, and leaves no listener behind', async () => {
+      const { contents, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      contents.loading = true
+      const waiting = screens.pageLoaded()
+      expect(await settledNow(waiting)).toBe(false)
+      contents.emit('did-stop-loading')
+      expect(await settledNow(waiting)).toBe(true)
+      expect(contents.listenerCount('did-stop-loading')).toBe(0)
+    })
+
+    it.each([
+      ['the tab starts another page', (c: EventEmitter) => c.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: 'https://elsewhere.example/' })],
+      ['the tab is destroyed', (c: EventEmitter) => c.emit('destroyed')]
+    ])('stops waiting when %s, and leaves no listener behind', async (_label, happen) => {
+      const { contents, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      contents.loading = true
+      const waiting = screens.pageLoaded()
+      happen(contents)
+      expect(await settledNow(waiting)).toBe(true)
+      expect(contents.listenerCount('did-stop-loading')).toBe(0)
+      expect(screens.moved()).toBe(true)
+    })
+
+    it('stops waiting when the visit ends, and leaves no listener behind', async () => {
+      const { contents, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      contents.loading = true
+      const waiting = screens.pageLoaded()
+      screens.end()
+      expect(await settledNow(waiting)).toBe(true)
+      expect(contents.listenerCount('did-stop-loading')).toBe(0)
+    })
+
+    it('does not wait for a tab that has already moved on', async () => {
+      const { contents, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      contents.loading = true
+      contents.emit('destroyed')
+      expect(await settledNow(screens.pageLoaded())).toBe(true)
+      expect(contents.listenerCount('did-stop-loading')).toBe(0)
+    })
+
+    it('keeps waiting through the page\'s own navigations within its origin', async () => {
+      const { contents, setup } = rig()
+      const screens = setup(asContents(contents), ADDRESS)!
+      contents.loading = true
+      const waiting = screens.pageLoaded()
+      contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, url: `${ADDRESS}other` })
+      expect(await settledNow(waiting)).toBe(false)
+      contents.emit('did-stop-loading')
+      expect(await settledNow(waiting)).toBe(true)
+    })
+  })
+
   it('has no screens for a web contents the window does not know', () => {
     const { setup } = rig()
     expect(setup(new EventEmitter() as unknown as WebContents, ADDRESS)).toBeUndefined()

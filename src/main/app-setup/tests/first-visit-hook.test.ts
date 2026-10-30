@@ -22,6 +22,7 @@ function screensFake (): TabScreens & { calls: string[] } {
     sheet: async () => 'leave',
     end: () => { calls.push('end') },
     moved: () => false,
+    pageLoaded: async () => {},
     signal: new AbortController().signal,
     tab: () => ({ window: {}, tabId: 't' }) as never,
     navigate: (url) => { calls.push(`navigate:${url}`) },

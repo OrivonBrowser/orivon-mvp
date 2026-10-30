@@ -1,9 +1,9 @@
 // A published app's first visit (ADR-0075, ADR-0076): the page loads at once as an ordinary website, with no grant. The
-// manifest is read beside it and the person is asked as soon as it is; from that same moment the app is cached (the
-// declared tree read, every file downloaded and checked, kept staged), whatever the answer will be. Grant all, or Close
-// with some switch on, grants what is on, serves the app checked, pins what was staged and reloads the tab as the app;
-// Close with every switch off keeps the plain website and stops the caching. Any file that is not the declared
-// one is bad data: the page is stopped and the origin taken away. No Electron: the
+// manifest is read beside it and the person is asked as soon as it is; beside the question the app is cached (the
+// declared tree read, every file downloaded and checked, kept staged) once the page has loaded, whatever the answer
+// will be. Grant all, or Close with some switch on, grants what is on, serves the app checked, pins what was staged
+// and reloads the tab as the app; Close with every switch off keeps the plain website and stops the caching. Any file
+// that is not the declared one is bad data: the page is stopped and the origin taken away. No Electron: the
 // tab's screens and its way into the app are the `SetupHost` the caller brings.
 
 import { originFromUrl } from '../../broker/policy/origin.js'
@@ -47,6 +47,8 @@ export interface FirstVisitDeps {
   readonly changed?: (() => void) | undefined
   /** How long after a tab is let in the background download waits, so it begins once the first page is up. */
   readonly backgroundDelayMs?: number | undefined
+  /** The longest the caching waits for the first page to finish loading; `FIRST_PAGE_HOLD_MS` when unset. */
+  readonly firstPageHoldMs?: number | undefined
 }
 
 /**
@@ -77,6 +79,8 @@ export interface SetupHost {
   end: () => void
   /** The tab this visit is in, as the opaque value `blocked` is handed back: a tab whose first page failed to load shows no address of the origin, yet is the one that must be covered. */
   tab?: () => object | undefined
+  /** Resolves when the page the visit began on has finished loading, or can no longer finish (the tab moved on or was destroyed); at once when it is not loading. Never rejects. Without it the caching does not wait for the page. */
+  pageLoaded?: () => Promise<void>
 }
 
 /** How the download ended: `pinned`, `blocked` (bad data, the origin was taken away), or `unfinished` (silent; the next visit finishes it). */
@@ -122,7 +126,7 @@ export async function runFirstVisit (deps: FirstVisitDeps, hintingOrigin: string
 
   // From here, beside the question: the app is cached, and the tree it declares is read.
   const keeper = createKeeper(deps, origin, hintedUrl, heldOf(read, undefined))
-  keeper.cache()
+  keeper.cache(host.pageLoaded?.())
   const reading = new AbortController()
   const stopReading = (): void => { reading.abort() }
   signal?.addEventListener('abort', stopReading, { once: true })

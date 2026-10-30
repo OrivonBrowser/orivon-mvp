@@ -19,6 +19,7 @@ function screensFake (calls: string[], choice: 'leave' | 'retry' = 'leave'): Tab
     sheet: async (sheet) => { calls.push(`sheet:${sheet.kind}`); return choice },
     end: () => { calls.push('end') },
     moved: () => false,
+    pageLoaded: async () => {},
     signal: new AbortController().signal,
     tab: () => ({ window: {}, tabId: 't' }) as unknown as TabRef,
     navigate: () => { calls.push('navigate') },

@@ -80,7 +80,9 @@ Skip routine sessions.
 - Edit a body: `gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@<file>`
   (`-F` reads the file; `-f` sends the literal string). `gh pr edit` fails the same way as
   `--label`.
-- Label: `gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>`.
+- Label: `gh api -X POST repos/OrivonBrowser/orivon-mvp/issues/<n>/labels -f labels[]=<label>`, once the PR's checks have
+  appeared. A label added in the same second as the PR starts a run that can cancel the opening run (or be cancelled by
+  it), which leaves a red `e2e` behind a green suite; `gh run rerun <the cancelled run>` clears it.
 - Read CI: `gh pr view <n> --json mergeStateStatus,statusCheckRollup`. This `gh`'s `pr checks` has no
   `--json`, so a script built on it sees no checks and waits for ever. A failed shard's spec:
   `gh api repos/OrivonBrowser/orivon-mvp/actions/jobs/<job id>/logs`, then grep for ` FAIL `.
