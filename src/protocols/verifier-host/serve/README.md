@@ -3,7 +3,7 @@
 **What lives here.** [`server.ts`](server.ts), the loopback TLS server that answers every host a
 protocol serves (a `.eth` name, `<name>.<scheme>.orivon`, and each scheme's endpoint
 `<scheme>.orivon`); its per-run self-signed certificate ([`certificate.ts`](certificate.ts)); the
-per-host mount cache ([`sites.ts`](sites.ts)); [`retry.ts`](retry.ts), which reads a file again before the page is told it is missing; [`route-of.ts`](route-of.ts), which says which route a request travels (the tunnel the shell marked it with, or direct) and how patient it is; [`error-pages.ts`](error-pages.ts); and [`gateway-offer.ts`](gateway-offer.ts), which decides when an error page offers "Load through public gateways" and what following that link does (`../gateway-consent.ts` holds the yes, for one load).
+per-host mount cache ([`sites.ts`](sites.ts)); [`buffer-budget.ts`](buffer-budget.ts), the bytes it holds whole before sending them; [`retry.ts`](retry.ts), which reads a file again before the page is told it is missing; [`route-of.ts`](route-of.ts), which says which route a request travels (the tunnel the shell marked it with, or direct) and how patient it is; [`error-pages.ts`](error-pages.ts); and [`gateway-offer.ts`](gateway-offer.ts), which decides when an error page offers "Load through public gateways" and what following that link does (`../gateway-consent.ts` holds the yes, for one load).
 
 **What it depends on.** [`../../registry.ts`](../../registry.ts) and
 [`../../address.ts`](../../address.ts), [`../protocol.ts`](../protocol.ts),
@@ -32,6 +32,14 @@ process-global `reflect-metadata` polyfill, in the process that holds every untr
 The server buffers that one file (waiting a bounded time for room in the same budget the small-file path uses), hashes it with the loader's leaf function
 under the request's canonical path and sends it only if the leaf matches, cutting a range from the buffered file. The expected leaf is on the request
 and nothing is kept in the host, so a restart or a sleep loses nothing. A mismatch is a `502` with `x-orivon-failure: ddoc-mismatch`.
+
+**The oldest read of a site may go one file past the site's buffer budget** ([`buffer-budget.ts`](buffer-budget.ts)). A file
+is held whole as its bytes arrive, so several large files read together can each hold part of the site's budget and wait for room that only a
+finished file frees. Each site keeps its reads in a line, oldest first; the oldest takes its chunks past the site's limit (never past the
+combined backstop), finishes, sends and gives its share back, and the next becomes the oldest. A site holds at most its limit plus the largest
+file an app may carry, so a read of a larger file runs out of room and is refused. A read stays in line until its response is written, so a page
+that never reads cannot step past the limit one file at a time, and a read waiting for room is refused only after nothing in the site's budget
+has moved for `LEAF_CHECK_WAIT_MS`.
 
 **A failure page for a failure that may pass offers Try again, and a person's own request for the page really tries again.** The
 unavailable and not-synced pages ([`error-pages.ts`](error-pages.ts)) carry a link to their own address, styled as a button, because the pages run

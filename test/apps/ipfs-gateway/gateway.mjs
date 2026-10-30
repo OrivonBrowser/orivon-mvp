@@ -15,7 +15,7 @@ const HOST = '127.0.0.1'
 
 /**
  * @param {Record<string, Record<string, string | Uint8Array> | string>} sites site name -> path -> content (text, or bytes for a binary file); a string is a site whose root is that one file
- * @param {{ dnslinks?: Record<string, string>, ipnsKeys?: string[], blockDelayMs?: number, hang?: boolean }} [options] `dnslinks`: DNS name -> the site whose root its DNSLink names; `ipnsKeys`: sites to publish under a fresh signed IPNS key each (`keys` names them); `blockDelayMs`: how long each block answer waits, as a slow gateway's do; `hang`: answer nothing at all, as a dead gateway behind a proxy does
+ * @param {{ dnslinks?: Record<string, string>, ipnsKeys?: string[], blockDelayMs?: number, linkBytesPerSecond?: number, hang?: boolean }} [options] `dnslinks`: DNS name -> the site whose root its DNSLink names; `ipnsKeys`: sites to publish under a fresh signed IPNS key each (`keys` names them); `blockDelayMs`: how long each block answer waits, as a slow gateway's do; `linkBytesPerSecond`: a link of that speed shared by every block answer, so each is sent only after the ones before it, as one slow connection would; `hang`: answer nothing at all, as a dead gateway behind a proxy does
  */
 export async function startFixtureGateway (sites, options = {}) {
   /** @type {Map<string, Uint8Array>} */
@@ -58,6 +58,9 @@ export async function startFixtureGateway (sites, options = {}) {
   const failures = new Map()
   /** @type {Map<string, { ms: number, times: number }>} block -> the next answers it holds back, and for how long */
   const delays = new Map()
+  const { linkBytesPerSecond } = options
+  /** When the shared link, if there is one, is next free. */
+  let linkFreeAt = 0
 
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${HOST}`)
@@ -83,7 +86,14 @@ export async function startFixtureGateway (sites, options = {}) {
       }
       const body = Buffer.from(block)
       if (tampered.has(key)) body[body.length - 1] ^= 0x01
-      const answer = () => { res.writeHead(200, { 'content-type': 'application/vnd.ipld.raw' }).end(body) }
+      const send = () => { res.writeHead(200, { 'content-type': 'application/vnd.ipld.raw' }).end(body) }
+      const answer = linkBytesPerSecond === undefined
+        ? send
+        : () => {
+            const start = Math.max(Date.now(), linkFreeAt)
+            linkFreeAt = start + (body.length / linkBytesPerSecond) * 1000
+            setTimeout(send, linkFreeAt - Date.now())
+          }
       const held = delays.get(key)
       if (held !== undefined && held.times > 0) {
         held.times -= 1

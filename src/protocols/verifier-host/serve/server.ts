@@ -21,6 +21,7 @@ import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { GatewayOffer } from './error-pages.js'
 import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
 import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
+import { BufferBudget, MAX_BUFFERED_BYTES } from './buffer-budget.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
 import { paceOf, routeOf } from './route-of.js'
@@ -28,32 +29,6 @@ import type { ServeRoutes } from './route-of.js'
 import { FILE_RETRIES, readWithRetries } from './retry.js'
 import { DIRECT_ROUTE } from '../../route-pace.js'
 import type { RoutePace } from '../../route-pace.js'
-
-/** A file up to this size is read and verified whole before its first byte is sent to a page, so a failure is an error page, never half a document. */
-export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
-
-/**
- * The most ONE partition's requests hold at once on the buffer-then-send
- * path below. A file's chunks are views into blocks the cache already owns,
- * so buffering one costs little beyond holding those references -- but a
- * page that opens many requests before reading any of them queues one
- * pending response per socket, and `MAX_BUFFERED_BYTES` alone only bounds
- * ONE of those, never their sum. Four files' worth covers ordinary
- * concurrent tabs on one site; past it, THAT site's own further requests are
- * refused with `503` rather than added to the pile -- never another site's,
- * which is exactly what one shared, unpartitioned budget would cost every
- * OTHER `.eth`/`ipfs://` page the moment one page opened enough requests
- * and never read them.
- */
-const MAX_PARTITION_BUFFERED_BYTES = 4 * MAX_BUFFERED_BYTES
-
-/**
- * The most every partition's requests hold at once, combined -- a backstop
- * against many partitions each spending up to their own share at the same
- * time, not a limit any single well-behaved partition should ever reach on
- * its own.
- */
-const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
 
 /**
  * How long a buffered response's reservation may be held waiting for the
@@ -69,48 +44,6 @@ export const BUFFERED_RESPONSE_DEADLINE_MS = 30_000
 
 /** How long each chunk of a file whose leaf is checked waits for room in the buffer budget before the file is refused: a page loads many files at once, and a refused script breaks the app. The wait is counted per chunk, not from the start of the request, because on a slow route the chunks arrive minutes apart. */
 const LEAF_CHECK_WAIT_MS = 10_000
-const BUDGET_POLL_MS = 25
-
-/**
- * Buffered bytes held right now, kept per partition (the same key
- * `sites.ts` mounts by) so one page's unread requests cost only that
- * page's own budget, plus a combined total across every partition. A
- * request with no partition (`partitionOf` returning undefined) shares one
- * bucket, keyed by the empty string, which no real partition ever is.
- */
-class BufferBudget {
-  private readonly perPartition = new Map<string, number>()
-  private total = 0
-
-  /** True and reserved if both this partition's own budget and the global
-   * backstop have room; false and unchanged otherwise. */
-  reserve (partition: string | undefined, length: number): boolean {
-    const key = partition ?? ''
-    const current = this.perPartition.get(key) ?? 0
-    if (current + length > MAX_PARTITION_BUFFERED_BYTES || this.total + length > MAX_TOTAL_BUFFERED_BYTES) return false
-    this.perPartition.set(key, current + length)
-    this.total += length
-    return true
-  }
-
-  /** `reserve`, waiting up to `waitMs` for a response held by someone else to finish and free its share. */
-  async reserveWithin (partition: string | undefined, length: number, waitMs: number): Promise<boolean> {
-    const until = Date.now() + waitMs
-    while (!this.reserve(partition, length)) {
-      if (Date.now() >= until) return false
-      await new Promise((resolve) => setTimeout(resolve, BUDGET_POLL_MS))
-    }
-    return true
-  }
-
-  release (partition: string | undefined, length: number): void {
-    const key = partition ?? ''
-    const remaining = (this.perPartition.get(key) ?? 0) - length
-    if (remaining > 0) this.perPartition.set(key, remaining)
-    else this.perPartition.delete(key)
-    this.total -= length
-  }
-}
 
 /**
  * Every response says the page came from the public internet, whatever
@@ -294,12 +227,13 @@ async function sendChecked (res: ServerResponse, host: string, target: string, e
   // Held against the app's own origin, never the shared key, and taken as the bytes arrive: a large cold file must not
   // keep its whole size from the scripts the page asked for beside it.
   const key = partition ?? `https://${host}`
+  const reader = budget.enter(key)
   let held = 0
   /** Every chunk of the file, or undefined once the buffer budget has no room for it. */
   const gather = async (source: GatheredFile): Promise<Uint8Array[] | undefined> => {
     const chunks: Uint8Array[] = []
     for await (const chunk of source.body) {
-      if (!await budget.reserveWithin(key, chunk.length, LEAF_CHECK_WAIT_MS)) return undefined
+      if (!await budget.takeWithin(key, chunk.length, LEAF_CHECK_WAIT_MS, reader)) return undefined
       held += chunk.length
       chunks.push(chunk)
     }
@@ -329,6 +263,7 @@ async function sendChecked (res: ServerResponse, host: string, target: string, e
     await writeBufferedChunks(res, range === undefined ? chunks : sliceChunks(chunks, range.start, range.end), bufferedResponseDeadlineMs)
   } finally {
     budget.release(key, held)
+    budget.leave(key, reader)
   }
 }
 
