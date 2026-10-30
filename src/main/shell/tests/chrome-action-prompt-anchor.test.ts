@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { overlayBounds } from '../../overlays/overlay-bounds.js'
 import { crossingAnchor, promptAnchor, promptAnchorReport, TOOLBAR_OVERLAP } from '../actions/prompt-anchor.js'
 import { CHROME_ACTIONS, runChromeAction } from '../chrome-actions.js'
-import type { WindowContext } from '../window-context.js'
+import type { ChromeActionContext } from '../chrome-actions.js'
 import type { ShellWindow } from '../window-registry.js'
 
 const windowOf = (): ShellWindow => ({}) as ShellWindow
-const contextOf = (window: ShellWindow): WindowContext => ({ window, services: {} }) as unknown as WindowContext
+const contextOf = (window: ShellWindow): ChromeActionContext => ({ window, services: {}, copyAddress: async () => {} }) as unknown as ChromeActionContext
 
 describe('the prompt.anchor chrome action', () => {
   it('is registered', () => {

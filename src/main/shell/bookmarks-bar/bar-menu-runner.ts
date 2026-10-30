@@ -1,5 +1,6 @@
 // Shows the bar's native menu: builds the model from the store, wires each item to what it does, and pops it up.
-import { Menu, clipboard } from 'electron'
+import { Menu } from 'electron'
+import { copyAddressLogged } from '../../os/address-clipboard-runner.js'
 import { commandById } from '../../shortcuts/commands.js'
 import { barMenuTemplate } from './bar-menu.js'
 import type { BarMenuTarget } from './bar-menu.js'
@@ -31,7 +32,7 @@ export function showBarMenu (ctx: WindowContext, id: string | null, at: { x: num
     rename: () => { if (node !== undefined) openBookmarkEdit(ctx, { id: node.id, anchor: here, mode: 'rename-folder' }) },
     addFolder: () => { openBookmarkEdit(ctx, { id: parent, anchor: here, mode: 'new-folder' }) },
     moveToBar: () => { if (node !== undefined) services.bookmarks.move([node.id], 'bar') },
-    copyLink: () => { if (node?.url !== undefined) clipboard.writeText(node.url) },
+    copyLink: () => { if (node?.url !== undefined) copyAddressLogged(node.url) },
     remove: () => { if (node !== undefined) services.bookmarks.remove([node.id]) },
     toggleBar: () => { services.commands.run('bookmarks.toggleBar', window) },
     openManager: commandById('bookmarks.open')?.pending === true ? undefined : () => { services.commands.run('bookmarks.open', window) }

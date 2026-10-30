@@ -38,6 +38,7 @@ function actions (): Parameters<typeof contextMenuTemplate>[1] & Record<string, 
     paste: vi.fn(),
     selectAll: vi.fn(),
     copyText: vi.fn(),
+    copyAddress: vi.fn(),
     openInNewTab: vi.fn(),
     copyImageAt: vi.fn(),
     inspectAt: vi.fn()
@@ -77,7 +78,8 @@ describe('contextMenuTemplate -- what a right-click in a tab offers', () => {
     click(template, 'Open Link in New Tab')
     click(template, 'Copy Link Address')
     expect(a.openInNewTab).toHaveBeenCalledWith('https://example.com/a')
-    expect(a.copyText).toHaveBeenCalledWith('https://example.com/a')
+    expect(a.copyAddress).toHaveBeenCalledWith('https://example.com/a')
+    expect(a.copyText).not.toHaveBeenCalled()
   })
 
   it('copies but never opens a link a new tab could not load (mailto:, javascript:)', () => {

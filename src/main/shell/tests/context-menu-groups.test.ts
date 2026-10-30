@@ -20,7 +20,7 @@ function params (overrides: Partial<ContextMenuParams>): ContextMenuParams {
 
 function full (): Actions & Record<string, ReturnType<typeof vi.fn> | object> {
   return {
-    cut: vi.fn(), copy: vi.fn(), paste: vi.fn(), selectAll: vi.fn(), copyText: vi.fn(), openInNewTab: vi.fn(),
+    cut: vi.fn(), copy: vi.fn(), paste: vi.fn(), selectAll: vi.fn(), copyText: vi.fn(), copyAddress: vi.fn(), openInNewTab: vi.fn(),
     copyImageAt: vi.fn(), inspectAt: vi.fn(), openInSplit: vi.fn(), openInWindow: vi.fn(), openInPrivate: vi.fn(),
     saveUrl: vi.fn(), search: vi.fn(), run: vi.fn(), replaceMisspelling: vi.fn(), addToDictionary: vi.fn(),
     toggleSpellcheck: vi.fn(), undo: vi.fn(), redo: vi.fn(), pasteAndMatchStyle: vi.fn(), pasteAndGo: vi.fn(),
@@ -73,11 +73,25 @@ describe('link group', () => {
     click(template, 'Open Link in New Window')
     click(template, 'Open Link in Private Window')
     click(template, 'Save Link As…')
+    click(template, 'Copy Link Address')
     click(template, 'Copy Link Text')
     expect(a.openInWindow).toHaveBeenCalledWith('https://example.com/a')
     expect(a.openInPrivate).toHaveBeenCalledWith('https://example.com/a')
     expect(a.saveUrl).toHaveBeenCalledWith('https://example.com/a')
-    expect(a.copyText).toHaveBeenCalledWith('text')
+    expect(a.copyAddress).toHaveBeenCalledExactlyOnceWith('https://example.com/a')
+    expect(a.copyText).toHaveBeenCalledExactlyOnceWith('text')
+  })
+
+  it('copies a link address as an address, the web link and the link text as plain text', () => {
+    const a = full()
+    const template = contextMenuTemplate(params({ linkURL: 'ipfs://vitalik.eth/blog', linkText: 'Blog' }), a, false, ctx)
+    click(template, 'Copy Link Address')
+    expect(a.copyAddress).toHaveBeenCalledExactlyOnceWith('ipfs://vitalik.eth/blog')
+    expect(a.copyText).not.toHaveBeenCalled()
+    click(template, 'Copy web link (opens in any browser)')
+    click(template, 'Copy Link Text')
+    expect(vi.mocked(a.copyText).mock.calls).toEqual([['https://vitalik.eth.limo/blog'], ['Blog']])
+    expect(a.copyAddress).toHaveBeenCalledTimes(1)
   })
 
   it('shows only Copy Link Address for a javascript: or mailto: link', () => {
@@ -138,6 +152,16 @@ describe('image group', () => {
     expect(labels(contextMenuTemplate(params(image), full(), false, ctx))).toEqual(['Open Image in New Tab', 'Save Image As…', 'Copy Image', 'Copy Image Address'])
   })
 
+  it('copies the image address as an address, and the image itself as pixels', () => {
+    const a = full()
+    const template = contextMenuTemplate(params({ ...image, srcURL: 'https://vitalik.eth/i.png' }), a, false, ctx)
+    click(template, 'Copy Image Address')
+    click(template, 'Copy Image')
+    expect(a.copyAddress).toHaveBeenCalledExactlyOnceWith('https://vitalik.eth/i.png')
+    expect(a.copyText).not.toHaveBeenCalled()
+    expect(a.copyImageAt).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps only Copy Image for a data: or blob: image', () => {
     for (const srcURL of ['data:image/png;base64,AAAA', 'blob:https://example.com/x']) {
       expect(labels(contextMenuTemplate(params({ ...image, srcURL }), full(), false, ctx))).toEqual(['Copy Image'])
@@ -161,6 +185,16 @@ describe('media group', () => {
     expect(template[0]).toMatchObject({ type: 'checkbox', checked: true })
     click(template, 'Picture in Picture')
     expect(a.run).toHaveBeenCalledWith('page.pip')
+  })
+
+  it('copies a video or audio address as an address', () => {
+    for (const mediaType of ['video', 'audio'] as const) {
+      const a = full()
+      const noun = mediaType === 'video' ? 'Video' : 'Audio'
+      click(contextMenuTemplate(params({ mediaType, srcURL: 'https://vitalik.eth/m.bin' }), a, false, ctx), `Copy ${noun} Address`)
+      expect(a.copyAddress).toHaveBeenCalledExactlyOnceWith('https://vitalik.eth/m.bin')
+      expect(a.copyText).not.toHaveBeenCalled()
+    }
   })
 
   it('pops out the video that was clicked, at the place clicked, when the window can do that', () => {

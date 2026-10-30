@@ -3,7 +3,7 @@ import { CHROME_ACTIONS, runChromeAction } from '../chrome-actions.js'
 import type { ChromeActionContext } from '../chrome-actions.js'
 
 function context (overlays?: { toggle: ReturnType<typeof vi.fn>, close: ReturnType<typeof vi.fn> }, takePress?: ChromeActionContext['takePress']): ChromeActionContext {
-  return { window: { overlays } as never, services: {} as never, ...(takePress === undefined ? {} : { takePress }) }
+  return { window: { overlays } as never, services: {} as never, copyAddress: async () => {}, ...(takePress === undefined ? {} : { takePress }) }
 }
 
 describe('runChromeAction', () => {

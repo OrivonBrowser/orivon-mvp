@@ -15,6 +15,8 @@ export interface ContextMenuActions {
   paste: () => void
   selectAll: () => void
   copyText: (text: string) => void
+  /** Copies an address as text, and as a link too where it has a web link (`../os/address-clipboard.ts`). */
+  copyAddress: (address: string) => void
   /** Absent in a kiosk, which opens nothing beside the page it shows. */
   openInNewTab?: (url: string) => void
   /** Offered only for a link in a frame that is itself a local file: opens its `file:` link in a new tab. */
@@ -112,7 +114,7 @@ export function linkGroup (params: MenuParams, actions: ContextMenuActions): Men
   const save = actions.saveUrl
   const saveable = webAddress(params.linkURL)
   if (save !== undefined && saveable !== null) items.push(SEPARATOR, { label: 'Save Link As…', click: () => { save(saveable) } })
-  items.push({ label: 'Copy Link Address', click: () => { actions.copyText(params.linkURL) } })
+  items.push({ label: 'Copy Link Address', click: () => { actions.copyAddress(params.linkURL) } })
   const webLink = webLinkDiffering(params.linkURL)
   if (webLink !== undefined) items.push({ label: WEB_LINK_LABEL, click: () => { actions.copyText(webLink) } })
   if (params.linkText.trim() !== '') items.push({ label: 'Copy Link Text', click: () => { actions.copyText(params.linkText.trim()) } })
@@ -128,7 +130,7 @@ export function imageGroup (params: MenuParams, actions: ContextMenuActions): Me
   const save = actions.saveUrl
   if (address !== null && save !== undefined) items.push({ label: 'Save Image As…', click: () => { save(address) } })
   if (params.hasImageContents) items.push({ label: 'Copy Image', click: () => { actions.copyImageAt(params.x, params.y) } })
-  if (address !== null) items.push({ label: 'Copy Image Address', click: () => { actions.copyText(address) } })
+  if (address !== null) items.push({ label: 'Copy Image Address', click: () => { actions.copyAddress(address) } })
   return items
 }
 
@@ -147,7 +149,7 @@ export function mediaGroup (params: MenuParams, actions: ContextMenuActions): Me
   if (inTab !== undefined) items.push({ label: `Open ${noun} in New Tab`, click: () => { inTab(address) } })
   const save = actions.saveUrl
   if (save !== undefined) items.push({ label: `Save ${noun} As…`, click: () => { save(address) } })
-  items.push({ label: `Copy ${noun} Address`, click: () => { actions.copyText(address) } })
+  items.push({ label: `Copy ${noun} Address`, click: () => { actions.copyAddress(address) } })
   return items
 }
 

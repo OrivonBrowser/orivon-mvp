@@ -35,6 +35,7 @@ export async function cases (): Promise<number> {
   // orivon:floating-ok
   void work() // FLAG
   void later() // FLAG
+  clipboard.write([]) // FLAG
 
   await work()
   const kept = work()
@@ -47,6 +48,7 @@ export async function cases (): Promise<number> {
   void wc.loadURL('https://example.com')
   wc.loadFile('index.html')
   clipboard.writeText('copied')
+  await clipboard.write([])
   plain()
   void plain()
   anything.run()
@@ -64,7 +66,7 @@ function project (files: Record<string, string>): string {
       include: ['src/**/*.ts']
     }),
     'node_modules/electron/package.json': JSON.stringify({ name: 'electron', types: 'index.d.ts' }),
-    'node_modules/electron/index.d.ts': 'export interface WebContents { loadURL (url: string): Promise<void>; loadFile (path: string): Promise<void> }\nexport interface Clipboard { writeText (text: string): Promise<void> }\n',
+    'node_modules/electron/index.d.ts': 'export interface WebContents { loadURL (url: string): Promise<void>; loadFile (path: string): Promise<void> }\nexport interface Clipboard { writeText (text: string): Promise<void>; write (items: unknown[]): Promise<void> }\n',
     ...files
   }
   for (const [name, body] of Object.entries(all)) {
