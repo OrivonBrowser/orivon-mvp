@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import { ADDRESS_PROBLEM, APP_UPDATES_NOTE, HELD_LINE, NO_SWITCH_NOTE, NYM_OFF_LINE, NYM_OFF_LINK, PROXY_UNSET_LINE, SETTINGS_LINK, TUNNEL_KINDS, addressChangeWords, everywhereHint, openedLine, tunnelListModel } from '../site-info/tunnels-model.js'
+import { ADDRESS_PROBLEM, APP_UPDATES_NOTE, HELD_LINE, NO_SWITCH_NOTE, NYM_OFF_LINE, NYM_OFF_LINK, PROXY_UNSET_LINE, SETTINGS_LINK, TUNNEL_KINDS, addressChangeWords, openedLine, tunnelListModel } from '../site-info/tunnels-model.js'
 
-const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } } }
+const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, tabs: 0, everything: false } } }
 const base: SiteInfo = {
   origin: 'https://example.com', displayOrigin: 'example.com', claimedName: undefined, homeDomain: undefined, update: undefined, asked: true,
   capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel, tunnelKind: 'nym', everywhere: false
@@ -15,7 +15,7 @@ const noSwitch = (patch: Partial<SiteInfo> = {}): SiteInfo => {
   return rest
 }
 const noView = { pending: undefined }
-const USERS = { sites: 2, apps: 1, everything: false }
+const USERS = { sites: 2, apps: 1, tabs: 0, everything: false }
 const row = (model: ReturnType<typeof tunnelListModel>, id: 'nym' | 'socks5') => model.rows.find((one) => one.kind.id === id)
 
 describe('the tunnels Orivon offers', () => {
@@ -47,7 +47,6 @@ describe('a private window held to Nym', () => {
     const model = tunnelListModel(held({ tunnel: { ...tunnel, subject: 'app', via: 'nym' } }), noView)
     expect(model.notes.map((note) => note.text)).toContain(HELD_LINE)
     expect(model.notes.map((note) => note.text), 'a held window gives up nothing for an app').not.toContain(APP_UPDATES_NOTE)
-    expect(model.hint).toEqual({ text: '' })
   })
 
   it('leaves an ordinary window\'s rows as they were', () => {
@@ -157,29 +156,21 @@ describe('a page that does not choose its tunnel here', () => {
   })
 })
 
-describe('the hint under the list', () => {
-  it('has nothing to say while the whole browser is not on a tunnel, and leaves the link to Tunnels settings to the page', () => {
-    expect(tunnelListModel(info(), noView).hint).toEqual({ text: '' })
+describe('under the list', () => {
+  it('is the link to Tunnels settings and nothing else, however the browser is set: the Browser-wide panel says what it does itself', () => {
     expect(SETTINGS_LINK).toBe('Open Tunnels settings')
-  })
-
-  it('names the tunnel everything without a choice follows while the whole browser is on one, and says where to change it', () => {
-    expect(tunnelListModel(info({ everywhere: true }), noView).hint).toEqual({ text: everywhereHint('nym') })
-    expect(everywhereHint('socks5')).toBe('Every site and app that has no choice here goes through your proxy. Change this under Browser-wide.')
-    expect(tunnelListModel(withTunnel({ defaultKind: 'socks5' }, { everywhere: true }), noView).hint.text).toBe(everywhereHint('socks5'))
-  })
-
-  it('says nothing in a window held to a tunnel, whose rows say it', () => {
-    expect(tunnelListModel(info({ everywhere: true, tunnelHeld: 'nym' }), noView).hint).toEqual({ text: '' })
-  })
-
-  it('says it also on a page with no choice of its own', () => {
-    expect(tunnelListModel(noSwitch({ everywhere: true }), noView).hint.text).toBe(everywhereHint('nym'))
+    for (const model of [
+      tunnelListModel(info(), noView),
+      tunnelListModel(info({ everywhere: true }), noView),
+      tunnelListModel(withTunnel({ defaultKind: 'socks5' }, { everywhere: true }), noView),
+      tunnelListModel(info({ everywhere: true, tunnelHeld: 'nym' }), noView),
+      tunnelListModel(noSwitch({ everywhere: true }), noView)
+    ]) expect(model).not.toHaveProperty('hint')
   })
 })
 
 describe('the address of the proxy', () => {
-  const saved = { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } }
+  const saved = { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, tabs: 0, everything: false } }
 
   it('is shown with a Change link, and no field, while one is saved', () => {
     expect(row(tunnelListModel(info(), noView), 'socks5')?.address).toEqual({ saved: '127.0.0.1:9050', editing: false, text: '127.0.0.1:9050', error: null, confirm: null })
@@ -197,10 +188,24 @@ describe('the address of the proxy', () => {
   })
 
   it('words the question for one, for apps only, and for the whole browser', () => {
-    expect(addressChangeWords({ sites: 1, apps: 0, everything: false })).toBe('1 site goes through your proxy now. It will use the new address, and what it has open is closed.')
-    expect(addressChangeWords({ sites: 0, apps: 3, everything: false })).toBe('3 apps go through your proxy now. They will use the new address, and what they have open is closed.')
-    expect(addressChangeWords({ sites: 1, apps: 0, everything: true })).toBe('Everything you browse and 1 site go through your proxy now. They will use the new address, and what they have open is closed.')
-    expect(addressChangeWords({ sites: 0, apps: 0, everything: false })).toBe('')
+    expect(addressChangeWords({ sites: 1, apps: 0, tabs: 0, everything: false })).toBe('1 site goes through your proxy now. It will use the new address, and what it has open is closed.')
+    expect(addressChangeWords({ sites: 0, apps: 3, tabs: 0, everything: false })).toBe('3 apps go through your proxy now. They will use the new address, and what they have open is closed.')
+    expect(addressChangeWords({ sites: 1, apps: 0, tabs: 0, everything: true })).toBe('Everything you browse and 1 site go through your proxy now. They will use the new address, and what they have open is closed.')
+    expect(addressChangeWords({ sites: 0, apps: 0, tabs: 0, everything: false })).toBe('')
+  })
+
+  it('names the tabs that chose the proxy, one or more, alone or with the rest', () => {
+    const words = (users: Partial<SiteTunnel['proxy']['users']>): string => addressChangeWords({ sites: 0, apps: 0, tabs: 0, everything: false, ...users })
+    expect(words({ tabs: 1 })).toBe('1 tab goes through your proxy now. It will use the new address, and what it has open is closed.')
+    expect(words({ tabs: 2 })).toBe('2 tabs go through your proxy now. They will use the new address, and what they have open is closed.')
+    expect(words({ tabs: 1, sites: 1 })).toBe('1 tab and 1 site go through your proxy now. They will use the new address, and what they have open is closed.')
+    expect(words({ tabs: 3, sites: 2, apps: 1 })).toBe('3 tabs, 2 sites and 1 app go through your proxy now. They will use the new address, and what they have open is closed.')
+    expect(words({ everything: true, tabs: 1 })).toBe('Everything you browse and 1 tab go through your proxy now. They will use the new address, and what they have open is closed.')
+  })
+
+  it('asks before an address is changed when only tabs go through the proxy', () => {
+    const model = tunnelListModel(withTunnel({ proxy: { ...saved, users: { sites: 0, apps: 0, tabs: 2, everything: false } } }), { pending: undefined, editor: { text: '127.0.0.1:9150', error: null, confirm: true } })
+    expect(row(model, 'socks5')?.address?.confirm).toBe('2 tabs go through your proxy now. They will use the new address, and what they have open is closed.')
   })
 
   it('has no address and no Test where the choice is fixed', () => {

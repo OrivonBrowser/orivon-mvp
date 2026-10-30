@@ -1,8 +1,8 @@
 // The person's proxy is set from the tunnel menu, without opening Settings. With no address saved, pressing the proxy's
 // switch asks for one in place; an address that is not host:port is refused in the words of Settings and nothing is chosen; a
 // good one is saved and the site then goes through the proxy (with the storage question a first move into the proxy's profile
-// asks). Test says whether the proxy answers. Changing the address while a site goes through the proxy asks first, naming how
-// many; Cancel leaves the old address, Confirm saves the new one and the site then goes through that. Every name has a
+// asks). Test says whether the proxy answers. Changing the address while a tab goes through the proxy asks first, naming how
+// many; Cancel leaves the old address, Confirm saves the new one and the tab's site then goes through that. Every name has a
 // decoy on the same port on loopback: a request that skipped the proxy would land on it.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-tunnel-menu-proxy.test.ts
@@ -20,7 +20,7 @@ import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
-import { closeTunnelList, pressAlways } from '../support/tunnel-popup.js'
+import { closeTunnelList } from '../support/tunnel-popup.js'
 
 const SITE_NAME = 'site.proxy-menu.test'
 
@@ -109,8 +109,7 @@ it('[app:tunnel-menu-sets-the-proxy] a good address is saved, the storage questi
   expect(first.requests.some((request) => request.destination === SITE_NAME)).toBe(true)
   expect(decoy.hits(), 'the decoy was asked only before the proxy').toBe(directHits)
 
-  // The row set the tab. The question about changing the address counts the sites that kept the proxy for good, so this one does.
-  await pressAlways(app, chrome, 'socks5')
+  // The row set the tab only: the question about changing the address counts the tab, with no entry for the site.
   await closeTunnelList(app, chrome)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
@@ -124,13 +123,13 @@ it('[app:tunnel-menu-sets-the-proxy] the saved address is shown with Change, and
   await shoot(app, chrome, popover, 'tunnel-menu-proxy-saved')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tunnel-menu-sets-the-proxy] changing the address while a site goes through the proxy asks first, naming how many; Cancel keeps the old one and Confirm moves the site to the new', async () => {
+it('[app:tunnel-menu-sets-the-proxy] changing the address while a tab goes through the proxy asks first, naming how many; Cancel keeps the old one and Confirm moves the tab to the new', async () => {
   const popover = await openPopover()
   await popover.click('#tunnel-proxy-change')
   await popover.fill('#tunnel-proxy-address', `127.0.0.1:${String(second.port)}`)
   await popover.click('#tunnel-proxy-save')
   await popover.waitForSelector('#tunnel-proxy-confirm')
-  expect(await popover.locator('.tunnel-address .tunnel-notice-text').textContent()).toBe('1 site goes through your proxy now. It will use the new address, and what it has open is closed.')
+  expect(await popover.locator('.tunnel-address .tunnel-notice-text').textContent()).toBe('1 tab goes through your proxy now. It will use the new address, and what it has open is closed.')
   await popover.click('#tunnel-proxy-cancel')
   expect(await popover.locator('.tunnel-address .route-line').textContent(), 'Cancel left the old address').toBe(`Address: 127.0.0.1:${String(first.port)}`)
 

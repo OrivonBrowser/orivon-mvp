@@ -69,7 +69,7 @@ describe('what the controller says of the browser\'s tunnel', () => {
   it('is on no tunnel, with the default one named, while the whole browser is not on a tunnel', async () => {
     const w = world({ kind: 'socks5' })
     const info = await popupInfo(controllerFor(w, w.routes))
-    expect(info?.browserTunnel).toMatchObject({ via: null, defaultKind: 'socks5', nodes: false, unreadable: false, tabs: [], blocked: {}, proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } })
+    expect(info?.browserTunnel).toMatchObject({ via: null, defaultKind: 'socks5', nodes: false, unreadable: false, tabs: [], blocked: {}, proxy: { address: '', users: { sites: 0, apps: 0, tabs: 0, everything: false } } })
     expect(info?.browserTunnel?.route, 'a browser on no tunnel has no route to speak of').toBeUndefined()
   })
 
@@ -88,6 +88,18 @@ describe('what the controller says of the browser\'s tunnel', () => {
     const tabs: BrowserTunnelTab[] = [{ title: 'News', choice: 'nym' }, { title: 'https://plain.example/', choice: 'direct' }]
     const w = world({ tabs })
     expect((await popupInfo(controllerFor(w, w.routes)))?.browserTunnel?.tabs).toEqual(tabs)
+  })
+
+  it('counts the tabs whose choice is the proxy among its users, a tab with no website yet included, wherever the proxy is read', async () => {
+    const tabs: BrowserTunnelTab[] = [{ title: '', choice: 'socks5' }, { title: 'News', choice: 'socks5' }, { title: 'Quiet', choice: 'nym' }, { title: 'Plain', choice: 'direct' }]
+    const w = world({ tabs })
+    const controller = controllerFor(w, w.routes)
+    const popup = await popupInfo(controller)
+    expect(popup?.browserTunnel?.proxy.users).toEqual({ sites: 0, apps: 0, tabs: 2, everything: false })
+    expect(popup?.tunnel?.proxy.users.tabs).toBe(2)
+    expect((await controller.siteInfoFor('https://news.example/')).tunnel?.proxy.users.tabs).toBe(2)
+    const none = world({ tabs: tabs.filter((tab) => tab.choice !== 'socks5') })
+    expect((await popupInfo(controllerFor(none, none.routes)))?.browserTunnel?.proxy.users.tabs).toBe(0)
   })
 
   it('says why a tunnel cannot be chosen, and that the settings could not be read', async () => {

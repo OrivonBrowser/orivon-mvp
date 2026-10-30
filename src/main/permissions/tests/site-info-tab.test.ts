@@ -3,7 +3,7 @@ import { tabSiteTunnel, tabTunnel, tabVia } from '../site-info-tab.js'
 import type { TabSiteFacts, TabTunnelFacts } from '../site-info-tab.js'
 import type { SiteTunnel } from '../site-info.js'
 
-const PROXY = { address: '', users: { sites: 0, apps: 0, everything: false } }
+const PROXY = { address: '', users: { sites: 0, apps: 0, tabs: 0, everything: false } }
 const facts = (over: Partial<TabTunnelFacts> = {}): TabTunnelFacts => ({ choice: undefined, everywhere: false, defaultKind: 'nym', unreadable: false, blocked: {}, proxy: PROXY, ...over })
 
 describe('the tunnel a tab\'s websites go through', () => {
@@ -59,7 +59,7 @@ describe('the tunnel switches of a tab', () => {
   })
 
   it('pass on why a tunnel cannot be chosen, what the proxy is and whether the settings could be read', () => {
-    const proxy = { address: '127.0.0.1:9050', users: { sites: 1, apps: 0, everything: false } }
+    const proxy = { address: '127.0.0.1:9050', users: { sites: 1, apps: 0, tabs: 0, everything: false } }
     expect(tabTunnel(facts({ blocked: { socks5: 'no-proxy' }, proxy, unreadable: true }))).toMatchObject({ blocked: { socks5: 'no-proxy' }, proxy, unreadable: true })
   })
 })
@@ -94,7 +94,7 @@ describe('the tunnel switches of a tab showing a website', () => {
   })
 
   it('keep everything the website\'s own panel tells: why a tunnel cannot be chosen, the storage notices, Swarm, the proxy, and whether the settings could be read', () => {
-    const proxy = { address: '127.0.0.1:9050', users: { sites: 1, apps: 0, everything: false } }
+    const proxy = { address: '127.0.0.1:9050', users: { sites: 1, apps: 0, tabs: 0, everything: false } }
     const own = site({ blocked: { socks5: 'no-proxy', nym: 'not-kept' }, notices: { nym: 'nym', off: 'direct' }, swarm: true, proxy, unreadable: true, defaultKind: 'socks5' })
     expect(tabSite({ site: own })).toMatchObject({ blocked: own.blocked, notices: own.notices, swarm: true, proxy, unreadable: true, defaultKind: 'socks5' })
   })

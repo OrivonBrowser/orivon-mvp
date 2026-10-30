@@ -287,7 +287,6 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
   container.append(document.createElement('hr'))
   const hint = document.createElement('div')
   hint.className = 'tunnel-hint'
-  if (model.hint.text !== '') hint.append(paragraph('route-line', model.hint.text))
   hint.append(link('tunnel-settings-open', SETTINGS_LINK, () => { callbacks.onOpenSettings(view.panel === 'browser') }))
   container.append(hint)
 }
