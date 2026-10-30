@@ -13,6 +13,7 @@ const createdViews: FakeView[] = []
 
 function fakeWebContents (): FakeView['webContents'] {
   const emitter = new EventEmitter() as FakeView['webContents']
+  emitter['id'] = createdViews.length + 1
   emitter['loadURL'] = vi.fn(async () => {})
   emitter['isDestroyed'] = vi.fn(() => false)
   emitter['isLoading'] = vi.fn(() => false)
@@ -45,9 +46,9 @@ const { TabManager } = await import('../tabs.js')
 const SHELL_PAGE = 'orivon-shell://renderer/newtab/index.html'
 const DASHBOARD_URL = SHELL_PAGE
 
-function newManager (): InstanceType<typeof TabManager> {
+function newManager (dashboardUrl = DASHBOARD_URL): InstanceType<typeof TabManager> {
   const contentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
-  return new TabManager(contentView as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), DASHBOARD_URL, {} as SubsystemContext)
+  return new TabManager(contentView as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), dashboardUrl, {} as SubsystemContext)
 }
 
 beforeEach(() => { createdViews.length = 0 })
@@ -77,6 +78,40 @@ describe('a dashboard tab that navigates to a page of its own opaque origin', ()
     view.webContents.emit('did-navigate', {}, `${DASHBOARD_URL}?q=1#top`)
 
     expect(manager.record(id)?.isDashboardTab).toBe(true)
+  })
+})
+
+// An http:// address, as the dashboard has in dev mode: the case where the address alone proves nothing.
+describe.each([['built', DASHBOARD_URL], ['dev', 'http://127.0.0.1:5173/newtab/']])('Back reaching the new-tab page (%s)', (_mode, dashboardUrl) => {
+  it('makes the tab the new tab again in the view made for it', () => {
+    const manager = newManager(dashboardUrl)
+    const id = manager.createTab()
+    const view = createdViews[0] as FakeView
+
+    view.webContents.emit('did-navigate', {}, 'https://a.example/')
+    expect(manager.record(id)?.isDashboardTab).toBe(false)
+
+    view.webContents.emit('did-navigate', {}, dashboardUrl)
+    expect(manager.record(id)?.isDashboardTab).toBe(true)
+    expect(manager.record(id)?.partition).toBeUndefined()
+  })
+
+  it('leaves a tab of any other view an ordinary page at that address', () => {
+    const manager = newManager(dashboardUrl)
+    const id = manager.createTab('https://a.example/')
+
+    ;(createdViews[0] as FakeView).webContents.emit('did-navigate', {}, dashboardUrl)
+
+    expect(manager.record(id)?.isDashboardTab).toBe(false)
+  })
+})
+
+describe('makeDashboardView', () => {
+  it('marks the view for its first load, whichever route made it', async () => {
+    const { makeDashboardView } = await import('../tab-view.js')
+    const { isFirstDashboardLoad } = await import('../../pages/dashboard-first-load.js')
+    const view = makeDashboardView(DASHBOARD_URL) as unknown as FakeView
+    expect(isFirstDashboardLoad(view.webContents['id'] as number)).toBe(true)
   })
 })
 

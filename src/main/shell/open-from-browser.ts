@@ -3,11 +3,17 @@
 // A page's link, `window.open` and an extension never come here: they cannot open a file.
 import { localFileKey } from '../../broker/policy/origin.js'
 import { parseLocalFileInput } from '../browsing/local-file-input.js'
+import type { TabState } from './tab-types.js'
 import type { TabManager } from './tabs.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 /** What the opening of an address needs of a window's tabs. */
 export type BrowserTabs = Pick<TabManager, 'createTab' | 'openLocalFile' | 'openLocalFileNow' | 'navigate' | 'closeTab' | 'getState' | 'activeWebContents'>
+
+/** A new tab nothing has happened in, which an address opened elsewhere may close. One that Back reached still holds the pages around it. */
+export function isEmptyNewTab (tab: Pick<TabState, 'isNewTab' | 'canGoBack' | 'canGoForward'>): boolean {
+  return tab.isNewTab && !tab.canGoBack && !tab.canGoForward
+}
 
 /** Opens `url` in a new tab, in front unless `active` is false. The tab keeps `tunnelChoice` (a local file has no use for one). */
 export function openFromBrowser (tabs: Pick<BrowserTabs, 'createTab' | 'openLocalFile'>, url: string, active = true, tunnelChoice?: TabTunnelChoice): void {
@@ -45,7 +51,8 @@ export async function navigateFromBrowser (tabs: BrowserTabs, tabId: string, inp
     tabs.navigate(tabId, input)
     return
   }
-  const wasBlank = tabs.getState().tabs.find((tab) => tab.id === tabId)?.isNewTab === true
+  const tab = tabs.getState().tabs.find((entry) => entry.id === tabId)
+  const wasBlank = tab !== undefined && isEmptyNewTab(tab)
   const opened = await tabs.openLocalFile(file, true)
   if (opened === undefined) return
   if (wasBlank) tabs.closeTab(tabId)

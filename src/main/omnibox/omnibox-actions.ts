@@ -9,7 +9,7 @@ import { sendChromeEvent } from '../shell/shell-events.js'
 import type { WindowContext } from '../shell/window-context.js'
 import { parseLocalFileInput } from '../browsing/local-file-input.js'
 import { parseOmniboxInput } from '../browsing/omnibox.js'
-import { navigateFromBrowser, openFromBrowser } from '../shell/open-from-browser.js'
+import { isEmptyNewTab, navigateFromBrowser, openFromBrowser } from '../shell/open-from-browser.js'
 import { prewarmVerifier } from '../verifier/verifier-access.js'
 import { OMNIBOX_MODULE, OMNIBOX_OVERLAY } from './omnibox-names.js'
 import { existingOmnibox, omniboxFor } from './omnibox-window.js'
@@ -141,7 +141,7 @@ function switchToTab (ctx: WindowContext, tabId: string): void {
   const owner = services.windows.all().find((entry) => !entry.window.isDestroyed() && entry.tabs.ids().includes(tabId))
   if (owner === undefined) return
   const { tabs: here, activeTabId } = window.tabs.getState()
-  const leaving = here.find((tab) => tab.id === activeTabId && tab.isNewTab && !(owner === window && tab.id === tabId))
+  const leaving = here.find((tab) => tab.id === activeTabId && isEmptyNewTab(tab) && !(owner === window && tab.id === tabId))
   owner.tabs.activateTab(tabId)
   if (owner !== window) {
     owner.window.show()

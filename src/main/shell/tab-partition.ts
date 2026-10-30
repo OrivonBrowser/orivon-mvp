@@ -148,6 +148,10 @@ export function appTabFlagChanged (target: string, view: WebContentsView, broker
  * one outside reader -- exported for that, not for general use). */
 export const appTabViews = new WeakSet<WebContentsView>()
 
+/** The views built with the new-tab page's preload (tab-view.ts's `makeDashboardView`), for the same reason: only
+ * such a view can be the new-tab page, and any other view at that address is an ordinary page. */
+export const dashboardViews = new WeakSet<WebContentsView>()
+
 /** The origin each app-tab view currently serves, kept current by wireView's
  * did-navigate handler for as long as the view stays put -- see the comment
  * there. tab-parking.ts's retireView reads this for its park key (ADR-0044)

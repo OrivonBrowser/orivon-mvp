@@ -81,6 +81,23 @@ describe('a history that holds the shell\'s own pages', () => {
   })
 })
 
+describe('carryHistory with an address left out', () => {
+  const DEV_DASHBOARD = 'http://127.0.0.1:5173/newtab/'
+  const list = [{ url: DEV_DASHBOARD, title: '' }, { url: 'https://a.example/1', title: '' }, { url: 'https://a.example/2', title: '' }]
+
+  it('carries the rest of the list, with the same page current', () => {
+    const to = contents([], -1)
+    expect(carryHistory(contents(list, 2).wc, to.wc, undefined, DEV_DASHBOARD)).toBe(true)
+    expect(to.restore).toHaveBeenCalledWith({ entries: list.slice(1), index: 1 })
+  })
+
+  it('carries nothing while that address is the one shown', () => {
+    const to = contents([], -1)
+    expect(carryHistory(contents(list, 0).wc, to.wc, 'https://b.example/', DEV_DASHBOARD)).toBe(false)
+    expect(to.restore).not.toHaveBeenCalled()
+  })
+})
+
 describe('carryHistory', () => {
   it('gives the copy the same pages by the same sequence, and only their address and title', () => {
     const from = contents([{ url: 'https://a.example/1', title: 'One', pageState: 'SECRET' }, { url: 'https://a.example/2', title: 'Two', pageState: 'SECRET' }], 1)
