@@ -216,7 +216,6 @@ it('[app:browser-wide-tunnel-asks-before-tabs-keep-their-own] turning a tunnel o
     expect(await popover.locator('.tunnel-kept-title b').count(), 'never read as markup').toBe(0)
     expect(await popover.locator('.tunnel-kept-via').textContent(), 'a tab that goes direct is listed too').toBe('Direct')
     expect(await popover.evaluate(() => document.activeElement?.id), 'the keyboard is on Cancel').toBe('tunnel-prompt-cancel')
-    await shoot(app, chrome, popover, 'browser-wide-prompt')
     await popover.click('#tunnel-prompt-cancel')
     expect(await popover.locator('.tunnel-notice').count()).toBe(0)
     expect(await checked(popover, 'tunnel-switch-nym'), 'Cancel leaves the switches where they were').toBe(false)

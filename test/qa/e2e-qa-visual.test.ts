@@ -23,7 +23,7 @@ import { clickAddressBarRetrying, runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { answerQuestion, noNativeDialogs, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
-import { captureState, checkState, prepareWindow, type Check, type Rect, type StateSpec } from '../support/qa-visual.js'
+import { captureState, checkState, panelFits, popupSized, prepareWindow, SCHEMES, type Check, type Rect, type StateSpec } from '../support/qa-visual.js'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findChrome, findViewShowing, popoverShown, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { fuseFilePath, readFileProtocolFuse } from '../../src/main/local-files/file-fuse.js'
 
@@ -60,13 +60,6 @@ const MAKE_DEFAULT = process.platform === 'win32' ? 'Open Windows Settings' : 'M
 const electronPath: string = createRequire(import.meta.url)('electron')
 const localFilesServed = await readFileProtocolFuse(fuseFilePath(electronPath)) === 'off'
 
-/** The schemes every state is captured in. */
-const requested = (process.env['ORIVON_QA_SCHEMES'] ?? 'light,dark').split(',').map((s) => s.trim())
-const SCHEMES = requested.filter((s): s is 'light' | 'dark' => s === 'light' || s === 'dark')
-if (SCHEMES.length === 0 || SCHEMES.length !== requested.length) {
-  throw new Error(`ORIVON_QA_SCHEMES must list "light" and/or "dark", comma-separated; got "${process.env['ORIVON_QA_SCHEMES'] ?? ''}"`)
-}
-
 type Shell = { orivonShell: { openInternal: (page: string, path?: string) => void } }
 
 let server: FixtureServer
@@ -87,35 +80,6 @@ afterAll(async () => {
 async function state (check: Check, app: ElectronApplication, name: string, spec: StateSpec, size?: { width: number, height: number }): Promise<void> {
   await prepareWindow(app, size)
   checkState(check, await captureState(app, name, spec))
-}
-
-/** The panel's card sits whole inside its own view: nothing is clipped at an edge and nothing scrolls. */
-async function panelFits (panel: Page): Promise<{ fits: boolean, detail: string }> {
-  const m = await panel.evaluate(() => {
-    const card = (document.querySelector('.q') as HTMLElement).getBoundingClientRect()
-    const root = document.documentElement
-    const body = document.body.getBoundingClientRect()
-    return { left: card.left, top: card.top, right: window.innerWidth - card.right, bottom: window.innerHeight - card.bottom, scrolls: root.scrollHeight > root.clientHeight || root.scrollWidth > root.clientWidth, unpaintedRight: window.innerWidth - body.right, unpaintedBottom: window.innerHeight - body.bottom }
-  })
-  return { fits: m.left >= 0 && m.top >= 0 && m.right >= 0 && m.bottom >= 0 && !m.scrolls && m.unpaintedRight === 0 && m.unpaintedBottom === 0, detail: JSON.stringify(m) }
-}
-
-/** Waits until the popup view whose address contains `part` has kept one size for five polls: a popup is sized after its content reports its height, in more than one step. */
-async function popupSized (app: ElectronApplication, part: string): Promise<boolean> {
-  let last = ''
-  let same = 0
-  return await waitFor(async () => {
-    const now = await app.evaluate(({ BaseWindow }, needle) => {
-      const [win] = BaseWindow.getAllWindows()
-      const views = (win?.contentView.children ?? []) as unknown as Array<{ getBounds: () => { x: number, y: number, width: number, height: number }, webContents?: { getURL: () => string } }>
-      const view = views.find((v) => (v.webContents?.getURL() ?? '').includes(needle))
-      return view === undefined ? '' : JSON.stringify(view.getBounds())
-    }, part)
-    same = now !== '' && now === last ? same + 1 : 0
-    last = now
-    await delay(100)
-    return same >= 5
-  })
 }
 
 async function openInternal (app: ElectronApplication, chrome: Page, name: string, path?: string): Promise<Page> {

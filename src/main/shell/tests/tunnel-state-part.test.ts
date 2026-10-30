@@ -58,7 +58,7 @@ describe('the tunnel part of the chrome state', () => {
     const read = (tabs: never, partition: string | undefined, isApp: (origin: string) => boolean = () => false, inflightTarget?: string) =>
       tunnelStatePart.read(ctx(() => ({ mark: 'on', via: 'nym' }), { url: 'https://news.example/a', partition }, undefined, isApp, inflightTarget), tabs)
 
-    it('is so for a website in a tab with a choice, in the shared session or a tunnel profile\'s, and for a new tab', () => {
+    it('is so for a website in a tab, with a choice or without, in the shared session or a tunnel profile\'s, and for a new tab', () => {
       expect(read(website(), undefined)).toMatchObject({ tunnelByTab: true })
       expect(read(website(), 'persist:tunnel-profile')).toMatchObject({ tunnelByTab: true })
       expect(read(website({ isNewTab: true, url: 'about:blank' }), undefined)).toMatchObject({ tunnelByTab: true })
@@ -78,8 +78,13 @@ describe('the tunnel part of the chrome state', () => {
       for (const partition of ['persist:app-3f9c', 'orivon-route-tab-3f9c0a']) expect(read(website(), partition), partition).toMatchObject({ tunnelByTab: false })
     })
 
-    it('is not so for a website in a tab with no choice', () => {
-      expect(read(website({ tunnelChoice: undefined }), undefined)).toMatchObject({ tunnelByTab: false })
+    it('is so for a website in a tab with no choice, which the popover sets the tab\'s rows for and keeps for good only on the website\'s say-so', () => {
+      expect(read(website({ tunnelChoice: undefined }), undefined)).toMatchObject({ tunnelByTab: true })
+    })
+
+    it('is not so for a page that cannot go through a tunnel, whatever the tab carries', () => {
+      const local = { tabs: [{ id: 't1', isNewTab: false, isInternal: false, url: 'http://localhost:3000/', tunnelChoice: 'nym' }], activeTabId: 't1' } as never
+      expect(tunnelStatePart.read(ctx(() => ({ mark: null, via: null }), { url: 'http://localhost:3000/', partition: undefined }, undefined, () => false), local)).toMatchObject({ tunnelByTab: false })
     })
   })
 

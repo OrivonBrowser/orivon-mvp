@@ -51,6 +51,15 @@ export function tunnelForTab (choice: TabTunnelChoice | undefined, origin: strin
 }
 
 /**
+ * The tunnel a page at `origin` leaves by: the tab's choice over the website's own profile (`profileForTab`), else, for a tab with no
+ * choice and a website with no profile of its own, `browser`: the tunnel the whole browser is on (undefined when it is on none).
+ */
+export function tunnelOfPage (choice: TabTunnelChoice | undefined, origin: string, ownProfile: Profile | undefined, browser: TunnelKind | undefined): TunnelKind | undefined {
+  if (choice === undefined && ownProfile === undefined) return browser
+  return tunnelForTab(choice, origin, ownProfile)
+}
+
+/**
  * The tunnel the websites of a tab with `choice` go through when none has an entry of its own: a tunnel choice wins; otherwise
  * `unreadable` (`unreadableTunnel` in `route-hub.ts`), which a direct choice yields to as it does to a website's own tunnel; otherwise `browser`, the
  * tunnel the whole browser is on (undefined when it is not on one), which a direct choice leaves. Undefined means no tunnel.

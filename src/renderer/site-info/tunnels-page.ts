@@ -14,7 +14,8 @@ import type { Panel } from './browser-wide-model.js'
 // half done between two drawings.
 
 export interface TunnelsBridge {
-  readonly setTunnel: (kind: SiteTunnelKind | null) => Promise<TunnelResult | null>
+  readonly setTunnel: (kind: SiteTunnelKind | null, shownOrigin?: string) => Promise<TunnelResult | null>
+  readonly setSiteAlways: (on: boolean, shownOrigin: string) => Promise<TunnelResult | null>
   readonly setBrowserTunnel: (kind: SiteTunnelKind | null) => Promise<TunnelResult | null>
   readonly setNodesTunnel: (on: boolean) => Promise<TunnelResult | null>
   readonly setProxyAddress: (text: string) => Promise<ProxyAddressResult | null>
@@ -44,23 +45,37 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
   /** The panel shown: decided on the first drawing, and after that only by the person's own click. */
   let panel: Panel | null = null
   let failed = false
+  let alwaysFailed = false
   let editor: Editor | null = null
   let test: { kind: SiteTunnelKind, busy: boolean, result: ProxyTestResult | null } | null = null
   /** Where the keyboard goes after the next drawing. */
   let focus: string | null = null
 
-  /** Takes what main answered to a change, whether it was done or not. */
-  function answered (result: TunnelResult | null): void {
-    failed = result === null || !result.ok
+  /** Takes what main answered to a change, whether it was done or not. `always` says it was the "Always" switch that asked. */
+  function answered (result: TunnelResult | null, always = false): void {
+    const bad = result === null || !result.ok
+    failed = bad && !always
+    alwaysFailed = bad && always
     if (result !== null) deps.setInfo(result.info)
     // No tab keeps a tunnel of its own any more: there is nothing left to ask, and the move the question was about is not made.
     if (result?.info.browserTunnel?.tabs.length === 0) asking = null
     deps.redraw()
   }
 
+  /** The website a tab's rows were drawn for, which main checks against the one the tab shows before it changes that website's entry; none for a panel that is not about a website in a tab. */
+  function shownOrigin (): string | undefined {
+    const info = deps.getInfo()
+    return info?.tunnel?.always === undefined ? undefined : info.origin
+  }
+
   async function setTunnel (kind: SiteTunnelKind | null): Promise<void> {
     notice = null
-    answered(await deps.bridge.setTunnel(kind))
+    const shown = shownOrigin()
+    answered(await (shown === undefined ? deps.bridge.setTunnel(kind) : deps.bridge.setTunnel(kind, shown)))
+  }
+
+  async function setAlways (on: boolean): Promise<void> {
+    answered(await deps.bridge.setSiteAlways(on, shownOrigin() ?? ''), true)
   }
 
   async function setBrowser (kind: SiteTunnelKind | null): Promise<void> {
@@ -154,6 +169,7 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
     editor = null
     test = null
     failed = false
+    alwaysFailed = false
     focus = `#tunnel-tab-${next}`
     deps.redraw()
   }
@@ -169,10 +185,11 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
       const noticeWhenDrawn = notice
       const pending = browser ? asking ?? undefined : notice === null ? undefined : notice.choice
       const model = (browser ? browserListModel : tunnelListModel)(info, { pending, editor, test })
-      const view = { notice: browser ? null : notice?.profile ?? null, pending, failed, panel: shown, panels: names }
+      const view = { notice: browser ? null : notice?.profile ?? null, pending, failed, alwaysFailed, panel: shown, panels: names }
       renderTunnelsPage(container, info, model, view, {
         onToggle: (kind, next) => {
           failed = false
+          alwaysFailed = false
           // The proxy has no address yet: its switch asks for one, and saving it is what turns the proxy on.
           if (kind === 'socks5' && next && proxyOf(info)?.address === '') {
             editor = { text: editor?.text ?? '', error: null, confirm: false, thenUse: true }
@@ -195,7 +212,8 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
         onCancel: () => { notice = null; asking = null; deps.redraw() },
         onOpenSettings: (everywhere) => { void deps.bridge.openTunnelSettings(everywhere) },
         onPanel: showPanel,
-        onNodes: (next) => { failed = false; focus = '#tunnel-switch-nodes'; void deps.bridge.setNodesTunnel(next).then(answered) }
+        onNodes: (next) => { failed = false; focus = '#tunnel-switch-nodes'; void deps.bridge.setNodesTunnel(next).then((result) => { answered(result) }) },
+        onAlways: (next) => { failed = false; alwaysFailed = false; focus = '#tunnel-switch-always'; void setAlways(next) }
       })
       // The page was drawn again: the keyboard goes where the last step left it, to Cancel while a question asks, else to the lit switch.
       const lit = browser ? info.browserTunnel?.via : info.tunnel?.via

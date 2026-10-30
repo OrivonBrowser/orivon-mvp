@@ -51,9 +51,9 @@ describe('which panel opens', () => {
 })
 
 describe('what the first tab is called', () => {
-  it('says what its switches act on: a tab, a website, an installed app', () => {
+  it('says what its switches act on: a tab, whose rows a website in it is set by, or an installed app', () => {
     expect(firstPanelLabel(info({ tunnel: { ...tunnel, subject: 'tab' } }))).toBe('This tab')
-    expect(firstPanelLabel(info())).toBe('This site')
+    expect(firstPanelLabel(info()), 'a website\'s page that is not about the tab (its session decides) is still the tab\'s').toBe('This tab')
     expect(firstPanelLabel(info({ tunnel: { ...tunnel, subject: 'app' } }))).toBe('This app')
   })
 

@@ -60,43 +60,43 @@ function world (start: Partial<World> = {}, refuse: Partial<Record<'kind' | 'eve
 }
 
 /** What the popup draws for the tab `t1`: its info and the tunnel of the whole browser. */
-const popupInfo = (controller: ReturnType<typeof controllerFor>) => controller.withBrowserTunnel(controller.tabInfoFor('t1') as never)
+const popupInfo = async (controller: ReturnType<typeof controllerFor>) => controller.withBrowserTunnel(await controller.tabInfoFor('t1') as never)
 
 const controllerFor = (w: ReturnType<typeof world> | undefined, routes: SubsystemContext['routes'], privateTunnel: 'nym' | null = null) =>
   createSiteInfoController({ broker: createBroker(baseDeps()), routes, privateTunnel } as unknown as SubsystemContext, NO_TRUST, undefined, undefined, undefined, { choiceOf: () => ({ choice: undefined }), set: () => {} }, w?.tunnels)
 
 describe('what the controller says of the browser\'s tunnel', () => {
-  it('is on no tunnel, with the default one named, while the whole browser is not on a tunnel', () => {
+  it('is on no tunnel, with the default one named, while the whole browser is not on a tunnel', async () => {
     const w = world({ kind: 'socks5' })
-    const info = popupInfo(controllerFor(w, w.routes))
+    const info = await popupInfo(controllerFor(w, w.routes))
     expect(info?.browserTunnel).toMatchObject({ via: null, defaultKind: 'socks5', nodes: false, unreadable: false, tabs: [], blocked: {}, proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } })
     expect(info?.browserTunnel?.route, 'a browser on no tunnel has no route to speak of').toBeUndefined()
   })
 
-  it('is on the default tunnel while the whole browser is on one, and reads the shared route, and what Nym is doing', () => {
+  it('is on the default tunnel while the whole browser is on one, and reads the shared route, and what Nym is doing', async () => {
     const w = world({ everywhere: true, nodes: true, routeState: 'down' })
-    const browser = popupInfo(controllerFor(w, w.routes))?.browserTunnel
+    const browser = (await popupInfo(controllerFor(w, w.routes)))?.browserTunnel
     expect(browser).toMatchObject({ via: 'nym', nodes: true, route: 'down', nym: { state: 'ready' } })
     expect(w.calls).toContain('state:orivon-shared-tunnel')
     const proxy = world({ everywhere: true, kind: 'socks5' })
-    const onProxy = popupInfo(controllerFor(proxy, proxy.routes))?.browserTunnel
+    const onProxy = (await popupInfo(controllerFor(proxy, proxy.routes)))?.browserTunnel
     expect(onProxy).toMatchObject({ via: 'socks5', route: 'ok', proxy: { users: { everything: true } } })
     expect(onProxy?.nym).toBeUndefined()
   })
 
-  it('lists the tabs that keep a choice of their own, as the browser names them', () => {
+  it('lists the tabs that keep a choice of their own, as the browser names them', async () => {
     const tabs: BrowserTunnelTab[] = [{ title: 'News', choice: 'nym' }, { title: 'https://plain.example/', choice: 'direct' }]
     const w = world({ tabs })
-    expect(popupInfo(controllerFor(w, w.routes))?.browserTunnel?.tabs).toEqual(tabs)
+    expect((await popupInfo(controllerFor(w, w.routes)))?.browserTunnel?.tabs).toEqual(tabs)
   })
 
-  it('says why a tunnel cannot be chosen, and that the settings could not be read', () => {
+  it('says why a tunnel cannot be chosen, and that the settings could not be read', async () => {
     const noProxy = world({ noProxy: true })
-    expect(popupInfo(controllerFor(noProxy, noProxy.routes))?.browserTunnel?.blocked).toEqual({ socks5: 'no-proxy' })
+    expect((await popupInfo(controllerFor(noProxy, noProxy.routes)))?.browserTunnel?.blocked).toEqual({ socks5: 'no-proxy' })
     const nymOff = world({ nymOff: true })
-    expect(popupInfo(controllerFor(nymOff, nymOff.routes))?.browserTunnel?.blocked).toEqual({ nym: 'nym-off' })
+    expect((await popupInfo(controllerFor(nymOff, nymOff.routes)))?.browserTunnel?.blocked).toEqual({ nym: 'nym-off' })
     const unreadable = world({ unreadable: true, everywhere: true })
-    expect(popupInfo(controllerFor(unreadable, unreadable.routes))?.browserTunnel).toMatchObject({ unreadable: true, via: 'nym' })
+    expect((await popupInfo(controllerFor(unreadable, unreadable.routes)))?.browserTunnel).toMatchObject({ unreadable: true, via: 'nym' })
   })
 
   it('is added to a website\'s info for the popup, and not to what the toolbar asks on every tab change, and absent while routes are not running', async () => {
@@ -111,20 +111,20 @@ describe('what the controller says of the browser\'s tunnel', () => {
 })
 
 describe('setBrowserTunnel', () => {
-  it('saves the tunnel first and only then turns the whole browser on, so the routes never see the old tunnel switched on', () => {
+  it('saves the tunnel first and only then turns the whole browser on, so the routes never see the old tunnel switched on', async () => {
     const w = world()
     expect(controllerFor(w, w.routes).setBrowserTunnel('socks5')).toBe(true)
     expect(w.calls.filter((call) => !call.startsWith('state:'))).toEqual(['kind:socks5', 'everywhere:true'])
   })
 
-  it('turns only the browser-wide switch off when the lit tunnel is turned off, and leaves the default tunnel alone', () => {
+  it('turns only the browser-wide switch off when the lit tunnel is turned off, and leaves the default tunnel alone', async () => {
     const w = world({ everywhere: true, kind: 'socks5' })
     expect(controllerFor(w, w.routes).setBrowserTunnel(null)).toBe(true)
     expect(w.calls).toEqual(['everywhere:false'])
     expect(w.state).toMatchObject({ kind: 'socks5', everywhere: false })
   })
 
-  it('does not turn the browser on when the tunnel could not be saved, and says it was not done when the switch could not move', () => {
+  it('does not turn the browser on when the tunnel could not be saved, and says it was not done when the switch could not move', async () => {
     const noKind = world({}, { kind: true })
     expect(controllerFor(noKind, noKind.routes).setBrowserTunnel('socks5')).toBe(false)
     expect(noKind.setters.setEverywhere).not.toHaveBeenCalled()
@@ -132,7 +132,7 @@ describe('setBrowserTunnel', () => {
     expect(controllerFor(noSwitch, noSwitch.routes).setBrowserTunnel('nym')).toBe(false)
   })
 
-  it('refuses a tunnel that cannot be used: no proxy address, Nym switched off. Turning off is always allowed', () => {
+  it('refuses a tunnel that cannot be used: no proxy address, Nym switched off. Turning off is always allowed', async () => {
     const noProxy = world({ noProxy: true, everywhere: true })
     const controller = controllerFor(noProxy, noProxy.routes)
     expect(controller.setBrowserTunnel('socks5')).toBe(false)
@@ -143,7 +143,7 @@ describe('setBrowserTunnel', () => {
     expect(controllerFor(nymOff, nymOff.routes).setBrowserTunnel(null)).toBe(true)
   })
 
-  it('changes nothing while the tunnel settings cannot be read, in a window held to Nym, and while routes are not running', () => {
+  it('changes nothing while the tunnel settings cannot be read, in a window held to Nym, and while routes are not running', async () => {
     const unreadable = world({ unreadable: true })
     expect(controllerFor(unreadable, unreadable.routes).setBrowserTunnel('nym')).toBe(false)
     expect(controllerFor(unreadable, unreadable.routes).setBrowserTunnel(null)).toBe(false)
@@ -156,7 +156,7 @@ describe('setBrowserTunnel', () => {
 })
 
 describe('setNodesTunnel', () => {
-  it('saves whether the nodes follow the tunnel, either way', () => {
+  it('saves whether the nodes follow the tunnel, either way', async () => {
     const w = world()
     const controller = controllerFor(w, w.routes)
     expect(controller.setNodesTunnel(true)).toBe(true)
@@ -164,12 +164,12 @@ describe('setNodesTunnel', () => {
     expect(w.calls).toEqual(['nodes:true', 'nodes:false'])
   })
 
-  it('says it was not done when the setting could not be saved', () => {
+  it('says it was not done when the setting could not be saved', async () => {
     const w = world({}, { nodes: true })
     expect(controllerFor(w, w.routes).setNodesTunnel(true)).toBe(false)
   })
 
-  it('changes nothing while the tunnel settings cannot be read, in a window held to Nym, and while routes are not running', () => {
+  it('changes nothing while the tunnel settings cannot be read, in a window held to Nym, and while routes are not running', async () => {
     const unreadable = world({ unreadable: true })
     expect(controllerFor(unreadable, unreadable.routes).setNodesTunnel(true)).toBe(false)
     const held = world({ everywhere: true })

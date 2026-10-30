@@ -56,9 +56,14 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'applyUpdate', cid } satisfies SiteInfoCommand)
       return (result ?? { ok: false, reason: 'no answer' }) as ApplyOutcome
     },
-    /** The tunnel of the website or app: Nym, the person's proxy, or none. Main decides what it can do and answers the info after. */
-    setTunnel: async (kind: 'nym' | 'socks5' | null): Promise<TunnelResult | null> => {
-      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setTunnel', kind } satisfies SiteInfoCommand)
+    /** The tunnel of the website or app: Nym, the person's proxy, or none. Main decides what it can do and answers the info after. On a tab's popup `shownOrigin` is the website the rows were drawn for, which main compares with the one the tab shows before it changes that website's entry. */
+    setTunnel: async (kind: 'nym' | 'socks5' | null, shownOrigin?: string): Promise<TunnelResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setTunnel', kind, ...(shownOrigin === undefined ? {} : { shownOrigin }) } satisfies SiteInfoCommand)
+      return (result ?? null) as TunnelResult | null
+    },
+    /** "Always use for this site", on a tab's popup: `shownOrigin` is the website the panel was drawn for; main acts on the one the tab shows and refuses when they differ. */
+    setSiteAlways: async (on: boolean, shownOrigin: string): Promise<TunnelResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setSiteAlways', on, shownOrigin } satisfies SiteInfoCommand)
       return (result ?? null) as TunnelResult | null
     },
     /** The tunnel of the whole browser: Nym, the person's proxy, or none. Main decides what it can do and answers the info after. */

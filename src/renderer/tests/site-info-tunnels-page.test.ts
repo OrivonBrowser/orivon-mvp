@@ -26,7 +26,8 @@ const browserInfo = (patch: Partial<BrowserTunnel> = {}, rest: Partial<SiteInfo>
 function setup (initial: SiteInfo) {
   let info = initial
   const bridge = {
-    setTunnel: vi.fn(async (kind: 'nym' | 'socks5' | null) => ({ ok: true, info: infoWith({ via: kind }) })),
+    setTunnel: vi.fn(async (kind: 'nym' | 'socks5' | null, _shownOrigin?: string) => ({ ok: true, info: infoWith({ via: kind }) })),
+    setSiteAlways: vi.fn(async (on: boolean, _shownOrigin: string) => ({ ok: true, info: infoWith({ via: 'nym', always: { on, available: true } }) }) as { ok: boolean, info: SiteInfo }),
     setProxyAddress: vi.fn(async (text: string) => ({ ok: true, info: infoWith({ proxy: { ...tunnel.proxy, address: text } }) }) as { ok: boolean, reason?: 'invalid' | 'refused', info: SiteInfo }),
     testTunnel: vi.fn(async (): Promise<unknown> => ({ ok: true, authentication: 'none' })),
     setBrowserTunnel: vi.fn(async (kind: 'nym' | 'socks5' | null) => ({ ok: true, info: browserInfo({ via: kind }) })),
@@ -219,7 +220,7 @@ describe('which panel is drawn', () => {
 
   it('names the two panels', () => {
     setup(infoWith())
-    expect(shownView.panels).toEqual({ first: 'This site', browser: 'Browser-wide' })
+    expect(shownView.panels).toEqual({ first: 'This tab', browser: 'Browser-wide' })
   })
 })
 
@@ -372,5 +373,59 @@ describe('the nodes switch', () => {
     callbacks.onNodes(true)
     await flush()
     expect(shownView.failed).toBe(true)
+  })
+})
+
+describe('"Always use for this site"', () => {
+  const ORIGIN = 'https://example.com'
+  const website = (patch: Partial<SiteTunnel> = {}): SiteInfo => infoWith({ subject: 'tab', following: false, via: 'nym', tabChoice: 'nym', always: { on: false, available: true }, ...patch })
+
+  it('asks main for the switch\'s position and the website the panel was drawn for, and draws what main answers', async () => {
+    const { bridge, flush, info } = setup(website())
+    callbacks.onAlways(true)
+    await flush()
+    expect(bridge.setSiteAlways).toHaveBeenLastCalledWith(true, ORIGIN)
+    expect(info().tunnel?.always).toEqual({ on: true, available: true })
+    callbacks.onAlways(false)
+    await flush()
+    expect(bridge.setSiteAlways).toHaveBeenLastCalledWith(false, ORIGIN)
+  })
+
+  it('draws the truth when main refused: the info it sent back, and a line that the choice could not be changed', async () => {
+    const { bridge, flush, info } = setup(website())
+    bridge.setSiteAlways.mockResolvedValueOnce({ ok: false, info: website({ always: { on: false, available: false } }) })
+    callbacks.onAlways(true)
+    await flush()
+    expect(shownView.alwaysFailed).toBe(true)
+    expect(shownView.failed).toBe(false)
+    expect(info().tunnel?.always).toEqual({ on: false, available: false })
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(shownView.alwaysFailed, 'the line goes with the next move').toBe(false)
+  })
+
+  it('moves a row for the website the rows were drawn for, so that main can refuse when the tab has moved on', async () => {
+    const { bridge, flush } = setup(website({ always: { on: true, available: true } }))
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(bridge.setTunnel).toHaveBeenLastCalledWith('socks5', ORIGIN)
+  })
+
+  it('asks the storage question first for a row, as for any first move into a profile, and applies nothing until Confirm', async () => {
+    const { bridge, flush } = setup(website({ notices: { socks5: 'socks5' } }))
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(bridge.setTunnel).not.toHaveBeenCalled()
+    expect(shown.always?.disabled, 'the switch waits for the answer').toBe(true)
+    callbacks.onConfirm()
+    await flush()
+    expect(bridge.setTunnel).toHaveBeenCalledWith('socks5', ORIGIN)
+  })
+
+  it('leaves the rows of a tab that shows no website, and of a website\'s own popup, as they were: no origin is sent', async () => {
+    const { bridge, flush } = setup(infoWith({ subject: 'tab' }, { origin: '' }))
+    callbacks.onToggle('nym', true)
+    await flush()
+    expect(bridge.setTunnel).toHaveBeenLastCalledWith('nym')
   })
 })

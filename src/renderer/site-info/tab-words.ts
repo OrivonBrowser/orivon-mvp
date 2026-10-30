@@ -6,12 +6,27 @@ import type { SiteTunnel } from '../../main/permissions/site-info.js'
 export const TAB_TUNNEL_FAILED = 'The tunnel could not be changed for this tab.'
 export const TAB_PICK_NOTE = 'Pick a tunnel and every site you open in this tab goes through it, until the tab is closed.'
 export const TAB_FOLLOWING_NOTE = 'This tab follows the tunnel you set for all your browsing. Turn it off here to open sites directly in this tab only.'
+export const SITE_OWN_DIRECT_NOTE = 'This site goes direct in every tab, because you chose that for the site.'
 export const TAB_TUNNEL_PROFILE_NOTE = 'They keep their sign-ins in your tunnel profile, apart from your normal browsing.'
 export const TAB_DIRECT_PROFILE_NOTE = 'A site that has a tunnel of its own keeps it. The others keep their sign-ins in your direct profile, apart from your normal browsing.'
+
+export const ALWAYS_LABEL = 'Always use for this site'
+export const ALWAYS_FAILED = 'The choice for this site could not be changed.'
+export const ALWAYS_LINE_OFF = 'Keeps this choice after the tab closes.'
+export const ALWAYS_LINE_ON = 'Saved for this site, in this tab and every other.'
+export const ALWAYS_LINE_NOTHING = 'Pick a tunnel to keep it for this site.'
+/** A switch that cannot be moved keeps nothing to promise: the notes above it say why. */
+export const ALWAYS_LINE_HELD = ''
 
 /** The name of the tunnel in a sentence about the tab. */
 function tunnelWords (kind: 'nym' | 'socks5'): string {
   return kind === 'nym' ? 'Nym' : 'your tunnel'
+}
+
+/** The website keeps one tunnel and this tab goes through another (the tab's choice wins): the switch is on for the one saved, and the line names both. */
+export function alwaysLineOther (saved: 'nym' | 'socks5' | null, via: 'nym' | 'socks5' | null): string {
+  const kept = saved === null ? 'Saved for this site: direct.' : `Saved for this site: ${tunnelWords(saved)}.`
+  return via === null ? `${kept} This tab goes direct.` : `${kept} This tab uses ${tunnelWords(via)}.`
 }
 
 /** Direct for this tab: said instead of an empty list of lit switches, so a tab that left the tunnel does not look like one that never had it. */
@@ -30,5 +45,7 @@ export function tabNotes (tunnel: SiteTunnel, everywhere: boolean, fixed: boolea
   if (choice === 'direct') return tunnel.unreadable ? [] : [directTabNote(everywhere), TAB_DIRECT_PROFILE_NOTE]
   if (choice !== undefined) return [`Every site you open in this tab goes through ${tunnelWords(choice)}, until the tab is closed.`, TAB_TUNNEL_PROFILE_NOTE]
   if (fixed) return []
+  // A website with an entry of its own and a tab with no choice: the page goes where the website was sent, not where the browser sends it.
+  if (tunnel.always?.on === true) return [tunnel.via === null ? SITE_OWN_DIRECT_NOTE : `This site goes through ${tunnelWords(tunnel.via)} in every tab, because you chose it for the site.`]
   return [tunnel.via === null ? TAB_PICK_NOTE : TAB_FOLLOWING_NOTE]
 }

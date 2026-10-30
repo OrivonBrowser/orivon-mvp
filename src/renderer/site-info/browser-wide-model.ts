@@ -18,13 +18,9 @@ export const BROWSER_FAILED = 'The tunnel could not be changed for the browser.'
 /** A tab with neither a title nor an address yet. */
 const UNNAMED_TAB = 'New tab'
 
-/** What the first panel is called: what its switches act on. A page with no tunnel of its own (this computer) is still asked about from a tab. */
+/** What the first panel is called: what its switches act on. Only an installed app's switches are about the app; a website's rows set its tab, and a page with no tunnel of its own (this computer) is still asked about from a tab. */
 export function firstPanelLabel (info: SiteInfo): string {
-  switch (info.tunnel?.subject) {
-    case 'site': return 'This site'
-    case 'app': return 'This app'
-    default: return 'This tab'
-  }
+  return info.tunnel?.subject === 'app' ? 'This app' : 'This tab'
 }
 
 /**
@@ -61,7 +57,7 @@ function nodesFor (browser: BrowserTunnel, held: boolean): NodesModel {
 export function browserListModel (info: SiteInfo, view: TunnelView): TunnelListModel {
   const browser = info.browserTunnel
   const hint = { text: '' }
-  if (browser === undefined) return { rows: [], notes: [], empty: null, hint, nodes: null, prompt: null }
+  if (browser === undefined) return { rows: [], notes: [], empty: null, hint, always: null, nodes: null, prompt: null }
   const held = info.tunnelHeld !== undefined
   const fixed = held || browser.unreadable
   const rows = tunnelRows({ via: browser.via, blocked: browser.blocked, proxy: browser.proxy, held, fixed, inUse: inUseLine(browser.route, browser.nym, 'browser') }, view)
@@ -70,5 +66,5 @@ export function browserListModel (info: SiteInfo, view: TunnelView): TunnelListM
     ...(browser.unreadable ? [{ text: UNREADABLE_HINT, down: true }] : [])
   ]
   const asking = view.pending !== undefined && view.pending !== null
-  return { rows, notes, empty: null, hint, nodes: nodesFor(browser, held), prompt: asking ? promptFor(browser) : null }
+  return { rows, notes, empty: null, hint, always: null, nodes: nodesFor(browser, held), prompt: asking ? promptFor(browser) : null }
 }

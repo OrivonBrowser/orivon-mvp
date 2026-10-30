@@ -20,6 +20,7 @@ import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { closeTunnelList, pressAlways } from '../support/tunnel-popup.js'
 
 const SITE_NAME = 'site.proxy-menu.test'
 
@@ -107,6 +108,10 @@ it('[app:tunnel-menu-sets-the-proxy] a good address is saved, the storage questi
   expect((await waitForTab(chrome, { address: url(), title: 'through the proxy' }, 60_000)).ok, 'the site came through the proxy').toBe(true)
   expect(first.requests.some((request) => request.destination === SITE_NAME)).toBe(true)
   expect(decoy.hits(), 'the decoy was asked only before the proxy').toBe(directHits)
+
+  // The row set the tab. The question about changing the address counts the sites that kept the proxy for good, so this one does.
+  await pressAlways(app, chrome, 'socks5')
+  await closeTunnelList(app, chrome)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnel-menu-sets-the-proxy] the saved address is shown with Change, and Test says the proxy answers', async () => {

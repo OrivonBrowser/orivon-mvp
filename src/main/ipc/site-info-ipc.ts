@@ -86,8 +86,10 @@ export type SiteInfoCommand =
   | { type: 'removeCookie'; key: string }
   | { type: 'clearCookies' }
   | { type: 'reload' }
-  /** The tunnel of a website or an installed app: Nym, the person's proxy, or none (null). Answers whether it was done, with the popup's info as it is after. */
-  | { type: 'setTunnel'; kind: 'nym' | 'socks5' | null }
+  /** The tunnel of a website or an installed app: Nym, the person's proxy, or none (null). Answers whether it was done, with the popup's info as it is after. On the popup of a tab, `shownOrigin` is the website the rows were drawn for: main acts on the one the tab shows now, and refuses a move of that website's entry when the two differ. */
+  | { type: 'setTunnel'; kind: 'nym' | 'socks5' | null; shownOrigin?: string }
+  /** "Always use for this site", on the popup of a tab only: keeps what the panel shows as the website's own choice, or lets it go. No origin to act on: main reads the website from the tab, and refuses when it is not `shownOrigin`, the one the panel was drawn for. */
+  | { type: 'setSiteAlways'; on: boolean; shownOrigin: string }
   /** The tunnel of the whole browser: Nym, the person's proxy, or none (null). Answers whether it was done, with the popup's info as it is after. */
   | { type: 'setBrowserTunnel'; kind: 'nym' | 'socks5' | null }
   /** Whether the IPFS and Swarm nodes follow the tunnel too. Answers whether it was done, with the popup's info as it is after. */
@@ -249,6 +251,9 @@ export function registerSiteInfoIpc (
         const ok = before.tunnel?.fixed === undefined && await controller.setTunnel(origin, command.kind)
         return { ok, info: ok ? withRoute(await controller.siteInfoFor(origin)) : before } satisfies TunnelResult
       }
+      case 'setSiteAlways':
+        // Only the popup of a tab has it (`./site-info-tab-ipc.ts`): a website's own popup keeps its entry with its switches.
+        return
       case 'setBrowserTunnel': {
         if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return { ok: false, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
         const ok = controller.setBrowserTunnel(command.kind)
