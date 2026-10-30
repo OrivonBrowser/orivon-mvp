@@ -359,7 +359,8 @@ it('loads no file: address a web page links to, and opens one the person types a
   const fileUrl = pathToFileURL(local).href
   const linker = await startServer((_request, response) => { html(response, PAGE_WITH_FILE_LINK(fileUrl)) })
   const { app, chrome } = await launched()
-  const urls = async (): Promise<string[]> => await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL()))
+  // The shell's own views are not pages: pointing at the link builds the link bubble's, and that opens nothing.
+  const urls = async (): Promise<string[]> => await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL()).filter((url) => !url.startsWith('orivon-shell://')))
   try {
     const page = await visit(app, chrome, `${linker.origin}/`)
     const before = await urls()
