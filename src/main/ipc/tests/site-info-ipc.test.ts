@@ -50,10 +50,13 @@ function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoC
     siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false, missing: false })),
     siteInfoFor: vi.fn(async () => EMPTY_INFO),
     inSession: vi.fn((info: SiteInfo) => info),
+    withBrowserTunnel: vi.fn((info: SiteInfo) => info),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
     tabInfoFor: vi.fn(() => undefined),
     setTabTunnel: vi.fn(() => false),
+    setBrowserTunnel: vi.fn(() => true),
+    setNodesTunnel: vi.fn(() => true),
     setTunnel: vi.fn(async () => true),
     setProxyAddress: vi.fn(() => 'ok' as const),
     testTunnel: vi.fn(async () => null),
@@ -178,6 +181,52 @@ describe('registerSiteInfoIpc -- setTunnel', () => {
     }
     expect(await dispatch({ type: 'setTunnel', kind: 'nym' }, OTHER_FRAME_URL)).toBeUndefined()
     expect(controller.setTunnel).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerSiteInfoIpc -- the tunnel of the whole browser', () => {
+  it('sends the whole browser through the tunnel asked for, or through none, and returns the info after, never touching the site\'s own entry', async () => {
+    const controller = fakeController()
+    register(controller)
+    for (const kind of ['nym', 'socks5', null]) expect(await dispatch({ type: 'setBrowserTunnel', kind, origin: 'https://evil.example' }), String(kind)).toEqual({ ok: true, info: EMPTY_INFO })
+    expect((controller.setBrowserTunnel as ReturnType<typeof vi.fn>).mock.calls).toEqual([['nym'], ['socks5'], [null]])
+    expect(controller.setTunnel).not.toHaveBeenCalled()
+  })
+
+  it('says it was not done, with the info as it was, when the controller could not', async () => {
+    register(fakeController({ setBrowserTunnel: vi.fn(() => false), setNodesTunnel: vi.fn(() => false) }))
+    expect(await dispatch({ type: 'setBrowserTunnel', kind: 'nym' })).toEqual({ ok: false, info: EMPTY_INFO })
+    expect(await dispatch({ type: 'setNodesTunnel', on: true })).toEqual({ ok: false, info: EMPTY_INFO })
+  })
+
+  it('refuses a browser-wide value that is not a tunnel, and a nodes value that is not a boolean, without reaching the controller', async () => {
+    const controller = fakeController()
+    register(controller)
+    for (const kind of [undefined, 1, 'true', true, false, 'tor', 'off', 'direct']) expect(await dispatch({ type: 'setBrowserTunnel', kind }), String(kind)).toEqual({ ok: false, info: EMPTY_INFO })
+    for (const on of [undefined, null, 1, 0, 'true', 'on', {}, []]) expect(await dispatch({ type: 'setNodesTunnel', on }), String(on)).toEqual({ ok: false, info: EMPTY_INFO })
+    expect(controller.setBrowserTunnel).not.toHaveBeenCalled()
+    expect(controller.setNodesTunnel).not.toHaveBeenCalled()
+  })
+
+  it('sets whether the nodes follow the tunnel for a true or a false, and answers nothing from another frame', async () => {
+    const controller = fakeController()
+    register(controller)
+    expect(await dispatch({ type: 'setNodesTunnel', on: true })).toEqual({ ok: true, info: EMPTY_INFO })
+    expect(await dispatch({ type: 'setNodesTunnel', on: false })).toEqual({ ok: true, info: EMPTY_INFO })
+    expect((controller.setNodesTunnel as ReturnType<typeof vi.fn>).mock.calls).toEqual([[true], [false]])
+    expect(await dispatch({ type: 'setBrowserTunnel', kind: 'nym' }, OTHER_FRAME_URL)).toBeUndefined()
+    expect(await dispatch({ type: 'setNodesTunnel', on: true }, OTHER_FRAME_URL)).toBeUndefined()
+    expect(controller.setBrowserTunnel).toHaveBeenCalledTimes(0)
+    expect(controller.setNodesTunnel).toHaveBeenCalledTimes(2)
+  })
+
+  it('gives the info as the tab\'s session makes it, with the tunnel of the whole browser in it', async () => {
+    const session = {}
+    const inSession = vi.fn((info: SiteInfo) => ({ ...info, tunnelKind: 'nym' as const }))
+    const withBrowserTunnel = vi.fn((info: SiteInfo) => ({ ...info, everywhere: true }))
+    register(fakeController({ inSession, withBrowserTunnel }), { activeWebContents: () => ({ getURL: () => ORIGIN, session }) as unknown as import('electron').WebContents })
+    expect(await dispatch({ type: 'setBrowserTunnel', kind: 'nym' })).toEqual({ ok: true, info: { ...EMPTY_INFO, tunnelKind: 'nym', everywhere: true } })
+    expect(await dispatch({ type: 'get' })).toEqual({ ...EMPTY_INFO, tunnelKind: 'nym', everywhere: true })
   })
 })
 

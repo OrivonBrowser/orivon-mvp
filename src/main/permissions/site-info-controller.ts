@@ -12,9 +12,11 @@ import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
 import { buildSiteInfo } from './site-info.js'
-import type { SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile, SiteUpdate } from './site-info.js'
+import type { BrowserTunnel, SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile, SiteUpdate } from './site-info.js'
 import { NO_TABS, tabTunnel, tabVia, THIS_TAB } from './site-info-tab.js'
 import type { TabTunnels } from './site-info-tab.js'
+import { browserTunnel, NO_BROWSER } from './site-info-browser.js'
+import type { BrowserTunnels } from './site-info-browser.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
 import type { TurnOnResult } from './site-switches.js'
 import { buildSiteTrust, providerIdFor, withProviderVerdict } from '../browsing/site-trust.js'
@@ -110,6 +112,8 @@ export interface SiteInfoController {
   siteInfoFor: (url: string) => Promise<SiteInfo>
   /** `info` as it is for the tab the popover is about, whose session decides the tunnel of a page opened through an app's tunnel. */
   inSession: (info: SiteInfo, session: object | undefined) => SiteInfo
+  /** `info` with the tunnel of the whole browser, for the popup's Browser-wide panel. Left as it is while routes are not running. Apart from `siteInfoFor` because the toolbar asks that on every tab change and has no use for it. */
+  withBrowserTunnel: (info: SiteInfo) => SiteInfo
   siteTrustFor: (url: string) => Promise<SiteTrust | null>
   /** What the manifest and the pin declare about storage -- the two facts
    * `../permissions/site-data-runner.js`'s disk measurements need but
@@ -124,6 +128,10 @@ export interface SiteInfoController {
   setTabTunnel: (tabId: string, kind: SiteTunnelKind | null) => boolean
   /** Sends a website or an installed app through the tunnel `kind`, or through none (null): false when it could not be done (no address for that tunnel, Nym switched off, this computer, or the choice could not be kept). */
   setTunnel: (origin: string, kind: SiteTunnelKind | null) => Promise<boolean>
+  /** Sends the whole browser through the tunnel `kind`, or takes it off its tunnel (null): false when it could not be done (no address for that tunnel, Nym switched off, the settings cannot be read, a window held to Nym). */
+  setBrowserTunnel: (kind: SiteTunnelKind | null) => boolean
+  /** Whether the IPFS and Swarm nodes follow the tunnel too: false when it could not be done (the settings cannot be read, a window held to Nym). */
+  setNodesTunnel: (on: boolean) => boolean
   /** Saves the address of the person's proxy from the menu: refused in a window held to Nym, invalid when it is not host:port. */
   setProxyAddress: (text: string) => 'ok' | 'invalid' | 'refused'
   /** Whether a tunnel answers, as Settings' Test asks it; null in a window held to Nym, which never tests the person's own proxy. */
@@ -152,7 +160,7 @@ function nymSwitchedOff (routes: Routes): boolean {
 
 const TUNNELS: readonly SiteTunnelKind[] = ['nym', 'socks5']
 
-export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false, entry: AppEntry = NO_ENTRY, proxySetup: ProxySetup = NO_PROXY_SETUP, tabTunnels: TabTunnels = NO_TABS): SiteInfoController {
+export function createSiteInfoController (ctx: SubsystemContext, trustSources: SiteTrustSources, deleteLocalFile: (key: string) => Promise<boolean> = async () => false, entry: AppEntry = NO_ENTRY, proxySetup: ProxySetup = NO_PROXY_SETUP, tabTunnels: TabTunnels = NO_TABS, browser: BrowserTunnels = NO_BROWSER): SiteInfoController {
   // The extensions disclosure (docs/planning/extensions-exploration.md) -- see
   // README.md's Design notes for why this is computed once, ahead of the
   // registered/unregistered branch `siteInfoFor` makes below.
@@ -180,6 +188,20 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const nym = routedKind === 'nym' ? ctx.routes?.nym.state() : undefined
     const kind = ctx.routes === undefined ? undefined : routedKind ?? tunnelKindOf(ctx.routes)
     return { ...info, ...(kind === undefined || ctx.routes === undefined ? {} : { tunnelKind: kind, everywhere: ctx.routes.hub.isEverywhere() }), ...(ctx.privateTunnel === 'nym' ? { tunnelHeld: 'nym' as const } : {}), ...(notLetIn === undefined ? {} : { notLetIn }), ...(update === undefined ? {} : { update }), ...(route === undefined || route === 'off' ? {} : { route }), ...(tunnel === undefined ? {} : { tunnel }), ...(nym === undefined ? {} : { nym }) }
+  }
+
+  /** The tunnel of the whole browser, for the popup's Browser-wide panel. */
+  function browserTunnelFor (routes: Routes): BrowserTunnel {
+    const everywhere = routes.hub.isEverywhere()
+    const defaultKind = routes.defaultKind()
+    const unreadableKind = unreadableTunnel(routes.hub)
+    const via = tabVia(undefined, everywhere, defaultKind, unreadableKind)
+    const route = via === null ? 'off' : routes.hub.state(unreadableKind === undefined ? SHARED_ORIGIN : profileOrigin(via))
+    return browserTunnel({
+      everywhere, defaultKind, nodes: browser.nodes(), unreadable: routes.hub.unreadable(), ...(unreadableKind === undefined ? {} : { unreadableKind }),
+      blocked: tabBlocked(routes), proxy: { address: proxySetup.address(), users: proxyUsers(routes) }, tabs: browser.tabs(),
+      ...(route === 'off' ? {} : { route }), ...(via === 'nym' ? { nym: routes.nym.state() } : {})
+    })
   }
 
   /** The profile the website lives in now. */
@@ -319,6 +341,10 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
 
     inSession,
 
+    withBrowserTunnel (info) {
+      return ctx.routes === undefined ? info : { ...info, browserTunnel: browserTunnelFor(ctx.routes) }
+    },
+
     async siteTrustFor (url) {
       const loader = ctx.loader
       const origin = originFromUrl(url)
@@ -393,6 +419,22 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
         return false
       }
       return true
+    },
+
+    setBrowserTunnel (kind) {
+      const routes = ctx.routes
+      // A window held to Nym keeps every setting where it is, whatever the popup asks (the store refuses it too).
+      if (routes === undefined || ctx.privateTunnel === 'nym' || routes.hub.unreadable()) return false
+      if (kind === null) return browser.setEverywhere(false)
+      if (tabBlocked(routes)[kind] !== undefined) return false
+      // The tunnel first: the routes then never see the whole browser switched on with the old one.
+      return browser.setKind(kind) && browser.setEverywhere(true)
+    },
+
+    setNodesTunnel (on) {
+      const routes = ctx.routes
+      if (routes === undefined || ctx.privateTunnel === 'nym' || routes.hub.unreadable()) return false
+      return browser.setNodes(on)
     },
 
     async turnOn (origin, capability, shownPatterns) {

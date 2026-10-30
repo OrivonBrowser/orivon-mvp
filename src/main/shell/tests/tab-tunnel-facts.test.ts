@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { kindShowing, noteTabVisit, tabChoiceCounts, tabsWithChoice } from '../tab-tunnel-facts.js'
+import { browserTunnelTabs, kindShowing, noteTabVisit, tabChoiceCounts, tabsWithChoice } from '../tab-tunnel-facts.js'
 import { setSiteRoutes } from '../../route/site-routes.js'
 
 const SITE = 'https://news.example'
@@ -96,5 +96,55 @@ describe('what the routes ask of the tabs', () => {
     const windows = windowsWith({ id: 'a', choice: 'nym' }, { id: 'b', choice: 'nym' }, { id: 'c', choice: 'socks5' }, { id: 'd' })
     expect(tabChoiceCounts(windows)).toEqual({ nym: 2, socks5: 1, direct: 0 })
     expect(tabChoiceCounts({ all: () => [] })).toEqual({ nym: 0, socks5: 0, direct: 0 })
+  })
+})
+
+describe('the tabs the browser-wide prompt lists', () => {
+  interface Fake { id: string, choice?: 'nym' | 'socks5' | 'direct', title?: string, url?: string, sleeping?: { title: string, url: string }, live?: boolean }
+
+  function windowsWith (...windows: ReadonlyArray<readonly Fake[]>): never {
+    return {
+      all: () => [
+        ...windows.map((tabs) => ({
+          window: { isDestroyed: () => false },
+          tabs: {
+            ids: () => tabs.map((tab) => tab.id),
+            record: (id: string) => { const tab = tabs.find((one) => one.id === id); return tab === undefined ? undefined : { ...(tab.choice === undefined ? {} : { tunnelChoice: tab.choice }), ...(tab.sleeping === undefined ? {} : { sleeping: tab.sleeping }) } },
+            liveWebContents: (id: string) => { const tab = tabs.find((one) => one.id === id); return tab === undefined || tab.live === false ? undefined : { getTitle: () => tab.title ?? '', getURL: () => tab.url ?? '' } }
+          }
+        })),
+        { window: { isDestroyed: () => true }, tabs: { ids: () => ['x'], record: () => ({ tunnelChoice: 'nym' }), liveWebContents: () => undefined } }
+      ]
+    } as never
+  }
+
+  it('is every tab with a choice in every window, by its title, with the choice it keeps', () => {
+    const windows = windowsWith(
+      [{ id: 'a', choice: 'nym', title: 'News', url: `${SITE}/a` }, { id: 'b', title: 'No choice', url: 'https://plain.example/' }],
+      [{ id: 'c', choice: 'direct', title: 'Bank', url: 'https://bank.example/' }]
+    )
+    expect(browserTunnelTabs(windows)).toEqual([{ title: 'News', choice: 'nym' }, { title: 'Bank', choice: 'direct' }])
+  })
+
+  it('names a tab by its address when its page has no title, and by what it kept when it sleeps', () => {
+    const windows = windowsWith([
+      { id: 'a', choice: 'socks5', title: '   ', url: `${SITE}/a` },
+      { id: 'b', choice: 'nym', live: false, sleeping: { title: 'Asleep', url: `${SITE}/b` } },
+      { id: 'c', choice: 'nym', live: false, sleeping: { title: '', url: `${SITE}/c` } },
+      { id: 'd', choice: 'direct', title: '', url: '' }
+    ])
+    expect(browserTunnelTabs(windows)).toEqual([
+      { title: `${SITE}/a`, choice: 'socks5' },
+      { title: 'Asleep', choice: 'nym' },
+      { title: `${SITE}/c`, choice: 'nym' },
+      { title: '', choice: 'direct' }
+    ])
+  })
+
+  it('cuts a title a website made very long, and is empty with no tab that has a choice', () => {
+    const [long] = browserTunnelTabs(windowsWith([{ id: 'a', choice: 'nym', title: 'x'.repeat(5000), url: '' }]))
+    expect(long?.title.length).toBeLessThanOrEqual(300)
+    expect(browserTunnelTabs(windowsWith([{ id: 'a', title: 'plain' }]))).toEqual([])
+    expect(browserTunnelTabs({ all: () => [] })).toEqual([])
   })
 })

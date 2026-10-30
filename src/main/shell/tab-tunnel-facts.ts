@@ -4,6 +4,8 @@ import { isPersistableOrigin, originFromUrl } from '../../broker/policy/origin.j
 import { keepSiteApart, siteProfileOf } from '../route/site-routes.js'
 import { tunnelOfChoice } from '../route/tab-tunnel.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
+import type { BrowserTunnelTab } from '../permissions/site-info.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import type { TunnelKind } from '../route/route-state.js'
 import type { TabRecord } from './tab-types.js'
 import type { WindowRegistry } from './window-registry.js'
@@ -64,4 +66,27 @@ export function tabChoiceCounts (windows: Pick<WindowRegistry, 'all'>): Record<T
   const counts: Record<TabTunnelChoice, number> = { nym: 0, socks5: 0, direct: 0 }
   for (const tab of tabsWithChoice(windows)) if (tab.choice !== undefined) counts[tab.choice] += 1
   return counts
+}
+
+/** A title a website made is cut here: the prompt that lists the tabs shows it on one line, and the popup is not the place for an essay. */
+const TITLE_LIMIT = 300
+
+/**
+ * The tabs that carry a choice, in every window, named as the tunnel popup lists them: the page's own title, else the address it
+ * shows, and what a sleeping tab kept of both. An empty name is a tab with neither (a new tab before it has loaded).
+ */
+export function browserTunnelTabs (windows: Pick<WindowRegistry, 'all'>): BrowserTunnelTab[] {
+  const tabs: BrowserTunnelTab[] = []
+  for (const window of windows.all()) {
+    if (window.window.isDestroyed()) continue
+    for (const id of window.tabs.ids()) {
+      const record = window.tabs.record(id)
+      if (record?.tunnelChoice === undefined) continue
+      const contents = window.tabs.liveWebContents(id)
+      const title = (contents?.getTitle() ?? record.sleeping?.title ?? '').trim()
+      const url = contents?.getURL() ?? record.sleeping?.url ?? ''
+      tabs.push({ title: (title === '' ? BUILTIN_ADDRESSES.displayUrl(url) : title).slice(0, TITLE_LIMIT), choice: record.tunnelChoice })
+    }
+  }
+  return tabs
 }

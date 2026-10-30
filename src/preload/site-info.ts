@@ -61,6 +61,16 @@ if (expectedUrl !== undefined && location.href === expectedUrl) {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setTunnel', kind } satisfies SiteInfoCommand)
       return (result ?? null) as TunnelResult | null
     },
+    /** The tunnel of the whole browser: Nym, the person's proxy, or none. Main decides what it can do and answers the info after. */
+    setBrowserTunnel: async (kind: 'nym' | 'socks5' | null): Promise<TunnelResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setBrowserTunnel', kind } satisfies SiteInfoCommand)
+      return (result ?? null) as TunnelResult | null
+    },
+    /** Whether the IPFS and Swarm nodes follow the tunnel too. Main decides what it can do and answers the info after. */
+    setNodesTunnel: async (on: boolean): Promise<TunnelResult | null> => {
+      const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setNodesTunnel', on } satisfies SiteInfoCommand)
+      return (result ?? null) as TunnelResult | null
+    },
     /** Saves the address of the person's proxy. Main checks it as Settings does and answers why not, with the info after. */
     setProxyAddress: async (text: string): Promise<ProxyAddressResult | null> => {
       const result: unknown = await ipcRenderer.invoke(SITE_INFO_COMMAND_CHANNEL, { type: 'setProxyAddress', text } satisfies SiteInfoCommand)
