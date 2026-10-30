@@ -13,7 +13,7 @@ import type { TabRecord } from './tab-types.js'
 import { applyTabSignals } from './tab-signals.js'
 import { carryHistory, listOf } from './tab-history.js'
 import { EMPTY_OUTER, leaveView } from './tab-outer-history.js'
-import { appTabArgsFor, appTabOrigins, appTabViews, makeTabView, wireView } from './tab-view.js'
+import { appTabArgsFor, appTabOrigins, appTabViews, dashboardViews, makeDashboardView, makeTabView, wireView } from './tab-view.js'
 import type { WebContentsView } from 'electron'
 
 function closeView (view: WebContentsView): void {
@@ -104,12 +104,14 @@ export function repartitionView (
   const oldPartition = record.partition
   const wasShown = host.isShown(id)
 
-  const appTabArgs = appTabArgsFor(target, host.broker)
-  const parked = takeParkedView(record, nextPartition, appTabArgs, target)
-  const newView = parked ?? makeTabView(host.preloadPath, nextPartition, appTabArgs, { target })
+  // A step through the tab's own history is the only way into the new-tab page's view; an address that merely matches stays an ordinary page.
+  const dashboard = step && target === host.dashboardUrl
+  const appTabArgs = dashboard ? undefined : appTabArgsFor(target, host.broker)
+  const parked = dashboard ? undefined : takeParkedView(record, nextPartition, appTabArgs, target)
+  const newView = parked ?? (dashboard ? makeDashboardView(target) : makeTabView(host.preloadPath, nextPartition, appTabArgs, { target }))
   record.view = newView
   record.partition = nextPartition
-  record.isDashboardTab = false
+  record.isDashboardTab = dashboard
   record.internalPage = null
   if (parked === undefined) wireView(id, record)
   else applyTabSignals(id, record)
@@ -123,10 +125,11 @@ export function repartitionView (
   // address loads after them. Same session, so no cookie, storage or
   // partition boundary is crossed.
   const left = oldView.webContents.isDestroyed() ? null : listOf(oldView.webContents)
-  const carried = !step && parked === undefined && oldPartition === nextPartition && left !== null && carryHistory(oldView.webContents, newView.webContents, target)
+  // A list that holds the new-tab page never carries: Back would reach it in a view that cannot show it.
+  const carried = !step && parked === undefined && oldPartition === nextPartition && !dashboardViews.has(oldView) && left !== null && carryHistory(oldView.webContents, newView.webContents, target)
   // Whatever the new view does not hold stays with the tab. A step has already moved the pages it leaves.
   const outer = record.outer ?? EMPTY_OUTER
-  const kept = carried || step || left === null ? outer : leaveView(outer, left.entries, left.index, left.entries[left.index]?.url === target)
+  const kept = carried || step || left === null ? outer : leaveView(outer, left.entries, left.index, left.entries[left.index]?.url === target, host.dashboardUrl)
   record.outer = { back: kept.back, forward: kept.forward, ...(parked !== undefined || kept.trimOnCommit === true ? { trimOnCommit: true } : {}) }
 
   // Only once the record shows the new view: the old one's handlers then

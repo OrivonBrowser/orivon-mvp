@@ -25,42 +25,42 @@ export const EMPTY_OUTER: OuterHistory = { back: [], forward: [] }
 /** The most pages a tab keeps outside its view, each way. */
 export const OUTER_HISTORY_LIMIT = 50
 
-/** A page a view can be made for and loaded at again: an address with an origin. Not a blank page, a `data:` page,
- * a local file (opened only through the local-files fence) or one of the shell's own pages. */
-export function keptInHistory (url: string): boolean {
-  return originFromUrl(url) !== null
+/** A page a view can be made for and loaded at again: the new-tab page, or an address with an origin. Not a blank
+ * page, a `data:` page, a local file (opened only through the local-files fence) or another of the shell's own pages. */
+export function keptInHistory (url: string, dashboardUrl: string): boolean {
+  return url === dashboardUrl || originFromUrl(url) !== null
 }
 
-const kept = (entries: readonly HistoryEntry[]): HistoryEntry[] => entries.filter(({ url }) => keptInHistory(url))
+const kept = (entries: readonly HistoryEntry[], dashboardUrl: string): HistoryEntry[] => entries.filter(({ url }) => keptInHistory(url, dashboardUrl))
 
 /** The tab leaves its view for a view of another session, on a new page. `entries` and `index` are the view being
  * left; `committed` when it already committed that new page (a swap after `did-navigate`), which is then not one
  * of the pages left behind. Pages after `index` stay ahead of it; a new page ends what was ahead of the view. */
-export function leaveView (outer: OuterHistory, entries: readonly HistoryEntry[], index: number, committed: boolean): OuterHistory {
-  const behind = kept(entries.slice(0, committed ? index : index + 1))
-  const ahead = committed && index < entries.length - 1 ? [...kept(entries.slice(index + 1)), ...outer.forward] : []
+export function leaveView (outer: OuterHistory, entries: readonly HistoryEntry[], index: number, committed: boolean, dashboardUrl: string): OuterHistory {
+  const behind = kept(entries.slice(0, committed ? index : index + 1), dashboardUrl)
+  const ahead = committed && index < entries.length - 1 ? [...kept(entries.slice(index + 1), dashboardUrl), ...outer.forward] : []
   return { back: [...outer.back, ...behind].slice(-OUTER_HISTORY_LIMIT), forward: ahead.slice(0, OUTER_HISTORY_LIMIT) }
 }
 
 export interface OuterStep { readonly target: HistoryEntry, readonly outer: OuterHistory }
 
 /** Back from the first page of the view: the page before it, with the view's pages now ahead. Null with none. */
-export function stepBack (outer: OuterHistory, entries: readonly HistoryEntry[], index: number): OuterStep | null {
+export function stepBack (outer: OuterHistory, entries: readonly HistoryEntry[], index: number, dashboardUrl: string): OuterStep | null {
   const target = outer.back.at(-1)
   if (target === undefined) return null
   return {
     target,
-    outer: { back: outer.back.slice(0, -1), forward: [...kept(entries.slice(index)), ...outer.forward].slice(0, OUTER_HISTORY_LIMIT), trimOnCommit: true }
+    outer: { back: outer.back.slice(0, -1), forward: [...kept(entries.slice(index), dashboardUrl), ...outer.forward].slice(0, OUTER_HISTORY_LIMIT), trimOnCommit: true }
   }
 }
 
 /** Forward from the last page of the view: the page after it, with the view's pages now behind. Null with none. */
-export function stepForward (outer: OuterHistory, entries: readonly HistoryEntry[], index: number): OuterStep | null {
+export function stepForward (outer: OuterHistory, entries: readonly HistoryEntry[], index: number, dashboardUrl: string): OuterStep | null {
   const target = outer.forward[0]
   if (target === undefined) return null
   return {
     target,
-    outer: { back: [...outer.back, ...kept(entries.slice(0, index + 1))].slice(-OUTER_HISTORY_LIMIT), forward: outer.forward.slice(1), trimOnCommit: true }
+    outer: { back: [...outer.back, ...kept(entries.slice(0, index + 1), dashboardUrl)].slice(-OUTER_HISTORY_LIMIT), forward: outer.forward.slice(1), trimOnCommit: true }
   }
 }
 

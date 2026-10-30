@@ -17,12 +17,12 @@ import type { InternalPageRegistry } from '../pages/internal-registry.js'
 import { guardInternalView } from '../pages/internal-tab.js'
 import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import type { TabRecord, TabViewHost } from './tab-types.js'
-import { appTabArgsFor, makeTabView, partitionForTab, partitionForTarget, wireView } from './tab-view.js'
+import { appTabArgsFor, makeDashboardView, makeTabView, partitionForTab, partitionForTarget, wireView } from './tab-view.js'
 import { allowedTabChoice } from '../route/site-routes.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 import { paintBacking } from './tab-backing.js'
 import { watchPopupOpener } from './popup-with-opener.js'
-import { DASHBOARD_BACKGROUND, INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
+import { INTERNAL_PAGE_BACKGROUND, onThemeUpdated, resolveThemeColor } from './theme-colors.js'
 
 /** The safe fallback for a REJECTED navigation (a dangerous typed scheme,
  * a bad window.open() URL, empty input) -- never the dashboard. Keeping
@@ -53,7 +53,6 @@ export interface BuiltTab {
 
 export class TabFactory {
   private readonly appPreload = join(import.meta.dirname, '../preload/app.js')
-  private readonly newTabPreload = join(import.meta.dirname, '../preload/newtab.js')
   private readonly internalPreload = join(import.meta.dirname, '../preload/internal.js')
 
   constructor (
@@ -111,29 +110,10 @@ export class TabFactory {
     // content, and must never be isolated as if it were an app's own origin.
     const partition = isDashboard ? undefined : partitionForTab(target, tunnelChoice)
 
-    const view = makeTabView(
-      isDashboard ? this.newTabPreload : this.appPreload,
-      partition,
-      // Tells the dashboard's own preload (src/preload/newtab.ts) what its
-      // expected URL is, so it can verify `location.href` matches before
-      // exposing anything -- necessary because a dashboard tab is an
-      // ordinary, navigable tab (unlike the chrome view), and preload
-      // cannot be un-set if the user later navigates away. A non-dashboard
-      // tab instead gets appTabArgsFor's ADR-0017 flag, if this origin is
-      // already a registered app.
-      isDashboard ? [`--orivon-newtab-url=${this.dashboardUrl}`] : appTabArgsFor(target, this.broker()),
-      {
-        // Only the dashboard and internal pages (below) get a pre-paint
-        // background -- an ordinary website tab is left at Electron's default
-        // (see makeTabView's own doc): a site with no CSS background of its
-        // own renders white, as the web expects, and painting it dark first
-        // would make a transparent-background site look wrong in dark mode.
-        // `exactOptionalPropertyTypes` refuses an explicit `undefined` for an
-        // optional property, hence the spread rather than a ternary value.
-        ...(isDashboard ? { backgroundColor: resolveThemeColor(DASHBOARD_BACKGROUND) } : {}),
-        target
-      }
-    )
+    // An ordinary website tab gets no pre-paint background (see makeTabView's own doc): a site with no CSS background of
+    // its own renders white, as the web expects, and painting it dark first would make a transparent-background site
+    // look wrong in dark mode. It gets appTabArgsFor's ADR-0017 flag if this origin is already a registered app.
+    const view = isDashboard ? makeDashboardView(target) : makeTabView(this.appPreload, partition, appTabArgsFor(target, this.broker()), { target })
     if (isDashboard) markFirstDashboardLoad(view.webContents, this.dashboardUrl)
     const id = makeTabId()
     const record = this.recordFor(view, partition, { isDashboardTab: isDashboard, ...choiceOf(tunnelChoice) })

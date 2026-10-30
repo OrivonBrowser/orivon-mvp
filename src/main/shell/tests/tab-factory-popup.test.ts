@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 vi.mock('../tab-view.js', () => ({
   appTabArgsFor: vi.fn(),
+  makeDashboardView: vi.fn(),
   makeTabView: vi.fn(),
   partitionForTarget: vi.fn(),
   partitionForTab: vi.fn(),
