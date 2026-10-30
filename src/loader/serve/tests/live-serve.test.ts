@@ -469,3 +469,57 @@ describe('the handler an app on an ordinary site runs on before its files are pi
     expect(served).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('files of an ordinary site held whole on their way to being checked', () => {
+  const MIB = 1024 * 1024
+  const declaration = (leaves: Array<{ path: string, leaf: string }>): NonNullable<LiveServeDeps['declaration']> => ({ bundleHash: `sha256:${'b'.repeat(64)}`, leaves })
+  /** Every file below is views of this one buffer, so a file of any size costs this much memory and no more. */
+  const shared = new Uint8Array(40 * MIB)
+
+  function viewsOf (size: number, chunk: number): Uint8Array[] {
+    const views: Uint8Array[] = []
+    for (let left = size; left > 0; left -= chunk) views.push(shared.subarray(0, Math.min(chunk, left)))
+    return views
+  }
+
+  /** One chunk per read, and `before` told which read is being answered. */
+  function streamOf (views: readonly Uint8Array[], before?: (read: number) => void): ReadableStream<Uint8Array> {
+    let read = 0
+    return new ReadableStream<Uint8Array>({
+      pull (controller) {
+        before?.(read)
+        const view = views[read++]
+        if (view === undefined) controller.close()
+        else controller.enqueue(view)
+      }
+    }, { highWaterMark: 0 })
+  }
+
+  it('answers every one of several large files read together, though they hold more than the reserve between them', async () => {
+    const paths = ['/big0.js', '/big1.js', '/big2.js', '/big3.js']
+    const views = viewsOf(25 * MIB, MIB)
+    const leaves = await Promise.all(paths.map(async (path) => ({ path, leaf: await leafOf(path, 25 * MIB, views) })))
+    const used = { seen: [], fetchNetwork: async () => ({ status: 200, body: streamOf(views) }) }
+    const { handle } = await networkHandler({ manifest: manifestOf({ assets: paths.map((path) => path.slice(1)) }), declaration: declaration(leaves) }, used)
+    const statuses = await Promise.all(paths.map(async (path) => (await handle(path)).status))
+    expect(statuses).toEqual([200, 200, 200, 200])
+  }, 30_000)
+
+  it('gives back what a refused file had held, so a whole file after several of them still fits', async () => {
+    const whole = viewsOf(50 * MIB, MIB)
+    const leaf = await leafOf('/big.js', 50 * MIB, whole)
+    let aborting: AbortController | undefined
+    const used = {
+      seen: [],
+      // A refused file has held one 40 MiB chunk when the request is abandoned before its next one is taken.
+      fetchNetwork: async () => ({ status: 200, body: aborting === undefined ? streamOf(whole) : streamOf(viewsOf(80 * MIB, 40 * MIB), (read) => { if (read === 1) aborting?.abort() }) })
+    }
+    const { handle } = await networkHandler({ manifest: manifestOf({ assets: ['big.js'] }), declaration: declaration([{ path: '/big.js', leaf }]) }, used)
+    for (let refused = 0; refused < 3; refused++) {
+      aborting = new AbortController()
+      expect((await handle('/big.js', { signal: aborting.signal })).type).toBe('error')
+    }
+    aborting = undefined
+    expect((await handle('/big.js')).status).toBe(200)
+  }, 30_000)
+})
