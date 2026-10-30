@@ -101,8 +101,14 @@
           />
           <div class="addressbar-trailing">
             <!-- Which list a search typed here goes to, Web3 or Web2 (chrome/search-mode.ts). Shown while the field is
-                 in use; the text, label and state come from the pushed state. -->
-            <button id="search-mode" class="search-mode" type="button" hidden aria-pressed="true"></button>
+                 in use; the text, label and state come from the pushed state. The magnifying glass says what the chip
+                 is for: it is lucide's `search` (ISC licence, https://lucide.dev). -->
+            <button id="search-mode" class="search-mode" type="button" hidden aria-pressed="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="m21 21-4.34-4.34" /><circle cx="11" cy="11" r="8" />
+              </svg>
+              <span id="search-mode-text"></span>
+            </button>
             <div id="address-slot" class="toolbar-slot"></div>
             <!-- The page's zoom, when it is not the default. Choosing it puts the page back to the default zoom. -->
             <button id="zoom-chip" class="zoom-chip" type="button" hidden title="Zoom: click to reset to the default size"></button>
