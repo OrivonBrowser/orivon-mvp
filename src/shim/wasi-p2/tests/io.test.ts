@@ -13,6 +13,16 @@ function source (chunks: Uint8Array[]): () => Promise<Uint8Array> {
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text)
 
+/** A pollable that becomes ready, and settles its wait, when `open` is called. */
+function gate (): { readonly pollable: Pollable, readonly open: () => void } {
+  let ready = false
+  let release: () => void = () => {}
+  const opened = new Promise<void>((resolve) => { release = resolve })
+  return { pollable: new Pollable(() => ready, async () => { await opened }), open: () => { ready = true; release() } }
+}
+
+const after = async (ms: number): Promise<void> => { await new Promise<void>((resolve) => setTimeout(resolve, ms)) }
+
 describe('InputStream', () => {
   it('answers a non-blocking read from what has arrived, empty until then, and closed at the end', async () => {
     const stream = new InputStream(source([bytes('hello')]))
@@ -116,6 +126,85 @@ describe('poll', () => {
     ready = true
     release()
     await third
+  })
+
+  // A guest's event loop reads each socket that woke in one pass of the host's loop, and polls again in between: an answer per socket costs the whole scan once per socket.
+  it('answers once for every pollable that became ready in the same pass of the event loop', async () => {
+    const [first, second, third] = [gate(), gate(), gate()] as const
+    const waiting = poll([first.pollable, second.pollable, third.pollable])
+    setImmediate(first.open)
+    setImmediate(third.open)
+    expect([...await waiting]).toEqual([0, 2])
+  })
+
+  it('answers at once when a pollable is ready as the poll starts', async () => {
+    const ready = gate()
+    ready.open()
+    expect([...await poll([gate().pollable, ready.pollable])]).toEqual([1])
+  })
+
+  it('adds no Set entry and no wait for each pollable a poll watches, however often it waits', async () => {
+    const waitedOn = vi.fn(async () => { await new Promise<void>(() => {}) })
+    const quiet = Array.from({ length: 50 }, () => new Pollable(() => false, waitedOn))
+    const adds = vi.spyOn(Set.prototype, 'add')
+    try {
+      for (let round = 0; round < 20; round++) {
+        const wake = gate()
+        const waiting = poll([...quiet, wake.pollable])
+        wake.open()
+        expect([...await waiting]).toEqual([50])
+      }
+      expect(adds.mock.calls.length).toBeLessThan(40)
+    } finally {
+      adds.mockRestore()
+    }
+    expect(waitedOn.mock.calls.length).toBe(50)
+  })
+
+  it('is never woken by a pollable the program has dropped', async () => {
+    const dropped = gate()
+    const other = gate()
+    const waiting = poll([dropped.pollable, other.pollable])
+    dropped.pollable[Symbol.dispose]()
+    dropped.open()
+    expect(await Promise.race([waiting.then(() => 'woke'), after(30).then(() => 'still waiting')])).toBe('still waiting')
+    other.open()
+    expect([...await waiting]).toContain(1)
+  })
+
+  it('clears the timer of a clock pollable the program drops', () => {
+    vi.useFakeTimers()
+    try {
+      const clock = monotonicClock.subscribeDuration(60_000_000_000n)
+      void poll([clock, gate().pollable])
+      expect(vi.getTimerCount()).toBe(1)
+      clock[Symbol.dispose]()
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // Where there is no setImmediate, a timer would clamp the wake to 4 ms in a page's Worker.
+  it('ends a pass with a message-channel task where there is no setImmediate', async () => {
+    const delivered: Array<() => void> = []
+    class FakeChannel {
+      readonly port1: { onmessage: (() => void) | null } = { onmessage: null }
+      readonly port2 = { postMessage: (): void => { delivered.push(() => { this.port1.onmessage?.() }) } }
+    }
+    vi.stubGlobal('setImmediate', undefined)
+    vi.stubGlobal('MessageChannel', FakeChannel)
+    try {
+      const only = gate()
+      const waiting = poll([only.pollable])
+      only.open()
+      await after(10)
+      expect(delivered.length).toBe(1)
+      delivered[0]?.()
+      expect([...await waiting]).toEqual([0])
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 })
 

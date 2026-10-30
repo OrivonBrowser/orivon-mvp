@@ -120,6 +120,45 @@ describe('loadComponent', () => {
     await expect(loadComponent(directory, 'local-node', pins, NO_IMPORTS, { instantiate: vi.fn() })).rejects.toBeInstanceOf(PinMismatch)
   })
 
+  describe('the glue\'s debug log', () => {
+    const DEBUG_LOG = 'const _debugLog = (...args) => {\n    if (!globalThis?.process?.env?.JCO_DEBUG) { return; }\n    console.debug(...args);\n  };'
+    const NO_OP = 'const _debugLog = () => {};'
+
+    /** The glue text the loader hands to the instantiate step, for `glue` pinned as it is. */
+    async function loaded (glue: string): Promise<string> {
+      const pins = await install('local-node', glue)
+      let seen = ''
+      const stop = new Error('stop here')
+      await expect(loadComponent(directory, 'local-node', pins, NO_IMPORTS, { instantiate: async (text) => { seen = text; throw stop } })).rejects.toBe(stop)
+      return seen
+    }
+
+    afterEach(() => { vi.unstubAllEnvs() })
+
+    it('is made a no-op when the glue defines it once and JCO_DEBUG is unset', async () => {
+      vi.stubEnv('JCO_DEBUG', undefined)
+      const base = tourFixture().glue
+      expect(await loaded(`${base}\n  ${DEBUG_LOG}\n`)).toBe(`${base}\n  ${NO_OP}\n`)
+    })
+
+    it('is left as it is when the glue does not define it', async () => {
+      vi.stubEnv('JCO_DEBUG', undefined)
+      expect(await loaded(tourFixture().glue)).toBe(tourFixture().glue)
+    })
+
+    it('is left as it is when the glue defines it twice, since the edit would not be the one fixed edit', async () => {
+      vi.stubEnv('JCO_DEBUG', undefined)
+      const twice = `${tourFixture().glue}\n  ${DEBUG_LOG}\n  ${DEBUG_LOG}\n`
+      expect(await loaded(twice)).toBe(twice)
+    })
+
+    it('is left as it is when JCO_DEBUG is set, so the glue can still log', async () => {
+      vi.stubEnv('JCO_DEBUG', '1')
+      const glue = `${tourFixture().glue}\n  ${DEBUG_LOG}\n`
+      expect(await loaded(glue)).toBe(glue)
+    })
+  })
+
   it.skipIf(!hasJspi)('runs a component from the directory against the confined fs, and reports its exit code', async () => {
     const pins = await install('local-node')
     const data = join(directory, 'data')

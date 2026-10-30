@@ -1,17 +1,18 @@
 // wasi:clocks, wasi:random and wasi:cli: the interfaces that touch no file
 // and no socket.
 
-import { delay, monotonicNs, randomBytes, realtimeNs } from '../wasi/time.js'
+import { monotonicNs, pause, randomBytes, realtimeNs } from '../wasi/time.js'
+import type { Pause } from '../wasi/time.js'
 import { InputStream, OutputStream, Pollable } from './io.js'
 
-/** Ready once the monotonic clock reaches `deadlineNs`; one timer however often it is polled. */
+/** Ready once the monotonic clock reaches `deadlineNs`; one timer however often it is polled, cleared when the program drops it. */
 function timer (deadlineNs: bigint): Pollable {
-  let fired: Promise<void> | undefined
+  let fired: Pause | undefined
   const remainingMs = (): number => Number(deadlineNs - monotonicNs()) / 1_000_000
   return new Pollable(() => remainingMs() <= 0, async () => {
-    fired ??= delay(Math.max(remainingMs(), 0))
-    await fired
-  })
+    fired ??= pause(Math.max(remainingMs(), 0))
+    await fired.done
+  }, () => { fired?.cancel() })
 }
 
 export const monotonicClock = {
