@@ -61,7 +61,7 @@ describe('createOverlayHost: a dock', () => {
 
   it('is built without rounded corners', () => {
     setup(dock()).show('dock')
-    expect(views[0]?.spec.square).toBe(true)
+    expect(views[0]?.spec.radius).toBe(0)
   })
 
   it('is not closed by closing the popups, a layout change, or a tab switch, and follows the page area', () => {

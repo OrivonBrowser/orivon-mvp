@@ -26,6 +26,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **The address a link goes to, in the corner of the page**: point at a link, or move the keyboard onto one, and a small bubble in the bottom-left corner of that page says where it goes; when the pointer reaches it, it moves to the bottom-right corner. It is one line, as wide as the address (long ones end in an ellipsis), never takes the keyboard and lies under menus. In a split window it is in the corner of the pane the link is in.
 - **A website's tunnel is kept with one switch**: the rows of the tunnel button's list now set the tab, and "Always use for this site" under them saves what they show as the website's own choice, for every tab and after the tab closes. Turning it off keeps the page where it is and leaves the tab with that tunnel.
 - **The tunnels popup has a Browser-wide part**: a control under its heading chooses between the page's own tunnel ("This tab" or "This app") and the whole browser's, with a switch to send the IPFS and Swarm nodes through it too. Setting a tunnel browser-wide while tabs keep their own asks first, and lists those tabs.
 - **A copied Web3 address pastes as a link**: copying a `.eth`, `ipfs://` or `ipns://` address in Orivon (the address bar, Copy link, a link's or image's address, a bookmark, a history row, the QR sheet) also puts a link on the clipboard, so a document or chat that pastes formatted text shows the same text linked to its `eth.limo` or `dweb.link` address. Plain-text fields get the address as before.

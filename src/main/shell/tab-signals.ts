@@ -10,6 +10,7 @@ import { connectionSignal } from './signals/connection.js'
 import { crashedSignal } from './signals/crashed.js'
 import { findSignal } from './signals/find.js'
 import { groupSignal } from '../tab-groups/group-signal.js'
+import { linkStatusSignal } from '../link-status/link-status-signal.js'
 import { pendingAddressSignal } from './signals/pending-address.js'
 import { readerSignal } from '../reader/reader-signal.js'
 import { stopKeySignal } from './signals/stop-key.js'
@@ -45,6 +46,7 @@ export const TAB_SIGNALS: readonly TabSignal[] = [
   crashedSignal,
   findSignal,
   groupSignal,
+  linkStatusSignal,
   pendingAddressSignal,
   readerSignal,
   restoredTitle,

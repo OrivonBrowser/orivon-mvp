@@ -33,7 +33,7 @@ runs a real upstream app.
 | `toolbar/` | The address bar, its dropdown, search engines and toolbar popups |
 | `library/` | Bookmarks, history, downloads, import and the side panel |
 | `sites/` | Per-site permissions, privacy, sign-in, certificates and passwords |
-| `page/` | What a page in a tab gets: find, zoom, dialogs, tools, menus, load errors, fullscreen, the reader |
+| `page/` | What a page in a tab gets: find, zoom, dialogs, tools, menus, the link address bubble, load errors, fullscreen, the reader |
 | `shell-pages/` | Settings, the internal pages, the intro screen and the UI kit |
 | `telemetry/` | What usage statistics send and when: a real send of both reports to a loopback ingest, and nothing sent without consent or after it is withdrawn |
 | `window/` | Launch and start-up, profiles, windows, menus, overlays, shortcuts and theme |

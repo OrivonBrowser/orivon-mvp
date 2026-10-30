@@ -66,6 +66,11 @@ export function overlayBounds (
 ): Electron.Rectangle {
   if (placement.kind === 'dock') return dockBounds(frame)
   if (placement.kind === 'pane') return { ...frame.area }
+  if (placement.kind === 'exact') {
+    return anchor === undefined
+      ? { x: 0, y: 0, width: 0, height: 0 }
+      : { x: Math.round(anchor.x), y: Math.round(anchor.y), width: Math.max(0, Math.round(anchor.width)), height: Math.max(0, Math.round(anchor.height)) }
+  }
   if (placement.kind === 'area') {
     const width = Math.max(0, Math.min(placement.width, frame.width - EDGE * 2))
     const areaBottom = frame.area.y + frame.area.height

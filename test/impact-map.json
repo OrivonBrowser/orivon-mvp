@@ -68,6 +68,7 @@
     { "prefix": "src/main/ipc", "run": ["@core"] },
     { "prefix": "src/main/keyring", "run": ["sites"] },
     { "prefix": "src/main/launch", "run": ["window"] },
+    { "prefix": "src/main/link-status", "run": ["page", "window", "tabs"] },
     { "prefix": "src/main/loading-screen", "run": ["web3", "tabs"] },
     { "prefix": "src/main/local-files", "run": ["sites"] },
     { "prefix": "src/main/media-grants", "run": ["@core", "sites"] },

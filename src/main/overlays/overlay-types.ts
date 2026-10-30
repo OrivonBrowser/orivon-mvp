@@ -14,6 +14,8 @@ export type OverlayPlacement =
   | { kind: 'dock' }
   /** Over the whole page area (the pane of the tab in front, in a split window), whatever the content's height. */
   | { kind: 'pane' }
+  /** Exactly the rectangle `show` or `reanchor` was given, in window pixels, with corners `radius` px round: a feature that places the view itself, at a size its content decides. The page's height reports are ignored. */
+  | { kind: 'exact', radius: number }
 
 /** A chrome rectangle in the chrome view's client pixels, which are window-content pixels too. */
 export interface OverlayAnchor { x: number, y: number, width: number, height: number }

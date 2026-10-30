@@ -40,3 +40,23 @@ describe('overlayBounds: pane', () => {
     expect(overlayBounds({ kind: 'pane' }, undefined, frame(pane), 200, LIMITS)).toEqual(pane)
   })
 })
+
+describe('overlayBounds: exact', () => {
+  const area = { x: 0, y: 76, width: 1200, height: 724 }
+
+  it('is the rectangle it was given, whatever the area and the height its content asks for', () => {
+    expect(overlayBounds({ kind: 'exact', radius: 6 }, { x: 604, y: 776, width: 200, height: 30 }, frame(area), 9999, LIMITS)).toEqual({ x: 604, y: 776, width: 200, height: 30 })
+  })
+
+  it('may reach past the window\'s edge', () => {
+    expect(overlayBounds({ kind: 'exact', radius: 6 }, { x: -6, y: 776, width: 206, height: 30 }, frame(area), 1, LIMITS)).toEqual({ x: -6, y: 776, width: 206, height: 30 })
+  })
+
+  it('rounds to whole pixels and never has a negative size', () => {
+    expect(overlayBounds({ kind: 'exact', radius: 6 }, { x: 10.4, y: 20.6, width: -3, height: 29.5 }, frame(area), 1, LIMITS)).toEqual({ x: 10, y: 21, width: 0, height: 30 })
+  })
+
+  it('is a place of no size until it is given one', () => {
+    expect(overlayBounds({ kind: 'exact', radius: 6 }, undefined, frame(area), 1, LIMITS)).toEqual({ x: 0, y: 0, width: 0, height: 0 })
+  })
+})

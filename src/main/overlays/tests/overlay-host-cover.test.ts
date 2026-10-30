@@ -74,7 +74,7 @@ describe('createOverlayHost: a cover', () => {
     const host = setup()
     host.show('cover')
     expect(viewOf('cover')?.bounds).toEqual({ x: 600, y: 104, width: 600, height: 696 })
-    expect(viewOf('cover')?.spec.square).toBe(true)
+    expect(viewOf('cover')?.spec.radius).toBe(0)
     viewOf('cover')?.spec.port.size(90)
     expect(viewOf('cover')?.bounds).toEqual({ x: 600, y: 104, width: 600, height: 696 })
   })

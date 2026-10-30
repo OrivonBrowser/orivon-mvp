@@ -14,6 +14,7 @@ import { extensionPermissionPage } from './extension-permission/page.js'
 import { extensionsMenuPage } from './extensions-menu/page.js'
 import { findPage } from './find/page.js'
 import { httpsWarningPage } from './https-warning/page.js'
+import { linkStatusPage } from './link-status/page.js'
 import { loadErrorPage } from './load-error/page.js'
 import { loadingScreenPage } from './loading-screen/page.js'
 import { menuPage } from './menu/page.js'
@@ -52,6 +53,7 @@ export const OVERLAY_PAGES: Readonly<Record<string, OverlayPage>> = {
   'extensions-menu': extensionsMenuPage,
   find: findPage,
   'https-warning': httpsWarningPage,
+  'link-status': linkStatusPage,
   'load-error': loadErrorPage,
   'loading-screen': loadingScreenPage,
   menu: menuPage,
