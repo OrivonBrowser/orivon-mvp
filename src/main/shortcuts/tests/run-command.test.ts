@@ -13,7 +13,7 @@ import * as shareCommands from '../../os/share-commands.js'
 // The page tools have tests of their own; here only that a key reaches them.
 vi.mock('../../page-tools/page-commands.js', () => Object.fromEntries(['print', 'pdf', 'save', 'viewSource', 'screenshot', 'pip'].map((name) => [`${name}Command`, vi.fn(async () => {})])))
 vi.mock('../../page-tools/real-deps.js', () => ({ realDeps: { real: true } }))
-vi.mock('../../os/share-commands.js', () => ({ copyLinkCommand: vi.fn(), copyWebLinkCommand: vi.fn(), emailLinkCommand: vi.fn(async () => {}) }))
+vi.mock('../../os/share-commands.js', () => ({ copyLinkCommand: vi.fn(async () => {}), copyWebLinkCommand: vi.fn(async () => {}), emailLinkCommand: vi.fn(async () => {}) }))
 vi.mock('../../shell/open-file-command.js', () => ({ openFileCommand: vi.fn(async () => {}) }))
 vi.mock('../../os/share-runner.js', () => ({ realShareDeps: { realShare: true } }))
 

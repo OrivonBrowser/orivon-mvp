@@ -1,6 +1,6 @@
 # `src/main/shell/actions/`: what the chrome asks main to do
 
-**What lives here.** One `ChromeAction` per call the chrome view makes that is not a command: `chrome-hidden.ts` (the chrome page reads hidden while its window is on screen), `home-open.ts` (the
+**What lives here.** One `ChromeAction` per call the chrome view makes that is not a command: `address-copy.ts` (a copy of the whole address field, which main writes with the address's web link), `chrome-hidden.ts` (the chrome page reads hidden while its window is on screen), `home-open.ts` (the
 Home button's click), `overlay.ts` (opening and toggling an overlay from a toolbar button), `tab-group.ts` (a group chip's collapse,
 menu and move), `pane-leave.ts` (the
 chrome's keyboard stepping past its first or last pane, or Escape giving it back to the page) and `tab-mute.ts` (the
@@ -10,8 +10,8 @@ which is reached from [`../window-actions.ts`](../window-actions.ts) after the c
 **Tied to Electron, partly.** An action takes plain values and the window context; only the code it calls touches
 Electron.
 
-**What it depends on.** `../chrome-actions.ts` for the type, and the shared pieces it drives (`../home.ts`,
-`../tab-commands.ts`).
+**What it depends on.** `../chrome-actions.ts` for the type, the shared pieces it drives (`../home.ts`,
+`../tab-commands.ts`) and `../../page-tools/toast.ts` (`address-copy.ts` tells the person a copy failed).
 
 **What it must never import.** A renderer, or [`../tabs.ts`](../tabs.ts) as a value.
 

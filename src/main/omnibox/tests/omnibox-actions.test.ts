@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CHROME_ACTIONS, runChromeAction } from '../../shell/chrome-actions.js'
+import type { ChromeActionContext } from '../../shell/chrome-actions.js'
 import { createOmniboxOverlay } from '../omnibox-overlay.js'
-import type { WindowContext } from '../../shell/window-context.js'
 import { SHELL_EVENT_CHANNEL } from '../../channels.js'
 import { provideVerifierAccess } from '../../verifier/verifier-access.js'
 import { suggestFetchFor } from '../suggest-net.js'
@@ -53,7 +53,7 @@ function setup (options: { history?: Array<{ url: string, title: string }>, book
     searchEngines: { all: () => [] },
     settings: { get: (key: string) => key === 'search.engine' ? 'duckduckgo' : key === 'search.mode' ? 'web2' : key === 'addressBar.autocomplete' ? true : '' }
   }
-  const ctx = { window: here.entry, services } as unknown as WindowContext
+  const ctx = { window: here.entry, services, copyAddress: async () => {} } as unknown as ChromeActionContext
   const anchor = { x: 10, y: 20, width: 500, height: 32 }
   return { ctx, here, markTyped, anchor, run: (name: string, payload: unknown) => runChromeAction(name, payload, ctx) }
 }

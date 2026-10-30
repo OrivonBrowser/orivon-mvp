@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import { homeOpen } from '../actions/home-open.js'
 import { CHROME_ACTIONS, runChromeAction } from '../chrome-actions.js'
-import type { WindowContext } from '../window-context.js'
+import type { ChromeActionContext } from '../chrome-actions.js'
 
-function context (homeUrl: string): { ctx: WindowContext, navigate: ReturnType<typeof vi.fn>, createTab: ReturnType<typeof vi.fn> } {
+function context (homeUrl: string): { ctx: ChromeActionContext, navigate: ReturnType<typeof vi.fn>, createTab: ReturnType<typeof vi.fn> } {
   const navigate = vi.fn()
   const createTab = vi.fn()
   const tabs = { getState: () => ({ tabs: [{ id: 'a', isNewTab: false }], activeTabId: 'a' }), navigate, createTab }
   const settings = { get: () => homeUrl }
-  return { ctx: { window: { tabs }, services: { settings } } as unknown as WindowContext, navigate, createTab }
+  return { ctx: { window: { tabs }, services: { settings }, copyAddress: async () => {} } as unknown as ChromeActionContext, navigate, createTab }
 }
 
 describe('the home.open chrome action', () => {

@@ -15,7 +15,8 @@ export interface HistoryActionDeps {
   readonly windows: Pick<WindowRegistry, 'findTab'>
   readonly commands: Pick<CommandBus, 'openWindow' | 'reopen'>
   readonly closedTabs: Pick<ClosedStack, 'list'>
-  readonly copyText: (text: string) => void
+  /** The page's address, as the clipboard gets it. */
+  readonly copyAddress: (address: string) => void
 }
 
 const DISPOSITIONS = ['tab', 'newTab', 'background', 'window'] as const
@@ -79,7 +80,7 @@ export function handleHistoryAction (request: { type?: unknown, id?: unknown, id
     case 'copy': {
       if (!Number.isInteger(request.id)) return undefined
       const [page] = history.pagesByIds([request.id as number])
-      if (page !== undefined) deps.copyText(page.url)
+      if (page !== undefined) deps.copyAddress(page.url)
       return { ok: true }
     }
     case 'closed': {

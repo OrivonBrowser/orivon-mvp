@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { chromeHidden } from '../actions/chrome-hidden.js'
 import { CHROME_ACTIONS, runChromeAction } from '../chrome-actions.js'
-import type { WindowContext } from '../window-context.js'
+import type { ChromeActionContext } from '../chrome-actions.js'
 
-function context (state: { visible?: boolean, minimized?: boolean, destroyed?: boolean, chromeShown?: boolean } = {}): { ctx: WindowContext, reshow: ReturnType<typeof vi.fn> } {
+function context (state: { visible?: boolean, minimized?: boolean, destroyed?: boolean, chromeShown?: boolean } = {}): { ctx: ChromeActionContext, reshow: ReturnType<typeof vi.fn> } {
   const reshow = vi.fn()
   const window = {
     window: { isDestroyed: () => state.destroyed === true, isVisible: () => state.visible !== false, isMinimized: () => state.minimized === true },
     chrome: { getVisible: () => state.chromeShown !== false },
     overlays: { reshow }
   }
-  return { ctx: { window, services: {} } as unknown as WindowContext, reshow }
+  return { ctx: { window, services: {}, copyAddress: async () => {} } as unknown as ChromeActionContext, reshow }
 }
 
 afterEach(() => { vi.useRealTimers() })

@@ -31,7 +31,7 @@ describe('the bookmarks domain', () => {
       windowOf: vi.fn(() => WINDOW),
       open: vi.fn(() => true),
       openAll: vi.fn(() => 2),
-      copyText: vi.fn(),
+      copyAddresses: vi.fn(),
       importAvailable: vi.fn(() => true),
       runImport: vi.fn(),
       exportFile: vi.fn(async () => 'saved' as const),
@@ -250,7 +250,7 @@ describe('the bookmarks domain', () => {
     const dir2 = folder('Dir')
 
     expect(await call({ type: 'copy', ids: [one.id, dir2.id, two.id] })).toEqual({ ok: true, count: 2 })
-    expect(deps.copyText).toHaveBeenCalledWith('https://one.example/\nhttps://two.example/')
+    expect(deps.copyAddresses).toHaveBeenCalledWith(['https://one.example/', 'https://two.example/'])
     expect(await call({ type: 'copy', ids: ['https://evil.example/'] })).toBeUndefined()
   })
 

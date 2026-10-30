@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CHROME_ACTIONS, runChromeAction } from '../chrome-actions.js'
-import type { WindowContext } from '../window-context.js'
+import type { ChromeActionContext } from '../chrome-actions.js'
 
-function context (): { ctx: WindowContext, pageFocus: ReturnType<typeof vi.fn>, chromeFocus: ReturnType<typeof vi.fn> } {
+function context (): { ctx: ChromeActionContext, pageFocus: ReturnType<typeof vi.fn>, chromeFocus: ReturnType<typeof vi.fn> } {
   const pageFocus = vi.fn()
   const chromeFocus = vi.fn()
   const window = { chrome: { webContents: { focus: chromeFocus, isDestroyed: () => false, send: vi.fn() } }, tabs: { activeWebContents: () => ({ focus: pageFocus }) } }
-  return { ctx: { window: window as never, services: {} as never }, pageFocus, chromeFocus }
+  return { ctx: { window: window as never, services: {} as never, copyAddress: async () => {} }, pageFocus, chromeFocus }
 }
 
 describe('the pane.leave chrome action', () => {
