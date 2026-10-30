@@ -22,7 +22,7 @@ import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { shoot } from '../support/auth-support.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
-import { activeTabInfo, delay, findViewShowing, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { closeTunnelList, pressAlways } from '../support/tunnel-popup.js'
 
 const PLAIN = 'plain.socks.test'
@@ -213,6 +213,12 @@ it('[app:tunnel-everywhere-leaves-a-site-set-to-off-direct] a site set to off mo
   expect(hosts.offDecoy.hits, 'saving the choice did not load the page again').toBe(hitsBefore)
   expect(await tabTitle()).toBe('direct')
   expect(await sessionOfTab(offUrl()), 'and did not move it').toMatchObject({ isDefault: false, webrtc: 'default' })
+
+  // The row gave this tab the choice to go direct, and every site opened in it goes direct in the direct profile: the tests below
+  // open sites that follow the browser, so they open them in a tab that has no choice.
+  const tabCount = (await tabIds(chrome)).length
+  await chrome.click('#new-tab')
+  expect(await waitFor(async () => (await tabIds(chrome)).length === tabCount + 1), 'a new tab, which has no choice of its own').toBe(true)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnel-everywhere-leaves-a-site-set-to-off-direct] Settings lists the site under the direct profile, and the toggle is on', async () => {

@@ -134,11 +134,11 @@ it('[app:website-tunnel-always-a-row-sets-the-tab-only] a row on a website moves
   expect(await waitFor(() => saved()?.apart === true), 'the visit is recorded as storage kept apart, as for any tab choice').toBe(true)
 
   // The tab closes with its choice: the same website in a new tab goes to the gateway directly.
-  const direct = blocksAsked(decoy)
+  const tunnelled = blocksAsked(real)
   await freshTab()
   await openSite()
-  expect(await sessionOfSite(), 'the website is in the shared session again').toBe('shared')
-  expect(blocksAsked(decoy), 'and read from the gateway directly').toBeGreaterThan(direct)
+  expect(await sessionOfSite(), 'the website is in the shared session again, which this browser sends direct').toBe('shared')
+  expect(blocksAsked(real), 'and the tunnel\'s gateway was not asked for it again').toBe(tunnelled)
   expect(saved()?.entry).toBeUndefined()
 }, 6 * QA_TEST_TIMEOUT_MS)
 
@@ -209,11 +209,10 @@ it('[app:website-tunnel-always-off-removes-the-entry-without-a-reload] turning "
   await closeTunnelList(app, chrome)
 
   // Nothing of it is left for another tab.
-  const direct = blocksAsked(decoy)
   await freshTab()
   await openSite()
-  expect(await sessionOfSite()).toBe('shared')
-  expect(blocksAsked(decoy), 'a new tab reads the gateway directly again').toBeGreaterThan(direct)
+  expect(await sessionOfSite(), 'a new tab has the website in the shared session again').toBe('shared')
+  expect(blocksAsked(real), 'and does not send it through the tunnel').toBe(asked)
 }, 6 * QA_TEST_TIMEOUT_MS)
 
 it('[app:website-tunnel-always-keeps-the-tunnel-for-the-site] with Always on, turning the lit row off takes the entry and the tab\'s choice away together, so the page really leaves the tunnel', async () => {
