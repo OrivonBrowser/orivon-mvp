@@ -47,7 +47,7 @@ describe('startUpdateWatch', () => {
     expect(check).toHaveBeenCalledTimes(2)
   })
 
-  it('defaults to every 30 minutes', () => {
-    expect(OPEN_TAB_CHECK_MS).toBe(30 * 60_000)
+  it('defaults to every 5 minutes', () => {
+    expect(OPEN_TAB_CHECK_MS).toBe(5 * 60_000)
   })
 })

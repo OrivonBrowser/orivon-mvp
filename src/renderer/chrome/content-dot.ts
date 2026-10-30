@@ -3,10 +3,10 @@ import type { ChromeModule } from './context.js'
 export const CONTENT_BLOCKED_NOTE = 'JavaScript, images or sound are blocked on this site'
 /** What the key says while an app's permissions are not all granted; `site-badges` adds it to the key's label and `data-missing` draws the dot (`styles/content-dot.css`). */
 export const MISSING_NOTE = 'Some permissions this site asked for are off'
-export const UPDATE_OFFERED_NOTE = 'A new version of this app is available'
+export const UPDATE_OFFERED_NOTE = 'An update for this app is available'
 
 /** Marks the address bar's key when the site in front has JavaScript, images or sound switched off (a dot after
- * the key), or is an installed app with a new version offered (a dot before it). The key is `site-badges`'s own
+ * the key), or is an installed app with an update offered (a dot before it). The key is `site-badges`'s own
  * button: this only sets attributes on it, so the two never fight over its label. */
 export function createContentDot (): ChromeModule {
   let key: HTMLElement | null = null

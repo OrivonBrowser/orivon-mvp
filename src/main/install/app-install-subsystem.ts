@@ -155,7 +155,8 @@ export const appInstallSubsystem: Subsystem = {
         if ((await loader.pinFor(origin))?.content === undefined) return
         // The tab the person sees, so the question can be answered where it appears.
         const tab = ctx.openTabs?.on(origin)[0]
-        await installFromHint(installDeps, origin, origin, tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)), true)
+        const checked = await installFromHint(installDeps, origin, origin, tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)), true)
+        if (checked.outcome === 'rejected') console.warn(`[app-updates] the check of the open app ${origin} failed: ${checked.reason}`)
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })

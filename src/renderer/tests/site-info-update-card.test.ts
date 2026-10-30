@@ -10,6 +10,7 @@ describe('the update card', () => {
   it('names both versions, or the new one alone when the pin is unreadable', () => {
     expect(updateHeading(UPDATE)).toBe('Version 1.0.1 is available (you have 1.0.0)')
     expect(updateHeading({ ...UPDATE, fromVersion: undefined })).toBe('Version 1.0.1 is available')
+    expect(updateHeading({ ...UPDATE, fromVersion: '1.0.1' })).toBe('A new build of version 1.0.1 is available')
   })
 
   it('offers Update for a verified version and only Trust & Force update otherwise', () => {
