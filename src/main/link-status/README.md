@@ -12,7 +12,8 @@ sends; `link-status-for.ts` holds each window's one `LinkStatus` and gives it th
 overlay is a `WebContentsView` through [`../overlays/`](../overlays/). `link-status.ts`, `bubble-geometry.ts` and
 `link-status-view.ts` need nothing of it.
 
-**What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`), and [`../shell/`](../shell/) for types only
+**What it depends on.** [`../overlays/`](../overlays/) (`overlay-types.ts`), [`../../protocols/`](../../protocols/)
+(`BUILTIN_ADDRESSES`, to read an address as the address bar does), and [`../shell/`](../shell/) for types only
 (`window-registry.ts`, `tab-signals.ts`).
 
 **What it must never import.** The renderer, or a value from the rest of the shell: the shell lists this feature, not the
@@ -51,9 +52,31 @@ arrives and nothing more is done, so it ends steadily on the right. No cursor po
 is unreliable on Wayland, and a per-move listener would cost every mouse move.
 
 **It goes after a short delay, and at once when its tab leaves.** An empty address starts a timer (`HIDE_DELAY_MS`) that a
-new address cancels, so the pointer crossing the gap between two links keeps one bubble. A navigation of the tab, a crashed
-or destroyed page, a tab switch, a resize or a page holding the whole screen end it at once. An empty address from another
-pane than the bubble's is not about it.
+new address cancels, so the pointer crossing the gap between two links keeps one bubble. A navigation of the tab's own page,
+a crashed or destroyed page, a tab switch, a resize or a page holding the whole screen end it at once. The overlay is not
+closed by the front tab's address changing: a page that rewrites its address while it scrolls would take the bubble down, the
+address may be that of the other pane, and Chromium does not say the link again. An empty address, or a link with no room
+to show in, from another pane than the bubble's is not about it.
+
+**A push of the tabs' state is the tick that checks its pane.** A split opening or closing, the panes swapping and a tab going
+behind change where the tab's page is, and none of them is a layout change of the window, so the overlay's `layout` close never
+fires for them. Each of them pushes the tabs' state, so the signal's `state` hook asks the bubble (`checkPane`) whether its tab's
+pane is the rectangle it was made for and still on screen, and it goes when not.
+
+**The address is the address bar's.** The text is `BUILTIN_ADDRESSES.displayUrl` of the link, then cut to `MAX_TEXT_LENGTH`: the
+name before an `@` is dropped, so `https://accounts.google.com@evil.example/` reads as `evil.example`, and a link on a site
+from IPFS reads as its `ipfs://` address, not the host that serves it. The reading comes first, so a long name before an `@`
+cannot push the host out of the cut text.
+
+**The end of the host is never what is cut.** A host is read from its end. Main tells the page the most the bubble may be wide
+(`room`); the page fits the text to it with `fitAddress` (in the page's directory), which measures candidates in the page: the
+path goes first, then the middle of the host, with the end of the host kept; CSS's ellipsis is left as a last resort for
+a measure that differs from the one that fitted.
+
+**It keeps the corner it dodged to for a moment.** The bubble takes the bottom-right corner when the pointer enters it and goes
+back to the left when it hides. A pointer that is slow to reach the next link would find the bubble reopened in the corner it
+left, and it would flicker between the corners, so a bubble that had dodged keeps the right corner for `SIDE_GRACE_MS` after it
+hid.
 
 **What the page sends is untrusted.** The overlay accepts a width (a finite number, whole sequence number) and the pointer
 entering, and nothing else.

@@ -13,6 +13,11 @@ import { ABSENCE_SETTLE_MS, delay, findViewShowing, popoverShown, tabIds, waitFo
 
 const TEST_TIMEOUT_MS = 90_000
 const LONG_PATH = `/${'long-segment/'.repeat(80)}`
+/** What a page can make of its host: its beginning reads as a bank's, its end is what it is. */
+const SPOOF_HOST = `www.paypal.com.${'a'.repeat(50)}.${'b'.repeat(50)}.evil.example`
+const CID = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
+/** A little longer than the time a bubble holds the corner it dodged to. */
+const SIDE_GRACE_WAIT_MS = 2000
 
 let server: FixtureServer
 
@@ -22,6 +27,9 @@ const PAGE = (name: string): string => `<!doctype html><title>${name}</title>
 <a id="top" href="/${name}/top-link" style="position:fixed;left:300px;top:100px">top link</a>
 <a id="other" href="/${name}/other-link" style="position:fixed;left:300px;top:200px">other link</a>
 <a id="long" href="${LONG_PATH}" style="position:fixed;left:300px;top:300px">long link</a>
+<a id="spoof" href="https://${SPOOF_HOST}/login" style="position:fixed;left:600px;top:100px">spoof link</a>
+<a id="userinfo" href="https://accounts.google.com@evil.example/" style="position:fixed;left:600px;top:200px">userinfo link</a>
+<a id="ipfs" href="https://${CID}.ipfs.orivon/a" style="position:fixed;left:600px;top:300px">ipfs link</a>
 <a id="corner" href="/${name}/corner-link" style="position:fixed;left:0;bottom:0;width:260px;height:80px;background:#cde">corner</a>
 <input id="field" style="position:fixed;left:300px;top:400px">
 </body>`
@@ -208,19 +216,44 @@ it('keeps one view, hidden in the window between links, across many links', asyn
   }
 }, TEST_TIMEOUT_MS)
 
-it('cuts a long address with an ellipsis inside a bubble of at most 600 pixels and half the page', async () => {
+it('cuts the path of a long address, not its host, inside a bubble of at most 600 pixels and half the page', async () => {
   const { app, tab, url } = await launchMaximized()
   try {
     await tab.hover('#long')
-    const up = await bubbleUp(app, `${server.origin}${LONG_PATH}`.slice(0, 1024))
+    expect(await waitFor(async () => (await shown(app))?.text.startsWith(`${server.origin}/long-segment/`) === true)).toBe(true)
+    const up = await shown(app) as Shown
     const pane = await paneOf(app, url)
     expect(up.rect.width).toBeLessThanOrEqual(600)
     expect(up.rect.width).toBeLessThanOrEqual(pane.width / 2)
+    expect(up.text.endsWith('\u2026')).toBe(true)
+    // Fitted in the page, not clipped by it: nothing of the text is outside its box.
     const clipped = await (bubblePage(app) as Page).evaluate(() => {
       const element = document.querySelector('.link-status:not(.link-status-probe)') as HTMLElement
-      return { overflow: element.scrollWidth > element.clientWidth, ellipsis: getComputedStyle(element).textOverflow }
+      return element.scrollWidth > element.clientWidth
     })
-    expect(clipped).toEqual({ overflow: true, ellipsis: 'ellipsis' })
+    expect(clipped).toBe(false)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('reads an address as the address bar does, and keeps the end of a long host in view', async () => {
+  const { app, tab } = await launchMaximized()
+  try {
+    // The name before an @ is not shown: it reads as the host.
+    await tab.hover('#userinfo')
+    expect((await bubbleUp(app, 'https://evil.example/')).rect.width).toBeGreaterThan(0)
+
+    // A link on a site from IPFS reads as its ipfs address, not the host that serves it.
+    await tab.hover('#ipfs')
+    await bubbleUp(app, `ipfs://${CID}/a`)
+
+    // A host too long for the room loses its middle, never its end.
+    await tab.hover('#spoof')
+    expect(await waitFor(async () => (await shown(app))?.text.includes('\u2026') === true && (await shown(app))?.text.startsWith('https://www.paypal') === true)).toBe(true)
+    const spoof = await shown(app) as Shown
+    expect(spoof.text.endsWith('evil.example')).toBe(true)
+    expect(spoof.rect.width).toBeLessThanOrEqual(600)
   } finally {
     await closeElectron(app)
   }
@@ -258,12 +291,21 @@ it('moves to the bottom-right corner when the pointer reaches it, and ends stead
     expect(sides.at(-1)).toBe('right')
     expect(sides.filter((side, index) => index > 0 && side === 'left' && sides[index - 1] === 'right')).toEqual([])
 
-    // Another link while it is on the right stays on the right; once it has hidden, the next one starts on the left.
+    // Another link while it is on the right stays on the right.
     await tab.hover('#top')
     const next = await bubbleUp(app, `${server.origin}/one/top-link`)
     expect(Math.abs(right(next.rect) - right(pane))).toBeLessThanOrEqual(1)
     await tab.mouse.move(pane.width - 80, 300)
     await expectGone(app)
+    // A link pointed at soon after is met on the right still, not by a bubble under the pointer in the corner it dodged.
+    await tab.hover('#top')
+    const soon = await bubbleUp(app, `${server.origin}/one/top-link`)
+    expect(Math.abs(right(soon.rect) - right(pane))).toBeLessThanOrEqual(1)
+
+    // Once the grace has run out, the next bubble starts on the left again.
+    await tab.mouse.move(pane.width - 80, 300)
+    await expectGone(app)
+    await delay(SIDE_GRACE_WAIT_MS)
     await tab.hover('#top')
     expect((await bubbleUp(app, `${server.origin}/one/top-link`)).rect.x).toBe(pane.x)
   } finally {
@@ -309,6 +351,19 @@ it('goes at once with a tab switch and with the navigation of its tab, and is no
   }
 }, TEST_TIMEOUT_MS)
 
+it('stays when its page rewrites its own address, as pages do while they scroll', async () => {
+  const { app, tab } = await launchMaximized()
+  try {
+    await tab.hover('#top')
+    await bubbleUp(app, `${server.origin}/one/top-link`)
+    await tab.evaluate(() => { history.replaceState(null, '', '/one/scrolled') })
+    await delay(ABSENCE_SETTLE_MS)
+    expect((await shown(app))?.text).toBe(`${server.origin}/one/top-link`)
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
 it('does not close an open menu, lies under it, and leaves the keyboard in the page\'s field', async () => {
   const { app, chrome, tab } = await launchMaximized()
   try {
@@ -342,7 +397,7 @@ it('does not close an open menu, lies under it, and leaves the keyboard in the p
   }
 }, TEST_TIMEOUT_MS)
 
-it('is in the corner of the pane the pointer is in, in a split window, not of the pane in front', async () => {
+it('is in the corner of the pane the pointer is in, in a split window, not of the pane in front, and goes when the split closes', async () => {
   const { app, chrome } = await launchMaximized()
   try {
     await chrome.click('#new-tab')
@@ -374,6 +429,14 @@ it('is in the corner of the pane the pointer is in, in a split window, not of th
     expect(inOne.rect.x).toBe(one.x)
     expect(Math.abs(bottom(inOne.rect) - bottom(one))).toBeLessThanOrEqual(1)
     expect(right(inOne.rect)).toBeLessThanOrEqual(one.x + one.width)
+
+    // The split closing moves the pane under it: the bubble goes with it, and does not stay over a place that is no longer the corner.
+    await startRecording(app)
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('split.toggle') })
+    expect(await waitFor(async () => (await paneOf(app, `${server.origin}/one`)).width > one.width + 50)).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    const samples = await stopRecording(app)
+    expect(samples.some((sample) => !sample.visible || sample.width === 0)).toBe(true)
   } finally {
     await closeElectron(app)
   }

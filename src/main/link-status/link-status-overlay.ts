@@ -18,8 +18,10 @@ export const linkStatusOverlay: OverlayDef = {
   surface: 'panel',
   focus: 'never',
   layer: 'bar',
-  // Gone with a tab switch, a navigation and a layout change: a bubble that held its place through a resize would sit in the page's middle.
-  closeOn: { ...CLOSE_LIKE_BAR, navigation: true, layout: true },
+  // Gone with a tab switch and a window resize: a bubble that held its place through a resize would sit in the page's middle.
+  // Not with the address of the front tab changing: a page that rewrites its address while scrolling would take it down, and
+  // it may be the other pane's. A navigation of its own tab ends it (`left`), and a split changing is `checkPane`'s.
+  closeOn: { ...CLOSE_LIKE_BAR, layout: true },
   keep: 'resident',
   attach: ({ window }) => {
     const status = linkStatusFor(window)

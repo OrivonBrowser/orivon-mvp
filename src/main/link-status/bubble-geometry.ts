@@ -23,10 +23,16 @@ export interface BubblePlace {
 /** One pixel of slack, for a window whose content size is not a whole number. */
 const EDGE_SLACK = 1
 
-/** The width a bubble gets for a text that measured `wanted` wide: at most the cap and half the pane, at least the floor. Nothing in a pane too narrow for that. */
-export function bubbleWidth (wanted: number, pane: PaneRect): number | undefined {
+/** The most a bubble in this pane may be wide: the cap, or half the pane when that is less. Nothing in a pane too narrow for a bubble. */
+export function bubbleRoom (pane: PaneRect): number | undefined {
   const room = Math.min(BUBBLE_MAX_WIDTH, Math.floor(pane.width / 2))
-  if (room < BUBBLE_MIN_WIDTH) return undefined
+  return room < BUBBLE_MIN_WIDTH ? undefined : room
+}
+
+/** The width a bubble gets for a text that measured `wanted` wide: at most its room, at least the floor. */
+export function bubbleWidth (wanted: number, pane: PaneRect): number | undefined {
+  const room = bubbleRoom(pane)
+  if (room === undefined) return undefined
   const asked = Number.isNaN(wanted) ? BUBBLE_MIN_WIDTH : Math.ceil(wanted)
   return Math.max(BUBBLE_MIN_WIDTH, Math.min(asked, room))
 }

@@ -3,10 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import type { TabSignalContext } from '../../shell/tab-signals.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 
-const made = new Map<unknown, { hovered: ReturnType<typeof vi.fn>, left: ReturnType<typeof vi.fn> }>()
+type Status = { hovered: ReturnType<typeof vi.fn>, left: ReturnType<typeof vi.fn>, checkPane: ReturnType<typeof vi.fn> }
+const made = new Map<unknown, Status>()
 vi.mock('../link-status-for.js', () => ({
   linkStatusFor: (window: unknown) => {
-    if (!made.has(window)) made.set(window, { hovered: vi.fn(), left: vi.fn() })
+    if (!made.has(window)) made.set(window, { hovered: vi.fn(), left: vi.fn(), checkPane: vi.fn() })
     return made.get(window)
   },
   existingLinkStatus: (window: unknown) => made.get(window)
@@ -17,7 +18,8 @@ const { linkStatusSignal } = await import('../link-status-signal.js')
 interface Rig {
   wc: EventEmitter & { isDestroyed: () => boolean }
   owner: ShellWindow
-  status: () => { hovered: ReturnType<typeof vi.fn>, left: ReturnType<typeof vi.fn> } | undefined
+  status: () => Status | undefined
+  record: object
   shownOn: { screen: boolean, view: boolean }
 }
 
@@ -28,7 +30,7 @@ function rig (): Rig {
   const view = { getBounds: () => ({ x: 0, y: 76, width: 1200, height: 724 }) }
   const record = { host: { isShown: () => shownOn.screen, services: { windows: { findOwner: () => owner } } } }
   linkStatusSignal.wire?.({ id: 'tab-1', wc, record, view, shown: () => shownOn.view } as unknown as TabSignalContext)
-  return { wc, owner, status: () => made.get(owner), shownOn }
+  return { wc, owner, status: () => made.get(owner), shownOn, record }
 }
 
 describe('the link status signal', () => {
@@ -93,6 +95,34 @@ describe('the link status signal', () => {
   it('says nothing to a bubble the page never spoke to', () => {
     const { wc, status } = rig()
     wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    expect(status()).toBeUndefined()
+  })
+})
+
+describe('the link status signal: the tab\'s own view', () => {
+  it('says nothing of a navigation or a crash of a page whose view is no longer the tab\'s', () => {
+    const { wc, status, shownOn } = rig()
+    wc.emit('update-target-url', {}, 'https://example.com/')
+    shownOn.view = false
+    wc.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false })
+    wc.emit('render-process-gone')
+    wc.emit('destroyed')
+    expect(status()?.left).not.toHaveBeenCalled()
+  })
+})
+
+describe('the link status signal: a push of the tabs\' state', () => {
+  it('has the bubble the page spoke to check that its pane is still where it was put, and adds nothing to the state', () => {
+    const { wc, status, record } = rig()
+    wc.emit('update-target-url', {}, 'https://example.com/')
+    expect(linkStatusSignal.state?.(record as never, wc as never)).toEqual({})
+    expect(status()?.checkPane).toHaveBeenCalledOnce()
+  })
+
+  it('does nothing for a page that never spoke to a bubble, and for a destroyed one', () => {
+    const { wc, status, record } = rig()
+    expect(linkStatusSignal.state?.(record as never, wc as never)).toEqual({})
+    expect(linkStatusSignal.state?.(record as never, undefined)).toEqual({})
     expect(status()).toBeUndefined()
   })
 })

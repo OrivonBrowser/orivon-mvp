@@ -17,8 +17,8 @@ describe('the link bubble overlay', () => {
     expect(linkStatusOverlay).toMatchObject({ focus: 'never', layer: 'bar', keep: 'resident' })
   })
 
-  it('is closed by a tab switch, a navigation and a layout change, and not by a blur', () => {
-    expect(linkStatusOverlay.closeOn).toEqual({ blur: false, tabSwitch: true, navigation: true, layout: true })
+  it('is closed by a tab switch and a layout change, and not by a blur, nor by the front tab\'s address changing (its own tab\'s navigation ends it, in the signal)', () => {
+    expect(linkStatusOverlay.closeOn).toEqual({ blur: false, tabSwitch: true, navigation: false, layout: true })
   })
 
   it('places itself, so what its page reports of its height is nothing', () => {
@@ -26,7 +26,7 @@ describe('the link bubble overlay', () => {
   })
 
   it('hands its page the view it was shown with', () => {
-    const view = { seq: 1, text: 'https://example.com/', side: 'left', inset: { left: 6, right: 0, bottom: 6 } }
+    const view = { seq: 1, text: 'https://example.com/', side: 'left', room: 600, inset: { left: 6, right: 0 } }
     expect(handler.show?.(view)).toBe(view)
   })
 

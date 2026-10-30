@@ -1,13 +1,17 @@
 // The link bubble's behaviour for one window, with no Electron in it: which link it shows, in which corner, and when
 // it goes. The overlay host is behind `LinkStatusPorts`, so the whole of it is driven by a fake clock in a unit test.
-import { BUBBLE_MIN_WIDTH, bubbleInset, bubblePlace, bubbleWidth, hiddenBounds } from './bubble-geometry.js'
+import { BUBBLE_MIN_WIDTH, bubbleInset, bubblePlace, bubbleRoom, bubbleWidth, hiddenBounds } from './bubble-geometry.js'
 import type { PaneRect, WindowSize } from './bubble-geometry.js'
 import { linkText } from './link-status-view.js'
 import type { BubbleSide, LinkStatusView } from './link-status-view.js'
 import type { OverlayAnchor } from '../overlays/overlay-types.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 /** How long a bubble outlives its link: the pointer crossing the gap between two links keeps one bubble instead of flickering. */
 export const HIDE_DELAY_MS = 120
+
+/** How long a bubble that took the other corner to get out of the pointer's way keeps it after it hid: the next link, pointed at a little later, would otherwise open it again under the pointer. */
+export const SIDE_GRACE_MS = 1500
 
 /** The tab a link is in. */
 export interface LinkTab {
@@ -36,9 +40,13 @@ interface Hover {
   readonly tab: LinkTab
   readonly text: string
   readonly seq: number
+  /** The pane the bubble was made for: it is gone when its tab's pane is another. */
+  readonly pane: PaneRect
   /** What its page measured the text to be, once it has. */
   width: number | undefined
 }
+
+const samePane = (a: PaneRect, b: PaneRect): boolean => a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height
 
 export class LinkStatus {
   private hover: Hover | undefined
@@ -46,6 +54,7 @@ export class LinkStatus {
   private side: BubbleSide = 'left'
   private seq = 0
   private hideTimer: ReturnType<typeof setTimeout> | undefined
+  private sideTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor (private readonly ports: LinkStatusPorts) {}
 
@@ -60,21 +69,29 @@ export class LinkStatus {
       if (this.open && this.hover?.tab.id === tab.id) this.armHide()
       return
     }
-    this.cancelHide()
-    const text = linkText(url)
+    // The address as the address bar shows it, before it is cut: what a link says before an @ is not where it goes.
+    const text = linkText(BUILTIN_ADDRESSES.displayUrl(url))
     const pane = tab.pane()
     const window = this.ports.window()
-    if (pane === undefined || window === undefined || this.ports.suppressed() || bubbleWidth(BUBBLE_MIN_WIDTH, pane) === undefined) {
+    if (window === undefined || this.ports.suppressed()) {
       this.hideNow()
       return
     }
+    // A pane with no room, or no place on screen, is no reason to take the bubble of another pane down.
+    if (pane === undefined || bubbleWidth(BUBBLE_MIN_WIDTH, pane) === undefined) {
+      if (this.hover?.tab.id === tab.id) this.hideNow()
+      return
+    }
     const before = this.hover
-    if (this.open && before?.tab.id === tab.id && before.text === text) return
-    const hover: Hover = { tab, text, seq: ++this.seq, width: undefined }
+    if (this.open && before?.tab.id === tab.id && !samePane(before.pane, pane)) this.hideNow()
+    this.cancelHide()
+    if (this.open && this.hover?.tab.id === tab.id && this.hover.text === text) return
+    const hover: Hover = { tab, text, seq: ++this.seq, pane, width: undefined }
     this.hover = hover
     const view = this.viewFor(hover, pane, window)
     if (!this.open) {
       this.open = true
+      this.cancelSideGrace()
       this.ports.show(hiddenBounds(pane, this.side), view)
       return
     }
@@ -100,7 +117,7 @@ export class LinkStatus {
     this.side = 'right'
     const pane = hover.tab.pane()
     const window = this.ports.window()
-    if (pane === undefined || window === undefined) { this.hideNow(); return }
+    if (pane === undefined || window === undefined || !samePane(hover.pane, pane)) { this.hideNow(); return }
     if (hover.width !== undefined) {
       const place = this.placeFor(hover, hover.width)
       if (place === undefined) return
@@ -109,25 +126,37 @@ export class LinkStatus {
     this.ports.send(this.viewFor(hover, pane, window))
   }
 
-  /** The tab navigated, died or went off screen: its bubble goes at once. */
+  /** The tab navigated or died: its bubble goes at once. */
   left (tabId: string): void {
     if (this.hover?.tab.id === tabId) this.hideNow()
   }
 
-  /** The host closed the overlay, for any reason. */
+  /** Something changed in how the tabs are laid out (a split opened or closed, the panes swapped, a tab went behind): the bubble goes when its tab's pane is not the one it was made for. */
+  checkPane (): void {
+    const hover = this.hover
+    if (!this.open || hover === undefined) return
+    const pane = hover.tab.pane()
+    if (pane === undefined || !samePane(hover.pane, pane)) this.hideNow()
+  }
+
+  /** The host closed the overlay, for any reason. A bubble that had taken the other corner keeps it a moment (`SIDE_GRACE_MS`). */
   closed (): void {
     this.cancelHide()
     this.open = false
     this.hover = undefined
-    this.side = 'left'
+    this.cancelSideGrace()
+    if (this.side === 'right') this.sideTimer = setTimeout(() => { this.sideTimer = undefined; this.side = 'left' }, SIDE_GRACE_MS)
+    else this.side = 'left'
   }
 
   dispose (): void {
     this.closed()
+    this.cancelSideGrace()
   }
 
   private viewFor (hover: Hover, pane: PaneRect, window: WindowSize): LinkStatusView {
-    return { seq: hover.seq, text: hover.text, side: this.side, inset: bubbleInset(pane, window, this.side) }
+    const { left, right } = bubbleInset(pane, window, this.side)
+    return { seq: hover.seq, text: hover.text, side: this.side, room: bubbleRoom(pane) ?? BUBBLE_MIN_WIDTH, inset: { left, right } }
   }
 
   /** Where the bubble goes at `width`; hides it when there is no longer a place. */
@@ -147,6 +176,11 @@ export class LinkStatus {
   private cancelHide (): void {
     if (this.hideTimer !== undefined) clearTimeout(this.hideTimer)
     this.hideTimer = undefined
+  }
+
+  private cancelSideGrace (): void {
+    if (this.sideTimer !== undefined) clearTimeout(this.sideTimer)
+    this.sideTimer = undefined
   }
 
   private hideNow (): void {

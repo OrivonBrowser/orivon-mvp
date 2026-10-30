@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { BUBBLE_MAX_WIDTH, BUBBLE_MIN_WIDTH, BUBBLE_RADIUS, bubblePlace } from '../bubble-geometry.js'
-import { HIDE_DELAY_MS, LinkStatus } from '../link-status.js'
+import { HIDE_DELAY_MS, LinkStatus, SIDE_GRACE_MS } from '../link-status.js'
 import type { LinkStatusPorts, LinkTab } from '../link-status.js'
 import { MAX_TEXT_LENGTH } from '../link-status-view.js'
 import type { LinkStatusView } from '../link-status-view.js'
@@ -8,6 +8,7 @@ import type { LinkStatusView } from '../link-status-view.js'
 const WINDOW = { width: 1200, height: 800 }
 const FULL = { x: 0, y: 76, width: 1200, height: 724 }
 const R = BUBBLE_RADIUS
+const CID = 'bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi'
 
 interface Rig {
   status: LinkStatus
@@ -55,7 +56,8 @@ describe('LinkStatus: showing', () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]).toEqual(['show', { bounds: { x: 0, y: 776, width: 0, height: 0 }, view: last() }])
-    expect(last()).toMatchObject({ text: 'https://example.com/', side: 'left', inset: { left: R, right: 0, bottom: R } })
+    expect(last()).toMatchObject({ text: 'https://example.com/', side: 'left' })
+    expect(last()?.inset).toEqual({ left: R, right: 0 })
   })
 
   it('takes its place when the page reports the width, and only then', () => {
@@ -129,6 +131,34 @@ describe('LinkStatus: showing', () => {
     expect(last()?.text).toHaveLength(MAX_TEXT_LENGTH)
   })
 
+  it('shows an address as the address bar does: without the name before an @, which would read as the host', () => {
+    const { status, last } = rig()
+    status.hovered(tab('a'), 'https://accounts.google.com@evil.example/')
+    expect(last()?.text).toBe('https://evil.example/')
+    status.hovered(tab('a'), 'https://user:secret@example.com/path?q=1#f')
+    expect(last()?.text).toBe('https://example.com/path?q=1#f')
+  })
+
+  it('shows the address a person reads for a link on a site from IPFS, not the host that serves it', () => {
+    const { status, last } = rig()
+    status.hovered(tab('a'), `https://${CID}.ipfs.orivon/docs/a.html?x=1#top`)
+    expect(last()?.text).toBe(`ipfs://${CID}/docs/a.html?x=1#top`)
+  })
+
+  it('cuts the address after reading it, so a long name before an @ cannot push the host out of the text', () => {
+    const { status, last } = rig()
+    status.hovered(tab('a'), `https://${'a'.repeat(MAX_TEXT_LENGTH * 2)}@evil.example/x`)
+    expect(last()?.text).toBe('https://evil.example/x')
+  })
+
+  it('tells its page how much room the text has: the most the bubble may be wide', () => {
+    const { status, last } = rig()
+    status.hovered(tab('a'), 'https://example.com/')
+    expect(last()?.room).toBe(BUBBLE_MAX_WIDTH)
+    status.hovered(tab('b', () => ({ x: 0, y: 76, width: 500, height: 724 })), 'https://two.example/')
+    expect(last()?.room).toBe(250)
+  })
+
   it('shows nothing for an address with no text', () => {
     const { status, calls } = rig()
     status.hovered(tab('a'), '')
@@ -166,10 +196,31 @@ describe('LinkStatus: where it shows', () => {
     expect(calls).toEqual([])
   })
 
-  it('shows nothing in a pane too narrow, and hides one that is up', () => {
+  it('shows nothing in a pane too narrow, and hides one that is up when its own pane has become too narrow', () => {
+    const { status, names } = rig()
+    let width = 1200
+    const own = tab('a', () => ({ x: 0, y: 76, width, height: 724 }))
+    status.hovered(own, 'https://one.example/')
+    width = 50
+    status.hovered(own, 'https://two.example/')
+    expect(names()).toEqual(['show', 'hide'])
+  })
+
+  it('leaves the bubble of one pane up when a link in another pane that is too narrow, or not on screen, is reported', () => {
     const { status, names } = rig()
     status.hovered(tab('a'), 'https://one.example/')
     status.hovered(tab('b', () => ({ x: 0, y: 76, width: 50, height: 724 })), 'https://two.example/')
+    status.hovered(tab('c', () => undefined), 'https://three.example/')
+    expect(names()).toEqual(['show'])
+  })
+
+  it('hides its own tab\'s bubble when that tab is no longer on screen', () => {
+    const { status, names } = rig()
+    let pane: ReturnType<LinkTab['pane']> = FULL
+    const own = tab('a', () => pane)
+    status.hovered(own, 'https://one.example/')
+    pane = undefined
+    status.hovered(own, 'https://two.example/')
     expect(names()).toEqual(['show', 'hide'])
   })
 
@@ -193,6 +244,51 @@ describe('LinkStatus: where it shows', () => {
     state.window = undefined
     status.hovered(tab('a'), 'https://example.com/')
     expect(calls).toEqual([])
+  })
+})
+
+describe('LinkStatus: the pane it was placed for', () => {
+  function inPane (): { status: LinkStatus, names: () => string[], pane: { value: ReturnType<LinkTab['pane']> }, own: LinkTab } {
+    const { status, names } = rig()
+    const pane: { value: ReturnType<LinkTab['pane']> } = { value: FULL }
+    const own = tab('a', () => pane.value)
+    status.hovered(own, 'https://example.com/')
+    return { status, names, pane, own }
+  }
+
+  it('stays while its tab\'s pane is where it was', () => {
+    const { status, names } = inPane()
+    status.checkPane()
+    expect(names()).toEqual(['show'])
+  })
+
+  it('goes when its tab\'s pane is another rectangle: a split closed, or the panes swapped', () => {
+    const { status, names, pane } = inPane()
+    pane.value = { x: 0, y: 76, width: 596, height: 724 }
+    status.checkPane()
+    expect(names()).toEqual(['show', 'hide'])
+  })
+
+  it('goes when its tab is no longer on screen', () => {
+    const { status, names, pane } = inPane()
+    pane.value = undefined
+    status.checkPane()
+    expect(names()).toEqual(['show', 'hide'])
+  })
+
+  it('has nothing to check while nothing is shown', () => {
+    const { status, names, pane } = inPane()
+    status.left('a')
+    pane.value = undefined
+    status.checkPane()
+    expect(names()).toEqual(['show', 'hide'])
+  })
+
+  it('is shown again, in the new pane, when the same link is reported from it', () => {
+    const { status, names, pane, own } = inPane()
+    pane.value = { x: 0, y: 76, width: 596, height: 724 }
+    status.hovered(own, 'https://example.com/')
+    expect(names()).toEqual(['show', 'hide', 'show'])
   })
 })
 
@@ -302,7 +398,8 @@ describe('LinkStatus: getting out of the pointer\'s way', () => {
     status.pointerEntered()
 
     expect(calls.at(-2)).toEqual(['place', bubblePlace(FULL, WINDOW, 'right', 200)?.bounds])
-    expect(last()).toMatchObject({ side: 'right', inset: { left: 0, right: R, bottom: R } })
+    expect(last()).toMatchObject({ side: 'right' })
+    expect(last()?.inset).toEqual({ left: 0, right: R })
   })
 
   it('ends up steadily on the right: the link is lost, the bubble moves, the link is hovered again', () => {
@@ -342,14 +439,58 @@ describe('LinkStatus: getting out of the pointer\'s way', () => {
     expect(calls.at(-1)).toEqual(['place', bubblePlace(FULL, WINDOW, 'right', 150)?.bounds])
   })
 
-  it('goes back to the left corner for the next bubble once it has hidden', () => {
+  it('goes back to the left corner for the next bubble once it has hidden and the grace has run out', () => {
     const { status, last } = shownOnLeft()
     status.pointerEntered()
     status.hovered(tab('a'), '')
     vi.advanceTimersByTime(HIDE_DELAY_MS)
+    vi.advanceTimersByTime(SIDE_GRACE_MS)
     status.hovered(tab('a'), 'https://two.example/')
 
     expect(last()?.side).toBe('left')
+  })
+
+  it('stays on the right for a link hovered soon after it hid, so the pointer is not met by it again in the corner it dodged', () => {
+    const { status, calls, last } = shownOnLeft()
+    status.pointerEntered()
+    status.hovered(tab('a'), '')
+    vi.advanceTimersByTime(HIDE_DELAY_MS)
+    vi.advanceTimersByTime(SIDE_GRACE_MS - 1)
+    status.hovered(tab('a'), 'https://example.com/')
+
+    expect(calls.filter(([name]) => name === 'show')).toHaveLength(2)
+    expect(last()?.side).toBe('right')
+    expect(last()?.inset).toEqual({ left: 0, right: R })
+  })
+
+  it('keeps the grace going while it is shown again, and counts it from the next hide', () => {
+    const { status, last } = shownOnLeft()
+    status.pointerEntered()
+    status.hovered(tab('a'), '')
+    vi.advanceTimersByTime(HIDE_DELAY_MS)
+    vi.advanceTimersByTime(SIDE_GRACE_MS - 1)
+    status.hovered(tab('a'), 'https://two.example/')
+    // Shown on the right, longer than the grace: the side is not taken from under it.
+    vi.advanceTimersByTime(SIDE_GRACE_MS * 3)
+    status.hovered(tab('a'), 'https://three.example/')
+    expect(last()?.side).toBe('right')
+  })
+
+  it('has no side to hold after a hide that followed no dodge', () => {
+    const { status, last } = shownOnLeft()
+    status.hovered(tab('a'), '')
+    vi.advanceTimersByTime(HIDE_DELAY_MS)
+    status.hovered(tab('a'), 'https://two.example/')
+    expect(last()?.side).toBe('left')
+  })
+
+  it('has no timer left once disposed during the grace', () => {
+    const { status } = shownOnLeft()
+    status.pointerEntered()
+    status.hovered(tab('a'), '')
+    vi.advanceTimersByTime(HIDE_DELAY_MS)
+    status.dispose()
+    expect(vi.getTimerCount()).toBe(0)
   })
 
   it('does nothing more when the pointer enters it on the right', () => {

@@ -22,9 +22,16 @@ export const linkStatusSignal: TabSignal = {
       spoken.set(wc, status)
       status.hovered(tab, url)
     })
-    const left = (): void => { spoken.get(wc)?.left(id) }
+    // A page whose view was swapped out of its tab is no longer the tab's: its end is not the bubble's.
+    const left = (): void => { if (shown()) spoken.get(wc)?.left(id) }
     wc.on('did-start-navigation', (details) => { if (details.isMainFrame && !details.isSameDocument) left() })
     wc.on('render-process-gone', left)
     wc.once('destroyed', left)
+  },
+  // Every change of how the tabs are laid out (a split opened or closed, the panes swapped, a tab put behind) pushes the
+  // tabs' state, which nothing else of the bubble's concern does without also ending it: the push is its tick.
+  state: (_record, wc) => {
+    if (wc !== undefined) spoken.get(wc)?.checkPane()
+    return {}
   }
 }

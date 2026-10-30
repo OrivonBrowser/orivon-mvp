@@ -1,10 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { BUBBLE_HEIGHT, BUBBLE_MAX_WIDTH, BUBBLE_MIN_WIDTH, BUBBLE_RADIUS, bubblePlace, bubbleWidth, hiddenBounds } from '../bubble-geometry.js'
+import { BUBBLE_HEIGHT, BUBBLE_MAX_WIDTH, BUBBLE_MIN_WIDTH, BUBBLE_RADIUS, bubblePlace, bubbleRoom, bubbleWidth, hiddenBounds } from '../bubble-geometry.js'
 
 const WINDOW = { width: 1200, height: 800 }
 const FULL = { x: 0, y: 76, width: 1200, height: 724 }
 const R = BUBBLE_RADIUS
 const H = BUBBLE_HEIGHT
+
+describe('bubbleRoom', () => {
+  it('is the cap in a wide pane and half the pane in a narrower one', () => {
+    expect(bubbleRoom(FULL)).toBe(BUBBLE_MAX_WIDTH)
+    expect(bubbleRoom({ ...FULL, width: 801 })).toBe(400)
+  })
+
+  it('is nothing in a pane too narrow for a bubble', () => {
+    expect(bubbleRoom({ ...FULL, width: BUBBLE_MIN_WIDTH * 2 - 1 })).toBeUndefined()
+    expect(bubbleRoom({ ...FULL, width: BUBBLE_MIN_WIDTH * 2 })).toBe(BUBBLE_MIN_WIDTH)
+  })
+})
 
 describe('bubbleWidth', () => {
   it('keeps a width that fits', () => {
