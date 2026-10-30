@@ -4,6 +4,7 @@
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { ShellActions } from '../ipc/ipc.js'
+import { copyAddress } from '../os/address-clipboard-runner.js'
 import { copyLinkCommand, copyWebLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
 import { shareAddressFor, webLinkForTab } from '../os/share.js'
@@ -94,8 +95,8 @@ export function shellActions (parts: WindowParts): ShellActions {
       newGroup: () => { groupTabNew(ctx, id) },
       ungroup: () => { ungroupTab(ctx, id) },
       sleep: () => { void sleepBackgroundTab(entry, id).catch((error: unknown) => { console.error('[shell] sleep background tab failed:', error) }) },
-      copyLink: () => { copyLinkCommand(entry, realShareDeps, id) },
-      copyWebLink: () => { copyWebLinkCommand(entry, realShareDeps, id) },
+      copyLink: () => { void copyLinkCommand(entry, realShareDeps, id).catch((error: unknown) => { console.error('[shell] copy link command failed:', error) }) },
+      copyWebLink: () => { void copyWebLinkCommand(entry, realShareDeps, id).catch((error: unknown) => { console.error('[shell] copy web link command failed:', error) }) },
       emailLink: () => { void emailLinkCommand(entry, realShareDeps, id).catch((error: unknown) => { console.error('[shell] email link command failed:', error) }) },
       moveToNewWindow: () => { moveToNewWindow(entry, id, openWindow, cascadeFrom(window.getBounds())) },
       separate: () => { tabs.splits.separate(id) },
@@ -143,7 +144,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       if (page === 'tunnels') holdForArrival()
     },
     runCommand: (id) => { services.commands.run(id, entry) },
-    act: (name, payload) => runChromeAction(name, payload, { window: entry, services, takePress: (button) => presses.take(button) }),
+    act: (name, payload) => runChromeAction(name, payload, { window: entry, services, takePress: (button) => presses.take(button), copyAddress }),
     // The anchor comes from the chrome page: only a rectangle of numbers places a view.
     openMenu: (anchor) => {
       const pressedAt = presses.take('menu')

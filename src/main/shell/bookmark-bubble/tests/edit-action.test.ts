@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { WindowContext } from '../../window-context.js'
+import type { ChromeActionContext } from '../../chrome-actions.js'
 import { BookmarkStore } from '../../../browsing/bookmarks.js'
 import { asAnchor, bookmarkEdit } from '../edit-action.js'
 
 const anchor = { x: 10, y: 20, width: 30, height: 40 }
 
-function setup (active: Record<string, unknown> | undefined = { id: 't', url: 'https://a.example/', title: 'A', isNewTab: false, isInternal: false }): { ctx: WindowContext, store: BookmarkStore, show: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn> } {
+function setup (active: Record<string, unknown> | undefined = { id: 't', url: 'https://a.example/', title: 'A', isNewTab: false, isInternal: false }): { ctx: ChromeActionContext, store: BookmarkStore, show: ReturnType<typeof vi.fn>, toggle: ReturnType<typeof vi.fn> } {
   let n = 0
   const store = new BookmarkStore('/nowhere/bookmarks.json', () => `id${String(n++)}`, () => 1)
   const show = vi.fn()
@@ -14,7 +14,7 @@ function setup (active: Record<string, unknown> | undefined = { id: 't', url: 'h
     tabs: { getState: () => ({ tabs: active === undefined ? [] : [active], activeTabId: active?.['id'] ?? null }), faviconFor: () => null },
     overlays: { show, toggle }
   }
-  return { ctx: { window, services: { bookmarks: store } } as unknown as WindowContext, store, show, toggle }
+  return { ctx: { window, services: { bookmarks: store }, copyAddress: async () => {} } as unknown as ChromeActionContext, store, show, toggle }
 }
 
 describe('bookmarks.edit', () => {

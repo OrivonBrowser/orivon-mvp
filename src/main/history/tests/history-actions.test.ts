@@ -15,7 +15,7 @@ function setup (closed: unknown[] = []): {
   tabs: { navigate: ReturnType<typeof vi.fn>, createTab: ReturnType<typeof vi.fn> }
   openWindow: ReturnType<typeof vi.fn>
   reopen: ReturnType<typeof vi.fn>
-  copyText: ReturnType<typeof vi.fn>
+  copyAddress: ReturnType<typeof vi.fn>
   windows: { findTab: ReturnType<typeof vi.fn> }
 } {
   const history = {
@@ -28,9 +28,9 @@ function setup (closed: unknown[] = []): {
   const windows = { findTab: vi.fn(() => ({ window: shell, tabId: 'tab-1' })) }
   const openWindow = vi.fn()
   const reopen = vi.fn(() => 'opened')
-  const copyText = vi.fn()
-  const domain = historyDomain(history as unknown as HistoryService, { windows: windows as never, commands: { openWindow, reopen } as never, closedTabs: { list: () => closed } as never, copyText })
-  return { call: (command) => domain.handle(command, CALLER), tabs, openWindow, reopen, copyText, windows }
+  const copyAddress = vi.fn()
+  const domain = historyDomain(history as unknown as HistoryService, { windows: windows as never, commands: { openWindow, reopen } as never, closedTabs: { list: () => closed } as never, copyAddress })
+  return { call: (command) => domain.handle(command, CALLER), tabs, openWindow, reopen, copyAddress, windows }
 }
 
 describe('the History page acting on a row by id', () => {
@@ -83,12 +83,12 @@ describe('the History page acting on a row by id', () => {
   })
 
   it('copies the address of a page, read from the history and never from the request', () => {
-    const { call, copyText } = setup()
+    const { call, copyAddress } = setup()
     call({ type: 'copy', id: 2, url: 'https://evil.example/' })
-    expect(copyText).toHaveBeenCalledExactlyOnceWith('https://b.example/')
+    expect(copyAddress).toHaveBeenCalledExactlyOnceWith('https://b.example/')
     expect(call({ type: 'copy', id: 'x' })).toBeUndefined()
     call({ type: 'copy', id: 99 })
-    expect(copyText).toHaveBeenCalledTimes(1)
+    expect(copyAddress).toHaveBeenCalledTimes(1)
   })
 })
 
