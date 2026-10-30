@@ -22,6 +22,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **`tunnel-everywhere-leaves-a-site-set-to-off-direct`**: a site turned off under a tunnelled browser stays that way for the site, and shows in Settings, only once "Always use for this site" is on; the row alone sends the tab. Apps need no change. Recheck: nothing.
 - **`browser-wide-tunnel-sets-the-whole-browser`**: the first panel of a website is named "This tab", not "This site". Apps need no change. Recheck: nothing.
 - **`tab-tunnel-button-opens-before-the-first-page-commits`**: the button on a tab opened onto a website that has not answered opens the tab's list, naming the website, with or without a choice on the tab. Apps need no change. Recheck: nothing.
+- **`tunnel-menu-sets-the-proxy`**: changing the proxy's address now also asks when only tabs go through it, and the popup's first panel says its normal case in one line. Apps need no change. Recheck: nothing.
 
 ### Added
 

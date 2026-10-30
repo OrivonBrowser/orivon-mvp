@@ -529,7 +529,7 @@ describe('createSiteInfoController -- the tunnel of a website or an installed ap
 
   it('offers both tunnels for an ordinary website, with nothing chosen and what the popover needs to ask first', async () => {
     const info = await controllerWith(routesFor({ notices: { nym: 'nym', socks5: 'socks5' } })).siteInfoFor(SITE)
-    expect(info.tunnel).toEqual({ via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'nym', socks5: 'socks5' }, swarm: false, unreadable: false, defaultKind: 'socks5', proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } })
+    expect(info.tunnel).toEqual({ via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'nym', socks5: 'socks5' }, swarm: false, unreadable: false, defaultKind: 'socks5', proxy: { address: '', users: { sites: 0, apps: 0, tabs: 0, everything: false } } })
   })
 
   it('says which tunnel the site goes through, whether that is its own choice or the default, and names the direct profile when giving the tunnel up would move it there', async () => {
@@ -668,7 +668,7 @@ describe('createSiteInfoController -- the proxy set from the menu', () => {
     const entries = [['https://a.example', 'socks5'], ['https://b.example', 'socks5'], ['https://c.example', 'nym'], ['https://d.example', 'off'], ['https://e.example', 'socks5']] as const
     const trust: SiteTrustSources = { ...NO_TRUST, isOriginServedFromCacheSync: (origin) => origin === 'https://e.example' }
     const info = await controller(routes({ entries }), setup(), null, trust).siteInfoFor(SITE)
-    expect(info.tunnel?.proxy).toEqual({ address: '127.0.0.1:9050', users: { sites: 2, apps: 1, everything: false } })
+    expect(info.tunnel?.proxy).toEqual({ address: '127.0.0.1:9050', users: { sites: 2, apps: 1, tabs: 0, everything: false } })
   })
 
   it('counts the whole browser as using the proxy when it is on the proxy', async () => {

@@ -92,7 +92,7 @@ it('[app:tunnelled-website-sends-nothing-direct] a .eth name with the tunnel on 
 
   const before = await openPopover()
   const lines = await before.locator('.tunnel-section .route-line').allTextContents()
-  expect(lines.filter((line) => !line.startsWith('Address: ')), 'it says nothing is left outside before the switch, only what a row of the tab does').toEqual(['Pick a tunnel and every site you open in this tab goes through it, until the tab is closed.'])
+  expect(lines.filter((line) => !line.startsWith('Address: ')), 'it says nothing is left outside before the switch, only what a row of the tab does').toEqual(['Pick a tunnel for the sites you open in this tab, until it closes.'])
   await before.click('#tunnel-switch-socks5')
   await before.waitForSelector('.tunnel-notice')
   await before.click('#tunnel-notice-confirm')

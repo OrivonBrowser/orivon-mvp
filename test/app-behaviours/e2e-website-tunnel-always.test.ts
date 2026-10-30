@@ -177,7 +177,7 @@ it('[app:website-tunnel-always-opens-on-for-a-site-with-an-entry] a website that
   expect(await list.locator('#tunnel-tab-first').getAttribute('aria-selected'), 'the list opens on the tab\'s panel').toBe('true')
   expect(await list.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('true')
   expect(await alwaysIsOn(list)).toBe(true)
-  expect(await list.locator('#tunnel-always-line').textContent()).toBe('Saved for this site, in this tab and every other.')
+  expect(await list.locator('#tunnel-always-line').textContent()).toBe('Saved for this site, in every tab.')
   await closeTunnelList(app, chrome)
 }, 3 * QA_TEST_TIMEOUT_MS)
 

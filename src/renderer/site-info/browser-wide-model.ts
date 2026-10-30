@@ -56,8 +56,7 @@ function nodesFor (browser: BrowserTunnel, held: boolean): NodesModel {
  */
 export function browserListModel (info: SiteInfo, view: TunnelView): TunnelListModel {
   const browser = info.browserTunnel
-  const hint = { text: '' }
-  if (browser === undefined) return { rows: [], notes: [], empty: null, hint, always: null, nodes: null, prompt: null }
+  if (browser === undefined) return { rows: [], notes: [], empty: null, always: null, nodes: null, prompt: null }
   const held = info.tunnelHeld !== undefined
   const fixed = held || browser.unreadable
   const rows = tunnelRows({ via: browser.via, blocked: browser.blocked, proxy: browser.proxy, held, fixed, inUse: inUseLine(browser.route, browser.nym, 'browser') }, view)
@@ -66,5 +65,5 @@ export function browserListModel (info: SiteInfo, view: TunnelView): TunnelListM
     ...(browser.unreadable ? [{ text: UNREADABLE_HINT, down: true }] : [])
   ]
   const asking = view.pending !== undefined && view.pending !== null
-  return { rows, notes, empty: null, hint, always: null, nodes: nodesFor(browser, held), prompt: asking ? promptFor(browser) : null }
+  return { rows, notes, empty: null, always: null, nodes: nodesFor(browser, held), prompt: asking ? promptFor(browser) : null }
 }

@@ -91,8 +91,8 @@ export interface SiteTunnel {
   readonly profile?: SiteTunnelProfile
   /** The tunnel everything without a choice of its own goes through. */
   readonly defaultKind: SiteTunnelKind
-  /** The person's own proxy: the address saved ('' when none), and what goes through it now, so a change of address can say who it moves. */
-  readonly proxy: { readonly address: string, readonly users: { readonly sites: number, readonly apps: number, readonly everything: boolean } }
+  /** The person's own proxy: the address saved ('' when none), and what goes through it now (`tabs`: the tabs whose choice is the proxy, a tab with no website yet included), so a change of address can say who it moves. */
+  readonly proxy: { readonly address: string, readonly users: { readonly sites: number, readonly apps: number, readonly tabs: number, readonly everything: boolean } }
   /** For a tab: the choice it carries; absent for a tab with none, whose websites follow their own entries. */
   readonly tabChoice?: TabTunnelChoice
   /** For a tab showing a website: the "Always use for this site" switch. `on` while the website has an entry of its own, `available` while it is on or the tab has a choice to save. `entry` is the tunnel the website's own entry sends it through (null: none), which the tab's choice can override. */

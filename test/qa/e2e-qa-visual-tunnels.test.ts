@@ -26,6 +26,14 @@ async function state (check: Check, app: ElectronApplication, name: string, spec
   checkState(check, await captureState(app, name, spec))
 }
 
+/** What the popup's page holds against the room it was given: it scrolls when the content is taller than the cap. */
+async function roomOf (list: Page): Promise<{ content: number, room: number }> {
+  return await list.evaluate(() => {
+    const page = document.querySelector('.page') as HTMLElement
+    return { content: page.scrollHeight, room: page.clientHeight }
+  })
+}
+
 /** The website's address under the heading of the list, in window coordinates: its port changes on every run, so a baseline skips it. */
 async function claimRect (app: ElectronApplication, list: Page): Promise<Rect> {
   const box = await list.locator('.site-claim').boundingBox() as Rect
@@ -84,16 +92,21 @@ for (const scheme of SCHEMES) {
         expect(await popupSized(app, '/site-info/')).toBe(true)
         check('the list is the tab\'s, names the website, and "Always use for this site" is off', await list.locator('#tunnel-tab-first').textContent() === 'This tab' && (await list.locator('.site-claim').textContent())?.includes('site.qa.test') === true && await list.locator('#tunnel-switch-always').getAttribute('aria-checked') === 'false')
         const claim = await claimRect(app, list)
+        // The proxy row has its address field open (no address is saved), the tallest ordinary state of this panel.
+        const off = await roomOf(list)
+        check('the first panel with the proxy\'s address field open fits the popup, with no scrollbar', off.content <= off.room, JSON.stringify(off))
         await state(check, app, `tunnel-list-website-always-off-${scheme}`, {
-          expected: 'The popup under the tunnel button on a website, headed "Tunnels" with the website\'s address under the heading, a two-part control "This tab" (selected) and "Browser-wide", two tunnels "Nym" and "Your proxy" with switches that are off, a row "Always use for this site" with a switch that is off and the line "Keeps this choice after the tab closes.", and a sentence saying that the sites opened in this tab go direct. Nothing is cut off and the popup sits inside the window.',
+          expected: 'The popup under the tunnel button on a website, headed "Tunnels" with the website\'s address under the heading, a two-part control "This tab" (selected) and "Browser-wide", two tunnels "Nym" and "Your proxy" with switches that are off, a row "Always use for this site" with a switch that is off and the line "Keeps this choice after the tab closes.", and one sentence under it: "Sites in this tab go direct. A site saved to a tunnel keeps it.". There is no scrollbar. Nothing is cut off and the popup sits inside the window.',
           action: 'Sent a new tab direct under a tunnelled browser, opened a website in it and pressed the tunnel button.',
           ignore: [FIXTURE_ADDRESS, claim]
         })
         await list.click('#tunnel-switch-always')
         await list.waitForSelector('#tunnel-switch-always[aria-checked="true"]')
         expect(await popupSized(app, '/site-info/')).toBe(true)
+        const on = await roomOf(list)
+        check('the same panel with "Always use for this site" on and its line fits the popup, with no scrollbar', on.content <= on.room, JSON.stringify(on))
         await state(check, app, `tunnel-list-website-always-on-${scheme}`, {
-          expected: 'The same popup with the "Always use for this site" switch on and the line "Saved for this site, in this tab and every other."; everything else as before, the two tunnels still off.',
+          expected: 'The same popup with the "Always use for this site" switch on and the line "Saved for this site, in every tab."; everything else as before, the two tunnels still off, and still one sentence under it and no scrollbar.',
           action: 'Pressed "Always use for this site".',
           ignore: [FIXTURE_ADDRESS, claim]
         })

@@ -6,7 +6,7 @@ import { HELD_LINE, NYM_OFF_LINE, PROXY_UNSET_LINE } from '../site-info/tunnels-
 // The Browser-wide panel of the tunnels popup as data: which panel opens, what the two tabs are called, the rows of the whole
 // browser's tunnel, the switch for the nodes and what the prompt lists.
 
-const PROXY = { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } }
+const PROXY = { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, tabs: 0, everything: false } }
 const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: PROXY }
 const browser: BrowserTunnel = { via: null, defaultKind: 'nym', nodes: false, blocked: {}, proxy: PROXY, unreadable: false, tabs: [] }
 const base: SiteInfo = {
@@ -125,13 +125,19 @@ describe('the rows of the whole browser\'s tunnel', () => {
   })
 
   it('open the proxy\'s address and ask before a change that sites and apps feel, from the browser\'s facts', () => {
-    const users = { sites: 2, apps: 1, everything: false }
+    const users = { sites: 2, apps: 1, tabs: 0, everything: false }
     const model = browserListModel(withBrowser({ proxy: { address: '127.0.0.1:9050', users } }), { pending: undefined, editor: { text: '127.0.0.1:9150', error: null, confirm: true } })
     expect(row(model, 'socks5')?.address?.confirm).toContain('2 sites and 1 app')
   })
 
   it('end in the one link to Tunnels settings, with no hint of its own', () => {
-    expect(browserListModel(info(), noView).hint).toEqual({ text: '' })
+    expect(browserListModel(info(), noView)).not.toHaveProperty('hint')
+  })
+
+  it('ask before a change that only tabs feel, from the browser\'s facts', () => {
+    const users = { sites: 0, apps: 0, tabs: 2, everything: false }
+    const model = browserListModel(withBrowser({ proxy: { address: '127.0.0.1:9050', users } }), { pending: undefined, editor: { text: '127.0.0.1:9150', error: null, confirm: true } })
+    expect(row(model, 'socks5')?.address?.confirm).toContain('2 tabs go through your proxy')
   })
 })
 

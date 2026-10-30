@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { browserTunnel, NO_BROWSER } from '../site-info-browser.js'
 import type { BrowserTunnelFacts } from '../site-info-browser.js'
 
-const PROXY = { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } }
+const PROXY = { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, tabs: 0, everything: false } }
 const facts = (over: Partial<BrowserTunnelFacts> = {}): BrowserTunnelFacts => ({ everywhere: false, defaultKind: 'nym', nodes: false, unreadable: false, blocked: {}, proxy: PROXY, tabs: [], ...over })
 
 describe('the tunnel of the whole browser, as the Browser-wide panel shows it', () => {

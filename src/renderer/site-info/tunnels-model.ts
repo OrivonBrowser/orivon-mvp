@@ -108,8 +108,6 @@ export interface TunnelListModel {
   readonly notes: readonly TunnelLine[]
   /** Said instead of rows when the page has no tunnel choice of its own. */
   readonly empty: string | null
-  /** The line under the list, before the link to Settings: what the browser's tunnel does for what has no choice here. */
-  readonly hint: { readonly text: string }
   /** The "Always" switch, on the first panel of a tab showing a website only. */
   readonly always: AlwaysModel | null
   /** The nodes switch, on the Browser-wide panel only. */
@@ -126,10 +124,6 @@ export const HELD_LINE = 'This private window always goes through Nym, so this c
 export const NO_SWITCH_NOTE = 'A page from this computer is never sent through a tunnel.'
 export const APP_UPDATES_NOTE = 'Its updates are not checked while it goes through a tunnel.'
 
-export function everywhereHint (defaultKind: TunnelKindId): string {
-  return `Every site and app that has no choice here goes through ${kindOf(defaultKind).who}. Change this under Browser-wide.`
-}
-
 export function openedLine (via: TunnelKindId): string {
   return `This page goes through ${kindOf(via).who} because the app that opened it does.`
 }
@@ -141,15 +135,12 @@ function kindOf (id: TunnelKindId): TunnelKind {
 export const ADDRESS_PROBLEM = 'Enter an address as host:port, like 127.0.0.1:9050'
 export const ADDRESS_NOT_SAVED = 'The address could not be saved.'
 
-/** The sentence asked before the address of the proxy is changed while sites or apps go through it. Empty when nobody does. */
+/** The sentence asked before the address of the proxy is changed while tabs, sites or apps go through it. Empty when nobody does. */
 export function addressChangeWords (users: SiteTunnel['proxy']['users']): string {
-  const parts = [
-    ...(users.everything ? ['Everything you browse'] : []),
-    ...(users.sites > 0 ? [`${String(users.sites)} ${users.sites === 1 ? 'site' : 'sites'}`] : []),
-    ...(users.apps > 0 ? [`${String(users.apps)} ${users.apps === 1 ? 'app' : 'apps'}`] : [])
-  ]
+  const count = (n: number, noun: string): string[] => n > 0 ? [`${String(n)} ${n === 1 ? noun : `${noun}s`}`] : []
+  const parts = [...(users.everything ? ['Everything you browse'] : []), ...count(users.tabs, 'tab'), ...count(users.sites, 'site'), ...count(users.apps, 'app')]
   if (parts.length === 0) return ''
-  const plural = parts.length > 1 || users.sites + users.apps > 1 || users.everything
+  const plural = parts.length > 1 || users.tabs + users.sites + users.apps > 1 || users.everything
   const who = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts.at(-1) ?? ''}` : parts[0] ?? ''
   return `${who} ${plural ? 'go' : 'goes'} through your proxy now. ${plural ? 'They' : 'It'} will use the new address, and what ${plural ? 'they have' : 'it has'} open is closed.`
 }
@@ -221,19 +212,15 @@ export function tunnelRows (facts: RowFacts, view: TunnelView): readonly TunnelR
 
 /** The first panel: the tunnel of this website, installed app or tab. */
 export function tunnelListModel (info: SiteInfo, view: TunnelView): TunnelListModel {
-  const everywhere = info.everywhere === true
-  const defaultKind = info.tunnel?.defaultKind ?? info.tunnelKind ?? 'nym'
-  // A window held to a tunnel says so on the row; what the browser's tunnel does for the rest is said under the list.
-  const hint = { text: info.tunnelHeld === undefined && everywhere ? everywhereHint(defaultKind) : '' }
   const tunnel = info.tunnel
-  if (tunnel === undefined) return { rows: [], notes: [], empty: NO_SWITCH_NOTE, hint, always: null, nodes: null, prompt: null }
+  if (tunnel === undefined) return { rows: [], notes: [], empty: NO_SWITCH_NOTE, always: null, nodes: null, prompt: null }
 
   const held = info.tunnelHeld !== undefined
   const shown = view.pending === undefined ? tunnel.via : view.pending
   const fixed = held || tunnel.unreadable || tunnel.fixed !== undefined
   const rows = tunnelRows({ via: tunnel.via, blocked: tunnel.blocked, proxy: tunnel.proxy, held, fixed, inUse: inUseLine(info.route, info.nym, lineSubject(tunnel)) }, view)
   const hintText = tunnelHint(tunnel)
-  const forTab = tunnel.subject === 'tab' ? tabNotes(tunnel, everywhere, fixed) : []
+  const forTab = tunnel.subject === 'tab' ? tabNotes(tunnel, fixed) : []
   const reach = tunnel.subject === 'site' || tunnel.always !== undefined ? extensionsHint(info.extensionsOnSite, tunnel.profile) : undefined
   const notes: TunnelLine[] = [
     ...(held ? [{ text: HELD_LINE, down: false }] : []),
@@ -243,7 +230,7 @@ export function tunnelListModel (info: SiteInfo, view: TunnelView): TunnelListMo
     ...(reach === undefined ? [] : [{ text: reach, down: false }]),
     ...(tunnel.subject === 'app' && shown !== null && !held ? [{ text: APP_UPDATES_NOTE, down: false }] : [])
   ]
-  return { rows, notes, empty: null, hint, always: alwaysModel(tunnel, fixed, view.pending !== undefined), nodes: null, prompt: null }
+  return { rows, notes, empty: null, always: alwaysModel(tunnel, fixed, view.pending !== undefined), nodes: null, prompt: null }
 }
 
 /** A tab with no choice that shows a website with an entry of its own goes where the website was sent: the line is about the website, not the tab. */

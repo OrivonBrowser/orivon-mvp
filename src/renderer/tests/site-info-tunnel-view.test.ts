@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SiteTunnel } from '../../main/permissions/site-info.js'
 import { extensionsHint, storageNotice, SWARM_HINT, tunnelHint } from '../site-info/tunnel-view.js'
 
-const base: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'nym' }, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '', users: { sites: 0, apps: 0, everything: false } } }
+const base: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: { nym: 'nym' }, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '', users: { sites: 0, apps: 0, tabs: 0, everything: false } } }
 
 // The DOM is covered by the end-to-end spec that switches a website on; these are the words.
 
