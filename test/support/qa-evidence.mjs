@@ -237,7 +237,14 @@ function compose (geometry, snaps) {
       try {
         const src = decoded(entry)
         const before = entry.snap.cornerRadius > 0 ? Buffer.from(canvas.data) : undefined
-        PNG.bitblt(src, canvas, 0, 0, Math.min(src.width, view.bounds.width), Math.min(src.height, view.bounds.height), Math.max(0, view.bounds.x), Math.max(0, view.bounds.y))
+        // A view may reach past the window (the link bubble's hidden corners): only what lies inside it is drawn.
+        const left = Math.max(0, view.bounds.x)
+        const top = Math.max(0, view.bounds.y)
+        const fromX = left - view.bounds.x
+        const fromY = top - view.bounds.y
+        const wide = Math.min(Math.min(src.width, view.bounds.width) - fromX, canvas.width - left)
+        const high = Math.min(Math.min(src.height, view.bounds.height) - fromY, canvas.height - top)
+        if (wide > 0 && high > 0) PNG.bitblt(src, canvas, fromX, fromY, wide, high, left, top)
         if (before !== undefined) restoreCorners(canvas, before, view.bounds.x, view.bounds.y, Math.min(src.width, view.bounds.width), Math.min(src.height, view.bounds.height), entry.snap.cornerRadius)
       } catch { /* undecodable view: leave the gap visible */ }
     }

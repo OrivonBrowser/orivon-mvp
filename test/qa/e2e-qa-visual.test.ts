@@ -71,7 +71,11 @@ type Shell = { orivonShell: { openInternal: (page: string, path?: string) => voi
 
 let server: FixtureServer
 beforeAll(async () => {
-  server = await startServer((_req, res) => {
+  server = await startServer((req, res) => {
+    if (req.url === '/links') {
+      html(res, '<!doctype html><meta charset="utf-8"><title>Links page</title><body style="font:16px sans-serif;margin:32px"><h1>Links page</h1><p><a id="next" href="/next-page">A link to the next page</a></p>')
+      return
+    }
     html(res, '<!doctype html><meta charset="utf-8"><title>Fixture page</title><body style="font:16px sans-serif;margin:32px"><h1>Fixture page</h1><p>Plain content served from 127.0.0.1.</p>')
   })
 })
@@ -724,6 +728,18 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
         await state(check, app, `profiles-page-${scheme}`, {
           expected: 'orivon://profiles is open: one profile card marked "This window", and a create row with a text field, colour swatches and a "Create profile" button whose label is on a single line, the button as tall as the field next to it.',
           action: 'Opened orivon://profiles on a fresh profile.'
+        })
+
+        const links = await visit(app, chrome, `${server.origin}/links`)
+        await prepareWindow(app)
+        await links.hover('#next')
+        expect(await waitFor(async () => await app.evaluate(({ BaseWindow }) => (BaseWindow.getAllWindows()[0]?.contentView.children ?? []).some((child) => (child as unknown as { webContents?: { getURL: () => string } }).webContents?.getURL().includes('overlay=link-status') === true && child.getVisible() && child.getBounds().width > 0)))).toBe(true)
+        expect(await popupSized(app, 'overlay=link-status')).toBe(true)
+        await state(check, app, `link-bubble-${scheme}`, {
+          expected: 'A page headed "Links page" with one link under it fills the page area. In its bottom-left corner, flush against the window\'s left and bottom edges, is a one-line bubble in the panel colour with a thin border along its top and right edges, a rounded top-right corner and square other corners, which reads the link\'s address (http://127.0.0.1:<port>/next-page) in secondary-colour text, whole and unclipped. The bubble is no wider than its text and covers no control.',
+          action: 'Opened the links page in the front tab and pointed at its link.',
+          pointer: 'keep',
+          ignore: [FIXTURE_ADDRESS, { x: 0, y: 776, width: 420, height: 24 }]
         })
 
         await prepareWindow(app, { width: 700, height: 600 })
