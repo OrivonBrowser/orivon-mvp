@@ -10,6 +10,7 @@ export interface UpdateCardCallbacks {
 }
 
 export function updateHeading (update: SiteUpdate): string {
+  if (update.fromVersion === update.toVersion) return `A new build of version ${update.toVersion} is available`
   return update.fromVersion === undefined ? `Version ${update.toVersion} is available` : `Version ${update.toVersion} is available (you have ${update.fromVersion})`
 }
 

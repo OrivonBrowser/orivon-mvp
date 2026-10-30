@@ -16,7 +16,7 @@ presses records the file (`../local-files/`) and grants all it declares (`ADR-00
 applies the offered root on Yes or a confirmed Trust & Force, and reloads every tab on the origin. From the yes, every open tab of the origin is covered at once
 (`update-cover.ts`, over `../app-setup/tab-screens.ts`) with "Updating <app>" and both versions; an install reloads each tab from the network and takes the
 cover away when the new page is ready, and anything else takes it away at once, with the old version untouched.
-`update-watch.ts` looks again, every 30 minutes, at each origin with an open app tab, and
+`update-watch.ts` looks again, every 5 minutes, at each origin with an open app tab, and
 `dialog-caller.ts` is how a question finds the tab that raised it.
 
 **Tied to Electron.** `app-install-subsystem.ts` and `manifest-hint.ts` import `electron`; the

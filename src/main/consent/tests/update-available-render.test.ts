@@ -18,6 +18,14 @@ describe('describeVerifiedUpdate', () => {
     expect(content.warning).toBe(false)
   })
 
+  it('calls the same version number a new build', () => {
+    expect(describeVerifiedUpdate(offer({ fromVersion: '1.0.0', toVersion: '1.0.0' })).detail).toContain('A new build of version 1.0.0.')
+    const notice = describeUnverifiedUpdate(offer({ fromVersion: '1.0.0', toVersion: '1.0.0', verified: false, reasons: ['not-newer'] }))
+    expect(notice.message).toContain('now points at another build of this version of the app')
+    expect(notice.detail).toContain('A new build of version 1.0.0.')
+    expect(notice.detail).toContain('Its version number is not higher than the newest one you have installed.')
+  })
+
   it('names no version it does not know', () => {
     expect(describeVerifiedUpdate(offer({ fromVersion: undefined })).detail).toContain('Version 0.25.3.1.')
   })

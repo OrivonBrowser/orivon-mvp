@@ -150,8 +150,8 @@ export interface SiteProvenance {
 export type HostRequest =
   /** What is mounted for a host in a partition now, or null; never resolves anything. */
   | { readonly kind: 'provenance', readonly host: string, readonly partition: string, readonly route?: TunnelRoute }
-  /** Resolves and mounts the host in the partition if it is not mounted there, then answers as `provenance` does. */
-  | { readonly kind: 'mount', readonly host: string, readonly partition: string, readonly route?: TunnelRoute }
+  /** Resolves and mounts the host in the partition if it is not mounted there, then answers as `provenance` does. `latest` proves the name now even when it is mounted. */
+  | { readonly kind: 'mount', readonly host: string, readonly partition: string, readonly route?: TunnelRoute, readonly latest?: true }
   | { readonly kind: 'status' }
 
 export interface HostReplies {
