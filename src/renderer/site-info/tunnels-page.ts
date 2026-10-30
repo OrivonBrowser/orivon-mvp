@@ -53,6 +53,8 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
   function answered (result: TunnelResult | null): void {
     failed = result === null || !result.ok
     if (result !== null) deps.setInfo(result.info)
+    // No tab keeps a tunnel of its own any more: there is nothing left to ask, and the move the question was about is not made.
+    if (result?.info.browserTunnel?.tabs.length === 0) asking = null
     deps.redraw()
   }
 
@@ -162,6 +164,9 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
       const names = info.browserTunnel === undefined ? null : { first: firstPanelLabel(info), browser: BROWSER_LABEL }
       const shown: Panel = names === null ? 'first' : panel
       const browser = shown === 'browser'
+      // What the buttons of this drawing answer: a press that comes after the answer has taken the question away asks the same again.
+      const askedWhenDrawn = asking
+      const noticeWhenDrawn = notice
       const pending = browser ? asking ?? undefined : notice === null ? undefined : notice.choice
       const model = (browser ? browserListModel : tunnelListModel)(info, { pending, editor, test })
       const view = { notice: browser ? null : notice?.profile ?? null, pending, failed, panel: shown, panels: names }
@@ -186,11 +191,11 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
         onConfirmAddress: () => { void saveAddress(editor?.text ?? '') },
         onCancelAddress: () => { editor = null; deps.redraw() },
         onTest: (kind) => { void runTest(kind) },
-        onConfirm: () => { if (asking !== null) void setBrowser(asking); else void setTunnel(notice === null ? null : notice.choice) },
+        onConfirm: () => { if (browser) { if (askedWhenDrawn !== null) void setBrowser(askedWhenDrawn) } else void setTunnel(noticeWhenDrawn === null ? null : noticeWhenDrawn.choice) },
         onCancel: () => { notice = null; asking = null; deps.redraw() },
         onOpenSettings: (everywhere) => { void deps.bridge.openTunnelSettings(everywhere) },
         onPanel: showPanel,
-        onNodes: (next) => { failed = false; void deps.bridge.setNodesTunnel(next).then(answered) }
+        onNodes: (next) => { failed = false; focus = '#tunnel-switch-nodes'; void deps.bridge.setNodesTunnel(next).then(answered) }
       })
       // The page was drawn again: the keyboard goes where the last step left it, to Cancel while a question asks, else to the lit switch.
       const lit = browser ? info.browserTunnel?.via : info.tunnel?.via

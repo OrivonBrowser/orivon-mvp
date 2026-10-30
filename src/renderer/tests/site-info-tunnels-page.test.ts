@@ -268,6 +268,31 @@ describe('the switches of Browser-wide', () => {
     expect(shown.prompt).toBeNull()
   })
 
+  it('ask the same question again, never one for the first panel, when Proceed on the drawn prompt is pressed twice', async () => {
+    const { bridge, flush } = setup(browserInfo({ via: null, tabs: [{ title: 'News', choice: 'nym' }] }))
+    callbacks.onPanel('browser')
+    callbacks.onToggle('socks5', true)
+    await flush()
+    const proceed = callbacks.onConfirm
+    proceed()
+    proceed()
+    await flush()
+    expect(bridge.setBrowserTunnel.mock.calls).toEqual([['socks5'], ['socks5']])
+    expect(bridge.setTunnel).not.toHaveBeenCalled()
+  })
+
+  it('drop the question, and the move it was about, when the last tab that kept its own tunnel is gone by the next drawing', async () => {
+    const { flush } = setup(browserInfo({ via: 'nym', tabs: [{ title: 'News', choice: 'direct' }] }))
+    callbacks.onPanel('browser')
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(shown.prompt).not.toBeNull()
+    callbacks.onNodes(true)
+    await flush()
+    expect(shown.prompt).toBeNull()
+    expect(rows.map((row) => [row.kind.id, row.on])).toEqual([['nym', true], ['socks5', false]])
+  })
+
   it('ask again when the tunnel that is on browser-wide is changed to the other, and not when it is turned off', async () => {
     const tabs: BrowserTunnel['tabs'] = [{ title: 'Bank', choice: 'direct' }]
     const { bridge, flush } = setup(browserInfo({ via: 'nym', tabs }))

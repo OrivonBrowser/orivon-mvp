@@ -142,9 +142,9 @@ describe('the switch for the nodes', () => {
     expect(browserListModel(info(), noView).nodes).toMatchObject({ label: NODES_LABEL, line: NODES_LINE })
   })
 
-  it('is off and cannot be moved while no tunnel is on browser-wide, because it does nothing then', () => {
-    expect(browserListModel(withBrowser({ via: null, nodes: true }), noView).nodes).toMatchObject({ on: true, disabled: true })
+  it('cannot be turned on while no tunnel is on browser-wide, and can still be turned off when it is saved on, because the nodes keep their rule about tunnelled sites then', () => {
     expect(browserListModel(withBrowser({ via: null, nodes: false }), noView).nodes).toMatchObject({ on: false, disabled: true })
+    expect(browserListModel(withBrowser({ via: null, nodes: true }), noView).nodes).toMatchObject({ on: true, disabled: false })
   })
 
   it('moves while a tunnel is on browser-wide, and shows what is saved', () => {

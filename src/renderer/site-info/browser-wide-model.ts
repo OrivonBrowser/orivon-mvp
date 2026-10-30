@@ -48,8 +48,10 @@ function promptFor (browser: BrowserTunnel): PromptModel | null {
 }
 
 function nodesFor (browser: BrowserTunnel, held: boolean): NodesModel {
-  // Without a tunnel on browser-wide the nodes connect directly whatever this says, so it is not offered then.
-  return { label: NODES_LABEL, line: NODES_LINE, on: browser.nodes, disabled: held || browser.unreadable || browser.via === null }
+  // With no tunnel on browser-wide this cannot be turned on, as the nodes connect directly then; once saved on it can still be turned off,
+  // because the nodes then refuse the websites that have a tunnel of their own.
+  const idle = browser.via === null && !browser.nodes
+  return { label: NODES_LABEL, line: NODES_LINE, on: browser.nodes, disabled: held || browser.unreadable || idle }
 }
 
 /**
