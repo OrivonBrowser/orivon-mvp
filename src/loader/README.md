@@ -59,7 +59,9 @@ root) and returns `update-available`; the pin does not move. The bundle is fetch
 manifest is byte-identical to the pinned one (the same files republished, which moves the pin silently when
 the bundle hash is equal and is an offer otherwise), and `applyUpdate`, which fetches the offered root, is
 refused when the name has moved again, and asserts the content it got is that root. A check is repeated at
-most every 5 minutes per origin on a visit, whatever the hourly record says.
+most every 30 seconds per origin on a visit, whatever the hourly record says, and one that could not read the
+new manifest does not count. It asks the name itself: the record the verifier keeps for a page's requests
+(`SITE_TTL_MS`) cannot say whether the name moved, and a stale answer would read as "nothing changed".
 
 **A staged file is hashed by reading it back, not as its bytes arrive**, because the leaf
 preimage puts the content's length before the content, and a declared `Content-Length` is

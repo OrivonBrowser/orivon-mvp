@@ -296,14 +296,15 @@ export async function verifierNameEvidence (origin: string, pin: PinRecord | nul
  *
  * Mounted in `partition` when given, the origin's own otherwise (the one a tab
  * opening it uses). A caller that is not that origin passes a partition of its
- * own, so what it asks never warms a name for anyone else (A256).
+ * own, so what it asks never warms a name for anyone else (A256). `latest` asks
+ * the name itself, where a mounted site otherwise answers with what it holds.
  */
-export async function verifierContentAddress (origin: string, partition?: string): Promise<ContentAddress | undefined> {
+export async function verifierContentAddress (origin: string, partition?: string, latest = false): Promise<ContentAddress | undefined> {
   if (!servedByVerifier(origin)) return undefined
   startHost()
   await listeningGate.whenSettled()
   if (supervisor === undefined) throw new Error('the verifier has not started')
-  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin, ...routeOf(origin) }, mountCeilingMs(hostThroughTunnel || routeOf(origin).route !== undefined) + MOUNT_GRACE_MS))
+  return contentAddressOf(await supervisor.request({ kind: 'mount', host: new URL(origin).hostname, partition: partition ?? new URL(origin).origin, ...routeOf(origin), ...(latest ? { latest } : {}) }, mountCeilingMs(hostThroughTunnel || routeOf(origin).route !== undefined) + MOUNT_GRACE_MS))
 }
 
 /** The content CID a `.eth` host names, proven now in `partition`; undefined when it does not resolve. Never throws. */

@@ -104,9 +104,11 @@ export interface CreateLoaderOptions {
    * The content address an origin's bundle is served from, for an origin
    * fetched from IPFS (a `.eth` name), and undefined for every other. Looked
    * up once per load: every request of that load is then pinned to its
-   * root, and the pin records it. Throws when it cannot be verified.
+   * root, and the pin records it. Throws when it cannot be verified. `latest`
+   * is a check of whether the name moved: the answer is the name's own, never
+   * one kept for the page loads around it.
    */
-  readonly contentAddress?: (origin: string) => Promise<ContentAddress | undefined>
+  readonly contentAddress?: (origin: string, latest?: boolean) => Promise<ContentAddress | undefined>
   /** Whether `origin`'s update checks are paused (an installed app whose traffic is routed): `load()` then answers `'up-to-date'` without asking anyone. A first visit is unaffected. */
   readonly updatesPaused?: (origin: string) => boolean
 }
@@ -385,10 +387,10 @@ async function decideAndRoute (
 
 export function createLoader (options: CreateLoaderOptions): Loader {
   /** An origin's content address, or `undefined` for one not served from IPFS; a rejection when it cannot be verified. */
-  async function contentOf (origin: string | null): Promise<ContentAddress | undefined | LoadRejected> {
+  async function contentOf (origin: string | null, latest = false): Promise<ContentAddress | undefined | LoadRejected> {
     if (origin === null || options.contentAddress === undefined) return undefined
     try {
-      return await options.contentAddress(origin)
+      return await options.contentAddress(origin, latest)
     } catch (error) {
       return { outcome: 'rejected', reason: `${origin}'s content could not be verified: ${error instanceof Error ? error.message : String(error)}` }
     }
@@ -396,7 +398,7 @@ export function createLoader (options: CreateLoaderOptions): Loader {
 
   const names = createNameUpdates(
     options,
-    contentOf,
+    async (origin) => await contentOf(origin, true),
     async (canonicalOrigin, manifest, tree, entries, declaration, content, context) => await decideAndRoute(options, canonicalOrigin, manifest, tree, entries, declaration, content, context)
   )
 

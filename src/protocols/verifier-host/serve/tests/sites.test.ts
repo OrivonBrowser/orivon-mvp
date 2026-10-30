@@ -224,6 +224,72 @@ function switchableRegistry (): { registry: ProtocolRegistry, resolve: { current
   return { registry: new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })]), resolve, calls }
 }
 
+describe('Sites.latest: whether a name moved', () => {
+  it('asks the name although a fresh record is kept, and keeps the answer for the requests that follow', async () => {
+    const clock = { now: 0 }
+    const { registry: r, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+    expect(calls.n).toBe(1)
+
+    clock.now = 1
+    const proven = await sites.latest('a.eth', P)
+    expect(calls.n).toBe(2)
+    expect(proven.mountedAt).toBe(1)
+    expect(await sites.get('a.eth', P)).toBe(proven)
+    expect(calls.n).toBe(2)
+  })
+
+  it('waits for the name past the fresh window, where a page load is served what is kept', async () => {
+    const clock = { now: 0 }
+    const { registry: r, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+
+    clock.now = SITE_TTL_MS + 1
+    expect((await sites.latest('a.eth', P)).mountedAt).toBe(SITE_TTL_MS + 1)
+    expect(calls.n).toBe(2)
+  })
+
+  it('joins a re-prove already running, and starts none of its own', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+
+    clock.now = SITE_TTL_MS + 1
+    let answer!: () => void
+    resolve.current = async () => await new Promise<NameRecord[]>((resolve) => { answer = () => { resolve([record]) } })
+    await sites.get('a.eth', P)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const asked = sites.latest('a.eth', P)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    answer()
+    expect((await asked).mountedAt).toBe(SITE_TTL_MS + 1)
+    expect(calls.n).toBe(2)
+  })
+
+  it('mounts a name nothing holds, and keeps it', async () => {
+    const { registry: r, calls } = switchableRegistry()
+    const sites = new Sites(r)
+    const proven = await sites.latest('a.eth', P)
+    expect(await sites.get('a.eth', P)).toBe(proven)
+    expect(calls.n).toBe(1)
+  })
+
+  it('fails when the name cannot be proven, and leaves what is kept to serve', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    const kept = await sites.get('a.eth', P)
+
+    clock.now = 1
+    resolve.current = async () => { throw new Error('down') }
+    await expect(sites.latest('a.eth', P)).rejects.toThrow('down')
+    expect(await sites.get('a.eth', P)).toBe(kept)
+  })
+})
+
 describe('Sites -- stale-while-revalidate', () => {
   it('serves the last good record past SITE_TTL_MS, without waiting on a re-prove', async () => {
     const clock = { now: 0 }

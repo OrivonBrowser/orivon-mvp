@@ -66,6 +66,6 @@ describe('reasonText', () => {
     expect(reasonText('no-provider', undefined)).toMatch(/No Web3 Score provider is chosen/)
     expect(reasonText('other-home', 'other.eth')).toMatch(/names other\.eth as its home/)
     expect(reasonText('other-home', undefined)).toMatch(/names no home/)
-    expect(reasonText('not-newer', undefined)).toMatch(/not newer/)
+    expect(reasonText('not-newer', undefined)).toMatch(/version number is not higher/)
   })
 })

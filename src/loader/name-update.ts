@@ -19,8 +19,8 @@ import { fetchManifestAtRoot } from './fetch/manifest-at-root.js'
 import { checkRecord, checkedRecently, loadCheckRecord, pinnedManifestLeaf, saveCheckRecord } from './fetch/update-check.js'
 import { leafOf } from './leaf-hash.js'
 
-/** A name is looked up at most this often per origin; in memory, so a restart checks at once. */
-export const NAME_CHECK_INTERVAL_MS = 5 * 60_000
+/** A name is looked up at most this often per origin, so that the tabs of one app opening together make one lookup; in memory, so a restart checks at once. */
+export const NAME_CHECK_INTERVAL_MS = 30_000
 
 /** What the update decision in `./index.ts` is given, so this file never imports it back. */
 export type DecideAndRoute = (
@@ -84,8 +84,14 @@ export function createNameUpdates (
     const content = await contentOf(origin)
     if (content !== undefined && 'outcome' in content) return content
     if (content === undefined) return undefined
-    checkedAt.set(origin, options.now())
+    const found = await comparedToPin(hintedUrl, origin, pin, content, context)
+    // A check that learned nothing does not hold the next one back.
+    if (found.outcome !== 'rejected') checkedAt.set(origin, options.now())
+    return found
+  }
 
+  /** What `content`, the name's content now, means for the pin. */
+  async function comparedToPin (hintedUrl: string, origin: string, pin: PinRecord, content: ContentAddress, context: LoadContext): Promise<LoadResult> {
     const fromCid = pin.content?.cid
     if (content.cid === fromCid) {
       const previous = await loadCheckRecord(options.storage, origin)

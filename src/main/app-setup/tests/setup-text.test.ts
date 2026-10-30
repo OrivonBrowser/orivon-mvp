@@ -26,6 +26,10 @@ describe('coverFor an update', () => {
     expect(coverFor({ kind: 'updating', name: 'Notes', fromVersion: undefined, toVersion: '1.1.0' }).detail).toBe('Version 1.1.0. The app reloads when the new version is ready.')
   })
 
+  it('calls the same version number a new build', () => {
+    expect(coverFor({ kind: 'updating', name: 'Notes', fromVersion: '1.1.0', toVersion: '1.1.0' }).detail).toBe('A new build of version 1.1.0. The app reloads when the new version is ready.')
+  })
+
   it('cuts a name and versions the manifest made too long, and drops control characters', () => {
     const text = coverFor({ kind: 'updating', name: 'N'.repeat(500), fromVersion: '1\u0000.0', toVersion: 'v'.repeat(500) })
     expect(text.title.length).toBeLessThanOrEqual(160)

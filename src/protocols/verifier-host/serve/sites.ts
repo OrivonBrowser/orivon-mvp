@@ -64,7 +64,7 @@ interface Entry {
    * SECOND concurrent stale caller wait on the revalidation the FIRST one
    * only started as a side effect, which is not what either caller asked
    * for. */
-  revalidating: Promise<void> | undefined
+  revalidating: Promise<SiteRecord> | undefined
   /** Paces a FAILED revalidation's retry; checked only once nothing is
    * currently revalidating. */
   retryAt: number | undefined
@@ -117,7 +117,7 @@ export class Sites {
     // never awaited by THIS call.
     if (current?.good !== undefined && now - current.good.mountedAt <= STALE_SERVE_MS) {
       this.use(key, current)
-      this.revalidate(key, current, host, partition)
+      this.revalidate(current, host, partition)
       return current.good
     }
 
@@ -133,26 +133,46 @@ export class Sites {
     return await entry.settled
   }
 
-  /** Starts a background re-prove for `key`, unless one is already running
-   * or a previous failure's retry delay has not yet passed. On success,
-   * `good` and `settled` both move to the fresh record and the TTL resets;
-   * on failure, `good` is untouched and a short retry delay is set so a
-   * burst of stale requests paces to one re-prove, not one each. */
-  private revalidate (key: string, entry: Entry, host: string, partition: string): void {
+  /** Starts a background re-prove, unless one is already running or a
+   * previous failure's retry delay has not yet passed. */
+  private revalidate (entry: Entry, host: string, partition: string): void {
     if (entry.revalidating !== undefined) return
     if (entry.retryAt !== undefined && entry.retryAt > this.now()) return
-    const attempt = this.mount(host, partition)
-    entry.revalidating = attempt.then(
+    // The caller has its answer already; a failure reads as `retryAt`.
+    this.reprove(entry, host, partition).catch(() => {})
+  }
+
+  /** The re-prove running, or a new one. On success, `good` and `settled`
+   * both move to the fresh record and the TTL resets; on failure, `good` is
+   * untouched and a short retry delay is set so a burst of stale requests
+   * paces to one re-prove, not one each. */
+  private async reprove (entry: Entry, host: string, partition: string): Promise<SiteRecord> {
+    entry.revalidating ??= this.mount(host, partition).then(
       (record) => {
         entry.good = record
         entry.settled = Promise.resolve(record)
         entry.expires = this.now() + SITE_TTL_MS
         entry.retryAt = undefined
+        return record
       },
-      () => {
+      (error: unknown) => {
         entry.retryAt = this.now() + FAILURE_TTL_MS
+        throw error
       }
     ).finally(() => { entry.revalidating = undefined })
+    return await entry.revalidating
+  }
+
+  /**
+   * The name as it reads now, for a caller asking whether it moved: a kept record cannot answer that, however fresh it is. What this proves
+   * is kept, so the requests that follow read the same root. Throws a ResolutionError and leaves what was kept alone; a mount already running is joined.
+   */
+  async latest (host: string, partition: string): Promise<SiteRecord> {
+    const key = `${partition} ${host}`
+    const current = this.entries.get(key)
+    if (current?.good === undefined) return await this.get(host, partition)
+    this.use(key, current)
+    return await this.reprove(current, host, partition)
   }
 
   /** The site currently mounted for `host` in `partition`, without
@@ -250,6 +270,10 @@ export class RoutedSites implements SiteSource {
 
   async get (host: string, partition: string | undefined, route?: FetchRoute, retry = false, fresh = false): Promise<SiteRecord> {
     return await this.for(route).get(host, partition, retry, fresh)
+  }
+
+  async latest (host: string, partition: string, route?: FetchRoute): Promise<SiteRecord> {
+    return await this.for(route).latest(host, partition)
   }
 
   async current (host: string, partition: string, route?: FetchRoute): Promise<SiteRecord | undefined> {
