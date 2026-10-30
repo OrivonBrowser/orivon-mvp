@@ -2,13 +2,17 @@ import type { SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile } from '..
 import { createSwitch } from './switch.js'
 import { tunnelIcon } from './icons.js'
 import { TAB_TUNNEL_FAILED } from './tab-words.js'
-import { ADDRESS_PROBLEM } from './tunnels-model.js'
+import { ADDRESS_PROBLEM, SETTINGS_LINK } from './tunnels-model.js'
 import type { AddressModel, TunnelListModel, TunnelRowModel } from './tunnels-model.js'
+import { BROWSER_FAILED } from './browser-wide-model.js'
+import type { Panel } from './browser-wide-model.js'
+import { renderNodes, renderPanelTabs, renderPrompt } from './browser-wide-view.js'
+import type { PanelNames } from './browser-wide-view.js'
 
-// The tunnels page of the site-info popup: a row for each tunnel with the switch that sends this website or app through it
-// (turning one on turns the other off, turning the lit one off sends the page through none), the line that says what that does
-// and, the first time a website would move into storage of its own, the notice that comes before it. The rows are
-// `tunnels-model.ts`'s. The words are composed here, never from anything a site wrote.
+// The tunnels page of the site-info popup: a row for each tunnel with the switch that sends this website, app or tab (or, on the
+// Browser-wide panel, the whole browser) through it (turning one on turns the other off, turning the lit one off sends the page
+// through none), the line that says what that does and, the first time a website would move into storage of its own, the notice
+// that comes before it. The rows are `tunnels-model.ts`'s. The words are composed here, never from anything a site wrote.
 
 export const TUNNEL_PAGE_TITLE = 'Tunnels'
 
@@ -22,9 +26,11 @@ export function storageNotice (profile: SiteTunnelProfile): string {
   return `This site moves to your ${PROFILE_WORDS[profile]} profile. You'll sign in to it again once, and what it stores stays apart from your normal browsing.`
 }
 
+export const UNREADABLE_HINT = 'Orivon could not read your tunnel settings, so every site goes through your default tunnel, or through Nym when that has no address. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
+
 /** Why the switch is fixed, or what it leaves outside the tunnel; one sentence, or undefined when there is nothing to add. */
 export function tunnelHint (tunnel: SiteTunnel): string | undefined {
-  if (tunnel.unreadable) return 'Orivon could not read your tunnel settings, so every site goes through your default tunnel, or through Nym when that has no address. Mend or remove routes.json in your profile folder and restart Orivon to choose again.'
+  if (tunnel.unreadable) return UNREADABLE_HINT
   if (tunnel.swarm) return SWARM_HINT
   return undefined
 }
@@ -60,6 +66,10 @@ export interface TunnelCallbacks {
   readonly onCancel: () => void
   /** A link to Settings > Tunnels; `everywhere` lands on the browser-wide switch. */
   readonly onOpenSettings: (everywhere: boolean) => void
+  /** A panel was chosen. */
+  readonly onPanel: (panel: Panel) => void
+  /** The nodes switch was moved: `next` is its position. */
+  readonly onNodes: (next: boolean) => void
 }
 
 export interface TunnelViewState {
@@ -69,6 +79,10 @@ export interface TunnelViewState {
   readonly pending: SiteTunnelKind | null | undefined
   /** The last change did not take. */
   readonly failed: boolean
+  /** The panel drawn. */
+  readonly panel: Panel
+  /** The names of the two panels, or null while there is nothing to choose between (routes are not running). */
+  readonly panels: PanelNames | null
 }
 
 function paragraph (className: string, text: string): HTMLElement {
@@ -162,7 +176,7 @@ function renderAddress (address: AddressModel, callbacks: TunnelCallbacks): HTML
   return box
 }
 
-function renderRow (row: TunnelRowModel, noun: 'site' | 'app' | 'tab', callbacks: TunnelCallbacks): HTMLElement {
+function renderRow (row: TunnelRowModel, scope: string, callbacks: TunnelCallbacks): HTMLElement {
   const el = document.createElement('div')
   el.className = 'tunnel-row'
   el.dataset['tunnel'] = row.kind.id
@@ -177,12 +191,12 @@ function renderRow (row: TunnelRowModel, noun: 'site' | 'app' | 'tab', callbacks
   text.append(name, state)
   const control = createSwitch(row.on, row.disabled, (next) => { callbacks.onToggle(row.kind.id, next) })
   control.id = `tunnel-switch-${row.kind.id}`
-  control.setAttribute('aria-label', `Use ${row.kind.who} for this ${noun}`)
+  control.setAttribute('aria-label', `Use ${row.kind.who} for ${scope}`)
   el.append(renderLogo(row), text, control)
   return el
 }
 
-/** The page: the title, the row of the tunnel in use, what else the person should know, the notice while it is open, and the hint to enforce a tunnel for the whole browser. */
+/** The page: the title, the two panels to choose between, the row of each tunnel, what else the person should know, the question while it is open, and the link to Settings. */
 export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model: TunnelListModel, view: TunnelViewState, callbacks: TunnelCallbacks): void {
   container.replaceChildren()
   const header = document.createElement('header')
@@ -190,17 +204,26 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
   const title = document.createElement('div')
   title.className = 'site-origin'
   title.textContent = TUNNEL_PAGE_TITLE
-  const origin = document.createElement('div')
-  origin.className = 'site-claim'
-  origin.textContent = info.displayOrigin
-  header.append(title, origin)
+  header.append(title)
+  // A tab is its own name on the first panel; a website or an app is named under the title. The whole browser has no name to give.
+  if (view.panel === 'first' && info.tunnel?.subject !== 'tab') {
+    const origin = document.createElement('div')
+    origin.className = 'site-claim'
+    origin.textContent = info.displayOrigin
+    header.append(origin)
+  }
   container.append(header)
+  if (view.panels !== null) container.append(renderPanelTabs(view.panel, view.panels, callbacks.onPanel))
 
   const section = document.createElement('div')
   section.className = 'tunnel-section'
+  section.id = 'tunnel-panel'
+  section.setAttribute('role', 'tabpanel')
+  if (view.panels !== null) section.setAttribute('aria-labelledby', `tunnel-tab-${view.panel}`)
   const noun = info.tunnel?.subject ?? 'site'
+  const scope = view.panel === 'browser' ? 'the whole browser' : `this ${noun}`
   for (const row of model.rows) {
-    section.append(renderRow(row, noun, callbacks))
+    section.append(renderRow(row, scope, callbacks))
     if (row.address !== null) section.append(renderAddress(row.address, callbacks))
     if (row.canTest) section.append(button(`tunnel-test-${row.kind.id}`, 'link-button', row.testLine?.busy === true ? 'Testing…' : 'Test', () => { callbacks.onTest(row.kind.id) }))
     if (row.testLine !== null) {
@@ -211,9 +234,10 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
     }
     if (row.settingsLink !== null) section.append(link(`tunnel-settings-link-${row.kind.id}`, row.settingsLink, () => { callbacks.onOpenSettings(false) }))
   }
+  if (model.nodes !== null) section.append(renderNodes(model.nodes, callbacks.onNodes))
   for (const note of model.notes) section.append(paragraph(note.down ? 'route-line route-line-down' : 'route-line', note.text))
   if (model.empty !== null) section.append(paragraph('route-line', model.empty))
-  if (view.failed) section.append(paragraph('route-line route-line-down', noun === 'tab' ? TAB_TUNNEL_FAILED : TUNNEL_FAILED))
+  if (view.failed) section.append(paragraph('route-line route-line-down', view.panel === 'browser' ? BROWSER_FAILED : noun === 'tab' ? TAB_TUNNEL_FAILED : TUNNEL_FAILED))
 
   if (view.notice !== null) {
     const notice = document.createElement('div')
@@ -222,28 +246,17 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
     notice.append(paragraph('tunnel-notice-text', storageNotice(view.notice)))
     const buttons = document.createElement('div')
     buttons.className = 'staged-buttons'
-    const cancel = document.createElement('button')
-    cancel.type = 'button'
-    cancel.id = 'tunnel-notice-cancel'
-    cancel.className = 'btn-secondary'
-    cancel.textContent = 'Cancel'
-    cancel.addEventListener('click', callbacks.onCancel)
-    const confirm = document.createElement('button')
-    confirm.type = 'button'
-    confirm.id = 'tunnel-notice-confirm'
-    confirm.className = 'btn-primary'
-    confirm.textContent = 'Confirm'
-    confirm.addEventListener('click', callbacks.onConfirm)
-    buttons.append(cancel, confirm)
+    buttons.append(button('tunnel-notice-cancel', 'btn-secondary', 'Cancel', callbacks.onCancel), button('tunnel-notice-confirm', 'btn-primary', 'Confirm', callbacks.onConfirm))
     notice.append(buttons)
     section.append(notice)
   }
+  if (model.prompt !== null) section.append(renderPrompt(model.prompt, callbacks.onCancel, callbacks.onConfirm))
   container.append(section)
 
   container.append(document.createElement('hr'))
   const hint = document.createElement('div')
   hint.className = 'tunnel-hint'
   if (model.hint.text !== '') hint.append(paragraph('route-line', model.hint.text))
-  hint.append(link('tunnel-enforce', model.hint.link, () => { callbacks.onOpenSettings(model.hint.everywhere) }))
+  hint.append(link('tunnel-settings-open', SETTINGS_LINK, () => { callbacks.onOpenSettings(view.panel === 'browser') }))
   container.append(hint)
 }

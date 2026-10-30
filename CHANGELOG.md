@@ -20,6 +20,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 ### Added
 
 - **The address a link goes to, in the corner of the page**: point at a link, or move the keyboard onto one, and a small bubble in the bottom-left corner of that page says where it goes; when the pointer reaches it, it moves to the bottom-right corner. It is one line, as wide as the address (long ones end in an ellipsis), never takes the keyboard and lies under menus. In a split window it is in the corner of the pane the link is in.
+- **The tunnels popup has a Browser-wide part**: a control under its heading chooses between the page's own tunnel ("This tab", "This site" or "This app") and the whole browser's, with a switch to send the IPFS and Swarm nodes through it too. Setting a tunnel browser-wide while tabs keep their own asks first, and lists those tabs.
 - **A tunnel for one tab, chosen before the first address**: the tunnel button is now on the new tab. Turn on Nym or your proxy there and the address you type, and every site that tab opens until it closes, goes through it from its first request; on a website that goes through the tab's tunnel the button says "Set for this tab". The new-tab page is not kept in the saved session until it navigates. In a window 640 pixels wide or less the toolbar's navigation buttons and the address bar's padding are 2 to 4 pixels tighter, so the address field keeps its room beside the new button.
 ### Changed
 

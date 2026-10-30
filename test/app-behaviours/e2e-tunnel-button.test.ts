@@ -99,9 +99,11 @@ it('is plain on the new tab and grey on a page that goes direct, and the key say
   await shoot(app, chrome, chrome, 'tunnel-button-direct')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('opens a list with Nym and the person\'s proxy, the logo of Nym, both switches off and the hint to enforce a tunnel browser-wide', async () => {
+it('opens a list with Nym and the person\'s proxy, the logo of Nym, both switches off, the two panels and the link to Tunnels settings', async () => {
   const popover = await openPopover()
   expect(await popover.locator('.site-origin').textContent()).toBe('Tunnels')
+  expect(await popover.locator('[role="tab"]').allTextContents(), 'two panels: the site\'s own and the whole browser').toEqual(['This site', 'Browser-wide'])
+  expect(await popover.locator('#tunnel-tab-first').getAttribute('aria-selected'), 'a site with no tunnel of its own, with the browser on none, opens on its own panel').toBe('true')
   expect(await popover.locator('.tunnel-row').count(), 'a row for each tunnel').toBe(2)
   expect(await popover.locator('.tunnel-row[data-tunnel="nym"] .tunnel-label').textContent()).toBe('Nym')
   expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-label').textContent()).toBe('Your proxy')
@@ -109,7 +111,7 @@ it('opens a list with Nym and the person\'s proxy, the logo of Nym, both switche
   const logoWidth = await popover.locator('img.tunnel-logo').evaluate((img) => (img as HTMLImageElement).complete ? (img as HTMLImageElement).naturalWidth : 0)
   expect(logoWidth, 'the logo is loaded').toBeGreaterThan(0)
   expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('false')
-  expect(await popover.locator('#tunnel-enforce').textContent()).toBe('Enforce a tunnel browser-wide')
+  expect(await popover.locator('#tunnel-settings-open').textContent()).toBe('Open Tunnels settings')
   expect(await popover.locator('#tunnel-notice-confirm').count()).toBe(0)
   await shoot(app, chrome, popover, 'tunnel-button-popover')
   await chrome.click('#tunnel-btn')
@@ -140,9 +142,10 @@ it('turns purple once the switch is on and the notice is confirmed, and the page
   await delay(300)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
-it('leads to Settings > Tunnels at the browser-wide switch, and closes the popover', async () => {
+it('leads to Settings > Tunnels at the browser-wide switch from the Browser-wide panel, and closes the popover', async () => {
   const popover = await openPopover()
-  await popover.click('#tunnel-enforce')
+  await popover.click('#tunnel-tab-browser')
+  await popover.click('#tunnel-settings-open')
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings/tunnels')))).toBe(true)
   const settings = app.windows().find((w) => w.url().startsWith('orivon://settings/tunnels')) as Page
   await settings.waitForSelector('#row-route-everywhere')

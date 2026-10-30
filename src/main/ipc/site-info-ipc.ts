@@ -88,6 +88,10 @@ export type SiteInfoCommand =
   | { type: 'reload' }
   /** The tunnel of a website or an installed app: Nym, the person's proxy, or none (null). Answers whether it was done, with the popup's info as it is after. */
   | { type: 'setTunnel'; kind: 'nym' | 'socks5' | null }
+  /** The tunnel of the whole browser: Nym, the person's proxy, or none (null). Answers whether it was done, with the popup's info as it is after. */
+  | { type: 'setBrowserTunnel'; kind: 'nym' | 'socks5' | null }
+  /** Whether the IPFS and Swarm nodes follow the tunnel too. Answers whether it was done, with the popup's info as it is after. */
+  | { type: 'setNodesTunnel'; on: boolean }
   /** The address of the person's proxy, typed in the menu: main checks it as Settings does and saves it. Refused in a window held to Nym. */
   | { type: 'setProxyAddress'; text: string }
   /** Whether a tunnel answers, as Settings' Test asks it: it names no address, main tests the one saved. Answers nothing in a window held to Nym. */
@@ -163,8 +167,8 @@ export function registerSiteInfoIpc (
   openScoreHelp: () => void = () => {},
   openSupport: (url: string) => void = () => {}
 ): void {
-  // A website the person opened through their proxy from a routed app says so, in the tab the popover is about.
-  const withRoute = (info: SiteInfo): SiteInfo => controller.inSession(info, activeWebContents()?.session)
+  // A website the person opened through their proxy from a routed app says so, in the tab the popover is about; and the tunnel of the whole browser is there for the Browser-wide panel.
+  const withRoute = (info: SiteInfo): SiteInfo => controller.withBrowserTunnel(controller.inSession(info, activeWebContents()?.session))
   // On the popup's own webContents: the handler goes with it, and two windows
   // can each have one open.
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
@@ -244,6 +248,15 @@ export function registerSiteInfoIpc (
         const before = withRoute(await controller.siteInfoFor(origin))
         const ok = before.tunnel?.fixed === undefined && await controller.setTunnel(origin, command.kind)
         return { ok, info: ok ? withRoute(await controller.siteInfoFor(origin)) : before } satisfies TunnelResult
+      }
+      case 'setBrowserTunnel': {
+        if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return { ok: false, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
+        const ok = controller.setBrowserTunnel(command.kind)
+        return { ok, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
+      }
+      case 'setNodesTunnel': {
+        const ok = typeof command.on === 'boolean' && controller.setNodesTunnel(command.on)
+        return { ok, info: withRoute(await controller.siteInfoFor(origin)) } satisfies TunnelResult
       }
       case 'setProxyAddress': {
         if (typeof command.text !== 'string') return { ok: false, reason: 'invalid', info: withRoute(await controller.siteInfoFor(origin)) } satisfies ProxyAddressResult

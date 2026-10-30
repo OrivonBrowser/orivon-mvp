@@ -128,7 +128,9 @@ it('[app:tunnel-everywhere-carries-orivons-own-requests] the verifier host fetch
   const popover = findPopup() as Page
   await popover.waitForSelector('#tunnel-switch-socks5')
   expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('true')
-  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent(), 'the popover does not say any part stays outside').toBe('This site\'s traffic goes through your tunnel.')
+  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent(), 'the popover says the whole browser goes through it, and not that any part stays outside').toBe('This browser\'s traffic goes through your tunnel.')
+  await popover.click('#tunnel-tab-first')
+  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent(), 'the site\'s own panel says the same of the site').toBe('This site\'s traffic goes through your tunnel.')
   await shoot(app, chrome, popover, 'tunnel-everywhere-web3')
 }, 4 * QA_TEST_TIMEOUT_MS)
 

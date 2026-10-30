@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import { ADDRESS_PROBLEM, APP_UPDATES_NOTE, ENFORCE_LINK, HELD_LINE, NO_SWITCH_NOTE, NYM_OFF_LINE, NYM_OFF_LINK, PROXY_UNSET_LINE, TUNNEL_KINDS, addressChangeWords, everywhereHint, openedLine, tunnelListModel } from '../site-info/tunnels-model.js'
+import { ADDRESS_PROBLEM, APP_UPDATES_NOTE, HELD_LINE, NO_SWITCH_NOTE, NYM_OFF_LINE, NYM_OFF_LINK, PROXY_UNSET_LINE, SETTINGS_LINK, TUNNEL_KINDS, addressChangeWords, everywhereHint, openedLine, tunnelListModel } from '../site-info/tunnels-model.js'
 
 const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } } }
 const base: SiteInfo = {
@@ -47,7 +47,7 @@ describe('a private window held to Nym', () => {
     const model = tunnelListModel(held({ tunnel: { ...tunnel, subject: 'app', via: 'nym' } }), noView)
     expect(model.notes.map((note) => note.text)).toContain(HELD_LINE)
     expect(model.notes.map((note) => note.text), 'a held window gives up nothing for an app').not.toContain(APP_UPDATES_NOTE)
-    expect(model.hint).toEqual({ text: '', link: 'Open Tunnels settings', everywhere: false })
+    expect(model.hint).toEqual({ text: '' })
   })
 
   it('leaves an ordinary window\'s rows as they were', () => {
@@ -158,19 +158,23 @@ describe('a page that does not choose its tunnel here', () => {
 })
 
 describe('the hint under the list', () => {
-  it('leads to the browser-wide switch while it is off', () => {
-    expect(tunnelListModel(info(), noView).hint).toEqual({ text: '', link: ENFORCE_LINK, everywhere: true })
-    expect(ENFORCE_LINK).toBe('Enforce a tunnel browser-wide')
+  it('has nothing to say while the whole browser is not on a tunnel, and leaves the link to Tunnels settings to the page', () => {
+    expect(tunnelListModel(info(), noView).hint).toEqual({ text: '' })
+    expect(SETTINGS_LINK).toBe('Open Tunnels settings')
   })
 
-  it('names the tunnel everything without a choice follows while the browser-wide switch is on, and links to Tunnels settings', () => {
-    expect(tunnelListModel(info({ everywhere: true }), noView).hint).toEqual({ text: everywhereHint('nym'), link: 'Open Tunnels settings', everywhere: false })
-    expect(everywhereHint('socks5')).toBe('Every site and app that has no choice here goes through your proxy. Change this in Tunnels settings.')
+  it('names the tunnel everything without a choice follows while the whole browser is on one, and says where to change it', () => {
+    expect(tunnelListModel(info({ everywhere: true }), noView).hint).toEqual({ text: everywhereHint('nym') })
+    expect(everywhereHint('socks5')).toBe('Every site and app that has no choice here goes through your proxy. Change this under Browser-wide.')
     expect(tunnelListModel(withTunnel({ defaultKind: 'socks5' }, { everywhere: true }), noView).hint.text).toBe(everywhereHint('socks5'))
   })
 
+  it('says nothing in a window held to a tunnel, whose rows say it', () => {
+    expect(tunnelListModel(info({ everywhere: true, tunnelHeld: 'nym' }), noView).hint).toEqual({ text: '' })
+  })
+
   it('says it also on a page with no choice of its own', () => {
-    expect(tunnelListModel(noSwitch({ everywhere: true }), noView).hint.link).toBe('Open Tunnels settings')
+    expect(tunnelListModel(noSwitch({ everywhere: true }), noView).hint.text).toBe(everywhereHint('nym'))
   })
 })
 

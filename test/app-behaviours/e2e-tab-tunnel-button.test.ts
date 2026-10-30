@@ -117,7 +117,8 @@ it('[app:tab-tunnel-button-first-address-leaves-through-the-chosen-tunnel] a tun
 
     const popover = await openList(app, chrome)
     expect(await popover.locator('.site-origin').textContent()).toBe('Tunnels')
-    expect(await popover.locator('.site-claim').textContent(), 'the list is about the tab, not a site').toBe('This tab')
+    expect(await popover.locator('#tunnel-tab-first').textContent(), 'the list is about the tab, not a site').toBe('This tab')
+    expect(await popover.locator('.site-claim').count(), 'a tab is its own name, with no address under the title').toBe(0)
     expect(await popover.locator('.tunnel-row').count()).toBe(2)
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-label')).toBe('Use Nym for this tab')
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('false')
@@ -166,7 +167,7 @@ it('[app:tab-tunnel-button-lists-the-tab-on-a-website-and-turns-off] on a websit
 
     // The list is the tab's, not the website's: no storage question, and it names the choice.
     popover = await openList(app, chrome)
-    expect(await popover.locator('.site-claim').textContent()).toBe('This tab')
+    expect(await popover.locator('#tunnel-tab-first').textContent()).toBe('This tab')
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
     expect(await notesOf(popover)).toContain('Every site you open in this tab goes through Nym')
     expect(await notesOf(popover)).toContain('sign-ins in your tunnel profile')
@@ -199,6 +200,9 @@ it('[app:tab-tunnel-button-direct-for-this-tab-under-a-tunnelled-browser] with t
     expect(await waitFor(async () => await attribute(chrome, 'data-tunnel') === 'on'), 'the new tab follows the browser onto the tunnel').toBe(true)
     expect(await attribute(chrome, 'aria-label')).toBe('Tunnels. Sites you open in this tab go through Nym')
     const popover = await openList(app, chrome)
+    expect(await popover.locator('#tunnel-tab-browser').getAttribute('aria-selected'), 'a tab with no choice of its own opens on the Browser-wide panel while the whole browser is on a tunnel').toBe('true')
+    expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
+    await popover.click('#tunnel-tab-first')
     expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
     expect(await notesOf(popover)).toContain('This tab follows the tunnel you set for all your browsing')
 
@@ -248,7 +252,7 @@ it('[app:tab-tunnel-button-opens-the-moment-a-new-tab-shows] the tunnels button 
     expect(opened, 'the press opened the list').toBe(true)
     const popover = findPopup(app) as Page
     await popover.waitForSelector('#tunnel-switch-nym')
-    expect(await popover.locator('.site-claim').textContent(), 'the list is about the tab').toBe('This tab')
+    expect(await popover.locator('#tunnel-tab-first').textContent(), 'the list is about the tab').toBe('This tab')
     await closeList(app, chrome)
   } finally {
     await closeElectron(app)
@@ -365,7 +369,7 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press o
     await openHeldInNewTab(app, chrome, findViewShowing(app, chrome, url()) as Page)
 
     const list = await openList(app, chrome)
-    expect(await list.locator('.site-claim').textContent(), 'the list is the tab\'s').toBe('This tab')
+    expect(await list.locator('#tunnel-tab-first').textContent(), 'the list is the tab\'s').toBe('This tab')
     expect(await list.locator('#tunnel-switch-nym').getAttribute('aria-checked'), 'the tab it was opened from handed it its choice').toBe('true')
 
     // The page comes while the tab's list is open: it is about the tab, so the arrival does not close it.
@@ -373,7 +377,7 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press o
     expect((await waitForTab(chrome, { address: heldUrl(), title: 'held' }, 60_000)).ok).toBe(true)
     await delay(ABSENCE_SETTLE_MS)
     expect(findPopup(app) !== undefined, 'the tab\'s list stays open when the page arrives').toBe(true)
-    expect(await list.locator('.site-claim').textContent(), 'it is still the tab\'s').toBe('This tab')
+    expect(await list.locator('#tunnel-tab-first').textContent(), 'it is still the tab\'s').toBe('This tab')
     await closeList(app, chrome)
   } finally {
     held.release()

@@ -11,7 +11,7 @@ import { deliveryLevelOverrideFor, scoreLevelOverrideFor } from '../dev/score-le
 import { localDdocHashFor } from '../dev/local-ddoc.js'
 import { createNetworksPanel } from '../networks/networks-panel.js'
 import { createSiteInfoPanel } from '../permissions/site-info-panel.js'
-import { proxySetup } from '../permissions/proxy-setup.js'
+import { browserTunnels, proxySetup } from '../permissions/proxy-setup.js'
 import { openWeb3ScoreHelp } from '../web3-score/web3-score-help.js'
 import { openCertificate } from '../auth/certificate-open.js'
 import { pageAccess } from '../site-settings/page-access.js'
@@ -23,6 +23,7 @@ import { extensionPopupPanel } from '../extensions/extension-popup-host.js'
 import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
 import { openFromActiveTab } from './open-from-browser.js'
+import { browserTunnelTabs } from './tab-tunnel-facts.js'
 import { reloadFromCard } from './reload-from-card.js'
 import { firstVisitNow } from '../app-setup/tab-setup-ref.js'
 import { announceEntryChange } from '../app-setup/entry-changes.js'
@@ -59,7 +60,9 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
     // The proxy's address is set from the tunnel menu as Settings sets it: through the same store, so it is checked, saved and followed the same way.
     proxySetup(ctx, services.settings),
     // The tunnel popover opened for a tab reads and sets the tab's own choice: the same call a test seam makes, so nothing else decides it.
-    { choiceOf: (id) => { const record = tabs.record(id); return record === undefined ? undefined : { choice: record.tunnelChoice } }, set: (id, choice) => { tabs.setTunnelChoice(id, choice) } })
+    { choiceOf: (id) => { const record = tabs.record(id); return record === undefined ? undefined : { choice: record.tunnelChoice } }, set: (id, choice) => { tabs.setTunnelChoice(id, choice) } },
+    // The Browser-wide panel moves the same three settings Settings does, and lists the tabs of every window that keep a choice of their own.
+    browserTunnels(services.settings, () => browserTunnelTabs(services.windows)))
 
   // The networks list is a panel inside this window rather than a second one -- ../networks/networks-panel.ts.
   const networks = createNetworksPanel(win, win.contentView, services.networks, dirname, () => tabs.activeWebContents())

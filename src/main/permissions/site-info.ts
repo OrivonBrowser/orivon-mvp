@@ -99,6 +99,31 @@ export interface SiteTunnel {
   readonly fixed?: 'temporary' | 'opened'
 }
 
+/** A tab that carries a tunnel choice of its own: the words that name it (its title, else its address) and what it keeps. */
+export interface BrowserTunnelTab {
+  readonly title: string
+  readonly choice: TabTunnelChoice
+}
+
+/**
+ * What the Browser-wide panel of the tunnels popup shows: the tunnel the whole browser goes through (`via`, null while it is
+ * not on one), whether the IPFS and Swarm nodes follow it, why a tunnel cannot be chosen, the person's proxy, whether the settings
+ * could not be read, and every tab in every window that keeps a choice of its own whatever is set here.
+ */
+export interface BrowserTunnel {
+  readonly via: SiteTunnelKind | null
+  readonly defaultKind: SiteTunnelKind
+  readonly nodes: boolean
+  readonly blocked: SiteTunnel['blocked']
+  readonly proxy: SiteTunnel['proxy']
+  readonly unreadable: boolean
+  readonly tabs: readonly BrowserTunnelTab[]
+  /** What the shared route of the browser is doing; absent while it is not on a tunnel. */
+  readonly route?: SiteRoute
+  /** What Nym is doing, while the browser goes through it. */
+  readonly nym?: NymState
+}
+
 export interface SiteInfo {
   readonly origin: string
   readonly displayOrigin: string
@@ -121,6 +146,8 @@ export interface SiteInfo {
   readonly tunnelHeld?: 'nym'
   /** The tunnel switch of a website; absent for an installed app, a local file and this computer. */
   readonly tunnel?: SiteTunnel
+  /** The tunnel of the whole browser, for the Browser-wide panel. Absent while routes are not running. */
+  readonly browserTunnel?: BrowserTunnel
   /** True when the site has asked for at least one Orivon capability or
    * picked a file/folder -- what the toolbar key's visibility switches on. */
   readonly asked: boolean
