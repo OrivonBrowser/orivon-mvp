@@ -42,6 +42,14 @@ export function leaveView (outer: OuterHistory, entries: readonly HistoryEntry[]
   return { back: [...outer.back, ...behind].slice(-OUTER_HISTORY_LIMIT), forward: ahead.slice(0, OUTER_HISTORY_LIMIT) }
 }
 
+/** The tab's view is to keep only the page it shows, the one at `index`: its other pages go to each side of what the tab keeps already. */
+export function leaveOnlyShown (outer: OuterHistory, entries: readonly HistoryEntry[], index: number, dashboardUrl: string): OuterHistory {
+  return {
+    back: [...outer.back, ...kept(entries.slice(0, index), dashboardUrl)].slice(-OUTER_HISTORY_LIMIT),
+    forward: [...kept(entries.slice(index + 1), dashboardUrl), ...outer.forward].slice(0, OUTER_HISTORY_LIMIT)
+  }
+}
+
 export interface OuterStep { readonly target: HistoryEntry, readonly outer: OuterHistory }
 
 /** Back from the first page of the view: the page before it, with the view's pages now ahead. Null with none. */

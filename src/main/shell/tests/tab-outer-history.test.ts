@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EMPTY_OUTER, keptInHistory, leaveView, noteCommit, OUTER_HISTORY_LIMIT, stepBack, stepForward } from '../tab-outer-history.js'
+import { EMPTY_OUTER, keptInHistory, leaveOnlyShown, leaveView, noteCommit, OUTER_HISTORY_LIMIT, stepBack, stepForward } from '../tab-outer-history.js'
 import type { OuterHistory } from '../tab-outer-history.js'
 
 const page = (name: string) => ({ url: `https://${name}.example/`, title: name })
@@ -50,6 +50,14 @@ describe('leaveView', () => {
     expect(outer.back).toHaveLength(OUTER_HISTORY_LIMIT)
     expect(outer.back.at(-1)?.url).toBe(page(`p${many.length - 1}`).url)
     expect(urls(outer.back)).not.toContain('about:blank')
+  })
+})
+
+describe('leaveOnlyShown', () => {
+  it('puts the view\'s other pages on each side of what the tab keeps', () => {
+    const outer = leaveOnlyShown({ back: [page('w')], forward: [page('z')] }, [page('a'), page('b'), page('c')], 1, DASHBOARD)
+    expect(urls(outer.back)).toEqual(urls([page('w'), page('a')]))
+    expect(urls(outer.forward)).toEqual(urls([page('c'), page('z')]))
   })
 })
 

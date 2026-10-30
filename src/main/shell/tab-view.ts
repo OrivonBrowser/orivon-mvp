@@ -28,6 +28,7 @@ import { recordViewBackground } from './view-background-test-hook.js'
 import { watchBacking } from './tab-backing.js'
 import { repartitionView } from './tab-parking.js'
 import { settleOuterHistory } from './tab-history.js'
+import { markFirstDashboardLoad } from '../pages/dashboard-first-load.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
@@ -141,6 +142,7 @@ export function makeTabView (preload: string, partition: string | undefined, add
 export function makeDashboardView (dashboardUrl: string): WebContentsView {
   const view = makeTabView(NEW_TAB_PRELOAD, undefined, [`--orivon-newtab-url=${dashboardUrl}`], { backgroundColor: resolveThemeColor(DASHBOARD_BACKGROUND), target: dashboardUrl })
   dashboardViews.add(view)
+  markFirstDashboardLoad(view.webContents, dashboardUrl)
   return view
 }
 

@@ -184,7 +184,9 @@ is fixed when a view is made, so `tab-view.ts`'s `makeDashboardView` is the one 
 else and comes back when such a view commits that address again, or when a step moves the tab into a new
 one (`stepOutOfView`). The address alone decides nothing: it is an http:// one in dev mode, and any other
 view that reaches it is an ordinary page. A list holding the page is never carried to another view,
-where Back would reach it with no preload.
+where Back would reach it with no preload. A new tab Back returned to still holds the pages it was left
+for, in its own session, so a tunnel chosen there moves them to the outer history (`moveListOutOfView`),
+and a command that closes an empty new tab leaves this one open (`isEmptyNewTab`).
 
 **One process, several windows: what is per window and what is shared.** Per window: the chrome view, the
 `TabManager`, the popovers, the fullscreen and notice state, and the IPC handlers on the chrome view and the

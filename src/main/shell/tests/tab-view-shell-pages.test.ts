@@ -13,6 +13,7 @@ const createdViews: FakeView[] = []
 
 function fakeWebContents (): FakeView['webContents'] {
   const emitter = new EventEmitter() as FakeView['webContents']
+  emitter['id'] = createdViews.length + 1
   emitter['loadURL'] = vi.fn(async () => {})
   emitter['isDestroyed'] = vi.fn(() => false)
   emitter['isLoading'] = vi.fn(() => false)
@@ -102,6 +103,15 @@ describe.each([['built', DASHBOARD_URL], ['dev', 'http://127.0.0.1:5173/newtab/'
     ;(createdViews[0] as FakeView).webContents.emit('did-navigate', {}, dashboardUrl)
 
     expect(manager.record(id)?.isDashboardTab).toBe(false)
+  })
+})
+
+describe('makeDashboardView', () => {
+  it('marks the view for its first load, whichever route made it', async () => {
+    const { makeDashboardView } = await import('../tab-view.js')
+    const { isFirstDashboardLoad } = await import('../../pages/dashboard-first-load.js')
+    const view = makeDashboardView(DASHBOARD_URL) as unknown as FakeView
+    expect(isFirstDashboardLoad(view.webContents['id'] as number)).toBe(true)
   })
 })
 

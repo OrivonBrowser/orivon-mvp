@@ -10,7 +10,6 @@ import type { WebContentsView } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { sanitizeDirectUrl } from '../browsing/omnibox.js'
 import { localPartitionFor } from '../local-files/partition.js'
-import { markFirstDashboardLoad } from '../pages/dashboard-first-load.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import type { InternalPageRegistry } from '../pages/internal-registry.js'
@@ -114,7 +113,6 @@ export class TabFactory {
     // its own renders white, as the web expects, and painting it dark first would make a transparent-background site
     // look wrong in dark mode. It gets appTabArgsFor's ADR-0017 flag if this origin is already a registered app.
     const view = isDashboard ? makeDashboardView(target) : makeTabView(this.appPreload, partition, appTabArgsFor(target, this.broker()), { target })
-    if (isDashboard) markFirstDashboardLoad(view.webContents, this.dashboardUrl)
     const id = makeTabId()
     const record = this.recordFor(view, partition, { isDashboardTab: isDashboard, ...choiceOf(tunnelChoice) })
     wireView(id, record)
