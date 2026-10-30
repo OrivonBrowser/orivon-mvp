@@ -9,7 +9,7 @@
 
 **The tunnel button's list is about the tab on every website, not only on a tab that carries a choice.** Its first panel is "This tab" for a new tab and for every website in a tab, whether or not the tab has a choice and whether or not the website has an entry of its own. It stays "This app" on an installed app's page, and it is about the page, as before, on a page in a session an app or a temporary route made for it, on a page of this computer or anything else that cannot go through a tunnel, and on a page of the shell.
 
-**A row sets the tab, never the website.** Moving a row sets the tab's choice (Nym, the proxy or direct, as ADR-0101 has it) and writes nothing about the website: no entry in `routes.json`, no record of storage kept apart for it. The choice is gone when the tab closes. The rows show what the page really does: the tab's choice over the website's entry (ADR-0101's table), else the entry, else the browser's tunnel. The first move of a website into a profile still shows the storage notice, and a failed move gives the choice back.
+**A row sets the tab, never the website.** Moving a row sets the tab's choice (Nym, the proxy or direct, as ADR-0101 has it) and writes no entry about the website in `routes.json`. The choice is gone when the tab closes; the storage the visit leaves in the profile is recorded as storage kept apart, as ADR-0101 has it for any tab's choice, so the first move of a website into a profile asks the storage question and a later one, once a tab has visited it there, does not. The rows show what the page really does: the tab's choice over the website's entry (ADR-0101's table), else the entry, else the browser's tunnel. The first move of a website into a profile still shows the storage notice, and a failed move gives the choice back.
 
 **"Always use for this site" saves what the panel shows as the website's own choice.** It is the only way the button makes an entry. It is on exactly while the website has an entry, and held while nothing is chosen. Turned on, the entry becomes the tab's choice (a `direct` choice while the browser is on a tunnel is an `off` entry) and nothing else changes or loads. Turned off, a tab with no choice first takes the entry's tunnel as its own (an `off` entry becomes `direct`), then the entry is removed, so nothing visibly moves. While it is on, a row moved changes the entry and the tab together, and the lit row turned off clears both, since the tab's choice would otherwise win over the entry (ADR-0101). The two steps of each change are in the order that fails closed: the tab first, because moving it is what can fail, then the entry; an entry that cannot be saved gives the tab back what it had.
 
@@ -21,7 +21,7 @@
 
 **The tunnel button says the choice is the tab's only when it is.** "Set for this tab" is drawn only while the tab carries a choice equal to the tunnel the page goes through; a website that has an entry and a tab with no choice is lit for the page and says nothing about the tab.
 
-**Settings lists a website once it has an entry.** A website a tab put in a profile without "Always use for this site" is not listed, as ADR-0101 says of the storage a visit leaves.
+**Settings lists a website for its storage or its entry.** A website a tab put in a profile is listed for the storage it has there, as ADR-0101 says of a visit; "Always use for this site" is what gives it a tunnel setting of its own.
 
 ## Context
 
@@ -41,8 +41,7 @@ The tab's choice already beats a website's entry (ADR-0101), so a row that sets 
 ## Consequences
 
 - A person who used the old list to give a website a tunnel for good presses one more switch. The ports that do so should turn Always on; the catalogue rows that stated the old behaviour say so.
-- A row on a website now asks the storage question each time the website moves into a profile it has no recorded storage in, since only an entry records that storage; the question is true each time.
-- A tab's choice on a website is not listed in Settings, and its storage in the profile is not either, until Always is on or the person clears it with the profile's data.
+- A person who only looked at a website through a tunnel finds it listed in Settings for its storage, with no tunnel setting, until they clear it; that is ADR-0101's decision about visits and is unchanged.
 - **Provisional: the proxy's address change counts only websites with an entry.** Changing the proxy's address asks first, naming the sites and apps that use it; a tab that chose the proxy without Always is not counted. What would settle it is a person who changes the address and finds a tab closed without having been told; the answer is to count the tabs too.
 - **Provisional: the first panel names the website under the title for a tab on a website.** The tab alone has no name; a tab on a website is named by it. What would settle it is the owner finding the line redundant with the address bar.
 

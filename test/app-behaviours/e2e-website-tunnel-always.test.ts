@@ -18,7 +18,7 @@ import { clickAddressBarRetrying, navigateToFixture } from '../support/e2e-helpe
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
-import { alwaysIsOn, closeTunnelList, openTunnelList, pressAlways } from '../support/tunnel-popup.js'
+import { alwaysIsOn, closeTunnelList, openTunnelList, pickTunnelForWebsite, pressAlways, pressRow } from '../support/tunnel-popup.js'
 
 const GATEWAY = 'gw.always.test'
 const ORIGIN = 'https://tunnelled.eth'
@@ -131,7 +131,7 @@ it('[app:website-tunnel-always-a-row-sets-the-tab-only] a row on a website moves
   expect(await after.locator('#tunnel-switch-always').isDisabled(), 'and there is a choice to keep now').toBe(false)
   await delay(ABSENCE_SETTLE_MS)
   expect(saved()?.entry, 'routes.json names no tunnel for the website').toBeUndefined()
-  expect(saved()?.apart ?? false, 'and records no storage for it').toBe(false)
+  expect(await waitFor(() => saved()?.apart === true), 'the visit is recorded as storage kept apart, as for any tab choice').toBe(true)
 
   // The tab closes with its choice: the same website in a new tab goes to the gateway directly.
   const direct = blocksAsked(decoy)
@@ -143,19 +143,17 @@ it('[app:website-tunnel-always-a-row-sets-the-tab-only] a row on a website moves
 }, 6 * QA_TEST_TIMEOUT_MS)
 
 it('[app:website-tunnel-always-keeps-the-tunnel-for-the-site] "Always use for this site" writes the website\'s entry without moving or loading the page again, and the entry outlives the tab', async () => {
-  const list = await openTunnelList(app, chrome, 'socks5')
-  await list.click('#tunnel-switch-socks5')
-  await list.waitForSelector('.tunnel-notice')
-  await list.click('#tunnel-notice-confirm')
+  // The first test left the website's storage recorded, so the move is not asked about again.
+  await pressRow(app, chrome, 'socks5')
   expect(await waitFor(async () => await sessionOfSite() === 'profile', 30_000)).toBe(true)
-  expect(saved()?.entry, 'the row alone wrote nothing').toBeUndefined()
+  expect(saved()?.entry, 'the row alone wrote no entry').toBeUndefined()
 
   const view = await waitFor(() => findViewShowing(app, chrome, `${ORIGIN}/`) !== undefined) ? findViewShowing(app, chrome, `${ORIGIN}/`) as Page : undefined
   await view?.evaluate(() => { (window as unknown as { __kept: boolean }).__kept = true })
   const asked = blocksAsked(real)
   await pressAlways(app, chrome, 'socks5')
   expect(await waitFor(() => saved()?.entry === 'socks5'), 'the website has its entry on disk').toBe(true)
-  expect(saved()?.apart, 'with the storage it keeps in the profile').toBe(true)
+  expect(saved()?.apart, 'and keeps recording the storage it has in the profile').toBe(true)
   await delay(ABSENCE_SETTLE_MS)
   expect(await view?.evaluate(() => (window as unknown as { __kept?: boolean }).__kept), 'the page was not loaded again').toBe(true)
   expect(blocksAsked(real), 'and the gateway was not asked again').toBe(asked)
@@ -216,4 +214,18 @@ it('[app:website-tunnel-always-off-removes-the-entry-without-a-reload] turning "
   await openSite()
   expect(await sessionOfSite()).toBe('shared')
   expect(blocksAsked(decoy), 'a new tab reads the gateway directly again').toBeGreaterThan(direct)
+}, 6 * QA_TEST_TIMEOUT_MS)
+
+it('[app:website-tunnel-always-keeps-the-tunnel-for-the-site] with Always on, turning the lit row off takes the entry and the tab\'s choice away together, so the page really leaves the tunnel', async () => {
+  await freshTab()
+  await openSite()
+  expect(await sessionOfSite(), 'the website starts direct').toBe('shared')
+  await pickTunnelForWebsite(app, chrome, 'socks5', { inProfile: async () => await sessionOfSite() === 'profile' })
+  expect(saved()?.entry, 'the website has its entry').toBe('socks5')
+
+  const list = await openTunnelList(app, chrome, 'socks5')
+  expect(await alwaysIsOn(list)).toBe(true)
+  await list.click('#tunnel-switch-socks5')
+  expect(await waitFor(() => saved()?.entry === undefined), 'the entry went with the row').toBe(true)
+  expect(await waitFor(async () => await sessionOfSite() === 'shared', 30_000), 'and the page left the tunnel profile').toBe(true)
 }, 6 * QA_TEST_TIMEOUT_MS)

@@ -1,7 +1,7 @@
 // A plain website the person turns the tunnel on for runs in the tunnel profile: the popover tells them first, then
 // the page and a subresource from another host arrive through the SOCKS5 fixture, its cookie lives apart from the shared
 // session's, and turning the tunnel off again returns the tab to the shared session with that cookie untouched. A row sets
-// the tab; "Always use for this site" is what makes the tunnel the website's own, which Settings then lists. The
+// the tab; "Always use for this site" is what makes the tunnel the website's own setting. The
 // fixture names resolve (on loopback) in the browser to a decoy on the same port as the fixture's names, so a request
 // that went direct would show the decoy's page and count a hit.
 //
@@ -190,7 +190,7 @@ it('[app:tunnelled-website-gets-its-own-storage] the tunnel button and its popov
 }, 3 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-gets-its-own-storage] Settings lists the site, and removing its separate storage clears that site\'s data in the profile and nothing else', async () => {
-  // The row moved the tab only; the site is listed once "Always use for this site" has made the tunnel its own.
+  // The row moved the tab only; Always makes the tunnel the site's own setting, which the list and the removal below keep.
   await pressAlways(app, chrome, 'socks5')
   await closeTunnelList(app, chrome)
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/tunnels') })

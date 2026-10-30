@@ -75,6 +75,8 @@ for (const scheme of SCHEMES) {
     }
     try {
       await runPhase('visual states of the tunnel list on a website and of the question about tabs', async (check) => {
+        // The window is sized before a list is open: a resize closes it.
+        await prepareWindow(app)
         await keepDirect()
         await visit(app, chrome, site)
         const list = await listOf()

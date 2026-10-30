@@ -3,12 +3,12 @@
 // where a spec's point is the entry, and press the row alone (`openTunnelList` then a click) where its point is what the tab does.
 import { expect } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
-import { delay, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { delay, waitFor } from './smoke-helpers.mjs'
 
 export type TunnelRow = 'nym' | 'socks5'
 
-/** The page the website must show again once the tab has moved into the tunnel's session. */
-export interface Arrival { readonly address: string, readonly title: string }
+/** Where the website's page must be once the tab has moved into the tunnel's session. */
+export interface Arrival { readonly inProfile: () => Promise<boolean> }
 
 export const findTunnelList = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().includes('/site-info/') && !w.isClosed())
 
@@ -52,16 +52,25 @@ export async function pressAlways (app: ElectronApplication, chrome: Page, row: 
 }
 
 /**
- * Gives the website on the front tab a tunnel of its own, as a person does: presses the row, confirms the storage question the
- * first move into a tunnel profile asks, waits for the website to show again from that tunnel, and presses Always. The tab ends
- * on the website with the entry saved and the list closed.
+ * Presses the row `row` of the list on the front tab and answers the storage question when it is asked. The question comes the
+ * first time a website moves into a profile and not again once a tab has visited it there (the visit is recorded as storage kept
+ * apart), so a press that is not asked simply moves the tab, and the list closes with the page's move.
  */
-export async function pickTunnelForWebsite (app: ElectronApplication, chrome: Page, row: TunnelRow, arrival: Arrival): Promise<void> {
+export async function pressRow (app: ElectronApplication, chrome: Page, row: TunnelRow): Promise<void> {
   const list = await openTunnelList(app, chrome, row)
   await list.click(`#tunnel-switch-${row}`)
-  await list.waitForSelector('.tunnel-notice')
-  await list.click('#tunnel-notice-confirm')
-  expect((await waitForTab(chrome, arrival, 60_000)).ok, 'the website came back through its tunnel').toBe(true)
+  const asked = await list.waitForSelector('#tunnel-notice-confirm', { timeout: 10_000 }).then(() => true, () => false)
+  if (asked) await list.click('#tunnel-notice-confirm')
+}
+
+/**
+ * Gives the website on the front tab a tunnel of its own, as a person does: presses the row, answers the storage question when it
+ * is asked, waits for the website to be in the tunnel's session, and presses Always. The tab ends on the website with the entry
+ * saved and the list closed.
+ */
+export async function pickTunnelForWebsite (app: ElectronApplication, chrome: Page, row: TunnelRow, arrival: Arrival): Promise<void> {
+  await pressRow(app, chrome, row)
+  expect(await waitFor(arrival.inProfile, 60_000), 'the website came back in its tunnel\'s session').toBe(true)
   await pressAlways(app, chrome, row)
   await closeTunnelList(app, chrome)
 }
