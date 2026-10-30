@@ -104,9 +104,7 @@ export interface CreateLoaderOptions {
    * The content address an origin's bundle is served from, for an origin
    * fetched from IPFS (a `.eth` name), and undefined for every other. Looked
    * up once per load: every request of that load is then pinned to its
-   * root, and the pin records it. Throws when it cannot be verified. `latest`
-   * is a check of whether the name moved: the answer is the name's own, never
-   * one kept for the page loads around it.
+   * root, and the pin records it; `latest` asks the name itself, never what is kept for page loads. Throws when it cannot be verified.
    */
   readonly contentAddress?: (origin: string, latest?: boolean) => Promise<ContentAddress | undefined>
   /** Whether `origin`'s update checks are paused (an installed app whose traffic is routed): `load()` then answers `'up-to-date'` without asking anyone. A first visit is unaffected. */

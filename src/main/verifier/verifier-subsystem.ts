@@ -296,8 +296,7 @@ export async function verifierNameEvidence (origin: string, pin: PinRecord | nul
  *
  * Mounted in `partition` when given, the origin's own otherwise (the one a tab
  * opening it uses). A caller that is not that origin passes a partition of its
- * own, so what it asks never warms a name for anyone else (A256). `latest` asks
- * the name itself, where a mounted site otherwise answers with what it holds.
+ * own, so what it asks never warms a name for anyone else (A256). `latest` asks the name itself, not what a mounted site holds.
  */
 export async function verifierContentAddress (origin: string, partition?: string, latest = false): Promise<ContentAddress | undefined> {
   if (!servedByVerifier(origin)) return undefined
