@@ -28,7 +28,7 @@ const rows: readonly Row[] = [
   {
     id: 'route-kind',
     label: 'Default tunnel',
-    help: 'The tunnel for everything that has no choice of its own: what Orivon sends for itself and the whole browser when you send all of it through a tunnel, and the Ethereum and IPFS nodes Orivon runs when they follow it. Each website and each app can use Nym or your own proxy whatever this says: you choose for a website from the tunnel button in the address bar, and for an app under Apps; until you do, nothing goes through a tunnel. Nym is a mixnet built into Orivon: each app or website gets a tunnel of its own, and the sites it reaches see an exit address, not this computer. Your own proxy is a SOCKS5 address, such as Tor\'s.',
+    help: 'The tunnel for everything that has no choice of its own: what Orivon sends for itself and the whole browser when you send all of it through a tunnel, and the Ethereum and IPFS nodes Orivon runs when they follow it. Each website and each app can use Nym or your own proxy whatever this says: you choose for a tab from the tunnel button in the address bar and keep it for a website with Always use for this site, and for an app under Apps; until you do, nothing goes through a tunnel. Nym is a mixnet built into Orivon: each app or website gets a tunnel of its own, and the sites it reaches see an exit address, not this computer. Your own proxy is a SOCKS5 address, such as Tor\'s.',
     keywords: ['tunnel', 'proxy', 'socks', 'socks5', 'tor', 'onion', 'route', 'vpn', 'anonymous', 'network', 'apps', 'sites', 'websites', 'nym', 'mixnet', 'built in'],
     group: TUNNEL,
     below: heldLine,
@@ -37,7 +37,7 @@ const rows: readonly Row[] = [
   {
     id: 'route-everywhere',
     label: 'Send all of Orivon\'s traffic through the default tunnel',
-    help: 'Every website and app follows this unless you set it to off or give it the other tunnel from its own menu, and so does what Orivon sends for itself: update checks, usage statistics you agreed to, search suggestions and the Web3 names Orivon reads. Left outside the tunnel: this computer, the connection to the tunnel itself, and the sites and apps you set to off. The IPFS and Swarm nodes Orivon can run connect to their peers themselves, so the switch under this one says whether they go through the tunnel too.',
+    help: 'Every website and app follows this unless you set it to off or give it the other tunnel (a website keeps it with Always use for this site in the tunnel button), and so does what Orivon sends for itself: update checks, usage statistics you agreed to, search suggestions and the Web3 names Orivon reads. Left outside the tunnel: this computer, the connection to the tunnel itself, and the sites and apps you set to off. The IPFS and Swarm nodes Orivon can run connect to their peers themselves, so the switch under this one says whether they go through the tunnel too.',
     keywords: ['tunnel', 'proxy', 'tor', 'everything', 'all traffic', 'whole browser', 'everywhere', 'vpn', 'anonymous', 'default', 'enforce', 'browser-wide', 'browser wide'],
     group: TUNNEL,
     control: { type: 'toggle', key: 'network.tunnel.everywhere', locked: held('network.tunnel.everywhere'), // With your own address as the tunnel and no address set it cannot be turned on, but it can always be turned off.
@@ -119,7 +119,7 @@ const rows: readonly Row[] = [
   {
     id: 'route-sites',
     label: 'Sites and apps with their own tunnel setting',
-    help: 'A website you send through Nym lives in your Nym profile, one you send through your proxy in your proxy profile, and one you turn the tunnel off for while everything else is on in your direct profile; each profile keeps its cookies and storage apart from your normal browsing. Your extensions run in each profile, each with settings of its own, and the direct profile\'s run only while one of its sites is open. The storage stays when you give the setting up, until you remove it here.',
+    help: 'A website you keep on Nym lives in your Nym profile, one you keep on your proxy in your proxy profile, and one you keep off while everything else is on in your direct profile; a tab you send through a tunnel without keeping it for the site shows its sites from the same profiles while the tab lasts. Each profile keeps its cookies and storage apart from your normal browsing. Your extensions run in each profile, each with settings of its own, and the direct profile\'s run only while one of its sites is open. The storage stays when you give the setting up, until you remove it here.',
     keywords: ['tunnel', 'proxy', 'tor', 'sites', 'websites', 'apps', 'storage', 'cookies', 'separate', 'remove', 'sign in'],
     group: SITES,
     control: { type: 'custom', wide: true, render: renderTunnelList }
@@ -129,6 +129,6 @@ const rows: readonly Row[] = [
 export const tunnels: Section = {
   id: 'tunnels',
   title: 'Tunnels',
-  intro: 'A tunnel sends what a site or an app does on the network through Nym or your own SOCKS5 proxy, so the sites it reaches do not see this computer. Pick a tunnel for one website from the tunnel button in the address bar, for an app under Apps, or send everything through the default one here.',
+  intro: 'A tunnel sends what a site or an app does on the network through Nym or your own SOCKS5 proxy, so the sites it reaches do not see this computer. Pick a tunnel for a tab from the tunnel button in the address bar and keep it for the website with Always use for this site, for an app under Apps, or send everything through the default one here.',
   rows
 }

@@ -1,6 +1,7 @@
 // A plain website the person turns the tunnel on for runs in the tunnel profile: the popover tells them first, then
 // the page and a subresource from another host arrive through the SOCKS5 fixture, its cookie lives apart from the shared
-// session's, and turning the tunnel off again returns the tab to the shared session with that cookie untouched. The
+// session's, and turning the tunnel off again returns the tab to the shared session with that cookie untouched. A row sets
+// the tab; "Always use for this site" is what makes the tunnel the website's own, which Settings then lists. The
 // fixture names resolve (on loopback) in the browser to a decoy on the same port as the fixture's names, so a request
 // that went direct would show the decoy's page and count a hit.
 //
@@ -20,6 +21,7 @@ import { shoot } from '../support/auth-support.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { activeTabInfo, delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { closeTunnelList, pressAlways } from '../support/tunnel-popup.js'
 
 const SITE_NAME = 'site.socks.test'
 const CDN_NAME = 'cdn.socks.test'
@@ -180,13 +182,17 @@ it('[app:tunnelled-website-gets-its-own-storage] the tunnel button and its popov
   expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on')).toBe(true)
   const popover = await openPopover()
   expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked')).toBe('true')
-  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent()).toBe('This site\'s traffic goes through your tunnel.')
+  expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent()).toBe('This tab\'s traffic goes through your tunnel.')
+  expect(await popover.locator('#tunnel-switch-always').getAttribute('aria-checked'), 'the row set the tab: the site has no tunnel of its own yet').toBe('false')
   await shoot(app, chrome, popover, 'website-tunnel-on')
   await closePopover()
   await shoot(app, chrome, chrome, 'website-tunnel-key')
 }, 3 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-gets-its-own-storage] Settings lists the site, and removing its separate storage clears that site\'s data in the profile and nothing else', async () => {
+  // The row moved the tab only; the site is listed once "Always use for this site" has made the tunnel its own.
+  await pressAlways(app, chrome, 'socks5')
+  await closeTunnelList(app, chrome)
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('settings', '/tunnels') })
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
   const settings = app.windows().find((w) => w.url().startsWith('orivon://settings')) as Page
@@ -228,6 +234,10 @@ it('[app:tunnelled-website-gets-its-own-storage] turning the tunnel off returns 
   expect(await waitFor(async () => await tabTitle() === 'tunnelled', 20_000), 'no notice stood in the way').toBe(true)
   expect(await sessionOfTab(siteUrl())).toMatchObject({ isDefault: false })
   expect((await cookies(profilePartition)).sort()).toEqual(['kept=1', 'who=site'])
+
+  // The tests below are about a site with a tunnel of its own, so it keeps this one for good.
+  await pressAlways(app, chrome, 'socks5')
+  await closeTunnelList(app, chrome)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-sends-nothing-direct] a load the shell did not move, into the shared session, is refused and reaches neither the site nor the tunnel', async () => {

@@ -5,16 +5,15 @@
 // single god-object covering both the grant list and the per-site
 // popover (code-guidelines.md Rule 2).
 
-import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
 import { profileOrigin, SHARED_ORIGIN, unreadableTunnel } from '../route/route-hub.js'
-import { choiceForSwitch } from '../route/tab-tunnel.js'
 import type { CapabilityKind, Pattern } from '../../contracts/index.js'
 import { isLocalFileKey, isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import type { SubsystemContext } from '../registry.js'
-import { buildSiteInfo } from './site-info.js'
+import { buildSiteInfo, emptySiteInfo } from './site-info.js'
 import type { BrowserTunnel, SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile, SiteUpdate } from './site-info.js'
-import { NO_TABS, tabTunnel, tabVia, THIS_TAB } from './site-info-tab.js'
+import { NO_TABS, tabVia } from './site-info-tab.js'
 import type { TabTunnels } from './site-info-tab.js'
+import { createTabTunnelController, nymSwitchedOff } from './site-info-tab-controller.js'
 import { browserTunnel, NO_BROWSER } from './site-info-browser.js'
 import type { BrowserTunnels } from './site-info-browser.js'
 import { turnOffCapability, turnOnCapability } from './site-switches.js'
@@ -59,10 +58,6 @@ export interface AppEntry {
 }
 
 const NO_ENTRY: AppEntry = { notLetIn: () => undefined, askAgain: async () => true, changed: () => {} }
-
-const EMPTY_SITE_INFO = (origin: string, extensionsOnSite: readonly string[] = []): SiteInfo => ({
-  origin, displayOrigin: origin, claimedName: undefined, homeDomain: undefined, update: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite
-})
 
 /** The loader-adjacent facts `../browsing/site-trust.js` needs but does not
  * read itself (its own header: pure, no `electron-serve.js` import) --
@@ -122,10 +117,18 @@ export interface SiteInfoController {
   storageDeclarationFor: (url: string) => Promise<StorageDeclaration | null>
   /** Takes the update offered for `origin` (`../install/app-updates.ts`): refused for any CID but the pending offer. */
   applyUpdate: (origin: string, cid: string, caller?: DialogCaller) => Promise<ApplyOutcome>
-  /** The tunnel popover's facts about the tab `tabId`: the tunnel its websites go through and what it is doing. Undefined for a tab that is not open, and while routes are not running. */
-  tabInfoFor: (tabId: string) => SiteInfo | undefined
-  /** Gives the tab the tunnel `kind` for every website it opens, or none (null): false when it could not be done (the tab is gone, the tunnel cannot be chosen, the settings cannot be read, a window held to Nym, or the tab could not move to the session the choice calls for). */
-  setTabTunnel: (tabId: string, kind: SiteTunnelKind | null) => boolean
+  /** The tunnel popover's facts about the tab `tabId`: the tunnel its websites go through and what it is doing, and for a tab showing a website everything that website's own panel tells and its "Always" switch. Undefined for a tab that is not open, and while routes are not running. */
+  tabInfoFor: (tabId: string) => Promise<SiteInfo | undefined>
+  /** The origin of the website the popup for the tab `tabId` is about, '' when it is about none. */
+  tabShownOrigin: (tabId: string) => string
+  /**
+   * Gives the tab the tunnel `kind` for every website it opens, or none (null), and the website it shows too while that website has an entry of its own (the row moves for good,
+   * ADR-0104): false when it could not be done (the tab is gone, the tunnel cannot be chosen, the settings cannot be read, a window held to Nym, the tab could not move to the session
+   * the choice calls for, the entry could not be changed, or the website has an entry and `shownOrigin` is not the one the tab shows now). A failed move leaves the tab as it was.
+   */
+  setTabTunnel: (tabId: string, kind: SiteTunnelKind | null, shownOrigin?: string) => Promise<boolean>
+  /** "Always use for this site": saves what the tab's panel shows as the website's own entry (`on`), or takes the entry away with the tab keeping what it does. False when it could not be done, or `shownOrigin` is not the website the tab shows now. */
+  setSiteAlways: (tabId: string, on: boolean, shownOrigin: string) => Promise<boolean>
   /** Sends a website or an installed app through the tunnel `kind`, or through none (null): false when it could not be done (no address for that tunnel, Nym switched off, this computer, or the choice could not be kept). */
   setTunnel: (origin: string, kind: SiteTunnelKind | null) => Promise<boolean>
   /** Sends the whole browser through the tunnel `kind`, or takes it off its tunnel (null): false when it could not be done (no address for that tunnel, Nym switched off, the settings cannot be read, a window held to Nym). */
@@ -150,12 +153,6 @@ type Routes = NonNullable<SubsystemContext['routes']>
 /** The tunnel the person chose for everything that has no choice of its own: Nym, or their own address (also while none is set). */
 function tunnelKindOf (routes: Routes): 'nym' | 'socks5' {
   return routes.defaultKind()
-}
-
-/** The person switched Nym off in Settings, so nothing can be sent through it until it is switched on again. */
-function nymSwitchedOff (routes: Routes): boolean {
-  const nym = routes.nym.state()
-  return nym.state === 'unavailable' && nym.reason === NYM_SWITCHED_OFF
 }
 
 const TUNNELS: readonly SiteTunnelKind[] = ['nym', 'socks5']
@@ -227,36 +224,13 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     return { ...(routes.targetOf('socks5') === undefined ? { socks5: 'no-proxy' as const } : {}), ...(nymSwitchedOff(routes) ? { nym: 'nym-off' as const } : {}) }
   }
 
-  function tabInfoFor (tabId: string): SiteInfo | undefined {
-    const routes = ctx.routes
-    const tab = tabTunnels.choiceOf(tabId)
-    if (routes === undefined || tab === undefined) return undefined
-    const everywhere = routes.hub.isEverywhere()
-    const defaultKind = routes.defaultKind()
-    // While the settings cannot be read every website is in one tunnel's profile, whatever the tab was told but a tunnel of its own.
-    const unreadableKind = unreadableTunnel(routes.hub)
-    const via = tabVia(tab.choice, everywhere, defaultKind, unreadableKind)
-    // The route the tab's websites share: their tunnel's profile when the tab chose one or the settings cannot be read, the shared one while it follows the browser.
-    const route = via === null ? 'off' : routes.hub.state(tab.choice === undefined && unreadableKind === undefined ? SHARED_ORIGIN : profileOrigin(via))
-    const tunnel = tabTunnel({ choice: tab.choice, everywhere, defaultKind, unreadable: routes.hub.unreadable(), ...(unreadableKind === undefined ? {} : { unreadableKind }), blocked: tabBlocked(routes), proxy: { address: proxySetup.address(), users: proxyUsers(routes) } })
-    return {
-      ...EMPTY_SITE_INFO('', []),
-      displayOrigin: THIS_TAB,
-      tunnelKind: via ?? defaultKind,
-      everywhere,
-      tunnel,
-      ...(ctx.privateTunnel === 'nym' ? { tunnelHeld: 'nym' as const } : {}),
-      ...(route === 'off' ? {} : { route }),
-      ...(via === 'nym' ? { nym: routes.nym.state() } : {})
-    }
-  }
-
-  /** The tunnel switches of a website or an installed app; not for a local file or this computer. */
-  function tunnelFor (origin: string): SiteTunnel | undefined {
+  /** The tunnel switches of a website or an installed app; not for a local file or this computer. `lit` is the tunnel the notices are for: the one the page goes through, which a tab's choice can make another than the website's own. */
+  function tunnelFor (origin: string, lit?: SiteTunnelKind | null): SiteTunnel | undefined {
     const routes = ctx.routes
     const subject = trustSources.isOriginServedFromCacheSync(origin) ? 'app' : 'site'
     if (routes === undefined || (subject === 'site' && !canTunnel(origin))) return undefined
-    const via = routes.hub.kindOf(origin) ?? null
+    const own = routes.hub.kindOf(origin) ?? null
+    const via = lit === undefined ? own : lit
     const blocked: { -readonly [kind in SiteTunnelKind]?: 'no-proxy' | 'nym-off' | 'not-kept' } = {}
     const notices: { -readonly [choice in SiteTunnelKind | 'off']?: SiteTunnelProfile } = {}
     for (const kind of TUNNELS) {
@@ -273,7 +247,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     }
     if (nymSwitchedOff(routes)) blocked.nym = 'nym-off'
     return {
-      via,
+      via: own,
       following: routes.store.stateOf(origin) === undefined,
       subject,
       blocked,
@@ -308,10 +282,10 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     const origin = isolationKeyFromUrl(url)
     // No canonical origin (about:, chrome://, a malformed url) -- nothing
     // to show, and no address for `broker` to look anything up under.
-    if (origin === null) return EMPTY_SITE_INFO(url)
+    if (origin === null) return emptySiteInfo(url)
     const extensionsOnSite = await extensionsFor(origin)
     const broker = ctx.broker
-    if (broker === undefined || !broker.app.isRegisteredSync(origin)) return EMPTY_SITE_INFO(origin, extensionsOnSite)
+    if (broker === undefined || !broker.app.isRegisteredSync(origin)) return emptySiteInfo(origin, extensionsOnSite)
     try {
       const [manifest, grants, pickedPaths] = await Promise.all([
         broker.app.manifest(origin),
@@ -323,9 +297,29 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       // A registered origin whose manifest read transiently fails -- the
       // same "drop the row rather than throw into a renderer" stance
       // permissions.ts's own describeOrigin takes.
-      return EMPTY_SITE_INFO(origin, extensionsOnSite)
+      return emptySiteInfo(origin, extensionsOnSite)
     }
   }
+
+  async function setTunnel (origin: string, kind: SiteTunnelKind | null): Promise<boolean> {
+    const routes = ctx.routes
+    if (routes === undefined || (!trustSources.isOriginServedFromCacheSync(origin) && !canTunnel(origin))) return false
+    // A window held to Nym keeps every switch where it is (the store refuses it too).
+    if (ctx.privateTunnel === 'nym' && kind !== 'nym') return false
+    if (kind !== null && (routes.routeSwitch.blockedFor(origin, kind) !== undefined || (kind === 'nym' && nymSwitchedOff(routes)))) return false
+    try {
+      await routes.routeSwitch.choose(origin, kind)
+    } catch (error) {
+      console.error('[site-info] the tunnel of a website could not be switched:', error)
+      return false
+    }
+    return true
+  }
+
+  const tabs = createTabTunnelController({
+    ctx, tabTunnels, isApp: trustSources.isOriginServedFromCacheSync, websiteTunnel: tunnelFor, blocked: tabBlocked, extensionsFor, setWebsiteTunnel: setTunnel,
+    proxy: (routes) => ({ address: proxySetup.address(), users: proxyUsers(routes) })
+  })
 
   return {
     async siteSummaryFor (url) {
@@ -393,33 +387,15 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       return ctx.routes === undefined || ctx.privateTunnel === 'nym' ? null : await proxySetup.test(kind)
     },
 
-    tabInfoFor,
+    tabInfoFor: tabs.tabInfoFor,
 
-    setTabTunnel (tabId, kind) {
-      const routes = ctx.routes
-      if (routes === undefined || tabTunnels.choiceOf(tabId) === undefined || routes.hub.unreadable()) return false
-      // A window held to Nym keeps every switch where it is (the tab refuses any other choice too).
-      if (ctx.privateTunnel === 'nym' && kind !== 'nym') return false
-      if (kind !== null && (routes.targetOf(kind) === undefined || (kind === 'nym' && nymSwitchedOff(routes)))) return false
-      const choice = choiceForSwitch(kind, routes.hub.isEverywhere())
-      tabTunnels.set(tabId, choice)
-      return tabTunnels.choiceOf(tabId)?.choice === (choice ?? undefined)
-    },
+    tabShownOrigin: tabs.tabShownOrigin,
 
-    async setTunnel (origin, kind) {
-      const routes = ctx.routes
-      if (routes === undefined || (!trustSources.isOriginServedFromCacheSync(origin) && !canTunnel(origin))) return false
-      // A window held to Nym keeps every switch where it is (the store refuses it too).
-      if (ctx.privateTunnel === 'nym' && kind !== 'nym') return false
-      if (kind !== null && (routes.routeSwitch.blockedFor(origin, kind) !== undefined || (kind === 'nym' && nymSwitchedOff(routes)))) return false
-      try {
-        await routes.routeSwitch.choose(origin, kind)
-      } catch (error) {
-        console.error('[site-info] the tunnel of a website could not be switched:', error)
-        return false
-      }
-      return true
-    },
+    setTabTunnel: tabs.setTabTunnel,
+
+    setSiteAlways: tabs.setSiteAlways,
+
+    setTunnel,
 
     setBrowserTunnel (kind) {
       const routes = ctx.routes

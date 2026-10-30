@@ -135,7 +135,7 @@ hr {
 .tunnel-tab:hover { color: var(--wink); }
 .tunnel-tab.selected { background: var(--wbg); color: var(--wink); box-shadow: 0 0 0 1px var(--wborder); }
 .tunnel-tab:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
-.tunnel-nodes { margin-top: 6px; }
+.tunnel-nodes, .tunnel-always { margin-top: 6px; }
 .tunnel-kept { list-style: none; margin: 0; padding: 0; max-height: 124px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
 .tunnel-kept:focus-visible { outline: 2px solid var(--waccent); outline-offset: 2px; }
 .tunnel-kept-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }

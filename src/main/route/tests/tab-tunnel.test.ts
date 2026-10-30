@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { choiceForSwitch, choiceUnderHold, isTabTunnelChoice, profileForTab, setTabTunnelSource, tabChoiceOfContents, tabKindShowing, tabWebsitesTunnel, tunnelForTab, tunnelOfChoice } from '../tab-tunnel.js'
+import { choiceForSwitch, choiceUnderHold, isTabTunnelChoice, profileForTab, setTabTunnelSource, tabChoiceOfContents, tabKindShowing, tabWebsitesTunnel, tunnelForTab, tunnelOfChoice, tunnelOfPage } from '../tab-tunnel.js'
 import type { TabTunnelChoice } from '../tab-tunnel.js'
 import type { Profile } from '../site-partition.js'
 
@@ -147,5 +147,27 @@ describe('the tunnel the websites of a tab go through when none has an entry of 
     for (const choice of [undefined, 'direct', 'nym', 'socks5'] as const) {
       for (const unreadable of ['nym', 'socks5'] as const) expect(tabWebsitesTunnel(choice, undefined, unreadable), `${String(choice)} over ${unreadable}`).toBe(tunnelForTab(choice, SITE, unreadable))
     }
+  })
+})
+
+describe('the tunnel a page leaves by', () => {
+  it('is the browser\'s for a tab with no choice and a website with no profile of its own, whatever that is', () => {
+    expect(tunnelOfPage(undefined, SITE, undefined, 'nym')).toBe('nym')
+    expect(tunnelOfPage(undefined, SITE, undefined, undefined)).toBeUndefined()
+  })
+
+  it('is the website\'s own for a tab with no choice: an off entry leaves the tunnel the browser is on', () => {
+    expect(tunnelOfPage(undefined, SITE, 'socks5', 'nym')).toBe('socks5')
+    expect(tunnelOfPage(undefined, SITE, 'direct', 'nym')).toBeUndefined()
+  })
+
+  it('is the tab\'s tunnel over both, and a direct tab never loosens a tunnel of the website\'s own', () => {
+    expect(tunnelOfPage('nym', SITE, 'socks5', undefined)).toBe('nym')
+    expect(tunnelOfPage('direct', SITE, undefined, 'nym'), 'a direct tab leaves the browser\'s tunnel').toBeUndefined()
+    expect(tunnelOfPage('direct', SITE, 'socks5', 'nym')).toBe('socks5')
+  })
+
+  it('is none for this computer whatever the tab carries', () => {
+    expect(tunnelOfPage('nym', 'http://localhost:3000', undefined, undefined)).toBeUndefined()
   })
 })

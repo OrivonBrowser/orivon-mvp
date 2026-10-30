@@ -1,5 +1,5 @@
 // The tunnel button at the right end of the address pill: grey on a page that goes direct, purple once the person
-// switches the tunnel on for the site in the popover it opens and confirms the storage notice. The popover lists Nym
+// switches the tunnel on for the tab in the popover it opens and confirms the storage notice. The popover lists Nym
 // with its logo and a switch, and leads to Settings > Tunnels at the browser-wide switch. The Nym module is the
 // stand-in `e2e-app-routed-nym` uses.
 //
@@ -102,8 +102,8 @@ it('is plain on the new tab and grey on a page that goes direct, and the key say
 it('opens a list with Nym and the person\'s proxy, the logo of Nym, both switches off, the two panels and the link to Tunnels settings', async () => {
   const popover = await openPopover()
   expect(await popover.locator('.site-origin').textContent()).toBe('Tunnels')
-  expect(await popover.locator('[role="tab"]').allTextContents(), 'two panels: the site\'s own and the whole browser').toEqual(['This site', 'Browser-wide'])
-  expect(await popover.locator('#tunnel-tab-first').getAttribute('aria-selected'), 'a site with no tunnel of its own, with the browser on none, opens on its own panel').toBe('true')
+  expect(await popover.locator('[role="tab"]').allTextContents(), 'two panels: the tab\'s own and the whole browser').toEqual(['This tab', 'Browser-wide'])
+  expect(await popover.locator('#tunnel-tab-first').getAttribute('aria-selected'), 'a tab with no tunnel of its own, with the browser on none, opens on its own panel').toBe('true')
   expect(await popover.locator('.tunnel-row').count(), 'a row for each tunnel').toBe(2)
   expect(await popover.locator('.tunnel-row[data-tunnel="nym"] .tunnel-label').textContent()).toBe('Nym')
   expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-label').textContent()).toBe('Your proxy')
@@ -113,6 +113,8 @@ it('opens a list with Nym and the person\'s proxy, the logo of Nym, both switche
   expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('false')
   expect(await popover.locator('#tunnel-settings-open').textContent()).toBe('Open Tunnels settings')
   expect(await popover.locator('#tunnel-notice-confirm').count()).toBe(0)
+  expect(await popover.locator('#tunnel-switch-always').getAttribute('aria-checked'), '"Always use for this site" is off').toBe('false')
+  expect(await popover.locator('#tunnel-switch-always').isDisabled(), 'and held while nothing is chosen to keep').toBe(true)
   await shoot(app, chrome, popover, 'tunnel-button-popover')
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)
@@ -127,7 +129,7 @@ it('turns purple once the switch is on and the notice is confirmed, and the page
   expect(await waitFor(async () => (await activeTabInfo(chrome)).title === 'tunnelled', 60_000), 'the page came through Nym').toBe(true)
   expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on')).toBe(true)
   expect(await buttonColour()).toBe(await tokenColour('--wtunnel'))
-  expect(await chrome.getAttribute('#tunnel-btn', 'aria-label')).toContain('This page goes through Nym')
+  expect(await chrome.getAttribute('#tunnel-btn', 'aria-label'), 'the button says the choice is the tab\'s').toBe('Tunnels. This page goes through Nym. Set for this tab')
   // The popover closes when the tab moves to its session: opened again it shows the switch on.
   if (findPopup() !== undefined) await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)
@@ -135,7 +137,9 @@ it('turns purple once the switch is on and the notice is confirmed, and the page
   await shoot(app, chrome, chrome, 'tunnel-button-on')
   const again = await openPopover()
   expect(await again.locator('#tunnel-switch-nym').getAttribute('aria-checked')).toBe('true')
-  expect(await again.locator('.tunnel-row[data-tunnel="nym"] .tunnel-state').textContent()).toContain('This site\'s traffic goes through Nym')
+  expect(await again.locator('.tunnel-row[data-tunnel="nym"] .tunnel-state').textContent()).toContain('This tab\'s traffic goes through Nym')
+  expect(await again.locator('#tunnel-switch-always').getAttribute('aria-checked'), 'the row set the tab, not the website').toBe('false')
+  expect(await again.locator('#tunnel-switch-always').isDisabled(), 'and there is a choice to keep now').toBe(false)
   await shoot(app, chrome, again, 'tunnel-button-popover-on')
   await chrome.click('#tunnel-btn')
   expect(await waitFor(() => findPopup() === undefined)).toBe(true)

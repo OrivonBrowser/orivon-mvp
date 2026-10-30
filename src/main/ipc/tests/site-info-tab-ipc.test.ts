@@ -20,7 +20,8 @@ const NEXT = { ...INFO, tunnelKind: 'nym' } as unknown as SiteInfo
 function fakeController (over: Partial<SiteInfoController> = {}): SiteInfoController {
   return {
     tabInfoFor: vi.fn(() => INFO),
-    setTabTunnel: vi.fn(() => true),
+    setTabTunnel: vi.fn(async () => true),
+    setSiteAlways: vi.fn(async () => true),
     setBrowserTunnel: vi.fn(() => true),
     setNodesTunnel: vi.fn(() => true),
     setProxyAddress: vi.fn(() => 'ok' as const),
@@ -78,16 +79,64 @@ describe('registerSiteInfoTabIpc', () => {
     const controller = fakeController({ tabInfoFor })
     register(controller)
     expect(await dispatch({ type: 'setTunnel', kind: 'nym', tab: 'tab-9' })).toEqual({ ok: true, info: NEXT })
-    expect(controller.setTabTunnel).toHaveBeenCalledWith(TAB, 'nym')
+    expect(controller.setTabTunnel).toHaveBeenCalledWith(TAB, 'nym', '')
     await dispatch({ type: 'setTunnel', kind: null })
-    expect(controller.setTabTunnel).toHaveBeenLastCalledWith(TAB, null)
+    expect(controller.setTabTunnel).toHaveBeenLastCalledWith(TAB, null, '')
     expect(controller.setTunnel, 'a tab\'s switch never writes a website\'s entry').not.toHaveBeenCalled()
   })
 
   it('says it was not done, with the info as it was, when the controller could not', async () => {
-    const controller = fakeController({ setTabTunnel: vi.fn(() => false) })
+    const controller = fakeController({ setTabTunnel: vi.fn(async () => false) })
     register(controller)
     expect(await dispatch({ type: 'setTunnel', kind: 'socks5' })).toEqual({ ok: false, info: INFO })
+  })
+
+  it('tells the controller which website the rows were drawn for, a string or nothing, and never lets the popup name the one that acts', async () => {
+    const controller = fakeController()
+    register(controller)
+    await dispatch({ type: 'setTunnel', kind: 'nym', shownOrigin: 'https://news.example' })
+    expect(controller.setTabTunnel).toHaveBeenLastCalledWith(TAB, 'nym', 'https://news.example')
+    for (const shownOrigin of [7, null, {}, ['https://news.example']]) {
+      await dispatch({ type: 'setTunnel', kind: 'socks5', shownOrigin })
+      expect(controller.setTabTunnel, String(shownOrigin)).toHaveBeenLastCalledWith(TAB, 'socks5', '')
+    }
+  })
+
+  it('answers with the info as it is after a move that was refused, so the rows show what is true', async () => {
+    const tabInfoFor = vi.fn().mockReturnValueOnce(INFO).mockReturnValue(NEXT)
+    register(fakeController({ tabInfoFor, setTabTunnel: vi.fn(async () => false) }))
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: false, info: NEXT })
+  })
+
+  it('keeps or lets go of the website\'s own choice for the tab it was built for, whatever tab or origin a command names, and returns the info after', async () => {
+    const tabInfoFor = vi.fn().mockReturnValueOnce(INFO).mockReturnValue(NEXT)
+    const controller = fakeController({ tabInfoFor })
+    register(controller)
+    expect(await dispatch({ type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example', tab: 'tab-9', origin: 'https://evil.example' })).toEqual({ ok: true, info: NEXT })
+    expect(controller.setSiteAlways).toHaveBeenCalledWith(TAB, true, 'https://news.example')
+    await dispatch({ type: 'setSiteAlways', on: false, shownOrigin: 'https://news.example' })
+    expect(controller.setSiteAlways).toHaveBeenLastCalledWith(TAB, false, 'https://news.example')
+    expect(controller.setTunnel, 'never an entry named by the popup').not.toHaveBeenCalled()
+  })
+
+  it('refuses a switch position that is no boolean, or a shown website that is no string, without reaching the controller', async () => {
+    const controller = fakeController()
+    register(controller)
+    for (const on of [undefined, null, 1, 0, 'true', {}]) expect(await dispatch({ type: 'setSiteAlways', on, shownOrigin: 'https://news.example' }), String(on)).toEqual({ ok: false, info: INFO })
+    for (const shownOrigin of [undefined, null, 7, {}, ['x']]) expect(await dispatch({ type: 'setSiteAlways', on: true, shownOrigin }), String(shownOrigin)).toEqual({ ok: false, info: INFO })
+    expect(controller.setSiteAlways).not.toHaveBeenCalled()
+  })
+
+  it('says the switch did not move, with the info as it is, when the controller refused (a stale panel, a held window, settings that cannot be read)', async () => {
+    register(fakeController({ setSiteAlways: vi.fn(async () => false) }))
+    expect(await dispatch({ type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example' })).toEqual({ ok: false, info: INFO })
+  })
+
+  it('answers nothing for the switch once the tab is gone', async () => {
+    const gone = fakeController({ tabInfoFor: vi.fn(async () => undefined) })
+    register(gone)
+    expect(await dispatch({ type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example' })).toBeUndefined()
+    expect(gone.setSiteAlways).not.toHaveBeenCalled()
   })
 
   it('refuses a value that is not a tunnel without reaching the controller, and answers nothing once the tab is gone', async () => {
@@ -95,7 +144,7 @@ describe('registerSiteInfoTabIpc', () => {
     register(controller)
     for (const kind of [undefined, 1, 'true', true, 'tor', 'off', 'direct']) expect(await dispatch({ type: 'setTunnel', kind }), String(kind)).toEqual({ ok: false, info: INFO })
     expect(controller.setTabTunnel).not.toHaveBeenCalled()
-    const gone = fakeController({ tabInfoFor: vi.fn(() => undefined) })
+    const gone = fakeController({ tabInfoFor: vi.fn(async () => undefined) })
     register(gone)
     expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toBeUndefined()
     expect(await dispatch({ type: 'get' })).toBeUndefined()
@@ -145,7 +194,7 @@ describe('registerSiteInfoTabIpc', () => {
   })
 
   it('answers nothing for the browser-wide commands once the tab is gone', async () => {
-    const gone = fakeController({ tabInfoFor: vi.fn(() => undefined) })
+    const gone = fakeController({ tabInfoFor: vi.fn(async () => undefined) })
     register(gone)
     expect(await dispatch({ type: 'setBrowserTunnel', kind: 'nym' })).toBeUndefined()
     expect(await dispatch({ type: 'setNodesTunnel', on: true })).toBeUndefined()
@@ -196,7 +245,7 @@ describe('registerSiteInfoTabIpc', () => {
   it('answers nothing from another frame', async () => {
     const controller = fakeController()
     register(controller)
-    for (const command of [{ type: 'get' }, { type: 'setTunnel', kind: 'nym' }, { type: 'setBrowserTunnel', kind: 'nym' }, { type: 'setNodesTunnel', on: true }, { type: 'setProxyAddress', text: '127.0.0.1:9050' }, { type: 'testTunnel', kind: 'nym' }]) {
+    for (const command of [{ type: 'get' }, { type: 'setTunnel', kind: 'nym' }, { type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example' }, { type: 'setBrowserTunnel', kind: 'nym' }, { type: 'setNodesTunnel', on: true }, { type: 'setProxyAddress', text: '127.0.0.1:9050' }, { type: 'testTunnel', kind: 'nym' }]) {
       expect(await dispatch(command, OTHER_FRAME), command.type).toBeUndefined()
     }
     expect(controller.setTabTunnel).not.toHaveBeenCalled()

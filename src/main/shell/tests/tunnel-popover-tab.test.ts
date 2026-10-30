@@ -17,19 +17,22 @@ describe('which tab the tunnel button\'s popover is about', () => {
     expect(forTab(snapshot(tab({ isNewTab: true, url: 'about:blank' })), shared, notApp)).toBe('t1')
   })
 
-  it('is the tab in front when it carries a tunnel choice and shows a website', () => {
+  it('is the tab in front for a website, whether or not the tab carries a tunnel choice and the website has an entry of its own', () => {
     for (const tunnelChoice of ['nym', 'socks5', 'direct'] as const) expect(forTab(snapshot(tab({ tunnelChoice })), shared, notApp), tunnelChoice).toBe('t1')
-    expect(forTab(snapshot(tab({ tunnelChoice: 'nym', url: 'http://localhost:3000/' })), shared, notApp), 'this computer, which the choice does not send through a tunnel, is still the tab\'s').toBe('t1')
+    expect(forTab(snapshot(tab()), shared, notApp), 'no choice').toBe('t1')
+    expect(forTab(snapshot(tab({ url: 'http://news.example/' })), shared, notApp), 'a plain http website').toBe('t1')
+  })
+
+  it('is no tab for a page that cannot go through a tunnel (this computer, a file, anything that is no web origin), whatever the tab carries', () => {
+    for (const url of ['http://localhost:3000/', 'http://127.0.0.1:8080/', 'file:///home/me/page.html', 'data:text/html,hello']) {
+      for (const tunnelChoice of [undefined, 'nym', 'direct'] as const) expect(forTab(snapshot(tab(tunnelChoice === undefined ? { url } : { url, tunnelChoice })), shared, notApp), `${url} ${String(tunnelChoice)}`).toBeUndefined()
+    }
   })
 
   it('is the tab in front for a website in the session of any tunnel profile, which is where its choice put it', () => {
     for (const partition of ['persist:tunnel-profile', 'persist:proxy-profile', 'persist:direct-profile', 'tunnel-profile-memory']) {
       expect(forTab(snapshot(tab({ tunnelChoice: 'nym' })), inPartition(partition), notApp), partition).toBe('t1')
     }
-  })
-
-  it('is no tab for a website in a tab with no choice, which has a tunnel of its own', () => {
-    expect(forTab(snapshot(tab()), shared, notApp)).toBeUndefined()
   })
 
   it('is no tab for an installed app, which keeps its own route whatever the tab carries', () => {
@@ -70,8 +73,12 @@ describe('a tab whose first page has not committed (its address is empty)', () =
   const uncommitted = (over: Partial<TabState> = {}): TabState => tab({ url: '', ...over })
   const opening = (address: string | undefined) => (): string | undefined => address
 
-  it('is no tab when it is opening a website and carries no choice: the press is about that website, as it is once the page has come', () => {
-    expect(tabForTunnelPopover(snapshot(uncommitted()), shared, notApp, opening('https://news.example/a'))).toBeUndefined()
+  it('is the tab when it is opening a website and carries no choice, as it is once the page has come', () => {
+    expect(tabForTunnelPopover(snapshot(uncommitted()), shared, notApp, opening('https://news.example/a'))).toBe('t1')
+  })
+
+  it('is no tab when what it is opening cannot go through a tunnel', () => {
+    for (const address of ['http://localhost:3000/', 'file:///home/me/page.html']) expect(tabForTunnelPopover(snapshot(uncommitted({ tunnelChoice: 'nym' })), shared, notApp, opening(address)), address).toBeUndefined()
   })
 
   it('is the tab when it carries a choice and is opening a website, which the choice decides', () => {
@@ -96,8 +103,9 @@ describe('a tab whose first page has not committed (its address is empty)', () =
 
   it('asks for the address only of a tab with no page, never of one that shows a page', () => {
     const pending = (): string => 'https://other.example/'
-    expect(tabForTunnelPopover(snapshot(tab({ url: 'https://news.example/' })), shared, notApp, pending)).toBeUndefined()
-    expect(tabForTunnelPopover(snapshot(tab({ url: 'https://news.example/', tunnelChoice: 'nym' })), shared, (origin) => origin === 'https://other.example', pending)).toBe('t1')
+    const pendingIsApp = (origin: string): boolean => origin === 'https://other.example'
+    expect(tabForTunnelPopover(snapshot(tab({ url: 'https://news.example/' })), shared, pendingIsApp, pending)).toBe('t1')
+    expect(tabForTunnelPopover(snapshot(tab({ url: 'https://news.example/', tunnelChoice: 'nym' })), shared, pendingIsApp, pending)).toBe('t1')
   })
 })
 

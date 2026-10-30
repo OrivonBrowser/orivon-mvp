@@ -95,6 +95,8 @@ export interface SiteTunnel {
   readonly proxy: { readonly address: string, readonly users: { readonly sites: number, readonly apps: number, readonly everything: boolean } }
   /** For a tab: the choice it carries; absent for a tab with none, whose websites follow their own entries. */
   readonly tabChoice?: TabTunnelChoice
+  /** For a tab showing a website: the "Always use for this site" switch. `on` while the website has an entry of its own, `available` while it is on or the tab has a choice to save. */
+  readonly always?: { readonly on: boolean, readonly available: boolean }
   /** The page does not choose its tunnel here: it runs in a temporary session opened through an app's tunnel, or in the session of the app that opened it. */
   readonly fixed?: 'temporary' | 'opened'
 }
@@ -230,4 +232,9 @@ export function buildSiteInfo (
     consentGranularity: manifest.consentGranularity ?? 'all-or-nothing',
     extensionsOnSite
   }
+}
+
+/** A `SiteInfo` with no capabilities, grants or tunnel: what an origin with no manifest shows, and what the tunnel popup for a tab starts from. */
+export function emptySiteInfo (origin: string, extensionsOnSite: readonly string[] = []): SiteInfo {
+  return { origin, displayOrigin: origin, claimedName: undefined, homeDomain: undefined, update: undefined, asked: false, capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite }
 }

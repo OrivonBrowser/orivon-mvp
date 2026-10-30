@@ -17,9 +17,16 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`tunnelled-website-gets-its-own-storage`**: the tunnel button's list on a website now sets the tab, and the website's own tunnel is made by "Always use for this site". Apps need no change; a port that opens a website through a tunnel on purpose turns Always on for it. Recheck: nothing.
+- **`tunnel-on-a-failed-page`**: the row that loads a failed page through a tunnel now sets the tab's tunnel, not the website's. Apps need no change. Recheck: ports that open onion addresses.
+- **`tunnel-everywhere-leaves-a-site-set-to-off-direct`**: a site turned off under a tunnelled browser stays that way for the site, and shows in Settings, only once "Always use for this site" is on; the row alone sends the tab. Apps need no change. Recheck: nothing.
+- **`browser-wide-tunnel-sets-the-whole-browser`**: the first panel of a website is named "This tab", not "This site". Apps need no change. Recheck: nothing.
+- **`tab-tunnel-button-opens-before-the-first-page-commits`**: the button on a tab opened onto a website that has not answered opens the tab's list, naming the website, with or without a choice on the tab. Apps need no change. Recheck: nothing.
+
 ### Added
 
-- **The tunnels popup has a Browser-wide part**: a control under its heading chooses between the page's own tunnel ("This tab", "This site" or "This app") and the whole browser's, with a switch to send the IPFS and Swarm nodes through it too. Setting a tunnel browser-wide while tabs keep their own asks first, and lists those tabs.
+- **A website's tunnel is kept with one switch**: the rows of the tunnel button's list now set the tab, and "Always use for this site" under them saves what they show as the website's own choice, for every tab and after the tab closes. Turning it off keeps the page where it is and leaves the tab with that tunnel.
+- **The tunnels popup has a Browser-wide part**: a control under its heading chooses between the page's own tunnel ("This tab" or "This app") and the whole browser's, with a switch to send the IPFS and Swarm nodes through it too. Setting a tunnel browser-wide while tabs keep their own asks first, and lists those tabs.
 - **A tunnel for one tab, chosen before the first address**: the tunnel button is now on the new tab. Turn on Nym or your proxy there and the address you type, and every site that tab opens until it closes, goes through it from its first request; on a website that goes through the tab's tunnel the button says "Set for this tab". The new-tab page is not kept in the saved session until it navigates. In a window 640 pixels wide or less the toolbar's navigation buttons and the address bar's padding are 2 to 4 pixels tighter, so the address field keeps its room beside the new button.
 ### Changed
 

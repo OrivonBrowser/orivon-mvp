@@ -3,7 +3,7 @@ import { nymTestingWords, nymTestWords } from '../pages/shared/nym-words.js'
 import { proxyTestWords } from '../pages/shared/proxy-words.js'
 import type { ProxyTestResult } from '../pages/shared/proxy-words.js'
 import { routeLineWords } from './route-line.js'
-import { tabNotes } from './tab-words.js'
+import { ALWAYS_LABEL, ALWAYS_LINE_NOTHING, ALWAYS_LINE_OFF, ALWAYS_LINE_ON, tabNotes } from './tab-words.js'
 import { extensionsHint, tunnelHint } from './tunnel-view.js'
 import type { RouteSubject } from './route-line.js'
 import type { NymState } from '../../main/route/nym-status.js'
@@ -85,6 +85,17 @@ export interface NodesModel {
   readonly disabled: boolean
 }
 
+/** The "Always use for this site" switch under the rows of a tab showing a website. */
+export interface AlwaysModel {
+  readonly label: string
+  /** What it does, in the state it is in. */
+  readonly line: string
+  /** The website has an entry of its own. */
+  readonly on: boolean
+  /** The switch cannot be moved: the choice is fixed here, a storage notice is open, or nothing is chosen so there is nothing to keep. */
+  readonly disabled: boolean
+}
+
 /** The question before a tunnel is set browser-wide while tabs keep their own: nothing is set until it is answered. */
 export interface PromptModel {
   readonly text: string
@@ -99,6 +110,8 @@ export interface TunnelListModel {
   readonly empty: string | null
   /** The line under the list, before the link to Settings: what the browser's tunnel does for what has no choice here. */
   readonly hint: { readonly text: string }
+  /** The "Always" switch, on the first panel of a tab showing a website only. */
+  readonly always: AlwaysModel | null
   /** The nodes switch, on the Browser-wide panel only. */
   readonly nodes: NodesModel | null
   /** The question of the Browser-wide panel, while it is open. */
@@ -213,15 +226,15 @@ export function tunnelListModel (info: SiteInfo, view: TunnelView): TunnelListMo
   // A window held to a tunnel says so on the row; what the browser's tunnel does for the rest is said under the list.
   const hint = { text: info.tunnelHeld === undefined && everywhere ? everywhereHint(defaultKind) : '' }
   const tunnel = info.tunnel
-  if (tunnel === undefined) return { rows: [], notes: [], empty: NO_SWITCH_NOTE, hint, nodes: null, prompt: null }
+  if (tunnel === undefined) return { rows: [], notes: [], empty: NO_SWITCH_NOTE, hint, always: null, nodes: null, prompt: null }
 
   const held = info.tunnelHeld !== undefined
   const shown = view.pending === undefined ? tunnel.via : view.pending
   const fixed = held || tunnel.unreadable || tunnel.fixed !== undefined
-  const rows = tunnelRows({ via: tunnel.via, blocked: tunnel.blocked, proxy: tunnel.proxy, held, fixed, inUse: inUseLine(info.route, info.nym, tunnel.subject) }, view)
+  const rows = tunnelRows({ via: tunnel.via, blocked: tunnel.blocked, proxy: tunnel.proxy, held, fixed, inUse: inUseLine(info.route, info.nym, lineSubject(tunnel)) }, view)
   const hintText = tunnelHint(tunnel)
   const forTab = tunnel.subject === 'tab' ? tabNotes(tunnel, everywhere, fixed) : []
-  const reach = tunnel.subject === 'site' ? extensionsHint(info.extensionsOnSite, tunnel.profile) : undefined
+  const reach = tunnel.subject === 'site' || tunnel.always !== undefined ? extensionsHint(info.extensionsOnSite, tunnel.profile) : undefined
   const notes: TunnelLine[] = [
     ...(held ? [{ text: HELD_LINE, down: false }] : []),
     ...(tunnel.fixed === 'opened' && tunnel.via !== null ? [{ text: openedLine(tunnel.via), down: false }] : []),
@@ -230,5 +243,18 @@ export function tunnelListModel (info: SiteInfo, view: TunnelView): TunnelListMo
     ...(reach === undefined ? [] : [{ text: reach, down: false }]),
     ...(tunnel.subject === 'app' && shown !== null && !held ? [{ text: APP_UPDATES_NOTE, down: false }] : [])
   ]
-  return { rows, notes, empty: null, hint, nodes: null, prompt: null }
+  return { rows, notes, empty: null, hint, always: alwaysModel(tunnel, fixed, view.pending !== undefined), nodes: null, prompt: null }
+}
+
+/** A tab with no choice that shows a website with an entry of its own goes where the website was sent: the line is about the website, not the tab. */
+function lineSubject (tunnel: SiteTunnel): RouteSubject {
+  return tunnel.subject === 'tab' && tunnel.tabChoice === undefined && tunnel.always?.on === true && tunnel.via !== null ? 'site' : tunnel.subject
+}
+
+function alwaysModel (tunnel: SiteTunnel, fixed: boolean, asking: boolean): AlwaysModel | null {
+  const always = tunnel.always
+  if (always === undefined) return null
+  // A switch held for a reason the notes already give (a held window, unreadable settings) still says what it would do.
+  const line = always.on ? ALWAYS_LINE_ON : always.available || fixed ? ALWAYS_LINE_OFF : ALWAYS_LINE_NOTHING
+  return { label: ALWAYS_LABEL, line, on: always.on, disabled: fixed || asking || (!always.on && !always.available) }
 }

@@ -78,11 +78,15 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-async function start (settings: Record<string, unknown> = {}): Promise<{ app: ElectronApplication, chrome: Page }> {
+/** `settings` are the profile's settings; `nymSites` are websites that already carry their own Nym entry, as one saved with "Always use for this site" does. */
+async function start (settings: Record<string, unknown> = {}, nymSites: readonly string[] = []): Promise<{ app: ElectronApplication, chrome: Page }> {
   return await launchShell({
     env: { ORIVON_TEST_NYM_MODULE: moduleDir, ORIVON_TEST_NYM_FAKE: configFile },
     args: [`--host-resolver-rules=MAP ${NAME} 127.0.0.1, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`],
-    seedProfile: async (userDataDir) => { writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 1, values: settings })) }
+    seedProfile: async (userDataDir) => {
+      writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 1, values: settings }))
+      if (nymSites.length > 0) writeFileSync(join(userDataDir, 'routes.json'), JSON.stringify({ version: 1, profiles: 1, kinds: 1, origins: nymSites, via: {}, off: [], apart: [], apartProxy: [], apartDirect: [] }))
+    }
   })
 }
 
@@ -324,7 +328,7 @@ async function openHeldInNewTab (app: ElectronApplication, chrome: Page, page: P
   expect(await loadingPages(app), 'a page is loading').toBeGreaterThan(0)
 }
 
-it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the tunnels button pressed on a tab opened onto a website that has not answered yet opens the list of that website, and the same list once the page has come', async () => {
+it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the tunnels button pressed on a tab opened onto a website that has not answered yet opens the list of the tab, naming that website, and the same list once the page has come', async () => {
   const { app, chrome } = await start()
   try {
     await clickAddressBarRetrying(chrome, url())
@@ -336,8 +340,9 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the tunnels butt
     // Nothing has come from the website, so the tab has no address of its own yet: the press is about the address it is opening.
     const popover = await openList(app, chrome)
     expect(await loadingPages(app), 'the list opened while the page was still loading').toBeGreaterThan(0)
-    expect(await popover.locator('.site-claim').textContent(), 'the list is the website\'s, not the tab\'s').toContain(`${NAME}:${String(held.port)}`)
-    expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-label')).toBe('Use Nym for this site')
+    expect(await popover.locator('#tunnel-tab-first').textContent(), 'the list is the tab\'s').toBe('This tab')
+    expect(await popover.locator('.site-claim').textContent(), 'and names the website it is opening').toContain(`${NAME}:${String(held.port)}`)
+    expect(await popover.locator('#tunnel-switch-nym').getAttribute('aria-label')).toBe('Use Nym for this tab')
 
     // The page comes while the list is open: the list is not closed by the page taking the keyboard.
     held.release()
@@ -385,20 +390,12 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press o
   }
 }, 6 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press on a tab that showed a website with a tunnel of its own, once an address has been typed in it that has not answered, opens the list of that address', async () => {
-  const { app, chrome } = await start()
+it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press on a tab that showed a website with a tunnel of its own, once an address has been typed in it that has not answered, opens the list of the tab, naming that address', async () => {
+  // The website has a tunnel of its own and the tab has no choice, so the tab shows it in the session that tunnel calls for: typing another address leaves that session.
+  const { app, chrome } = await start({}, [`http://${NAME}:${String(decoy.port)}`])
   try {
-    // The website gets a tunnel of its own, so the tab shows it in the session that tunnel calls for: typing another address leaves that session.
     await clickAddressBarRetrying(chrome, url())
-    expect((await waitForTab(chrome, { address: url(), title: 'direct' }, 60_000)).ok).toBe(true)
-    const popover = await openList(app, chrome)
-    await popover.click('#tunnel-switch-nym')
-    await popover.waitForSelector('.tunnel-notice')
-    await popover.click('#tunnel-notice-confirm')
     expect((await waitForTab(chrome, { address: url(), title: 'tunnelled' }, 60_000)).ok, 'the website came through Nym').toBe(true)
-    if (findPopup(app) !== undefined) await chrome.click('#tunnel-btn')
-    expect(await waitFor(() => findPopup(app) === undefined)).toBe(true)
-    await delay(300)
 
     // The view in that session is put away on a blank page as the new address starts to load: that page's end is not the end of the load.
     const before = held.requests()
@@ -408,8 +405,10 @@ it('[app:tab-tunnel-button-opens-before-the-first-page-commits] the same press o
     expect(await loadingPages(app), 'a page is loading').toBeGreaterThan(0)
     expect(await chrome.locator('#tunnel-btn').isVisible(), 'the tab draws the button while its page has not committed').toBe(true)
     const list = await openList(app, chrome)
-    expect(await list.locator('.site-claim').textContent(), 'the list is the one of the address being opened').toContain(`${NAME}:${String(held.port)}`)
-    expect(await list.locator('#tunnel-switch-nym').getAttribute('aria-label')).toBe('Use Nym for this site')
+    expect(await list.locator('#tunnel-tab-first').textContent(), 'the list is the tab\'s').toBe('This tab')
+    expect(await list.locator('.site-claim').textContent(), 'and names the address being opened, not the website the tab left').toContain(`${NAME}:${String(held.port)}`)
+    expect(await list.locator('#tunnel-switch-nym').getAttribute('aria-label')).toBe('Use Nym for this tab')
+    expect(await list.locator('#tunnel-switch-nym').getAttribute('aria-checked'), 'the address being opened has no tunnel of its own').toBe('false')
     held.release()
     expect((await waitForTab(chrome, { address: heldUrl(), title: 'held' }, 60_000)).ok).toBe(true)
     await closeList(app, chrome)

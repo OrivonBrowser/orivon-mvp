@@ -44,6 +44,8 @@ export interface RouteSwitch {
    * does with it, else it follows the default. Resolves once its sessions follow it, so nothing is told it is on while they are still direct.
    */
   choose: (origin: string, kind: TunnelKind | null) => Promise<void>
+  /** Takes a website's entry away, so it follows the default: unlike choosing none, which is an entry of its own while the whole browser is on a tunnel. Its storage stays. Nothing for an app or this computer. */
+  forget: (origin: string) => Promise<void>
   /** Every origin with a setting of its own or storage in a profile. */
   rows: () => TunnelRow[]
   /** Clears what a website stored in the profiles, keeping its setting. False for an origin that is not a website with storage there. */
@@ -53,6 +55,34 @@ export interface RouteSwitch {
 export function createRouteSwitch (routes: Pick<RouteService, 'targetOf' | 'defaultKind' | 'store' | 'controller' | 'hub'>, world: RouteSwitchWorld): RouteSwitch {
   const { store } = routes
   const entryOf = (kind: TunnelKind | null): TunnelEntry | undefined => entryFor(kind ?? 'off', routes.hub.isEverywhere())
+  /** Gives a website `entry` (undefined: none), keeps the record of the storage it now has, and resolves once the sessions follow. */
+  const setWebsiteEntry = async (origin: string, entry: TunnelEntry | undefined): Promise<void> => {
+    const before = profileOf(store.stateOf(origin))
+    // Cookies the proxy's sites left in Nym's profile (a move that could not be made) are cleared before the website arrives, never reused there; a failure to clear stops the switch.
+    if (profileOf(entry) === 'nym' && store.isForeignToNym(origin) && world.removeSiteStorage !== undefined) {
+      await world.removeSiteStorage(profilePartitionFor('nym', origin), origin)
+      store.dropApart(origin, 'nym')
+    }
+    store.setEntry(origin, entry)
+    // The record that its storage is kept follows the entry: a failure to save it must not undo a switch already made.
+    const profile = profileOf(entry)
+    if (profile !== undefined) {
+      try {
+        store.keepApart(origin, profile)
+      } catch (error) {
+        console.error('[route] could not record that a website has storage in a profile:', error)
+      }
+    }
+    await routes.controller.settled()
+    // A website that moved to another session must not wake in the one it left: its workers there would run with the other session's route.
+    if (profile !== before) {
+      try {
+        await world.dropServiceWorkers?.(before === undefined ? undefined : profilePartitionFor(before, origin), origin)
+      } catch (error) {
+        console.error('[route] could not unregister a website\'s service workers in the session it left:', error)
+      }
+    }
+  }
   return {
     // An app whose files are not held here has a first visit to pause; an origin not written to disk would be routed until the next start and then go direct.
     blockedFor: (origin, kind) => {
@@ -74,32 +104,11 @@ export function createRouteSwitch (routes: Pick<RouteService, 'targetOf' | 'defa
         return
       }
       if (!canTunnel(origin)) return
-      const entry = entryOf(kind)
-      const before = profileOf(store.stateOf(origin))
-      // Cookies the proxy's sites left in Nym's profile (a move that could not be made) are cleared before the website arrives, never reused there; a failure to clear stops the switch.
-      if (profileOf(entry) === 'nym' && store.isForeignToNym(origin) && world.removeSiteStorage !== undefined) {
-        await world.removeSiteStorage(profilePartitionFor('nym', origin), origin)
-        store.dropApart(origin, 'nym')
-      }
-      store.setEntry(origin, entry)
-      // The record that its storage is kept follows the entry: a failure to save it must not undo a switch already made.
-      const profile = profileOf(entry)
-      if (profile !== undefined) {
-        try {
-          store.keepApart(origin, profile)
-        } catch (error) {
-          console.error('[route] could not record that a website has storage in a profile:', error)
-        }
-      }
-      await routes.controller.settled()
-      // A website that moved to another session must not wake in the one it left: its workers there would run with the other session's route.
-      if (profile !== before) {
-        try {
-          await world.dropServiceWorkers?.(before === undefined ? undefined : profilePartitionFor(before, origin), origin)
-        } catch (error) {
-          console.error('[route] could not unregister a website\'s service workers in the session it left:', error)
-        }
-      }
+      await setWebsiteEntry(origin, entryOf(kind))
+    },
+    forget: async (origin) => {
+      if (routes.hub.isApp(origin) || !canTunnel(origin)) return
+      await setWebsiteEntry(origin, undefined)
     },
     rows: () => {
       const entries = new Map(store.entries())

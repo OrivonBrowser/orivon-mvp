@@ -260,3 +260,28 @@ describe('a website whose storage in Nym\'s profile is the proxy\'s', () => {
     }
   })
 })
+
+describe('taking a website\'s entry away', () => {
+  it('drops the entry even while the whole browser is on a tunnel, where choosing none would write an off entry, and keeps its storage', async () => {
+    const { routeSwitch, store, settled } = setup({ everywhere: true })
+    await routeSwitch.choose(SITE, 'nym')
+    settled.mockClear()
+    await routeSwitch.forget(SITE)
+    expect(store.stateOf(SITE)).toBeUndefined()
+    expect(store.isApart(SITE, 'nym')).toBe(true)
+    expect(settled).toHaveBeenCalled()
+    await routeSwitch.choose(SITE, null)
+    expect(store.stateOf(SITE), 'choosing none is an entry there').toBe('off')
+    await routeSwitch.forget(SITE)
+    expect(store.stateOf(SITE)).toBeUndefined()
+  })
+
+  it('does nothing for an installed app, whose entry is set by its own switch, nor for this computer', async () => {
+    const { routeSwitch, store } = setup()
+    await routeSwitch.choose(APP, 'nym')
+    await routeSwitch.forget(APP)
+    expect(store.stateOf(APP)).toBe('nym')
+    await routeSwitch.forget('http://localhost:3000')
+    expect(store.stateOf('http://localhost:3000')).toBeUndefined()
+  })
+})

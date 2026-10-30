@@ -5,7 +5,7 @@ import { tunnelRowWords } from '../route-part.js'
 import type { RoutePart, TunnelRowView } from '../route-part.js'
 import type { SettingsState } from '../state.js'
 
-export const EMPTY_TUNNEL_LIST = 'No site or app has its own tunnel setting yet. Turn one on from the tunnel button in the address bar, or for an app under Apps.'
+export const EMPTY_TUNNEL_LIST = 'No site or app has its own tunnel setting yet. Keep one for a website with Always use for this site in the tunnel button in the address bar, or for an app under Apps.'
 export const REMOVE_STORAGE = 'Remove its separate storage'
 
 function rowOf (row: TunnelRowView, part: RoutePart): HTMLElement {

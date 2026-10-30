@@ -18,6 +18,7 @@ import { clickAddressBarRetrying, navigateToFixture } from '../support/e2e-helpe
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { closeTunnelList, pressAlways } from '../support/tunnel-popup.js'
 
 const GATEWAY = 'gw.socks.test'
 const DNSLINK_ORIGIN = 'https://docs-example.ipns.orivon'
@@ -111,8 +112,12 @@ it('[app:tunnelled-website-sends-nothing-direct] a .eth name with the tunnel on 
 
   expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'the tunnel button is purple').toBe(true)
   const after = await openPopover()
-  expect(await after.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent(), 'the popover says nothing stays outside').toBe('This site\'s traffic goes through your tunnel.')
+  expect(await after.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-state').textContent(), 'the popover says nothing stays outside').toBe('This tab\'s traffic goes through your tunnel.')
   await shoot(app, chrome, after, 'website-tunnel-web3')
+
+  // The row set the tab; "Always use for this site" keeps it for the name, which the tests below rely on.
+  await pressAlways(app, chrome, 'socks5')
+  await closeTunnelList(app, chrome)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnelled-website-sends-nothing-direct] an ipns:// DNSLink name with the tunnel on has its DNS-over-HTTPS lookup and its blocks sent through the tunnel', async () => {

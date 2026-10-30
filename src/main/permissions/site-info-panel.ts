@@ -35,7 +35,7 @@ export interface SiteInfoPanel {
    * (`../shell/window.ts`), so a toggle call always either opens fresh or
    * closes what is already showing the origin it was opened for. */
   toggle: (anchor: PopoverAnchor, origin: string, page: SiteInfoPage, pressedAt?: number) => void
-  /** The tunnels page for the tab `tabId` rather than for a website: the tab is fixed for the popup's life, as an origin is. The tunnel button of a new tab, and of a tab with a choice, opens it. */
+  /** The tunnels page for the tab `tabId` rather than for a website: the tab is fixed for the popup's life, as an origin is. The tunnel button of a new tab, and of every website in a tab, opens it. */
   toggleTab: (anchor: PopoverAnchor, tabId: string, pressedAt?: number) => void
   close: () => void
   /** Closes the popup unless it is about what `arrived` names: the first page its tab committed, or the tab. A list the tunnel button opened while a tab's page was loading is still right when the page comes; any other change of origin leaves it stale. */
@@ -69,6 +69,8 @@ export function createSiteInfoPanel (
   let openOrigin = ''
   /** Set instead of `openOrigin` on an open for a tab; the same rule applies to it. */
   let openTab: string | null = null
+  /** The website the popup of `openTab` was drawn for, '' for none. */
+  let openShown = ''
 
   const popover = createPopoverView(win, contentView, {
     dirname,
@@ -93,15 +95,17 @@ export function createSiteInfoPanel (
     toggle (anchor, origin, page, pressedAt) {
       openOrigin = origin
       openTab = null
+      openShown = ''
       popover.toggle(anchor, [`--orivon-site-info-page=${page}`, `--orivon-site-info-origin=${origin}`], page, pressedAt)
     },
     toggleTab (anchor, tabId, pressedAt) {
       openTab = tabId
+      openShown = controller.tabShownOrigin(tabId)
       popover.toggle(anchor, ['--orivon-site-info-page=tunnels'], 'tunnels', pressedAt)
     },
     close: popover.close,
     closeUnlessAbout (arrived) {
-      if (!popover.isOpen() || !popupIsAbout({ tab: openTab, origin: openOrigin }, arrived)) popover.close()
+      if (!popover.isOpen() || !popupIsAbout({ tab: openTab, origin: openOrigin, shown: openShown }, arrived)) popover.close()
     },
     holdAgainstArrival: popover.holdAgainstArrival,
     isOpen: popover.isOpen,

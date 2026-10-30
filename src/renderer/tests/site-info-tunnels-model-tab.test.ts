@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import { TAB_DIRECT_PROFILE_NOTE, TAB_FOLLOWING_NOTE, TAB_PICK_NOTE, TAB_TUNNEL_FAILED, TAB_TUNNEL_PROFILE_NOTE, directTabNote, tabNotes } from '../site-info/tab-words.js'
+import { ALWAYS_LABEL, ALWAYS_LINE_NOTHING, ALWAYS_LINE_OFF, ALWAYS_LINE_ON, SITE_OWN_DIRECT_NOTE, TAB_DIRECT_PROFILE_NOTE, TAB_FOLLOWING_NOTE, TAB_PICK_NOTE, TAB_TUNNEL_FAILED, TAB_TUNNEL_PROFILE_NOTE, directTabNote, tabNotes } from '../site-info/tab-words.js'
 import { HELD_LINE, NYM_OFF_LINE, tunnelListModel } from '../site-info/tunnels-model.js'
 
 // The tunnels page when it is about a tab (ADR-0101): the same rows, the words of a tab, and no storage notice.
@@ -106,5 +106,77 @@ describe('the words about a tab', () => {
   it('are nothing for a tab with no choice whose switches are fixed', () => {
     expect(tabNotes(tunnel, false, true)).toEqual([])
     expect(tabNotes({ ...tunnel, tabChoice: 'nym' }, false, true)).toHaveLength(2)
+  })
+})
+
+describe('the tunnels page of a tab showing a website', () => {
+  const ORIGIN = 'https://news.example'
+  const site = (patch: Partial<SiteTunnel> = {}, rest: Partial<SiteInfo> = {}): SiteInfo => tab({ always: { on: false, available: false }, ...patch }, { origin: ORIGIN, ...rest })
+
+  it('has no "Always" switch on a tab that shows no website, and on a page that is not about the tab', () => {
+    expect(tunnelListModel(tab(), noView).always).toBeNull()
+    expect(tunnelListModel(tab({ subject: 'site' }), noView).always).toBeNull()
+  })
+
+  it('has it under the rows, labelled for the site, off and held while nothing is chosen', () => {
+    const always = tunnelListModel(site(), noView).always
+    expect(always).toEqual({ label: ALWAYS_LABEL, line: ALWAYS_LINE_NOTHING, on: false, disabled: true })
+    expect(ALWAYS_LABEL).toBe('Always use for this site')
+  })
+
+  it('is free to move once the tab has a choice to keep, and says what it does', () => {
+    const always = tunnelListModel(site({ via: 'nym', following: false, tabChoice: 'nym', always: { on: false, available: true } }), noView).always
+    expect(always).toEqual({ label: ALWAYS_LABEL, line: ALWAYS_LINE_OFF, on: false, disabled: false })
+    expect(ALWAYS_LINE_OFF).toBe('Keeps this choice after the tab closes.')
+  })
+
+  it('is on while the website has an entry of its own, and can be turned off', () => {
+    const always = tunnelListModel(site({ via: 'nym', following: false, always: { on: true, available: true } }), noView).always
+    expect(always).toEqual({ label: ALWAYS_LABEL, line: ALWAYS_LINE_ON, on: true, disabled: false })
+  })
+
+  it('is held with the rows: in a window held to a tunnel and while the settings cannot be read, still saying what it would do', () => {
+    const held = tunnelListModel(site({ always: { on: false, available: false } }, { tunnelHeld: 'nym' }), noView).always
+    expect(held).toMatchObject({ disabled: true, line: ALWAYS_LINE_OFF })
+    const unreadable = tunnelListModel(site({ unreadable: true, always: { on: true, available: true } }), noView).always
+    expect(unreadable).toMatchObject({ on: true, disabled: true })
+  })
+
+  it('is held while the storage question is open, so the question is answered before anything else is changed', () => {
+    const open = { pending: 'nym' as const }
+    expect(tunnelListModel(site({ via: null, always: { on: false, available: true }, tabChoice: 'direct', following: false }), open).always?.disabled).toBe(true)
+  })
+
+  it('lights what the page really does, and keeps the extensions note a website\'s own panel gives', () => {
+    const model = tunnelListModel(site({ via: 'socks5', following: false, profile: 'socks5', always: { on: true, available: true } }, { extensionsOnSite: ['Ad Blocker'] }), noView)
+    expect(model.rows.map((one) => one.on)).toEqual([false, true])
+    expect(model.notes.map((note) => note.text).join(' ')).toContain('Your extensions run in the tunnel profile too: Ad Blocker.')
+  })
+
+  it('does not say the tab follows the browser for a website that has a tunnel of its own', () => {
+    expect(notes(site({ via: 'nym', following: false, always: { on: true, available: true } }))).toEqual(['This site goes through Nym in every tab, because you chose it for the site.'])
+    expect(notes(site({ via: 'socks5', following: false, always: { on: true, available: true } }))).toEqual(['This site goes through your tunnel in every tab, because you chose it for the site.'])
+    expect(notes(site({ via: null, following: false, always: { on: true, available: true } }))).toEqual([SITE_OWN_DIRECT_NOTE])
+    expect(notes(site({ via: 'nym', following: true }, { everywhere: true }))).toEqual([TAB_FOLLOWING_NOTE])
+  })
+
+  it('names the website, not the tab, in the line of a tunnel the website has but the tab did not choose', () => {
+    const live = { route: 'ok', nym: { state: 'off' } } as const
+    const own = tunnelListModel(site({ via: 'nym', following: false, always: { on: true, available: true } }, live), noView)
+    expect(row(own, 'nym')?.state.text).toBe('This site\'s traffic goes through Nym.')
+    const chosen = tunnelListModel(site({ via: 'nym', following: false, tabChoice: 'nym', always: { on: true, available: true } }, live), noView)
+    expect(row(chosen, 'nym')?.state.text, 'a tab that chose speaks for its sites').toBe('This tab\'s traffic goes through Nym.')
+    const following = tunnelListModel(site({ via: 'nym', following: true }, { ...live, everywhere: true }), noView)
+    expect(row(following, 'nym')?.state.text).toBe('This tab\'s traffic goes through Nym.')
+  })
+
+  it('says what a tab\'s choice means for every site it opens, whether or not this one keeps it', () => {
+    expect(notes(site({ via: 'nym', following: false, tabChoice: 'nym', always: { on: true, available: true } }))).toEqual(['Every site you open in this tab goes through Nym, until the tab is closed.', TAB_TUNNEL_PROFILE_NOTE])
+  })
+
+  it('keeps the Swarm hint and the storage notices of the website', () => {
+    const info = site({ swarm: true, notices: { nym: 'nym' } })
+    expect(notes(info).join(' ')).toContain('Swarm')
+    expect(info.tunnel?.notices).toEqual({ nym: 'nym' })
   })
 })
