@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CHROME_ACTIONS, runChromeAction } from '../chrome-actions.js'
-import type { WindowContext } from '../window-context.js'
+import type { ChromeActionContext } from '../chrome-actions.js'
 
-function context (): { ctx: WindowContext, record: { muted: boolean, view: { webContents: { isDestroyed: () => boolean, setAudioMuted: ReturnType<typeof vi.fn>, getURL: () => string } } }, changed: ReturnType<typeof vi.fn> } {
+function context (): { ctx: ChromeActionContext, record: { muted: boolean, view: { webContents: { isDestroyed: () => boolean, setAudioMuted: ReturnType<typeof vi.fn>, getURL: () => string } } }, changed: ReturnType<typeof vi.fn> } {
   const record = { muted: false, view: { webContents: { isDestroyed: () => false, setAudioMuted: vi.fn(), getURL: () => 'https://example.test/' } } }
   const changed = vi.fn()
   const tabs = { ids: () => ['t1'], record: (id: string) => id === 't1' ? record : undefined, changed }
-  return { ctx: { window: { tabs } as never, services: {} as never }, record, changed }
+  return { ctx: { window: { tabs } as never, services: {} as never, copyAddress: async () => {} }, record, changed }
 }
 
 describe('the tab.mute chrome action', () => {

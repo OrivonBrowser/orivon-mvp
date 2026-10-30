@@ -2,6 +2,7 @@ import type { TabState } from '../../main/shell/tabs.js'
 import type { ShellState } from '../../main/shell/tabs.js'
 import { h } from '../pages/shared/dom.js'
 import { fileIcon, warningIcon } from '../pages/shared/icons.js'
+import { handleAddressCopy } from './address-copy.js'
 import { formatAddress } from './address-format.js'
 import { createAddressSelect } from './address-select.js'
 import type { ChromeContext, ChromeModule } from './context.js'
@@ -101,6 +102,8 @@ export function createAddressDisplay (): ChromeModule {
         pressedBlurred = false
       })
       input.addEventListener('keydown', () => { entry.keyDown() })
+      // Ctrl+C and the field's menu both end in a copy event here.
+      input.addEventListener('copy', (event) => { handleAddressCopy(input, event, (name, payload) => ctx.shell.act(name, payload)) })
       // Ctrl+L and a paste from the context menu reach the field with no key press in it.
       input.addEventListener('select', () => { entry.entered() })
       input.addEventListener('input', () => { entry.entered() })

@@ -42,7 +42,8 @@ changes enough that shards drift well apart.
 [`cross-os.yml`](../../.github/workflows/cross-os.yml) runs Orivon from source on GitHub's Windows and macOS runners,
 the way a person on that system runs it: `npm ci`, whose `postinstall` runs the Rule 8 guard over that system's own
 dependency tree, the build `npm start` makes, `smoke`, then e2e specs, by default the QA
-states spec, which saves a screenshot of every state it reaches. It runs every night on `main`, on a pull request that
+states spec, which saves a screenshot of every state it reaches, and the address-bar copy spec, which reads the
+real clipboard back on Windows and macOS. It runs every night on `main`, on a pull request that
 changes the install, the launch scripts, `package.json` or `src/main/os/` (install and `smoke` only), and on demand:
 
 ```bash

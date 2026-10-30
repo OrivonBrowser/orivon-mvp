@@ -1,12 +1,12 @@
 // A fake window and services around a real BookmarkStore, for the bookmarks bar's tests.
 import { vi } from 'vitest'
 import { BookmarkStore } from '../../../browsing/bookmarks.js'
-import type { WindowContext } from '../../window-context.js'
+import type { ChromeActionContext } from '../../chrome-actions.js'
 
 export const tiny = 'data:image/png;base64,iVBORw0KGgo='
 
 export interface Harness {
-  ctx: WindowContext
+  ctx: ChromeActionContext
   store: BookmarkStore
   tabs: { getState: ReturnType<typeof vi.fn>, navigate: ReturnType<typeof vi.fn>, createTab: ReturnType<typeof vi.fn>, openLocalFile: ReturnType<typeof vi.fn>, closeTab: ReturnType<typeof vi.fn>, activeWebContents: ReturnType<typeof vi.fn>, ids: ReturnType<typeof vi.fn> }
   overlays: { isOpen: ReturnType<typeof vi.fn>, show: ReturnType<typeof vi.fn>, close: ReturnType<typeof vi.fn> }
@@ -39,5 +39,5 @@ export function harness (options: { isPrivate?: boolean, active?: string | null,
   const settings = { get: vi.fn(() => 'auto'), set: vi.fn() }
   const services = { bookmarks: store, commands, profiles: { openPrivate }, isPrivate: options.isPrivate === true, settings }
   const window = { tabs, overlays, window: { isDestroyed: () => false } }
-  return { ctx: { window, services } as unknown as WindowContext, store, tabs, overlays, commands, openPrivate, settings, newWindowTabs }
+  return { ctx: { window, services, copyAddress: async () => {} } as unknown as ChromeActionContext, store, tabs, overlays, commands, openPrivate, settings, newWindowTabs }
 }
