@@ -30,7 +30,8 @@ export interface BookmarksDomainDeps {
   readonly windowOf: (contents: WebContents) => ShellWindow | undefined
   readonly open: (window: ShellWindow, id: string, disposition: ManagerDisposition) => boolean
   readonly openAll: (window: ShellWindow, id: string) => number
-  readonly copyText: (text: string) => void
+  /** The bookmarks' addresses, as the clipboard gets them. */
+  readonly copyAddresses: (addresses: readonly string[]) => void
   /** Whether the import page exists in this build. */
   readonly importAvailable: () => boolean
   readonly runImport: (window: ShellWindow) => void
@@ -173,7 +174,7 @@ export function bookmarksDomain (store: Store, deps: BookmarksDomainDeps): Inter
           const ids = idList(request.ids)
           if (ids === null) return undefined
           const urls = ids.flatMap((id) => store.node(id)?.url ?? [])
-          if (urls.length > 0) deps.copyText(urls.join('\n'))
+          if (urls.length > 0) deps.copyAddresses(urls)
           return { ok: true, count: urls.length }
         }
         case 'import': {

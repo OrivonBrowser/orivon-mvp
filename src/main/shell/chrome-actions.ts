@@ -1,3 +1,4 @@
+import { addressCopy } from './actions/address-copy.js'
 import { bookmarkEdit } from './bookmark-bubble/edit-action.js'
 import { barFolder, barItems, barMenu, barMove, barOpen } from './bookmarks-bar/bar-actions.js'
 import { omniboxClose, omniboxPick, omniboxQuery, omniboxSelect } from '../omnibox/omnibox-actions.js'
@@ -17,6 +18,8 @@ import type { WindowContext } from './window-context.js'
  * (press-stamps.ts), where the window keeps them. */
 export interface ChromeActionContext extends WindowContext {
   readonly takePress?: (button: PressButton) => number | undefined
+  /** Puts an address on the clipboard as text and, where it has one, as a link (the real clipboard; absent in a test). */
+  readonly copyAddress?: (address: string) => void
 }
 
 /** A call from the chrome that carries arguments and is not a command. `payload` comes from a renderer:
@@ -25,6 +28,7 @@ export type ChromeAction = (payload: unknown, ctx: ChromeActionContext) => unkno
 
 /** One entry per action, alphabetical by name. */
 export const CHROME_ACTIONS: Readonly<Record<string, ChromeAction>> = {
+  'address.copy': addressCopy,
   'bookmarks.bar': barItems,
   'bookmarks.edit': bookmarkEdit,
   'bookmarks.folder': barFolder,

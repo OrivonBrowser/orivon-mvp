@@ -1,13 +1,13 @@
 // The QR sheet wired to the real machine, for the registry in ../overlays/overlays.ts.
-import { clipboard } from 'electron'
 import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { downloadsFolder } from '../downloads/folder-runner.js'
+import { copyAddress } from '../os/address-clipboard-runner.js'
 import { qrOverlayFor } from './qr-overlay.js'
 
 export const qrOverlay = qrOverlayFor({
-  writeClipboard: (text) => { clipboard.writeText(text) },
+  writeClipboard: copyAddress,
   downloadsDir: downloadsFolder,
   exists: existsSync,
   writeFile: async (path, data) => {

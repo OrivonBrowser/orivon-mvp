@@ -114,9 +114,18 @@ it('offers Copy web link beside Copy Link Address for a .eth link only, and copi
   try {
     const page = await visit(app, chrome, '/')
     await app.evaluate(({ clipboard }) => {
-      const g = globalThis as unknown as { __copied: string[] }
+      const g = globalThis as unknown as { __copied: string[], __copiedHtml: string[] }
       g.__copied = []
+      g.__copiedHtml = []
       clipboard.writeText = ((text: string) => { g.__copied.push(text) }) as typeof clipboard.writeText
+      // An address with a web link is written as an item holding its text and a link.
+      const target = clipboard as unknown as { write: (items: Array<{ getType: (type: string) => Promise<Blob> }>) => void }
+      target.write = (items) => {
+        void (async () => {
+          g.__copiedHtml.push(await (await items[0]?.getType('text/html'))?.text() ?? '')
+          g.__copied.push(await (await items[0]?.getType('text/plain'))?.text() ?? '')
+        })()
+      }
     })
     const labels = labelsOf(await rightClick(app, page, '#web3-link'))
     expect(labels).toContain('Copy Link Address')
@@ -124,7 +133,9 @@ it('offers Copy web link beside Copy Link Address for a .eth link only, and copi
     await choose(app, 'Copy web link (opens in any browser)')
     expect(await app.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied)).toEqual(['https://web-link-fixture.eth.limo/docs?q=1#top'])
     await choose(app, 'Copy Link Address')
+    expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied)).length === 2)).toBe(true)
     expect((await app.evaluate(() => (globalThis as unknown as { __copied: string[] }).__copied)).at(-1)).toBe('ipfs://web-link-fixture.eth/docs?q=1#top')
+    expect(await app.evaluate(() => (globalThis as unknown as { __copiedHtml: string[] }).__copiedHtml)).toEqual(['<a href="https://web-link-fixture.eth.limo/docs?q=1#top">ipfs://web-link-fixture.eth/docs?q=1#top</a>'])
     expect(labelsOf(await rightClick(app, page, '#link'))).not.toContain('Copy web link (opens in any browser)')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {

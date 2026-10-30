@@ -6,10 +6,12 @@ import type { ExternalLinkQuestion } from '../sessions/external-links.js'
 import type { QuestionTarget } from '../shell/question/ask-question.js'
 import type { TabState } from '../shell/tab-types.js'
 import type { ShellWindow } from '../shell/window-registry.js'
+import { addressClip } from './address-clipboard.js'
+import type { AddressClip } from './address-clipboard.js'
 import { mailtoFor, shareAddressFor, webLinkForTab } from './share.js'
 
 export interface ShareDeps {
-  writeClipboard: (text: string) => void
+  writeClipboard: (clip: AddressClip) => void
   /** The question the page-opened external links ask: true only when the person chose to go on. */
   confirm: (where: QuestionTarget, question: ExternalLinkQuestion) => Promise<boolean>
   openExternal: (url: string) => Promise<void>
@@ -25,7 +27,7 @@ export function copyLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: s
   const address = shareAddressFor(tabOf(target, tabId))
   if (address === undefined) { showToast(target, 'noAddress'); return }
   try {
-    deps.writeClipboard(address)
+    deps.writeClipboard(addressClip(address))
     showToast(target, 'linkCopied')
   } catch (error) {
     console.error('[os] could not copy the link', error)
@@ -38,7 +40,7 @@ export function copyWebLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?
   const link = webLinkForTab(tabOf(target, tabId))
   if (link === undefined) { showToast(target, 'noWebLink'); return }
   try {
-    deps.writeClipboard(link)
+    deps.writeClipboard({ text: link })
     showToast(target, 'webLinkCopied')
   } catch (error) {
     console.error('[os] could not copy the web link', error)

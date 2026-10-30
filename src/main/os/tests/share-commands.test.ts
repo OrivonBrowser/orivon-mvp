@@ -21,14 +21,24 @@ describe('Copy link', () => {
   it('copies the address of the tab in front and says so', () => {
     const { window, deps, toasts } = setup('b')
     copyLinkCommand(window, deps)
-    expect(deps.writeClipboard).toHaveBeenCalledWith('https://two.example/x')
+    expect(deps.writeClipboard).toHaveBeenCalledExactlyOnceWith({ text: 'https://two.example/x' })
     expect(toasts()).toEqual(['linkCopied'])
   })
 
   it('copies the tab it was asked about when that is not the one in front', () => {
     const { window, deps } = setup('b')
     copyLinkCommand(window, deps, 'a')
-    expect(deps.writeClipboard).toHaveBeenCalledWith('https://one.example/')
+    expect(deps.writeClipboard).toHaveBeenCalledExactlyOnceWith({ text: 'https://one.example/' })
+  })
+
+  it('copies the address of a .eth tab as text and as a link another program can follow', () => {
+    const { window, deps, toasts } = setup('d')
+    copyLinkCommand(window, deps)
+    expect(deps.writeClipboard).toHaveBeenCalledExactlyOnceWith({
+      text: 'ipfs://vitalik.eth/blog?a=1#x',
+      html: '<a href="https://vitalik.eth.limo/blog?a=1#x">ipfs://vitalik.eth/blog?a=1#x</a>'
+    })
+    expect(toasts()).toEqual(['linkCopied'])
   })
 
   it('copies nothing from a shell page, and says there is no address', () => {
@@ -51,14 +61,14 @@ describe('Copy web link', () => {
   it('copies the https address another browser opens for a .eth tab, and says so', () => {
     const { window, deps, toasts } = setup('d')
     copyWebLinkCommand(window, deps)
-    expect(deps.writeClipboard).toHaveBeenCalledWith('https://vitalik.eth.limo/blog?a=1#x')
+    expect(deps.writeClipboard).toHaveBeenCalledExactlyOnceWith({ text: 'https://vitalik.eth.limo/blog?a=1#x' })
     expect(toasts()).toEqual(['webLinkCopied'])
   })
 
   it('acts on the tab it was asked about, not the one in front', () => {
     const { window, deps } = setup('a')
     copyWebLinkCommand(window, deps, 'd')
-    expect(deps.writeClipboard).toHaveBeenCalledWith('https://vitalik.eth.limo/blog?a=1#x')
+    expect(deps.writeClipboard).toHaveBeenCalledExactlyOnceWith({ text: 'https://vitalik.eth.limo/blog?a=1#x' })
   })
 
   it('copies nothing for a web page, which Copy link already copies, or for a shell page', () => {

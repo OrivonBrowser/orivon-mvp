@@ -6,12 +6,12 @@ runner, `os-domain.ts` for the Settings page). When Orivon asks to be the defaul
 is the rule over three facts and the clock; `install-default-browser-ask.ts` looks at it every hour). The entries a
 dock or a taskbar shows for Orivon's icon (`launcher-tasks.ts`, `install-launcher-menu.ts`, and
 `windows-taskbar.ts` for a run from source on Windows). The share commands, Copy link, Copy web link and Email link (`share.ts`,
-`share-commands.ts`, `share-runner.ts`; `web-link.ts` is the rewrite Copy web link copies). A site's shortcut: the file's text (`site-shortcut.ts`), where it is
+`share-commands.ts`, `share-runner.ts`; `web-link.ts` is the rewrite Copy web link copies). What the clipboard gets when any address is copied from Orivon's own UI (`address-clipboard.ts`: the address as text, and as a link to its web form where it has one; `address-clipboard-runner.ts` is the write, called by the menus, the address bar's copy and the share commands). A site's shortcut: the file's text (`site-shortcut.ts`), where it is
 written (`site-shortcut-runner.ts`), and the sheet that asks for it (`shortcut-open.ts`, `shortcut-overlay.ts`,
 `shortcut-real.ts`). `menu-state.ts` says when the main menu greys those rows. `default-browser-test-seam.ts` is the
 recording host a test build uses in place of the system.
 
-**Tied to Electron, in the runners and the installers.** `default-browser-runner.ts`, `share-runner.ts`,
+**Tied to Electron, in the runners and the installers.** `default-browser-runner.ts`, `share-runner.ts`, `address-clipboard-runner.ts`,
 `shortcut-real.ts`, `windows-taskbar-real.ts`, `install-launcher-menu.ts` and `install-default-browser-ask.ts` import
 `electron` or a module bound to it; every other file takes what it needs through a host interface, so a unit test
 never touches the machine. `createDefaultBrowserCheck` and `askPlace` are the parts of the ask that a test drives.

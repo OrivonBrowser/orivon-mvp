@@ -4,6 +4,7 @@
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { ShellActions } from '../ipc/ipc.js'
+import { copyAddress } from '../os/address-clipboard-runner.js'
 import { copyLinkCommand, copyWebLinkCommand, emailLinkCommand } from '../os/share-commands.js'
 import { realShareDeps } from '../os/share-runner.js'
 import { shareAddressFor, webLinkForTab } from '../os/share.js'
@@ -143,7 +144,7 @@ export function shellActions (parts: WindowParts): ShellActions {
       if (page === 'tunnels') holdForArrival()
     },
     runCommand: (id) => { services.commands.run(id, entry) },
-    act: (name, payload) => runChromeAction(name, payload, { window: entry, services, takePress: (button) => presses.take(button) }),
+    act: (name, payload) => runChromeAction(name, payload, { window: entry, services, takePress: (button) => presses.take(button), copyAddress }),
     // The anchor comes from the chrome page: only a rectangle of numbers places a view.
     openMenu: (anchor) => {
       const pressedAt = presses.take('menu')

@@ -84,14 +84,22 @@ async function runToExit (args: string[], userData: string, timeoutMs = 20_000):
   })
 }
 
-interface Recorded { clipboard: string[], opened: string[], setDefault: string[], isDefault: string[] }
+interface Recorded { clipboard: string[], links: string[], opened: string[], setDefault: string[], isDefault: string[] }
 
 /** Replaces, in the main process, everything that would reach the machine, and records what was asked of it. */
 async function stubSystem (app: App): Promise<void> {
   await app.evaluate(({ app: electron, clipboard, shell }) => {
     const g = globalThis as unknown as { __os: Recorded }
-    g.__os = { clipboard: [], opened: [], setDefault: [], isDefault: [] }
+    g.__os = { clipboard: [], links: [], opened: [], setDefault: [], isDefault: [] }
     clipboard.writeText = ((text: string) => { g.__os.clipboard.push(text) }) as typeof clipboard.writeText
+    // An address with a web link is written as one item holding its text and a link.
+    const target = clipboard as unknown as { write: (items: Array<{ getType: (type: string) => Promise<Blob> }>) => void }
+    target.write = (items) => {
+      void (async () => {
+        g.__os.links.push(await (await items[0]?.getType('text/html'))?.text() ?? '')
+        g.__os.clipboard.push(await (await items[0]?.getType('text/plain'))?.text() ?? '')
+      })()
+    }
     shell.openExternal = (async (url: string) => { g.__os.opened.push(url) }) as typeof shell.openExternal
     electron.setAsDefaultProtocolClient = ((protocol: string) => {
       g.__os.setDefault.push(protocol)
@@ -403,10 +411,18 @@ it('copies a web link another browser opens for a .eth page, with the path, quer
     await row.click()
     expect(await waitFor(async () => (await recorded(app)).clipboard.length === 2)).toBe(true)
 
+    // Copy link writes the address as shown, with the web link as its HTML form.
+    const shown = await chrome.locator('#address').inputValue()
+    await runCommand(chrome, 'share.copyLink')
+    expect(await waitForToast(app, 'Link copied')).toBe(true)
+    expect(await waitFor(async () => (await recorded(app)).clipboard.length === 3)).toBe(true)
+    expect((await recorded(app)).clipboard.at(-1)).toBe(shown)
+    expect((await recorded(app)).links).toEqual([`<a href="https://web-link-fixture.eth.limo/docs/a%20b?q=1#top">${shown}</a>`])
+
     await visit(chrome, `${origin}/plain`)
     await runCommand(chrome, 'share.copyWebLink')
     expect(await waitForToast(app, 'This page has no web link to share')).toBe(true)
-    expect((await recorded(app)).clipboard).toHaveLength(2)
+    expect((await recorded(app)).clipboard).toHaveLength(3)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
