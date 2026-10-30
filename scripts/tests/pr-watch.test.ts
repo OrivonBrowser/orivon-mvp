@@ -7,12 +7,14 @@ import { failedSpecs, headOnceSeen, nextStep, normalize, runIds, updateBranch } 
 
 const pass = (name: string) => ({ name, conclusion: 'SUCCESS' })
 const fail = (name: string) => ({ name, conclusion: 'FAILURE' })
+const job = (name: string, conclusion: string, run: number) => ({ name, conclusion, workflow: 'CI', url: `https://github.com/o/r/actions/runs/${String(run)}/job/1` })
 
 describe('normalize', () => {
   it('reads a check run and a commit status alike, pending as an empty conclusion', () => {
-    expect(normalize({ name: 'check', conclusion: '', detailsUrl: 'u' })).toEqual({ name: 'check', conclusion: '', url: 'u' })
-    expect(normalize({ context: 'ci/x', state: 'PENDING', targetUrl: 't' })).toEqual({ name: 'ci/x', conclusion: '', url: 't' })
+    expect(normalize({ name: 'check', conclusion: '', detailsUrl: 'u' })).toEqual({ name: 'check', conclusion: '', url: 'u', workflow: '' })
+    expect(normalize({ context: 'ci/x', state: 'PENDING', targetUrl: 't' })).toEqual({ name: 'ci/x', conclusion: '', url: 't', workflow: '' })
     expect(normalize({ context: 'ci/x', state: 'FAILURE' }).conclusion).toBe('FAILURE')
+    expect(normalize({ name: 'check', workflowName: 'CI' }).workflow).toBe('CI')
   })
 })
 
@@ -50,12 +52,29 @@ describe('nextStep', () => {
     expect(nextStep({ ...base, checks: [fail('check'), fail('e2e-shard-1')] })).toEqual({ step: 'fail', failed: ['check', 'e2e-shard-1'] })
   })
 
-  it('reads past a check that a later run of the same check on the same commit cancelled', () => {
-    const cancelled = (name: string) => ({ name, conclusion: 'CANCELLED' })
-    expect(nextStep({ ...base, checks: [cancelled('check'), pass('check'), cancelled('scope'), pass('scope')] }).step).toBe('merge')
-    expect(nextStep({ ...base, checks: [cancelled('check'), { name: 'check', conclusion: '' }] }).step).toBe('wait')
-    expect(nextStep({ ...base, checks: [cancelled('check'), fail('check')] })).toEqual({ step: 'fail', failed: ['check'] })
-    expect(nextStep({ ...base, checks: [pass('scope'), cancelled('check')] })).toEqual({ step: 'fail', failed: ['check'] })
+  it('reads past all of a run a later run on the same commit replaced, whatever its jobs ended as', () => {
+    const replaced = [job('check', 'CANCELLED', 1), job('e2e-shard-${{ matrix.shard }}', 'CANCELLED', 1), job('e2e', 'FAILURE', 1)]
+    expect(nextStep({ ...base, checks: [...replaced, job('check', 'SUCCESS', 2), job('e2e-shard-1', 'SUCCESS', 2), job('e2e', 'SUCCESS', 2)] }).step).toBe('merge')
+    expect(nextStep({ ...base, checks: [...replaced, job('check', '', 2)] }).step).toBe('wait')
+    expect(nextStep({ ...base, checks: [...replaced, job('check', 'FAILURE', 2)] })).toEqual({ step: 'fail', failed: ['check'] })
+  })
+
+  it('keeps a cancelled run that nothing later replaced', () => {
+    const cancelled = [job('scope', 'SUCCESS', 1), job('check', 'CANCELLED', 1), job('e2e', 'FAILURE', 1)]
+    const verdict = { step: 'fail', failed: ['check', 'e2e'] }
+    expect(nextStep({ ...base, checks: cancelled })).toEqual(verdict)
+    // What a label that is not `ci:` starts: every job skipped, next to the real run.
+    expect(nextStep({ ...base, checks: [...cancelled, job('check', 'SKIPPED', 2), job('e2e', 'SKIPPED', 2)] })).toEqual(verdict)
+    expect(nextStep({ ...base, checks: [...cancelled, { ...job('check', 'SUCCESS', 2), workflow: 'Other' }] })).toEqual(verdict)
+  })
+
+  it('never lets an earlier run replace a later one', () => {
+    const checks = [job('check', 'SUCCESS', 1), job('e2e', 'SUCCESS', 1), job('check', 'CANCELLED', 2), job('e2e', 'FAILURE', 2)]
+    expect(nextStep({ ...base, checks })).toEqual({ step: 'fail', failed: ['check', 'e2e'] })
+  })
+
+  it('keeps a check with no run behind it', () => {
+    expect(nextStep({ ...base, checks: [{ name: 'CodeQL', conclusion: 'CANCELLED', url: 'https://github.com/o/r/runs/5' }, job('CodeQL', 'SUCCESS', 2)] })).toEqual({ step: 'fail', failed: ['CodeQL'] })
   })
 })
 

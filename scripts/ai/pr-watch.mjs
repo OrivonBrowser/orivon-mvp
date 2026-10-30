@@ -31,23 +31,32 @@ const FAILED = new Set(['FAILURE', 'CANCELLED', 'TIMED_OUT', 'STARTUP_FAILURE', 
 const RERUNNABLE = /^(e2e|e2e-ordinary|e2e-shard-\d+|live \(\w+\)|from source \(\w+\))$/
 
 /**
- * One entry of `statusCheckRollup`, check run or commit status, as name, conclusion ('' while pending) and URL.
- * @param {{ name?: string, context?: string, conclusion?: string, state?: string, detailsUrl?: string, targetUrl?: string }} check
+ * One entry of `statusCheckRollup`, check run or commit status, as name, conclusion ('' while pending), URL and workflow.
+ * @param {{ name?: string, context?: string, conclusion?: string, state?: string, detailsUrl?: string, targetUrl?: string, workflowName?: string }} check
  */
 export function normalize (check) {
   const state = check.state === 'PENDING' || check.state === 'EXPECTED' ? '' : check.state
-  return { name: check.name ?? check.context ?? '', conclusion: check.conclusion || state || '', url: check.detailsUrl ?? check.targetUrl ?? '' }
+  return { name: check.name ?? check.context ?? '', conclusion: check.conclusion || state || '', url: check.detailsUrl ?? check.targetUrl ?? '', workflow: check.workflowName ?? '' }
 }
 
+/** The workflow run a check's job URL names; none for a commit status or another app's check. */
+const runOf = (check) => /\/runs\/(\d+)\//.exec(check.url)?.[1]
+
 /**
- * The checks without those a later run of the same check on this commit cancelled: a `ci:` label or a re-run starts a
- * fresh run and cancels the one before, which stays in the rollup next to its replacement.
- * @template {{ name: string, conclusion: string }} T
+ * The checks without the runs a later run on this commit replaced: a `ci:` label or a re-run starts a fresh run that
+ * cancels the one before, which stays in the rollup next to its replacement. All of it goes, not only its cancelled
+ * jobs: its `e2e` summary runs whatever happened and fails, and a matrix cut off before it expanded keeps an unexpanded
+ * name nothing replaces. A later skipped job replaces nothing: a label that is not `ci:` starts a run of skipped jobs
+ * next to the real one, and reading that as a replacement would merge past a real failure.
+ * @template {{ name: string, conclusion: string, url?: string, workflow?: string }} T
  * @param {T[]} checks
  * @returns {T[]}
  */
 function current (checks) {
-  return checks.filter((check) => check.conclusion !== 'CANCELLED' || !checks.some((other) => other.name === check.name && other.conclusion !== 'CANCELLED'))
+  const replaces = (later, check) => later.name === check.name && later.workflow === check.workflow &&
+    later.conclusion !== 'CANCELLED' && later.conclusion !== 'SKIPPED' && Number(runOf(later)) > Number(runOf(check))
+  const replaced = new Set(checks.filter((check) => check.conclusion === 'CANCELLED' && checks.some((later) => replaces(later, check))).map(runOf))
+  return checks.filter((check) => !replaced.has(runOf(check)))
 }
 
 /**
@@ -68,7 +77,7 @@ export async function headOnceSeen (readHead, wanted, { budgetMs, pollMs, sleep 
 
 /**
  * What to do next for checks in this state.
- * @param {{ checks: Array<{ name: string, conclusion: string }>, state: string, reruns: number, maxReruns: number }} now
+ * @param {{ checks: Array<{ name: string, conclusion: string, url?: string, workflow?: string }>, state: string, reruns: number, maxReruns: number }} now
  * @returns {{ step: 'wait' | 'merge' | 'rerun' | 'fail' | 'stuck', failed?: string[] }}
  */
 export function nextStep ({ checks: all, state, reruns, maxReruns }) {
@@ -99,7 +108,7 @@ export function failedSpecs (log) {
 
 /** The workflow run ids of failed checks, from their job URLs. */
 export function runIds (checks) {
-  return [...new Set(current(checks).filter((check) => FAILED.has(check.conclusion)).map((check) => /\/runs\/(\d+)\//.exec(check.url)?.[1]).filter(Boolean))]
+  return [...new Set(current(checks).filter((check) => FAILED.has(check.conclusion)).map(runOf).filter(Boolean))]
 }
 
 /**
@@ -162,7 +171,7 @@ function read (pr) {
 /** Prints each failed e2e shard's failed specs, and returns them all. */
 function reportSpecs (checks) {
   const all = []
-  for (const check of checks.filter((c) => FAILED.has(c.conclusion) && /^e2e-shard-\d+$/.test(c.name))) {
+  for (const check of current(checks).filter((c) => FAILED.has(c.conclusion) && /^e2e-shard-\d+$/.test(c.name))) {
     const job = /\/job\/(\d+)/.exec(check.url)?.[1]
     let specs = []
     try { specs = job === undefined ? [] : failedSpecs(gh('api', `repos/{owner}/{repo}/actions/jobs/${job}/logs`)) } catch {}
