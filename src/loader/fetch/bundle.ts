@@ -25,6 +25,7 @@ import { MAX_MANIFEST_BYTES, describeValue, parseManifest } from '../manifest/ma
 import { BUNDLE_TIMEOUT_MS, ByteBudget, NOT_MODIFIED, fetchWithBudget, joinChunks, raceAbort, rejected, tooLargeRejected } from './budget.js'
 import type { Fetch, FetchBundleRejected } from './budget.js'
 import { retryBackoffFor, retryTransient } from './retry.js'
+import { ReadOrder, collectForScan } from './read-order.js'
 import { FETCH_CONCURRENCY, fetchAssetToStaging, forEachBounded, resolveUrl, stageBytes } from './asset.js'
 import type { StagedAsset } from './asset.js'
 import { fetchDdocDeclaration } from '../ddoc-declaration.js'
@@ -245,8 +246,23 @@ async function fetchStaged (
   const declaration = fetchedDeclaration
 
   const context = { fetchFn, canonicalOrigin, pinnedAddresses, storage, budget, assetCap: limits.assetBytes, bundleSignal: bundleController.signal, retryBackoffMs: retryBackoffFor(canonicalOrigin, limits.retryBackoffMs) }
-  const assets = await forEachBounded(assetPaths, FETCH_CONCURRENCY, async (path) => await fetchAssetToStaging(context, path), () => { bundleController.abort() })
+  const order = new ReadOrder(canonicalOrigin, assetPaths)
+  const fetchOne = async (path: string, index: number): Promise<StagedAsset | FetchBundleRejected> => {
+    const staged = await fetchAssetToStaging(context, path)
+    if ('ok' in staged) return staged
+    await noteMentionsOf(storage, canonicalOrigin, order, index, staged)
+    return staged
+  }
+  // The entry alone first: what it names decides the order the others are read in (README.md, Design notes).
+  order.take()
+  const entry = await fetchOne(manifest.entry, 0)
+  if ('ok' in entry) {
+    bundleController.abort()
+    return entry
+  }
+  const assets = await forEachBounded(assetPaths, FETCH_CONCURRENCY, fetchOne, () => { bundleController.abort() }, () => order.take())
   if (!Array.isArray(assets)) return assets
+  assets[0] = entry
   const entries = [fetchedManifest.staged, ...assets]
 
   let tree: BundleTree
@@ -263,4 +279,15 @@ async function fetchStaged (
   }
 
   return { ok: true, canonicalOrigin, manifest, tree, entries, declaration, ...(fetchedManifest.validators !== undefined && { validators: fetchedManifest.validators }) }
+}
+
+/** Has `order` read the file just staged for the paths it names, if it wants that. A file that cannot be read back for it is only not read for it. */
+async function noteMentionsOf (storage: LoaderStorage, canonicalOrigin: string, order: ReadOrder, index: number, staged: StagedAsset): Promise<void> {
+  if (!order.reserveScan(index, staged.byteLength)) return
+  try {
+    const stream = await storage.readStaged(canonicalOrigin, staged.staged)
+    if (stream !== undefined) order.noteMentions(index, await collectForScan(stream.chunks))
+  } catch (error) {
+    console.warn('[loader] could not read a staged file for the files it names', canonicalOrigin, error)
+  }
 }

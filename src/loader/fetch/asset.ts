@@ -138,25 +138,26 @@ async function fetchAssetOnce (ctx: AssetFetchContext, assetPath: string): Promi
 }
 
 /**
- * Runs `work` over `items`, at most `limit` at once, in input order of
- * starting. Stops starting new items after the first rejection, calls
- * `onFailure` once so the caller can abort what is still in flight, and
- * returns that first rejection.
+ * Runs `work` over `items`, at most `limit` at once, each starting in the
+ * order `nextIndex` names them (input order when absent). Stops starting new
+ * items after the first rejection, calls `onFailure` once so the caller can
+ * abort what is still in flight, and returns that first rejection. The
+ * results are in input order whatever the order of starting.
  */
 export async function forEachBounded<T, R> (
   items: readonly T[],
   limit: number,
-  work: (item: T) => Promise<R | FetchBundleRejected>,
-  onFailure: () => void
+  work: (item: T, index: number) => Promise<R | FetchBundleRejected>,
+  onFailure: () => void,
+  nextIndex: () => number | undefined = inputOrder(items.length)
 ): Promise<R[] | FetchBundleRejected> {
   const results: R[] = new Array<R>(items.length)
-  let next = 0
   let failure: FetchBundleRejected | undefined
   const lane = async (): Promise<void> => {
-    while (failure === undefined && next < items.length) {
-      const index = next
-      next += 1
-      const outcome = await work(items[index] as T)
+    while (failure === undefined) {
+      const index = nextIndex()
+      if (index === undefined) return
+      const outcome = await work(items[index] as T, index)
       if (typeof outcome === 'object' && outcome !== null && 'ok' in outcome && outcome.ok === false) {
         if (failure === undefined) {
           failure = outcome
@@ -169,4 +170,9 @@ export async function forEachBounded<T, R> (
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane))
   return failure ?? results
+}
+
+function inputOrder (length: number): () => number | undefined {
+  let next = 0
+  return () => next < length ? next++ : undefined
 }

@@ -30,6 +30,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **An app whose page starts its main program only after Allow no longer takes so long on the reload**: Orivon downloaded an app's files in the order its manifest lists them, so a large main file that the first page leaves for after Allow came near the last. The download now reads the files the first page leads to first, and the reload finds the main file already read.
 - **An app of several large files no longer stalls and loses a file when allowed during its first load**: files the page asked for together could each hold part of the room Orivon keeps for checking them and wait on each other for ten seconds, until one was refused and its script never ran. A site's reads now take turns, so the oldest finishes and frees its room for the next, within the limit every site shares.
 - **Bug reports now include what Orivon's background processes log**: the lines the `.eth`, IPFS and Swarm host (page and file timings, name and gateway failures), the IPFS and Swarm node hosts and the Nym tunnel write, and what one prints as it crashes, went to the app's own stderr and past the log a report carries, and a packaged Windows app has no stderr at all. Main now writes each line to its own log, so the report's "Recent log" shows them: at most 60 a minute from each process, a line printed again and again once with a count, the last few of any overflow with the count, and from the Nym tunnel only its own lines, never the library's.
 

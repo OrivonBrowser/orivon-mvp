@@ -5,7 +5,7 @@ fetch and the bounded pool), `budget.ts` (the `Fetch` type, byte cap and idle de
 `install-origin.ts` (T12/A46's public-unicast guard), `verifier-origin.ts` (the hosts a protocol
 serves, exempt from that guard and given a longer idle deadline), `content-root.ts` (the root-CID
 request header), `update-check.ts` (the update-check interval and conditional-request validators),
-`undeclared-assets.ts` (warning about subresources the manifest doesn't declare) and
+`undeclared-assets.ts` (warning about subresources the manifest doesn't declare), `read-order.ts` (the order the declared files are downloaded in) and
 `manifest-at-root.ts` (the manifest of the content a root CID names, and nothing else of the bundle; a 404 means "no manifest" only when it echoes that root in the root header, because a name pointing at no content answers 404 too).
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../manifest/`](../manifest/)
@@ -28,6 +28,21 @@ type), `../electron/fetch.ts`, `../manifest/manifest.ts` and `undeclared-assets.
 retried after a pause by [`retry.ts`](retry.ts): three attempts at most (1 s and 3 s apart), or five for a file the verifier serves (1, 3, 10 and 30 s apart: behind it are gateways, a light client and, with the tunnel on, a mixnet, and the verifier host starts again when the tunnel setting changes), the bundle's deadline
 cutting a pause short. A 404, a script served as HTML and a byte cap reject at once. A rejection
 still marked `transient` after the last attempt means the download failed, not that the bundle is bad.
+
+**[`read-order.ts`](read-order.ts) downloads what the entry page leads to first, on purpose.** A
+manifest a publishing tool writes lists its files sorted, so a bundler's numbered chunks come before
+the one program the app needs, and a page that starts that program only once it is an app tab (a script that writes the main
+script when `process` exists) needs it first on the reload after Allow, while the download is still
+reading the chunks in front of it and competing for the link. So the entry is read alone, and the
+declared paths that the files read so far name come before the rest, in the order found. **Content
+only reorders the declared list**: a name is looked up in the set of declared paths still waiting, so
+a path the manifest does not list is never requested, every declared file is requested once, and each
+file's checks, caps, retries and failure are its own. Only text the entry led to is read for names
+(`.html`, `.htm`, `.js`, `.mjs`, `.css`, at most 1 MiB, at most 32 files), from its staged copy after
+the last attempt, so a retried file is never read from a partial one; the bulk of a bundle (images,
+fonts, WebAssembly, a program over 1 MiB) is none of these.
+The result does not depend on the order: `fetchBundle` returns the entries as the manifest lists them,
+and the tree sorts its leaves. The entry alone costs one round trip before the parallel reads begin.
 
 **[`bundle.ts`](bundle.ts) owns one concern**: `(fetch, hintedUrl)` in, a validated bundle out.
 TOFU versus `decideUpdate()` is `../index.ts`'s job, and persistence is
