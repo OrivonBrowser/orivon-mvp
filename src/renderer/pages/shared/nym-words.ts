@@ -39,7 +39,7 @@ export function nymTestingWords (): string {
 }
 
 /** The popover's line about an app routed through Nym. */
-export function nymRouteLine (route: 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary', state: NymState, noun: 'app' | 'site' | 'tab' = 'app'): string {
+export function nymRouteLine (route: 'idle' | 'ok' | 'down' | 'no-proxy' | 'temporary', state: NymState, noun: 'app' | 'site' | 'tab' | 'browser' = 'app'): string {
   if (route === 'temporary') return 'This page goes through Nym, and nothing it stores is kept once its last tab is closed.'
   if (state.state === 'failed' || state.state === 'unavailable') return `${nymStatusWords(state)}, so this ${noun}'s traffic is stopped.`
   if (route === 'down') return `Nym is not answering, so this ${noun}'s traffic is stopped.`

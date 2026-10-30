@@ -29,6 +29,8 @@ interface OrivonSiteInfo {
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
   applyUpdate: (cid: string) => Promise<ApplyOutcome>
   setTunnel: (kind: 'nym' | 'socks5' | null) => Promise<TunnelResult | null>
+  setBrowserTunnel: (kind: 'nym' | 'socks5' | null) => Promise<TunnelResult | null>
+  setNodesTunnel: (on: boolean) => Promise<TunnelResult | null>
   setProxyAddress: (text: string) => Promise<ProxyAddressResult | null>
   testTunnel: (kind: 'nym' | 'socks5') => Promise<unknown>
   openHome: () => Promise<void>

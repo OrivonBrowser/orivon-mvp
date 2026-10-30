@@ -129,6 +129,18 @@ hr {
 .tunnel-logo { flex: none; width: 20px; height: 20px; border-radius: 50%; }
 .tunnel-logo-generic { display: inline-flex; align-items: center; justify-content: center; color: var(--wink-dim); }
 .tunnel-logo-generic .icon-tunnel { width: 18px; height: 18px; }
+/* The two panels of the tunnels popup: a segmented control, and what Browser-wide adds. */
+.tunnel-tabs { display: flex; gap: 2px; margin-top: 8px; padding: 2px; border-radius: 8px; background: var(--wsurface); border: 1px solid var(--wborder); }
+.tunnel-tab { flex: 1; min-width: 0; padding: 5px 8px; border: 0; border-radius: 6px; background: none; color: var(--wink-dim); font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tunnel-tab:hover { color: var(--wink); }
+.tunnel-tab.selected { background: var(--wbg); color: var(--wink); box-shadow: 0 0 0 1px var(--wborder); }
+.tunnel-tab:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
+.tunnel-nodes { margin-top: 6px; }
+.tunnel-kept { list-style: none; margin: 0; padding: 0; max-height: 124px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.tunnel-kept:focus-visible { outline: 2px solid var(--waccent); outline-offset: 2px; }
+.tunnel-kept-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.tunnel-kept-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tunnel-kept-via { flex: none; color: var(--wink-dim); }
 .tunnel-hint { display: flex; flex-direction: column; gap: 4px; }
 .tunnel-hint .route-line { margin: 0; }
 .tunnel-section .route-line { margin: 0; }
