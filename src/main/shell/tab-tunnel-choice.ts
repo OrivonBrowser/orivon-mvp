@@ -4,6 +4,7 @@
 import { allowedTabChoice, ensureSiteSession } from '../route/site-routes.js'
 import { profilePartition } from '../route/site-partition.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
+import { moveListOutOfView } from './tab-history.js'
 import { repartitionView } from './tab-parking.js'
 import { partitionChanged } from './tab-partition.js'
 import type { TabRecord } from './tab-types.js'
@@ -37,6 +38,8 @@ export function setTabTunnelChoice (id: string, record: TabRecord, choice: TabTu
 
 /** Whether the choice stands: false only when the page is still in the session it was in because the move could not be made. */
 function moveToChoice (id: string, record: TabRecord): boolean {
+  // A new tab that Back returned to holds the pages it was left for, in the session it is in.
+  if (record.isDashboardTab && !record.view.webContents.isDestroyed()) moveListOutOfView(record, record.view.webContents)
   // The new-tab page, a page of the shell and a sleeping tab show no website: the first address, or the wake, follows the choice.
   if (record.isDashboardTab || record.internalPage !== null || (record.sleeping ?? null) !== null || record.host.isClosing()) return true
   const before = record.view

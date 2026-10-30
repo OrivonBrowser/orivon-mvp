@@ -44,17 +44,15 @@ export interface TabState {
    * were literal `tab.url === 'about:blank'` checks before the
    * dashboard existed.
    *
-   * NOT simply `url === dashboardUrl` -- found 2026-08-28: in dev mode
-   * `dashboardUrl` is a plain http://localhost:PORT/... address, which
-   * `sanitizeDirectUrl` does not reject, so an ordinary page could steer
-   * an UNRELATED tab's URL to match it (window.open(), or a same-page
-   * redirect) and get "new tab" treatment on content that was never the
-   * dashboard. Gated on TabRecord.isDashboardTab too (tabs.ts) -- set at
-   * creation, and only ever flipped false, one-way, by a real navigation
-   * (repartitionView()), never from a URL a page can influence. That flag
-   * also makes the tab the new tab before the dashboard has committed an
-   * address (`url` is still empty), so the chrome never draws a tab it
-   * cannot tell is the new tab. */
+   * NOT simply `url === dashboardUrl`: in dev mode `dashboardUrl` is a
+   * plain http://localhost:PORT/... address, which `sanitizeDirectUrl` does
+   * not reject, so an ordinary page could steer an UNRELATED tab's URL to
+   * match it (window.open(), or a same-page redirect) and get "new tab"
+   * treatment on content that was never the dashboard. Gated on
+   * TabRecord.isDashboardTab too (tabs.ts), which only a view made for the
+   * dashboard can hold, never a URL alone. That flag also makes the tab the
+   * new tab before the dashboard has committed an address (`url` is still
+   * empty), so the chrome never draws a tab it cannot tell is the new tab. */
   isNewTab: boolean
   /** The tab shown beside this one in a split, or null. */
   splitWith: string | null
@@ -235,7 +233,7 @@ export interface SplitBackdrop {
 export interface TabViewHost {
   readonly preloadPath: string
   readonly broker: Broker | undefined
-  /** Read only to tell "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate. Never used to decide that a tab IS the dashboard -- `TabRecord.isDashboardTab` owns that, and only creation sets it. */
+  /** Tells "still showing the dashboard" from "navigated away", in `wireView`'s did-navigate. Never enough to decide that a tab IS the dashboard: `TabRecord.isDashboardTab` owns that, and only a view made for the dashboard can hold it. */
   readonly dashboardUrl: string
   /** Undefined without a window around the tabs; a tab then shows no dialog or menu. */
   readonly window: BaseWindow | undefined
@@ -322,13 +320,14 @@ export interface TabRecord {
    * `view.webContents.getURL()`, which may still reflect an in-flight
    * navigation. */
   partition: string | undefined
-  /** True only for a tab still showing the dashboard. Starts from
-   * createTab()'s own `isDashboard` decision; repartitionView() flips it
-   * to false, ONE-WAY, the moment a navigate() call sends this tab to
-   * real, different-origin content -- never re-derived from a URL a page
-   * could influence (see TabState.isNewTab's own doc comment: `this.
-   * dashboardUrl` is a plain http:// address in dev mode, which a page
-   * could otherwise steer an unrelated tab's `wc.getURL()` to match). */
+  /** True only for a tab showing the dashboard. Starts from createTab()'s
+   * own `isDashboard` decision and goes false the moment the tab shows
+   * anything else. It comes back true only in a view made for the dashboard
+   * (`dashboardViews`), when Back or Forward reaches that page again: never
+   * from a URL alone, which a page could influence (see TabState.isNewTab's
+   * own doc comment: `this.dashboardUrl` is a plain http:// address in dev
+   * mode, which a page could otherwise steer an unrelated tab's
+   * `wc.getURL()` to match). */
   isDashboardTab: boolean
   /** The shell's own page this tab was opened as, or null. Set only by
    * `TabManager.openInternal`; cleared when the tab navigates to a website. */

@@ -2,6 +2,7 @@
 // partition it gets -- split out of tabs.ts (see that directory's README,
 // `## Design notes`, for why). Pure with respect to TabManager: neither
 // function here reads or writes any tab-collection state.
+import { join } from 'node:path'
 import { shell, WebContentsView } from 'electron'
 import type { NativeImage, WebContents, WebPreferences } from 'electron'
 import { localFileKey, originFromUrl } from '../../broker/policy/origin.js'
@@ -20,13 +21,14 @@ import { watchFileNavigation } from './local-file-navigation.js'
 import { repartitionBeforeCommit, repartitionOnFileBlock } from './pre-partition.js'
 import { askBeforeLeavingRoute, chooseLeave, leaveForOpen } from './leaving-route.js'
 import { keepsOpenerSession, openerCutNeeded, popupTargetIsApp } from './popup-opener.js'
-import { DEFAULT_BACKGROUND } from './theme-colors.js'
+import { DASHBOARD_BACKGROUND, DEFAULT_BACKGROUND, resolveThemeColor } from './theme-colors.js'
 import { isDashboardUrl, sheetBackdropOf } from './sheet-backdrop.js'
 import { isShellSchemeUrl } from './shell-session.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { watchBacking } from './tab-backing.js'
 import { repartitionView } from './tab-parking.js'
 import { settleOuterHistory } from './tab-history.js'
+import { markFirstDashboardLoad } from '../pages/dashboard-first-load.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import { canViewSource } from '../page-tools/view-source.js'
 import { sitePopups } from '../site-settings/site-popups.js'
@@ -42,11 +44,11 @@ import { wireSignInIdentity } from './sign-in-identity-tab.js'
 import { watchAppTab } from './app-tab-watch.js'
 import { wireTabSignals } from './tab-signals.js'
 import { readableNow } from '../reader/reader-signal.js'
-import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTab } from './tab-partition.js'
+import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, dashboardViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTab } from './tab-partition.js'
 import { noteTabVisit } from './tab-tunnel-facts.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
-export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, partitionAfterFileBlock, partitionChanged, partitionForTab, partitionForTarget } from './tab-partition.js'
+export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, dashboardViews, partitionAfterFileBlock, partitionChanged, partitionForTab, partitionForTarget } from './tab-partition.js'
 export type { PartitionSwap } from './tab-partition.js'
 
 /** tabs.ts's own tab-count ceiling: an unbounded window.open() flood (an
@@ -67,6 +69,8 @@ export const EXIT_FULLSCREEN_WORLD_ID = 1001
  * `audioTracks.length` on `loadedmetadata`). `AudioVideoTracks` adds the
  * standard `audioTracks` / `videoTracks` lists to media elements. */
 const APP_TAB_BLINK_FEATURES = 'AudioVideoTracks'
+
+const NEW_TAB_PRELOAD = join(import.meta.dirname, '../preload/newtab.js')
 
 /** Every tab's webPreferences, with the standard, non-negotiable ones
  * (contextIsolation/sandbox/no Node integration/webSecurity) -- shared by
@@ -128,6 +132,17 @@ export function makeTabView (preload: string, partition: string | undefined, add
     recordViewBackground(view.webContents.id, opts.backgroundColor)
   }
   watchAppTab(view, additionalArguments, opts.target)
+  return view
+}
+
+/** The one kind of view that can show the new-tab page: a preload is fixed when a view is made. Created in no session
+ * of its own, whatever the address looks like: `dashboardUrl` is an http:// address in dev mode, and the page is the
+ * shell's, never an app's. The argument tells the preload (src/preload/newtab.ts) the address to check `location.href`
+ * against before it exposes anything, because the tab stays an ordinary, navigable one. */
+export function makeDashboardView (dashboardUrl: string): WebContentsView {
+  const view = makeTabView(NEW_TAB_PRELOAD, undefined, [`--orivon-newtab-url=${dashboardUrl}`], { backgroundColor: resolveThemeColor(DASHBOARD_BACKGROUND), target: dashboardUrl })
+  dashboardViews.add(view)
+  markFirstDashboardLoad(view.webContents, dashboardUrl)
   return view
 }
 
@@ -211,9 +226,6 @@ export function wireView (id: string, record: TabRecord): void {
     // kept skipping this check, for the rest of its life. It could never
     // become an app tab afterwards, however it was later granted.
     //
-    // ONLY EVER CLEARED, NEVER SET, so no URL a page can influence can win
-    // dashboard treatment -- the direction TabRecord.isDashboardTab's own
-    // one-way rule exists to protect.
     // By address, not origin: about:blank, data: and file: pages share the dashboard's opaque origin.
     if (record.isDashboardTab && !isDashboardUrl(navigatedUrl, record.host.dashboardUrl)) {
       record.isDashboardTab = false
@@ -224,6 +236,9 @@ export function wireView (id: string, record: TabRecord): void {
       // never rebuilding it fresh.
       resetViewBackground(view)
     }
+    // Back to the new tab this view was made for. Only such a view: a page can steer any other view to this address
+    // (TabRecord.isDashboardTab's own doc), and there it is an ordinary page with no new-tab preload.
+    if (dashboardViews.has(view) && navigatedUrl === record.host.dashboardUrl) record.isDashboardTab = true
     // guardInternalView (../pages/internal-tab.ts) refuses every navigation
     // an internal page's OWN content could trigger, so this fires only for
     // one path it cannot see: the address bar (tabs.ts's navigate()) typing
