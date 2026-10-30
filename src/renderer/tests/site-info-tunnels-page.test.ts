@@ -1,22 +1,27 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
-import type { TunnelCallbacks } from '../site-info/tunnel-view.js'
-import type { TunnelRowModel } from '../site-info/tunnels-model.js'
+import type { BrowserTunnel, SiteInfo, SiteTunnel } from '../../main/permissions/site-info.js'
+import type { TunnelCallbacks, TunnelViewState } from '../site-info/tunnel-view.js'
+import type { TunnelListModel, TunnelRowModel } from '../site-info/tunnels-model.js'
 
 let callbacks: TunnelCallbacks
 let rows: readonly TunnelRowModel[] = []
+let shown: TunnelListModel
+let shownView: TunnelViewState
 vi.mock('../site-info/tunnel-view.js', async (importOriginal) => ({
   ...await importOriginal<typeof import('../site-info/tunnel-view.js')>(),
-  renderTunnelsPage: (_container: unknown, _info: unknown, model: { rows: readonly TunnelRowModel[] }, _view: unknown, given: TunnelCallbacks) => { callbacks = given; rows = model.rows }
+  renderTunnelsPage: (_container: unknown, _info: unknown, model: TunnelListModel, view: TunnelViewState, given: TunnelCallbacks) => { callbacks = given; rows = model.rows; shown = model; shownView = view }
 }))
 
 const { createTunnelsPage } = await import('../site-info/tunnels-page.js')
 
 const tunnel: SiteTunnel = { via: null, following: true, subject: 'site', blocked: {}, notices: {}, swarm: false, unreadable: false, defaultKind: 'nym', proxy: { address: '127.0.0.1:9050', users: { sites: 0, apps: 0, everything: false } } }
-const infoWith = (patch: Partial<SiteTunnel> = {}): SiteInfo => ({
+const browser: BrowserTunnel = { via: null, defaultKind: 'nym', nodes: false, blocked: {}, proxy: tunnel.proxy, unreadable: false, tabs: [] }
+const infoWith = (patch: Partial<SiteTunnel> = {}, rest: Partial<SiteInfo> = {}): SiteInfo => ({
   origin: 'https://example.com', displayOrigin: 'example.com', claimedName: undefined, homeDomain: undefined, update: undefined, asked: true,
-  capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel: { ...tunnel, ...patch }
+  capabilityRows: [], pickedPathRows: [], consentGranularity: 'all-or-nothing', extensionsOnSite: [], tunnel: { ...tunnel, ...patch }, browserTunnel: browser, ...rest
 })
+/** The popup of a website while the whole browser is on `via` (null: on none), with `patch` for the browser's facts. */
+const browserInfo = (patch: Partial<BrowserTunnel> = {}, rest: Partial<SiteInfo> = {}): SiteInfo => infoWith({}, { everywhere: patch.via !== undefined && patch.via !== null, browserTunnel: { ...browser, ...patch }, ...rest })
 
 function setup (initial: SiteInfo) {
   let info = initial
@@ -24,6 +29,8 @@ function setup (initial: SiteInfo) {
     setTunnel: vi.fn(async (kind: 'nym' | 'socks5' | null) => ({ ok: true, info: infoWith({ via: kind }) })),
     setProxyAddress: vi.fn(async (text: string) => ({ ok: true, info: infoWith({ proxy: { ...tunnel.proxy, address: text } }) }) as { ok: boolean, reason?: 'invalid' | 'refused', info: SiteInfo }),
     testTunnel: vi.fn(async (): Promise<unknown> => ({ ok: true, authentication: 'none' })),
+    setBrowserTunnel: vi.fn(async (kind: 'nym' | 'socks5' | null) => ({ ok: true, info: browserInfo({ via: kind }) })),
+    setNodesTunnel: vi.fn(async (on: boolean) => ({ ok: true, info: browserInfo({ via: 'nym', nodes: on }) })),
     openTunnelSettings: vi.fn(async () => {})
   }
   const redraw = vi.fn(() => { page.render({ querySelector: () => null } as unknown as HTMLElement, info) })
@@ -171,5 +178,174 @@ describe('the switches of a tab', () => {
     callbacks.onToggle('socks5', false)
     await flush()
     expect(bridge.setTunnel).toHaveBeenLastCalledWith(null)
+  })
+})
+
+describe('which panel is drawn', () => {
+  it('opens on the first panel for a page that is not on the browser\'s tunnel, and on Browser-wide when it follows one', () => {
+    setup(infoWith())
+    expect(shownView.panel).toBe('first')
+    setup(browserInfo({ via: 'nym' }))
+    expect(shownView.panel).toBe('browser')
+    expect(rows.find((row) => row.kind.id === 'nym')?.on, 'the rows are the browser\'s').toBe(true)
+  })
+
+  it('opens on the first panel for a page with a choice of its own while the browser is on a tunnel', () => {
+    setup(browserInfo({ via: 'nym' }, { tunnel: { ...tunnel, following: false, via: 'socks5' } }))
+    expect(shownView.panel).toBe('first')
+    expect(rows.find((row) => row.kind.id === 'socks5')?.on).toBe(true)
+  })
+
+  it('shows the panel the person clicked, and holds it while the popup is open, whatever the facts become', async () => {
+    const { bridge, flush } = setup(infoWith())
+    callbacks.onPanel('browser')
+    await flush()
+    expect(shownView.panel).toBe('browser')
+    callbacks.onToggle('nym', true)
+    await flush()
+    expect(bridge.setBrowserTunnel).toHaveBeenCalledWith('nym')
+    expect(shownView.panel, 'the browser is on a tunnel now, and the panel stays where the person put it').toBe('browser')
+    callbacks.onPanel('first')
+    await flush()
+    expect(shownView.panel).toBe('first')
+    expect(rows.find((row) => row.kind.id === 'nym')?.on, 'the first panel is the page\'s own, not the browser\'s').toBe(false)
+  })
+
+  it('draws no panels at all while routes are not running', () => {
+    const { browserTunnel: _omitted, ...bare } = infoWith()
+    setup(bare)
+    expect(shownView.panels).toBeNull()
+  })
+
+  it('names the two panels', () => {
+    setup(infoWith())
+    expect(shownView.panels).toEqual({ first: 'This site', browser: 'Browser-wide' })
+  })
+})
+
+describe('the first panel is unchanged by the second', () => {
+  it('still sets the website\'s own tunnel, and never the browser\'s', async () => {
+    const { bridge, flush } = setup(infoWith())
+    callbacks.onToggle('nym', true)
+    await flush()
+    expect(bridge.setTunnel).toHaveBeenCalledWith('nym')
+    expect(bridge.setBrowserTunnel).not.toHaveBeenCalled()
+  })
+})
+
+describe('the switches of Browser-wide', () => {
+  it('set the tunnel browser-wide when no tab keeps a choice of its own, and turn it off when the lit one is turned off, asking nothing', async () => {
+    const { bridge, flush } = setup(browserInfo({ via: null }))
+    callbacks.onPanel('browser')
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(bridge.setBrowserTunnel).toHaveBeenLastCalledWith('socks5')
+    expect(shown.prompt).toBeNull()
+    callbacks.onToggle('nym', false)
+    await flush()
+    expect(bridge.setBrowserTunnel).toHaveBeenLastCalledWith(null)
+    expect(bridge.setTunnel).not.toHaveBeenCalled()
+  })
+
+  it('ask first when a tab keeps its own tunnel, set nothing until Proceed, and nothing at all on Cancel', async () => {
+    const tabs: BrowserTunnel['tabs'] = [{ title: 'News', choice: 'nym' }]
+    const { bridge, flush } = setup(browserInfo({ via: null, tabs }))
+    callbacks.onPanel('browser')
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(bridge.setBrowserTunnel).not.toHaveBeenCalled()
+    expect(shown.prompt?.tabs).toEqual([{ title: 'News', kept: 'Nym' }])
+    expect(rows.find((row) => row.kind.id === 'socks5')?.on, 'the switch shows the move while the prompt is open').toBe(true)
+    callbacks.onCancel()
+    await flush()
+    expect(bridge.setBrowserTunnel).not.toHaveBeenCalled()
+    expect(shown.prompt).toBeNull()
+    expect(rows.find((row) => row.kind.id === 'socks5')?.on).toBe(false)
+    callbacks.onToggle('socks5', true)
+    callbacks.onConfirm()
+    await flush()
+    expect(bridge.setBrowserTunnel).toHaveBeenCalledWith('socks5')
+    expect(shown.prompt).toBeNull()
+  })
+
+  it('ask again when the tunnel that is on browser-wide is changed to the other, and not when it is turned off', async () => {
+    const tabs: BrowserTunnel['tabs'] = [{ title: 'Bank', choice: 'direct' }]
+    const { bridge, flush } = setup(browserInfo({ via: 'nym', tabs }))
+    callbacks.onPanel('browser')
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(shown.prompt).not.toBeNull()
+    expect(bridge.setBrowserTunnel).not.toHaveBeenCalled()
+    callbacks.onToggle('socks5', false)
+    await flush()
+    expect(shown.prompt, 'the switches moved back to where they were').toBeNull()
+    callbacks.onToggle('nym', false)
+    await flush()
+    expect(bridge.setBrowserTunnel).toHaveBeenLastCalledWith(null)
+  })
+
+  it('close an open prompt when the person goes to the other panel, without setting anything', async () => {
+    const { bridge, flush } = setup(browserInfo({ via: null, tabs: [{ title: 'News', choice: 'nym' }] }))
+    callbacks.onPanel('browser')
+    callbacks.onToggle('nym', true)
+    await flush()
+    expect(shown.prompt).not.toBeNull()
+    callbacks.onPanel('first')
+    await flush()
+    callbacks.onPanel('browser')
+    await flush()
+    expect(shown.prompt).toBeNull()
+    expect(bridge.setBrowserTunnel).not.toHaveBeenCalled()
+  })
+
+  it('ask for the proxy\'s address when none is saved, and saving it is what sets the proxy browser-wide, after the prompt if one is due', async () => {
+    const noAddress = { ...tunnel.proxy, address: '' }
+    const tabs: BrowserTunnel['tabs'] = [{ title: 'News', choice: 'nym' }]
+    const { bridge, flush } = setup(browserInfo({ via: null, proxy: noAddress, blocked: { socks5: 'no-proxy' }, tabs }))
+    bridge.setProxyAddress.mockResolvedValueOnce({ ok: true, info: browserInfo({ via: null, proxy: tunnel.proxy, tabs }) })
+    callbacks.onPanel('browser')
+    callbacks.onToggle('socks5', true)
+    await flush()
+    expect(bridge.setBrowserTunnel, 'nothing is chosen before there is an address').not.toHaveBeenCalled()
+    callbacks.onAddressInput('127.0.0.1:9050')
+    callbacks.onSaveAddress('127.0.0.1:9050')
+    await flush()
+    expect(bridge.setProxyAddress).toHaveBeenCalledWith('127.0.0.1:9050')
+    expect(shown.prompt, 'a tab keeps its own tunnel, so the person is asked').not.toBeNull()
+    callbacks.onConfirm()
+    await flush()
+    expect(bridge.setBrowserTunnel).toHaveBeenCalledWith('socks5')
+  })
+
+  it('say the change did not take when main refused it', async () => {
+    const { bridge, flush } = setup(browserInfo({ via: null }))
+    bridge.setBrowserTunnel.mockResolvedValueOnce({ ok: false, info: browserInfo({ via: null }) })
+    callbacks.onPanel('browser')
+    callbacks.onToggle('nym', true)
+    await flush()
+    expect(shownView.failed).toBe(true)
+    expect(rows.find((row) => row.kind.id === 'nym')?.on).toBe(false)
+  })
+})
+
+describe('the nodes switch', () => {
+  it('sets whether the IPFS and Swarm nodes follow the tunnel, and draws what main says', async () => {
+    const { bridge, flush } = setup(browserInfo({ via: 'nym' }))
+    expect(shown.nodes).toMatchObject({ on: false, disabled: false })
+    callbacks.onNodes(true)
+    await flush()
+    expect(bridge.setNodesTunnel).toHaveBeenCalledWith(true)
+    expect(shown.nodes?.on).toBe(true)
+    callbacks.onNodes(false)
+    await flush()
+    expect(bridge.setNodesTunnel).toHaveBeenLastCalledWith(false)
+  })
+
+  it('says the change did not take when main refused it', async () => {
+    const { bridge, flush } = setup(browserInfo({ via: 'nym' }))
+    bridge.setNodesTunnel.mockResolvedValueOnce({ ok: false, info: browserInfo({ via: 'nym' }) })
+    callbacks.onNodes(true)
+    await flush()
+    expect(shownView.failed).toBe(true)
   })
 })

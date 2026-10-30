@@ -5,8 +5,8 @@ import { nymRouteLine } from '../pages/shared/nym-words.js'
 // The words the tunnels page says for an origin the person routed through their tunnel, and when the tunnel is not
 // answering. Composed here, never from anything an app wrote.
 
-/** Whose traffic the line is about: an installed app, a website, or a tab (every website opened in it). */
-export type RouteSubject = 'app' | 'site' | 'tab'
+/** Whose traffic the line is about: an installed app, a website, a tab (every website opened in it) or the whole browser. */
+export type RouteSubject = 'app' | 'site' | 'tab' | 'browser'
 
 export function routeLineWords (route: SiteRoute, subject: RouteSubject = 'app', nym?: NymState): string {
   const noun = subject

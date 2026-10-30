@@ -21,6 +21,8 @@ function fakeController (over: Partial<SiteInfoController> = {}): SiteInfoContro
   return {
     tabInfoFor: vi.fn(() => INFO),
     setTabTunnel: vi.fn(() => true),
+    setBrowserTunnel: vi.fn(() => true),
+    setNodesTunnel: vi.fn(() => true),
     setProxyAddress: vi.fn(() => 'ok' as const),
     testTunnel: vi.fn(async () => ({ ok: true as const, authentication: 'none' as const })),
     siteInfoFor: vi.fn(async () => { throw new Error('a tab popup never asks about an origin') }),
@@ -35,6 +37,7 @@ function fakeController (over: Partial<SiteInfoController> = {}): SiteInfoContro
     storageDeclarationFor: vi.fn(async () => null),
     siteSummaryFor: vi.fn(async () => ({ asked: false, warning: false, missing: false })),
     inSession: vi.fn((info: SiteInfo) => info),
+    withBrowserTunnel: vi.fn((info: SiteInfo) => info),
     ...over
   } as unknown as SiteInfoController
 }
@@ -60,6 +63,14 @@ describe('registerSiteInfoTabIpc', () => {
     expect(await dispatch({ type: 'get', tab: 'tab-9', tabId: 'tab-9' })).toBe(INFO)
     expect(controller.tabInfoFor).toHaveBeenCalledWith(TAB)
     expect(controller.tabInfoFor).not.toHaveBeenCalledWith('tab-9')
+  })
+
+  it('adds the tunnel of the whole browser to every info it answers', async () => {
+    const withBrowserTunnel = vi.fn((info: SiteInfo) => ({ ...info, everywhere: true }))
+    register(fakeController({ withBrowserTunnel }))
+    expect(await dispatch({ type: 'get' })).toEqual({ ...INFO, everywhere: true })
+    expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toEqual({ ok: true, info: { ...INFO, everywhere: true } })
+    expect(await dispatch({ type: 'setNodesTunnel', on: true })).toEqual({ ok: true, info: { ...INFO, everywhere: true } })
   })
 
   it('gives the tab the tunnel asked for, or none, and returns the info after', async () => {
@@ -89,6 +100,57 @@ describe('registerSiteInfoTabIpc', () => {
     expect(await dispatch({ type: 'setTunnel', kind: 'nym' })).toBeUndefined()
     expect(await dispatch({ type: 'get' })).toBeUndefined()
     expect(gone.setTabTunnel).not.toHaveBeenCalled()
+  })
+
+  it('sends the whole browser through the tunnel asked for, or through none, and returns the tab\'s info after', async () => {
+    const tabInfoFor = vi.fn().mockReturnValueOnce(INFO).mockReturnValue(NEXT)
+    const controller = fakeController({ tabInfoFor })
+    register(controller)
+    expect(await dispatch({ type: 'setBrowserTunnel', kind: 'socks5', tab: 'tab-9' })).toEqual({ ok: true, info: NEXT })
+    expect(controller.setBrowserTunnel).toHaveBeenCalledWith('socks5')
+    await dispatch({ type: 'setBrowserTunnel', kind: null })
+    expect(controller.setBrowserTunnel).toHaveBeenLastCalledWith(null)
+    expect(controller.setTabTunnel, 'the browser-wide switch never moves the tab\'s own choice').not.toHaveBeenCalled()
+  })
+
+  it('says the browser was not moved, with the info as it was, when the controller could not', async () => {
+    const controller = fakeController({ setBrowserTunnel: vi.fn(() => false) })
+    register(controller)
+    expect(await dispatch({ type: 'setBrowserTunnel', kind: 'nym' })).toEqual({ ok: false, info: INFO })
+  })
+
+  it('refuses a browser-wide value that is not a tunnel without reaching the controller', async () => {
+    const controller = fakeController()
+    register(controller)
+    for (const kind of [undefined, 1, 'true', true, false, 'tor', 'off', 'direct']) expect(await dispatch({ type: 'setBrowserTunnel', kind }), String(kind)).toEqual({ ok: false, info: INFO })
+    expect(controller.setBrowserTunnel).not.toHaveBeenCalled()
+  })
+
+  it('sets whether the nodes follow the tunnel only for a true or a false, and returns the info after', async () => {
+    const tabInfoFor = vi.fn().mockReturnValueOnce(INFO).mockReturnValue(NEXT)
+    const controller = fakeController({ tabInfoFor })
+    register(controller)
+    expect(await dispatch({ type: 'setNodesTunnel', on: true })).toEqual({ ok: true, info: NEXT })
+    expect(controller.setNodesTunnel).toHaveBeenCalledWith(true)
+    await dispatch({ type: 'setNodesTunnel', on: false })
+    expect(controller.setNodesTunnel).toHaveBeenLastCalledWith(false)
+    expect(controller.setNodesTunnel).toHaveBeenCalledTimes(2)
+    const strict = fakeController()
+    register(strict)
+    for (const on of [undefined, null, 1, 0, 'true', 'on', {}, []]) expect(await dispatch({ type: 'setNodesTunnel', on }), String(on)).toEqual({ ok: false, info: INFO })
+    expect(strict.setNodesTunnel).not.toHaveBeenCalled()
+    const refusing = fakeController({ setNodesTunnel: vi.fn(() => false) })
+    register(refusing)
+    expect(await dispatch({ type: 'setNodesTunnel', on: true })).toEqual({ ok: false, info: INFO })
+  })
+
+  it('answers nothing for the browser-wide commands once the tab is gone', async () => {
+    const gone = fakeController({ tabInfoFor: vi.fn(() => undefined) })
+    register(gone)
+    expect(await dispatch({ type: 'setBrowserTunnel', kind: 'nym' })).toBeUndefined()
+    expect(await dispatch({ type: 'setNodesTunnel', on: true })).toBeUndefined()
+    expect(gone.setBrowserTunnel).not.toHaveBeenCalled()
+    expect(gone.setNodesTunnel).not.toHaveBeenCalled()
   })
 
   it('saves the proxy\'s address, and tests a tunnel naming no address', async () => {
@@ -134,10 +196,12 @@ describe('registerSiteInfoTabIpc', () => {
   it('answers nothing from another frame', async () => {
     const controller = fakeController()
     register(controller)
-    for (const command of [{ type: 'get' }, { type: 'setTunnel', kind: 'nym' }, { type: 'setProxyAddress', text: '127.0.0.1:9050' }, { type: 'testTunnel', kind: 'nym' }]) {
+    for (const command of [{ type: 'get' }, { type: 'setTunnel', kind: 'nym' }, { type: 'setBrowserTunnel', kind: 'nym' }, { type: 'setNodesTunnel', on: true }, { type: 'setProxyAddress', text: '127.0.0.1:9050' }, { type: 'testTunnel', kind: 'nym' }]) {
       expect(await dispatch(command, OTHER_FRAME), command.type).toBeUndefined()
     }
     expect(controller.setTabTunnel).not.toHaveBeenCalled()
+    expect(controller.setBrowserTunnel).not.toHaveBeenCalled()
+    expect(controller.setNodesTunnel).not.toHaveBeenCalled()
     expect(controller.setProxyAddress).not.toHaveBeenCalled()
     expect(controller.testTunnel).not.toHaveBeenCalled()
   })

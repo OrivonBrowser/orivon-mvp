@@ -26,8 +26,12 @@ export function registerSiteInfoTabIpc (
     command: SiteInfoCommand
   ): Promise<void | SiteInfo | TunnelResult | ProxyAddressResult | ProxyTestReply | null> => {
     if (!isFromSiteInfoWindow(event, siteInfoWebContents, popupUrl)) return
-    // The tab may be gone when a command arrives: nothing then has an answer to draw.
-    const info = controller.tabInfoFor(tabId)
+    // The tab may be gone when a command arrives: nothing then has an answer to draw. The tunnel of the whole browser is part of what is drawn.
+    const infoNow = (): SiteInfo | undefined => {
+      const now = controller.tabInfoFor(tabId)
+      return now === undefined ? undefined : controller.withBrowserTunnel(now)
+    }
+    const info = infoNow()
 
     switch (command.type) {
       case 'get':
@@ -36,13 +40,24 @@ export function registerSiteInfoTabIpc (
         if (info === undefined) return
         if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return { ok: false, info } satisfies TunnelResult
         const ok = controller.setTabTunnel(tabId, command.kind)
-        return { ok, info: ok ? controller.tabInfoFor(tabId) ?? info : info } satisfies TunnelResult
+        return { ok, info: ok ? infoNow() ?? info : info } satisfies TunnelResult
+      }
+      case 'setBrowserTunnel': {
+        if (info === undefined) return
+        if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return { ok: false, info } satisfies TunnelResult
+        const ok = controller.setBrowserTunnel(command.kind)
+        return { ok, info: infoNow() ?? info } satisfies TunnelResult
+      }
+      case 'setNodesTunnel': {
+        if (info === undefined) return
+        const ok = typeof command.on === 'boolean' && controller.setNodesTunnel(command.on)
+        return { ok, info: infoNow() ?? info } satisfies TunnelResult
       }
       case 'setProxyAddress': {
         if (info === undefined) return
         if (typeof command.text !== 'string') return { ok: false, reason: 'invalid', info } satisfies ProxyAddressResult
         const saved = controller.setProxyAddress(command.text)
-        return { ok: saved === 'ok', ...(saved === 'ok' ? {} : { reason: saved }), info: controller.tabInfoFor(tabId) ?? info } satisfies ProxyAddressResult
+        return { ok: saved === 'ok', ...(saved === 'ok' ? {} : { reason: saved }), info: infoNow() ?? info } satisfies ProxyAddressResult
       }
       case 'testTunnel':
         return command.kind === 'nym' || command.kind === 'socks5' ? await controller.testTunnel(command.kind) : null

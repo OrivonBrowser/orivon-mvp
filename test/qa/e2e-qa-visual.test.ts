@@ -208,8 +208,15 @@ for (const scheme of SCHEMES) {
         await tabList.waitForSelector('#tunnel-switch-nym')
         expect(await popupSized(app, '/site-info/')).toBe(true)
         await state(check, app, `tunnel-list-new-tab-${scheme}`, {
-          expected: 'The popup under the tunnel button on the new tab, headed "Tunnels" with "This tab" under it, lists two tunnels, "Nym" with its logo and "Your proxy" with the generic tunnel icon, each with a switch that is off, and one sentence under them that says to pick a tunnel and every site opened in this tab goes through it; nothing is cut off, and the popup sits inside the window. The tunnel button at the right end of the address pill is open (pressed) and plain.',
+          expected: 'The popup under the tunnel button on the new tab, headed "Tunnels", with a two-part control under the heading, "This tab" (selected) and "Browser-wide", and no address under the heading. The selected panel lists two tunnels, "Nym" with its logo and "Your proxy" with the generic tunnel icon, each with a switch that is off, one sentence under them that says to pick a tunnel and every site opened in this tab goes through it, and an "Open Tunnels settings" link; nothing is cut off, and the popup sits inside the window. The tunnel button at the right end of the address pill is open (pressed) and plain.',
           action: 'Clicked the tunnel button on the new tab and waited for its list to be drawn.'
+        })
+        await tabList.click('#tunnel-tab-browser')
+        await tabList.waitForSelector('#tunnel-switch-nodes')
+        expect(await popupSized(app, '/site-info/')).toBe(true)
+        await state(check, app, `tunnel-browser-wide-${scheme}`, {
+          expected: 'The same popup on its "Browser-wide" part, now the selected one of the control under the "Tunnels" heading: the same two tunnels, "Nym" and "Your proxy", each with a switch that is off, then a row "Also use for IPFS and Swarm nodes" with the line "More private, but pages from these networks load more slowly." and a switch that is off and dimmed, because no tunnel is on for the browser; and the "Open Tunnels settings" link. No question is open. Nothing is cut off, and the popup sits inside the window.',
+          action: 'Chose the Browser-wide part of the tunnel list.'
         })
         await chrome.click('#tunnel-btn')
         expect(await waitFor(async () => !(await popoverShown(app, '/site-info/')))).toBe(true)

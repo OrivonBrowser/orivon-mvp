@@ -173,9 +173,12 @@ it('[app:tunnel-everywhere-carries-a-plain-website] a website with no setting of
   await shoot(app, chrome, chrome, 'tunnel-everywhere-key')
 
   const popover = await openPopover()
-  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked'), 'the switch shows the default it follows').toBe('true')
+  expect(await popover.locator('#tunnel-tab-browser').getAttribute('aria-selected'), 'a website that follows the browser opens on the Browser-wide panel').toBe('true')
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked'), 'the switch shows the tunnel the whole browser is on').toBe('true')
   expect(await popover.locator('.tunnel-row[data-tunnel="socks5"] .tunnel-label').textContent()).toBe(TUNNEL_NAME)
   await shoot(app, chrome, popover, 'tunnel-everywhere-popover')
+  await popover.click('#tunnel-tab-first')
+  expect(await popover.locator('#tunnel-switch-socks5').getAttribute('aria-checked'), 'the site\'s own panel shows the default it follows').toBe('true')
   await closePopover()
 }, 4 * QA_TEST_TIMEOUT_MS)
 
@@ -185,6 +188,8 @@ it('[app:tunnel-everywhere-leaves-a-site-set-to-off-direct] a site set to off mo
   const tunnelled = asked(OFF, hosts.offDecoy.port)
 
   const popover = await openPopover()
+  // The popup opens on Browser-wide for a site that follows the browser: the site's own switch is on the first panel.
+  await popover.click('#tunnel-tab-first')
   await popover.click('#tunnel-switch-socks5')
   await popover.waitForSelector('.tunnel-notice')
   expect(await popover.locator('.tunnel-notice-text').textContent()).toBe(DIRECT_NOTICE)
