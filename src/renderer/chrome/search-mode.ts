@@ -41,6 +41,8 @@ export function chipShown (fieldFocused: boolean, chipFocused: boolean, fieldVal
 
 export function createSearchMode (): ChromeModule {
   let chip: HTMLButtonElement | undefined
+  /** The chip's word, apart from its icon, so a push rewrites the word and leaves the icon in place. */
+  let word: HTMLElement | undefined
   let input: HTMLInputElement | undefined
   /** What was last drawn, so a push that changes nothing here asks nothing of the dropdown. */
   let drawn: string | undefined
@@ -51,6 +53,7 @@ export function createSearchMode (): ChromeModule {
       const button = must(document.querySelector<HTMLButtonElement>('#search-mode'), '#search-mode missing')
       const field = must(document.querySelector<HTMLInputElement>('#address'), '#address missing')
       chip = button
+      word = must(document.querySelector<HTMLElement>('#search-mode-text'), '#search-mode-text missing')
       input = field
       let fieldFocused = false
       let chipFocused = false
@@ -67,9 +70,9 @@ export function createSearchMode (): ChromeModule {
       button.hidden = true
     },
     render: (state) => {
-      if (chip === undefined || input === undefined) return
+      if (chip === undefined || word === undefined || input === undefined) return
       const view = chipView(state)
-      chip.textContent = view.text
+      word.textContent = view.text
       chip.dataset['mode'] = state.searchMode
       chip.title = view.label
       chip.setAttribute('aria-label', view.label)

@@ -7,8 +7,11 @@
 }
 
 .search-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   height: 20px;
-  padding: 0 8px;
+  padding: 0 8px 0 6px;
   border: none;
   border-radius: 999px;
   flex: none;
@@ -21,6 +24,7 @@
   cursor: pointer;
 }
 .search-mode[hidden] { display: none; }
+.search-mode svg { width: 12px; height: 12px; flex: none; }
 .search-mode[data-mode='web3'] {
   color: var(--wsearch-web3-ink);
   background: color-mix(in srgb, var(--waccent) 16%, transparent);
@@ -29,7 +33,7 @@
 .search-mode[data-mode='web3']:hover { background: color-mix(in srgb, var(--waccent) 26%, transparent); }
 .search-mode:focus-visible { outline: 2px solid var(--waccent); outline-offset: 1px; }
 
-/* A narrow window gives the address field every pixel it can (toolbar.css, the same 640px): the chip is 46px, and with
+/* A narrow window gives the address field every pixel it can (toolbar.css, the same 640px): the chip is about 60px (icon and word), and with
    Home and the Extensions button at the 500px minimum it would leave the field under 60px. Settings and the
    `search.toggleMode` command still switch the mode there. */
 @container (max-width: 640px) {

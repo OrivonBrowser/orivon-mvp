@@ -49,10 +49,11 @@ describe('the chip across state pushes', () => {
 
   function mount () {
     const chip = new El()
+    const word = new El()
     const input = new El()
     const page = { focused: true, active: undefined as unknown }
     const fakeDocument = {
-      querySelector: (selector: string) => (selector === '#search-mode' ? chip : input),
+      querySelector: (selector: string) => (selector === '#search-mode' ? chip : selector === '#search-mode-text' ? word : input),
       hasFocus: () => page.focused,
       get activeElement () { return page.active }
     }
@@ -63,7 +64,7 @@ describe('the chip across state pushes', () => {
     module.init(ctx)
     const state = { searchMode: 'web3', searchWeb3Name: 'Explore', searchWeb2Name: 'DuckDuckGo' } as never
     return {
-      chip, input, page,
+      chip, word, input, page,
       push: (value: string): void => { input.value = value; module.render?.(state, ctx) },
       restore: (): void => { (globalThis as { document?: unknown }).document = original }
     }
@@ -86,6 +87,17 @@ describe('the chip across state pushes', () => {
       m.page.focused = true
       m.push('https://example.com/')
       expect(m.chip.hidden).toBe(false)
+    } finally {
+      m.restore()
+    }
+  })
+
+  it('writes the mode into the word beside the icon, never over the chip, so the icon stays', () => {
+    const m = mount()
+    try {
+      m.push('')
+      expect(m.word.textContent).toBe('Web3')
+      expect(m.chip.textContent).toBe('')
     } finally {
       m.restore()
     }
