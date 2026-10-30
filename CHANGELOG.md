@@ -33,6 +33,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **An app of several large files no longer stalls and loses a file when allowed during its first load**: files the page asked for together could each hold part of the room Orivon keeps for checking them and wait on each other for ten seconds, until one was refused and its script never ran. A site's reads now take turns, so the oldest finishes and frees its room for the next, within the limit every site shares.
 - **Bug reports now include what Orivon's background processes log**: the lines the `.eth`, IPFS and Swarm host (page and file timings, name and gateway failures), the IPFS and Swarm node hosts and the Nym tunnel write, and what one prints as it crashes, went to the app's own stderr and past the log a report carries, and a packaged Windows app has no stderr at all. Main now writes each line to its own log, so the report's "Recent log" shows them: at most 60 a minute from each process, a line printed again and again once with a count, the last few of any overflow with the count, and from the Nym tunnel only its own lines, never the library's.
 
+- **An app on an ordinary web host no longer stalls and loses a file when several large files load together**: they could each hold part of the room kept for checking them and wait on each other until one was refused. A file refused part way, or found too large, also gave none of that room back, so later files were refused sooner. The files of an app now take turns, and every file gives its room back.
+
 ## [0.0.12] - 2026-10-28
 
 Pre-release, published 2026-10-28. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.0.12).

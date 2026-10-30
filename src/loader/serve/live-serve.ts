@@ -44,9 +44,9 @@ export interface UpstreamResponse {
 
 export type FetchUpstream = (url: string, init: { readonly method: string, readonly headers: Record<string, string>, readonly signal: AbortSignal }) => Promise<UpstreamResponse>
 
-/** How many bytes of files held whole, for a leaf to be computed over them, one handler has in flight at once. */
+/** How many bytes of files held whole, for a leaf to be computed over them, one handler has in flight at once; the oldest file may go one file past it. */
 const HELD_BYTES = 96 * 1024 * 1024
-/** How long a file waits for room in that, and so for the files beside it to be done. */
+/** How long a file waits for room in that with nothing moving in it, and so for the files beside it to be done. */
 const HELD_WAIT_MS = 10_000
 
 /** One version of an app: what the person was asked about and the tree its site declared for it. */
@@ -112,7 +112,7 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
   let version: LiveVersion = { manifest: deps.manifest, declaration: deps.declaration, content: deps.content }
   let state = derive(origin, version)
   const reachOptions: ReachOptions = { appOrigin: origin, redirects: createRedirectChains() }
-  const held = new ByteReserve(HELD_BYTES)
+  const held = new ByteReserve(HELD_BYTES, MAX_ASSET_BYTES)
   let ended = false
   let served = false
   let looking: Promise<LiveVersion | undefined> | undefined
@@ -228,26 +228,27 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
     if (upstream.status !== 200) return refused(path, upstream)
     const declared = Number(upstream.headers?.get('content-length') ?? Number.NaN)
     if (Number.isFinite(declared) && declared > MAX_ASSET_BYTES) { void upstream.body?.cancel().catch(() => {}); return block({ differing: [path] }) }
+    const reader = held.enter()
     const chunks: Uint8Array[] = []
     let total = 0
-    let reserved = 0
+    // Every way out leaves the line and gives back what this file took, once.
     try {
-      const reader = upstream.body?.getReader()
-      for (;;) {
-        const next = await reader?.read()
-        if (next === undefined || next.done) break
-        if (!await held.take(next.value.length, HELD_WAIT_MS)) { await reader?.cancel().catch(() => {}); return failedLoad() }
-        reserved += next.value.length
-        total += next.value.length
-        // A file past what an app may carry cannot be the declared one.
-        if (total > MAX_ASSET_BYTES) { await reader?.cancel().catch(() => {}); return block({ differing: [path] }) }
-        chunks.push(next.value)
+      try {
+        const source = upstream.body?.getReader()
+        for (;;) {
+          const next = await source?.read()
+          if (next === undefined || next.done) break
+          // A file past what an app may carry cannot be the declared one; checked before it takes, so one file never holds more than the oldest reader's slack.
+          if (total + next.value.length > MAX_ASSET_BYTES) { await source?.cancel().catch(() => {}); return block({ differing: [path] }) }
+          if (!await held.take(next.value.length, HELD_WAIT_MS, reader)) { await source?.cancel().catch(() => {}); return failedLoad() }
+          total += next.value.length
+          chunks.push(next.value)
+        }
+      } catch {
+        return failedLoad()
       }
-    } catch {
-      held.give(reserved)
-      return failedLoad()
-    }
-    try {
+      // Gathered: out of the line, though its bytes stay held until it is answered.
+      held.leave(reader)
       let found: string
       try {
         found = await leafOf(path, total, chunks)
@@ -261,7 +262,8 @@ export function createLiveRequestHandler (deps: LiveServeDeps): AppRequestHandle
       if (!await follow(next)) return failedLoad()
       return await answered(request, path, next.manifest, chunks, total)
     } finally {
-      held.give(reserved)
+      held.leave(reader)
+      held.give(total)
     }
   }
 

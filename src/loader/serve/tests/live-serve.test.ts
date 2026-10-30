@@ -469,3 +469,69 @@ describe('the handler an app on an ordinary site runs on before its files are pi
     expect(served).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('files of an ordinary site held whole on their way to being checked', () => {
+  const MIB = 1024 * 1024
+  const declaration = (leaves: Array<{ path: string, leaf: string }>): NonNullable<LiveServeDeps['declaration']> => ({ bundleHash: `sha256:${'b'.repeat(64)}`, leaves })
+  /** Every file below is views of this one chunk, so a file of any size costs this much memory and no more. */
+  const chunk = new Uint8Array(MIB)
+
+  function viewsOf (size: number): Uint8Array[] {
+    return Array.from({ length: size / MIB }, () => chunk)
+  }
+
+  /** One chunk per read. */
+  function streamOf (views: readonly Uint8Array[]): ReadableStream<Uint8Array> {
+    let read = 0
+    return new ReadableStream<Uint8Array>({
+      pull (controller) {
+        const view = views[read++]
+        if (view === undefined) controller.close()
+        else controller.enqueue(view)
+      }
+    }, { highWaterMark: 0 })
+  }
+
+  it('answers every one of several large files read together, though they hold more than the reserve between them', async () => {
+    const paths = ['/big0.js', '/big1.js', '/big2.js', '/big3.js']
+    const views = viewsOf(25 * MIB)
+    const leaves = await Promise.all(paths.map(async (path) => ({ path, leaf: await leafOf(path, 25 * MIB, views) })))
+    const used = { seen: [], fetchNetwork: async () => ({ status: 200, body: streamOf(views) }) }
+    const { handle } = await networkHandler({ manifest: manifestOf({ assets: paths.map((path) => path.slice(1)) }), declaration: declaration(leaves) }, used)
+    const statuses = await Promise.all(paths.map(async (path) => (await handle(path)).status))
+    expect(statuses).toEqual([200, 200, 200, 200])
+  }, 30_000)
+
+  it('gives back what a refused file had taken, so a file read after it fits in that room', async () => {
+    // A gathers 60 MiB and its host then goes silent; B takes the other 36 MiB of the 96 MiB reserve and finds no room for more.
+    let goSilent: () => void = () => {}
+    let release: () => void = () => {}
+    const silent = new Promise<void>((resolve) => { goSilent = resolve })
+    let reads = 0
+    const hostA = new ReadableStream<Uint8Array>({
+      async pull (controller) {
+        if (reads++ < 60) { controller.enqueue(chunk); return }
+        goSilent()
+        await new Promise<void>((resolve) => { release = resolve })
+        controller.error(new Error('the host went silent'))
+      }
+    }, { highWaterMark: 0 })
+    const leafC = await leafOf('/c.js', 30 * MIB, viewsOf(30 * MIB))
+    const bodies: Record<string, ReadableStream<Uint8Array>> = { '/a.js': hostA, '/b.js': streamOf(viewsOf(40 * MIB)), '/c.js': streamOf(viewsOf(30 * MIB)) }
+    const unchecked = `sha256:${'0'.repeat(64)}`
+    const used = { seen: [], fetchNetwork: async (url: string) => ({ status: 200, body: bodies[new URL(url).pathname] ?? null }) }
+    const { handle } = await networkHandler({
+      manifest: manifestOf({ assets: ['a.js', 'b.js', 'c.js'] }),
+      declaration: declaration([{ path: '/a.js', leaf: unchecked }, { path: '/b.js', leaf: unchecked }, { path: '/c.js', leaf: leafC }])
+    }, used)
+    const a = handle('/a.js')
+    try {
+      await silent
+      expect((await handle('/b.js')).type).toBe('error')
+      expect((await handle('/c.js')).status).toBe(200)
+    } finally {
+      release()
+    }
+    expect((await a).type).toBe('error')
+  }, 30_000)
+})

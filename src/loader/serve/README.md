@@ -4,7 +4,8 @@
 `verifiedManifestFor`), `asset.ts` (streams one asset, Range support), `path.ts` (maps a request
 path to a pinned asset), `verify.ts` (re-verifies the whole tree), `range.ts` (Range header
 parsing), `content-type.ts` (Content-Type from the file extension), `csp.ts` (builds the CSP
-header) and `pin-coverage.ts` (per-session pin coverage counters).
+header), `pin-coverage.ts` (per-session pin coverage counters), `live-serve.ts` (answers an app not yet
+pinned, from its own host or a verifier) and `byte-reserve.ts` (how many bytes of files `live-serve.ts` holds whole at once).
 
 **What it depends on.** [`../../contracts/`](../../contracts/), [`../cache/`](../cache/)
 (`storage.ts`'s `openAsset`) and [`../leaf-hash.ts`](../leaf-hash.ts). `serve.ts` imports
@@ -25,6 +26,17 @@ a 64 MiB asset nor a Range request into one is held whole, and a HEAD holds no f
 open handle serves the whole body, so a file replaced mid-response keeps serving the bytes it
 started with; a file whose identity changed after the headers were built, or that is cut short,
 fails the body rather than send bytes the headers do not describe.
+
+**A file held whole waits in a line, and the oldest has one file of slack** ([`byte-reserve.ts`](byte-reserve.ts)). An app on an
+ordinary host has each file held whole until it is hashed, taken from a shared reserve as its bytes arrive. Files read together
+that each hold part of the reserve would wait on each other for room only a finished file frees. So readers wait in a line, and
+the oldest may hold the reserve plus one file (the most an app may carry): it has room to finish, and what it gives back lets the
+next in line do the same. Room is not guaranteed, because a gathered file can sit waiting to be answered while its bytes stay
+held. Every reader, oldest or not, is therefore refused once nothing has been taken or given in the reserve for the wait. Nothing
+else limits how long an ordinary host may stay silent, so a later reader with no timer would wait for ever behind a stalled one
+while the bytes it holds stay pinned. The verifier's budget differs here: every source under it has a read deadline, so only its
+oldest read can be refused. A reader leaves the line once its file is gathered, not when its response is sent, because the ceiling
+already bounds what a page that never reads can hold.
 
 **Re-verification cost: whole-tree, once, at handler creation, not one leaf hash per request.**
 [`ADR-0007`](../../../docs/decisions/ADR-0007-cached-bundles-served-at-their-own-origin.md)
