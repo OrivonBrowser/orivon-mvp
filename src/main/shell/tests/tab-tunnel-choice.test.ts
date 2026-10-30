@@ -15,7 +15,7 @@ interface Fake { record: Record<string, unknown>, emitState: ReturnType<typeof v
 
 function fake (over: Record<string, unknown> = {}, url = `${SITE}/page`, closing = false): Fake {
   const emitState = vi.fn()
-  const record = { view: { webContents: { isDestroyed: () => false, getURL: () => url } }, partition: undefined, isDashboardTab: false, internalPage: null, sleeping: null, host: { emitState, isClosing: () => closing }, ...over }
+  const record = { view: { webContents: { isDestroyed: () => false, getURL: () => url, navigationHistory: { getAllEntries: () => [], getActiveIndex: () => 0 } } }, partition: undefined, isDashboardTab: false, internalPage: null, sleeping: null, host: { emitState, isClosing: () => closing }, ...over }
   return { record, emitState }
 }
 
@@ -63,6 +63,21 @@ describe('giving a tab a tunnel choice', () => {
     expect(emitState).not.toHaveBeenCalled()
     expect(ensure).not.toHaveBeenCalled()
     expect(log).not.toHaveBeenCalled()
+  })
+
+  it('takes the pages a new tab holds out of its view, so that Forward loads them in the session the choice calls for', () => {
+    const removed: number[] = []
+    const navigationHistory = {
+      getAllEntries: () => [{ url: 'orivon-shell://renderer/newtab/index.html', title: '' }, { url: `${SITE}/a`, title: 'a' }, { url: `${SITE}/b`, title: 'b' }],
+      getActiveIndex: () => 0,
+      length: () => 3,
+      removeEntryAtIndex: (index: number) => { removed.push(index) }
+    }
+    const { record } = fake({ isDashboardTab: true, view: { webContents: { isDestroyed: () => false, getURL: () => '', navigationHistory } } })
+    setTabTunnelChoice('t1', record as never, 'nym')
+    expect(record['outer']).toMatchObject({ back: [], forward: [{ url: `${SITE}/a` }, { url: `${SITE}/b` }] })
+    expect(removed).toEqual([2, 1])
+    expect(repartitionView).not.toHaveBeenCalled()
   })
 
   it.each([

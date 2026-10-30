@@ -2,15 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { provideVerifierAccess } from '../../verifier/verifier-access.js'
 
 const repartitionView = vi.fn()
+const loadURL = vi.fn(async () => {})
 const partitionChanged = vi.fn<(target: string, current: string | undefined) => { to: string | undefined } | undefined>()
 const appTabFlagChanged = vi.fn<() => boolean>()
 vi.mock('../tab-parking.js', () => ({ repartitionView: (...args: unknown[]) => repartitionView(...args) }))
-vi.mock('../tab-partition.js', () => ({ partitionChanged: (target: string, current: string | undefined) => partitionChanged(target, current), appTabFlagChanged: () => appTabFlagChanged() }))
+const dashboardView = { webContents: { loadURL, isDestroyed: () => false } }
+vi.mock('../tab-partition.js', () => ({ partitionChanged: (target: string, current: string | undefined) => partitionChanged(target, current), appTabFlagChanged: () => appTabFlagChanged(), dashboardViews: new Set([dashboardView]) }))
 
-const { gatewayLinkTarget, loadInTab, repartitionForTarget } = await import('../load-in-tab.js')
+const { gatewayLinkTarget, loadInTab, repartitionForTarget, stepOutOfView } = await import('../load-in-tab.js')
 const { setLeavingRoutes } = await import('../../route/leaving-routes.js')
 
-const loadURL = vi.fn(async () => {})
 const record = (partition: string | undefined, redirect = true): never => ({ partition, view: { webContents: { loadURL } }, host: { broker: undefined, services: { settings: { get: () => redirect } } } }) as never
 
 afterEach(() => { provideVerifierAccess({ start: () => {}, ready: async () => {} }) })
@@ -69,6 +70,28 @@ describe('repartitionForTarget onto a page the person opened through their proxy
     repartitionForTarget('t1', tab, 'https://site.example/', true)
     repartitionForTarget('t1', { ...(tab as object), routedAway: 'orivon-route-tab-2' } as never, 'https://site.example/')
     expect(repartitionView.mock.calls.map((call) => call[3])).toEqual([undefined, undefined])
+  })
+})
+
+describe('stepOutOfView onto the new-tab page', () => {
+  // An http:// address, as the dashboard has in dev mode: as a site it would ask for a session of its own.
+  const DASHBOARD = 'http://127.0.0.1:5173/newtab/'
+  const history = { getAllEntries: () => [{ url: 'https://a.example/', title: 'a' }], getActiveIndex: () => 0 }
+  const tab = (view: object): never => ({ partition: 'persist:a', view, outer: { back: [{ url: DASHBOARD, title: '' }], forward: [] }, host: { dashboardUrl: DASHBOARD, emitState: vi.fn() } }) as never
+
+  beforeEach(() => { partitionChanged.mockReturnValue({ to: 'persist:dev-server' }) })
+
+  it('moves to a view of no session of its own, whatever the address looks like', () => {
+    const moved = tab({ webContents: { loadURL, isDestroyed: () => false, navigationHistory: history } })
+    expect(stepOutOfView('t1', moved, 'back')).toBe(true)
+    expect(repartitionView).toHaveBeenCalledExactlyOnceWith('t1', moved, DASHBOARD, undefined, true)
+  })
+
+  it('loads in the tab\'s view when that is the view made for the page', () => {
+    Object.assign(dashboardView.webContents, { navigationHistory: history })
+    expect(stepOutOfView('t1', tab(dashboardView), 'back')).toBe(true)
+    expect(repartitionView).not.toHaveBeenCalled()
+    expect(loadURL).toHaveBeenCalledExactlyOnceWith(DASHBOARD)
   })
 })
 

@@ -1,6 +1,7 @@
 // A tab keeps its whole back and forward list while it moves between sessions: the web, a cache-served app with a
 // partition of its own, the web again, and back into the app's kept view. The toolbar's Back walks every page in
-// order and Forward walks back, each page shown in its own session (src/main/shell/tab-outer-history.ts).
+// order and Forward walks back, each page shown in its own session (src/main/shell/tab-outer-history.ts). The new-tab
+// page the tab started on is one of those pages: Back reaches it, and there the tab is the new tab, whichever view holds it.
 //
 // RUN THIS WITH:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/tabs/e2e-history-across-sessions.test.ts
@@ -9,7 +10,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
-import { waitForTab } from '../support/smoke-helpers.mjs'
+import { waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import { originFromUrl } from '../../src/broker/policy/origin.js'
 import { partitionFor } from '../../src/broker/grants/origin-hash.js'
 import { bundleTree } from '../../src/broker/policy/bundle-hash.js'
@@ -79,6 +80,31 @@ async function press (chrome: Page, button: '#back' | '#forward', expected: stri
   expect(landed.ok, `${button} lands on ${expected}: ${JSON.stringify(landed.info)}`).toBe(true)
 }
 
+/** The new-tab page in front as itself: an empty address bar, and its page holding the bridge only its own view is given. */
+async function expectNewTab (app: ElectronApplication, chrome: Page): Promise<void> {
+  const landed = await waitForTab(chrome, { address: '', backDisabled: true })
+  expect(landed.ok, `the new tab shows no address: ${JSON.stringify(landed.info)}`).toBe(true)
+  const bridged = await waitFor(async () => {
+    const page = app.windows().find((candidate) => candidate.url().endsWith('/newtab/index.html'))
+    return await page?.evaluate(() => typeof (window as unknown as { orivonNewTab?: unknown }).orivonNewTab === 'object') ?? false
+  })
+  expect(bridged, 'the page is the working new-tab page').toBe(true)
+}
+
+it('is the new tab again when Back reaches the page it started on', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const a = `${web.origin}/a`
+    await visit(app, chrome, a)
+    await press(chrome, '#back', '')
+    await expectNewTab(app, chrome)
+    await press(chrome, '#forward', a)
+    expect((await waitForTab(chrome, { address: a, title: 'web /a', backDisabled: false, forwardDisabled: true })).ok).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
 it('walks the whole list back and forth across the web and an installed app', async () => {
   const { app, chrome } = await launchShell()
   try {
@@ -102,8 +128,11 @@ it('walks the whole list back and forth across the web and an installed app', as
     expect(await sessionOfShown(app, appUrl, appPartition)).toBe('app')
     await press(chrome, '#back', b)
     await press(chrome, '#back', a)
-    expect((await waitForTab(chrome, { address: a, backDisabled: true, forwardDisabled: false })).ok, 'Back ends on the first page').toBe(true)
+    await press(chrome, '#back', '')
+    await expectNewTab(app, chrome)
+    expect((await waitForTab(chrome, { forwardDisabled: false })).ok, 'Back ends on the new tab, with every page ahead of it').toBe(true)
 
+    await press(chrome, '#forward', a)
     await press(chrome, '#forward', b)
     await press(chrome, '#forward', appUrl)
     expect(await sessionOfShown(app, appUrl, appPartition)).toBe('app')

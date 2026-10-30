@@ -5,7 +5,7 @@ import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import { startNavigation } from './leave-page-prompt.js'
 import { listOf } from './tab-history.js'
 import { EMPTY_OUTER, stepBack, stepForward } from './tab-outer-history.js'
-import { appTabFlagChanged, partitionChanged } from './tab-partition.js'
+import { appTabFlagChanged, dashboardViews, partitionChanged } from './tab-partition.js'
 import { isTemporaryRoutePartitionLive } from '../route/leaving-routes.js'
 import type { TabRecord } from './tab-types.js'
 
@@ -26,6 +26,14 @@ function stepTarget (record: TabRecord, to: string | undefined, step: boolean): 
   return record.routedAway
 }
 
+/** A step onto the new-tab page needs the view made for it, in no session of its own, whatever its address looks
+ * like (`makeDashboardView`). False when the tab's view is that view. */
+function moveToDashboardView (id: string, record: TabRecord, target: string): boolean {
+  if (dashboardViews.has(record.view)) return false
+  repartitionView(id, record, target, undefined, true)
+  return true
+}
+
 /** Back from the first page of the tab's view, or Forward from its last, to the page of the tab's outer history
  * beyond it (tab-outer-history.ts). It loads in a view of its own session, as an address typed into the bar would;
  * in the tab's own view when that is one. False when there is no such page.
@@ -38,11 +46,12 @@ export function stepOutOfView (id: string, record: TabRecord, direction: 'back' 
   if (wc.isDestroyed()) return false
   const { entries, index } = listOf(wc)
   const outer = record.outer ?? EMPTY_OUTER
-  const step = direction === 'back' ? stepBack(outer, entries, index) : stepForward(outer, entries, index)
+  const { dashboardUrl } = record.host
+  const step = direction === 'back' ? stepBack(outer, entries, index, dashboardUrl) : stepForward(outer, entries, index, dashboardUrl)
   if (step === null) return false
   const target = step.target.url
   record.outer = step.outer
-  if (!repartitionForTarget(id, record, target, true)) {
+  if (!(target === dashboardUrl ? moveToDashboardView(id, record, target) : repartitionForTarget(id, record, target, true))) {
     record.outer = outer
     const next = step.outer
     startNavigation(wc, () => {

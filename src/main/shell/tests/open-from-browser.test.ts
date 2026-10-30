@@ -4,7 +4,7 @@ import type { BrowserTabs } from '../open-from-browser.js'
 
 const FILE = 'file:///home/u/notes/app.html'
 
-function fakeTabs (newTab = false): { tabs: BrowserTabs, calls: string[] } {
+function fakeTabs (newTab = false, canGoForward = false): { tabs: BrowserTabs, calls: string[] } {
   const calls: string[] = []
   const tabs: BrowserTabs = {
     createTab: vi.fn((url?: string, active = true) => { calls.push(`create ${url ?? ''} ${active}`); return 'web' }),
@@ -12,13 +12,21 @@ function fakeTabs (newTab = false): { tabs: BrowserTabs, calls: string[] } {
     openLocalFileNow: vi.fn((url: string, active = true) => { calls.push(`now ${url} ${active}`); return 'known' }),
     navigate: vi.fn((id: string, input: string) => { calls.push(`navigate ${id} ${input}`) }),
     closeTab: vi.fn((id: string) => { calls.push(`close ${id}`) }),
-    getState: () => ({ tabs: [{ id: 't1', isNewTab: newTab }], activeTabId: 't1' }) as never,
+    getState: () => ({ tabs: [{ id: 't1', isNewTab: newTab, canGoBack: false, canGoForward }], activeTabId: 't1' }) as never,
     activeWebContents: () => undefined
   }
   return { tabs, calls }
 }
 
 beforeEach(() => { vi.clearAllMocks() })
+
+describe('navigateFromBrowser on a new tab that Back reached', () => {
+  it('leaves the tab open, because it still holds the page ahead of it', async () => {
+    const { tabs, calls } = fakeTabs(true, true)
+    await navigateFromBrowser(tabs, 't1', FILE)
+    expect(calls).toEqual([`file ${FILE} true`])
+  })
+})
 
 describe('openFromBrowser', () => {
   it('opens a web address as an ordinary tab and a local file through openLocalFile', () => {

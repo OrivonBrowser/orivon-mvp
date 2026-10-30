@@ -2,7 +2,7 @@
 // in the original would.
 import type { WebContents } from 'electron'
 import { isShellSchemeUrl } from './shell-session.js'
-import { noteCommit } from './tab-outer-history.js'
+import { EMPTY_OUTER, leaveOnlyShown, noteCommit } from './tab-outer-history.js'
 import type { HistoryEntry, OuterHistory } from './tab-outer-history.js'
 
 /**
@@ -47,13 +47,15 @@ export function restoreHistory (wc: WebContents, entries: ReadonlyArray<{ readon
  * travel: an entry's saved page state holds form values and a form's POST body, which a copy must not resubmit or
  * show. A history of one page has nothing to carry. When `expectedUrl` is given and `from` is not yet on it (a swap
  * made before the address has committed), the pages `from` has been through are carried up to the one it is on, and
- * `expectedUrl` loads after them, so Back returns to that page. True when `to` was given the list and loads its
- * current page. */
-export function carryHistory (from: WebContents | undefined, to: WebContents | undefined, expectedUrl?: string): boolean {
+ * `expectedUrl` loads after them, so Back returns to that page. `leaveOut` is an address that does not travel, and a
+ * list showing it carries nothing. True when `to` was given the list and loads its current page. */
+export function carryHistory (from: WebContents | undefined, to: WebContents | undefined, expectedUrl?: string, leaveOut?: string): boolean {
   if (from === undefined || to === undefined) return false
-  const entries = from.navigationHistory.getAllEntries().map(({ url, title }) => ({ url, title }))
-  const index = from.navigationHistory.getActiveIndex()
-  if (index < 0 || index >= entries.length) return false
+  const listed = from.navigationHistory.getAllEntries().map(({ url, title }) => ({ url, title }))
+  const active = from.navigationHistory.getActiveIndex()
+  if (active < 0 || active >= listed.length || listed[active]?.url === leaveOut) return false
+  const entries = listed.filter(({ url }) => url !== leaveOut)
+  const index = listed.slice(0, active).filter(({ url }) => url !== leaveOut).length
   if (expectedUrl !== undefined && entries[index]?.url !== expectedUrl) {
     if (entries[index]?.url === 'about:blank') return false
     return restoreHistory(to, entries.slice(0, index + 1), index, expectedUrl)
@@ -68,6 +70,23 @@ export function listOf (wc: WebContents): { entries: HistoryEntry[], index: numb
   return { entries: history.getAllEntries().map(({ url, title }) => ({ url, title })), index: history.getActiveIndex() }
 }
 
+/** From the end, so each removal leaves the indices still to visit alone. */
+function holdActiveAlone (history: WebContents['navigationHistory']): void {
+  const active = history.getActiveIndex()
+  for (let index = history.length() - 1; index >= 0; index--) if (index !== active) history.removeEntryAtIndex(index)
+}
+
+/** Moves the pages of the tab's view, other than the one it shows, to its outer history: for a choice that changes the
+ * session they belong in. Back and Forward then reach them in a view of that session, where the view's own list would
+ * load them in this one. */
+export function moveListOutOfView (record: { outer?: OuterHistory, readonly host: { readonly dashboardUrl: string } }, wc: WebContents): void {
+  const { entries, index } = listOf(wc)
+  const shown = entries[index]
+  if (shown === undefined || entries.length < 2) return
+  record.outer = noteCommit(leaveOnlyShown(record.outer ?? EMPTY_OUTER, entries, index, record.host.dashboardUrl), [shown.url], 0)
+  holdActiveAlone(wc.navigationHistory)
+}
+
 /** The tab's view committed a page (`sameDocument` for a fragment or `pushState` change). A view that has just
  * stepped out of its list, or a parked view the tab came back to, is left holding that page alone: its other pages
  * are in the tab's outer history already, and going back to the page a parked app left for would load it inside the
@@ -80,9 +99,7 @@ export function settleOuterHistory (record: { outer?: OuterHistory }, wc: WebCon
   const history = wc.navigationHistory
   if (outer.trimOnCommit === true) {
     if (sameDocument || url === 'about:blank') return
-    const active = history.getActiveIndex()
-    // From the end, so each removal leaves the indices still to visit alone.
-    for (let index = history.length() - 1; index >= 0; index--) if (index !== active) history.removeEntryAtIndex(index)
+    holdActiveAlone(history)
   }
   record.outer = noteCommit(outer, history.getAllEntries().map((entry) => entry.url), history.getActiveIndex())
 }

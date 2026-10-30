@@ -6,6 +6,7 @@ const appTabArgsFor = vi.fn((_target: string, _broker: unknown) => [] as string[
 const makeTabView = vi.fn((_preload: string, _partition: string | undefined, _args: string[], _options?: { target: string }) => ({ webContents: { id: 1, once: vi.fn(), on: vi.fn(), off: vi.fn() } }))
 vi.mock('../tab-view.js', () => ({
   appTabArgsFor: (target: string, broker: unknown) => appTabArgsFor(target, broker),
+  makeDashboardView: (target: string) => makeTabView('', undefined, [], { target }),
   makeTabView: (preload: string, partition: string | undefined, args: string[], options?: { target: string }) => makeTabView(preload, partition, args, options),
   partitionForTarget: (target: string) => partitionForTarget(target),
   partitionForTab: (target: string, choice: unknown) => partitionForTab(target, choice),

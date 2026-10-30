@@ -178,6 +178,16 @@ so no step loads a page in the wrong one. A new page ends what was ahead, as in 
 toolbar, the page menu and the HTTPS warning read the joined list. A copied or restored tab carries
 only its view's own list.
 
+**The new-tab page is a page of the tab's history, and only a view made for it can show it.** A preload
+is fixed when a view is made, so `tab-view.ts`'s `makeDashboardView` is the one maker and
+`dashboardViews` remembers its views. `TabRecord.isDashboardTab` goes false when the tab shows anything
+else and comes back when such a view commits that address again, or when a step moves the tab into a new
+one (`stepOutOfView`). The address alone decides nothing: it is an http:// one in dev mode, and any other
+view that reaches it is an ordinary page. A list carried to another view leaves the page out, because
+Back would reach it there with no preload, and the page stays in the tab's outer history. A new tab Back returned to still holds the pages it was left
+for, in its own session, so a tunnel chosen there moves them to the outer history (`moveListOutOfView`),
+and a command that closes an empty new tab leaves this one open (`isEmptyNewTab`).
+
 **One process, several windows: what is per window and what is shared.** Per window: the chrome view, the
 `TabManager`, the popovers, the fullscreen and notice state, and the IPC handlers on the chrome view and the
 popovers, which are registered on those views' own `ipc` so two windows never collide on a channel. Shared:
