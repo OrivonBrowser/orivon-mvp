@@ -96,12 +96,28 @@ wildcard host only as `*:*`: a program with its own DNS resolver names it, as `1
 broker drops a refused datagram without an error (A87), so the program sees only a query that
 never gets an answer (A304).
 
-**`poll` leaves one reaction on a pending wait, however often it is called.** A program's event
-loop polls every socket it holds each time anything wakes it. Waiting on each pollable's own
-promise per call (`Promise.race`) left one reaction on the promise of every socket that stayed
-quiet, and a busy program holding a hundred sockets grew its heap by
-about 35 MB a second. `Pollable.subscribe` (`io.ts`) arms the underlying wait once and fans a wake
-out to the polls currently waiting; a poll withdraws from the pollables that did not wake it.
+**`poll` waits in constant time per pollable and answers a whole pass of the event loop at once.** A
+program's event loop polls every socket it holds each time anything wakes it: a busy program holding
+two hundred sockets polls about two thousand times a second, each call naming all of them. Three
+properties of `io.ts` keep that cheap:
+
+- *One reaction per pending wait.* A `Pollable` arms its underlying promise once, when a poll first
+  watches it, and stays armed until that promise settles. Waiting on each pollable's own promise per
+  call (`Promise.race`) left one reaction on the promise of every socket that stayed quiet, and a
+  busy program grew its heap by about 35 MB a second.
+- *A wait is a field write per pollable.* A poll that starts waiting adds one to each pollable's
+  watcher count and joins one realm-wide set of waiting polls; it takes the counts back when it is
+  resumed. It adds no closure and no `Set` entry per pollable, and the scan that comes first
+  collects indices in one loop without an array per element.
+- *One answer per pass.* When a pollable that a poll watches settles, the waiting polls are resumed
+  once, at the end of the event loop's current pass (`setImmediate`, or a `MessageChannel` task
+  where there is none; a timer would clamp to 4 ms in a page's Worker). Every socket that became
+  readable in that pass is then in the one answer, so the program serves them all in one turn
+  instead of paying the scan for each. A pollable that is ready when `poll` is called answers at once.
+
+The glue calls `[Symbol.dispose]` when a program drops a pollable: it then wakes no poll, and a clock
+pollable clears its timer, where the program drops one per `poll` call and every one would otherwise
+stay scheduled to its deadline.
 
 **A dropped socket gives back what it held in the broker, whatever it had got to.** A program that drops a socket
 is closing a descriptor, and the origin's census must show it gone. One still connecting is abandoned with the

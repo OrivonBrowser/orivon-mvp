@@ -19,12 +19,31 @@ export function monotonicNs (): bigint {
   return msToNs(performance.now())
 }
 
-/** A pause of any length; zero yields once to the event loop. */
-export async function delay (ms: number): Promise<void> {
-  for (let left = ms; left > 0; left -= MAX_TIMER_MS) {
-    await new Promise((resolve) => setTimeout(resolve, Math.min(left, MAX_TIMER_MS)))
+/** A pause that `cancel` ends at once, clearing its timer; `done` settles either way. */
+export interface Pause {
+  readonly done: Promise<void>
+  readonly cancel: () => void
+}
+
+/** A pause of any length, taken in slices of what setTimeout allows; zero yields once to the event loop. */
+export function pause (ms: number): Pause {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let finish: () => void = () => {}
+  const done = new Promise<void>((resolve) => { finish = resolve })
+  const slice = (left: number): void => {
+    timer = setTimeout(() => {
+      timer = undefined
+      if (left > MAX_TIMER_MS) slice(left - MAX_TIMER_MS)
+      else finish()
+    }, Math.max(0, Math.min(left, MAX_TIMER_MS)))
   }
-  if (ms <= 0) await new Promise((resolve) => setTimeout(resolve, 0))
+  slice(ms)
+  return { done, cancel: () => { clearTimeout(timer); timer = undefined; finish() } }
+}
+
+/** A pause nothing ends early. */
+export async function delay (ms: number): Promise<void> {
+  await pause(ms).done
 }
 
 /** Fresh random bytes, in a buffer of their own: getRandomValues refuses a view over shared memory. */

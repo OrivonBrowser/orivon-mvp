@@ -66,16 +66,62 @@ export class Signal {
   }
 }
 
+/** A `poll` that is waiting: the pollables it watches, and the call that resumes it. */
+interface WaitingPoll {
+  readonly list: readonly Pollable[]
+  readonly resume: () => void
+}
+
+const waitingPolls = new Set<WaitingPoll>()
+let passEnding = false
+let channel: MessageChannel | undefined
+
+/** Runs `task` once the host's event loop has finished the callbacks of its current pass. */
+function atEndOfPass (task: () => void): void {
+  const immediate = (globalThis as { setImmediate?: (task: () => void) => unknown }).setImmediate
+  if (immediate !== undefined) {
+    immediate(task)
+    return
+  }
+  if (channel === undefined) {
+    channel = new MessageChannel()
+    channel.port1.onmessage = () => { wakePolls() }
+  }
+  channel.port2.postMessage(null)
+}
+
+/** Resumes every waiting poll, which then answers with all that is ready by now. */
+function wakePolls (): void {
+  passEnding = false
+  for (const waiting of waitingPolls) {
+    for (const pollable of waiting.list) pollable.unwatch()
+    waiting.resume()
+  }
+  waitingPolls.clear()
+}
+
 export class Pollable {
   readonly #isReady: () => boolean
   readonly #wait: () => Promise<void>
-  readonly #waiters = new Set<() => void>()
+  readonly #onDispose: (() => void) | undefined
+  #watchers = 0
   #armed = false
+  #disposed = false
 
-  /** `wait` settles once `isReady` would answer true. */
-  constructor (isReady: () => boolean, wait: () => Promise<void>) {
+  /** The underlying wait settled: a poll watching this is woken at the end of the pass, unless the program dropped it. */
+  readonly #settled = (): void => {
+    this.#armed = false
+    if (this.#watchers > 0 && !this.#disposed && !passEnding) {
+      passEnding = true
+      atEndOfPass(wakePolls)
+    }
+  }
+
+  /** `wait` settles once `isReady` would answer true; `onDispose` gives back what `wait` holds. */
+  constructor (isReady: () => boolean, wait: () => Promise<void>, onDispose?: () => void) {
     this.#isReady = isReady
     this.#wait = wait
+    this.#onDispose = onDispose
   }
 
   ready (): boolean {
@@ -92,48 +138,64 @@ export class Pollable {
   }
 
   /**
-   * @internal Calls `waiter` once when the pollable may have become ready, and
-   * returns the call that withdraws it. However many polls wait on this at
-   * once, or one after another, the underlying promise holds one reaction: a
+   * @internal A poll that starts waiting counts itself among this pollable's
+   * watchers, and the underlying wait is armed unless it already is: one
+   * reaction per pending promise however many polls watch it, since a
    * reaction added per poll stays on a promise that settles rarely (an idle
    * socket's read) for as long as it is pending, which a busy event loop
    * turns into gigabytes (see README.md's Design notes).
    */
-  subscribe (waiter: () => void): () => void {
-    this.#waiters.add(waiter)
-    if (!this.#armed) {
-      this.#armed = true
-      const woken = (): void => {
-        this.#armed = false
-        const waiting = [...this.#waiters]
-        this.#waiters.clear()
-        for (const wake of waiting) wake()
-      }
-      let waited: Promise<void>
-      try {
-        waited = this.#wait()
-      } catch {
-        waited = Promise.resolve()
-      }
-      waited.then(woken, woken)
+  watch (): void {
+    this.#watchers++
+    if (this.#armed || this.#disposed) return
+    this.#armed = true
+    let waited: Promise<void>
+    try {
+      waited = this.#wait()
+    } catch {
+      waited = Promise.resolve()
     }
-    return () => { this.#waiters.delete(waiter) }
+    waited.then(this.#settled, this.#settled)
+  }
+
+  /** @internal A waiting poll stops watching, whether or not this is what woke it. */
+  unwatch (): void {
+    this.#watchers--
+  }
+
+  /** The program dropped this pollable: it wakes no poll, and what its wait holds is given back. */
+  [Symbol.dispose] (): void {
+    this.#disposed = true
+    this.#onDispose?.()
   }
 }
 
 export const ALWAYS_READY = new Pollable(() => true, async () => {})
 
-/** wasi:io/poll's `poll`: the indices of the pollables that are ready, waiting for at least one. */
+/** The positions in `list` of the pollables that are ready now, or `undefined` when none is. */
+function readyIndices (list: readonly Pollable[]): number[] | undefined {
+  let ready: number[] | undefined
+  let index = 0
+  for (const pollable of list) {
+    if (pollable.ready()) (ready ??= []).push(index)
+    index++
+  }
+  return ready
+}
+
+/**
+ * wasi:io/poll's `poll`: the indices of the pollables that are ready, waiting
+ * for at least one. A waiting poll is resumed once per pass of the event loop,
+ * after all that settled in that pass has, so one answer carries them all.
+ */
 export async function poll (list: readonly Pollable[]): Promise<Uint32Array> {
   if (list.length === 0) throw new TypeError('poll needs at least one pollable')
   for (;;) {
-    const ready = list.flatMap((pollable, index) => pollable.ready() ? [index] : [])
-    if (ready.length > 0) return new Uint32Array(ready)
-    await new Promise<void>((resolve) => {
-      const withdraw = list.map((pollable) => pollable.subscribe(() => {
-        for (const off of withdraw) off()
-        resolve()
-      }))
+    const ready = readyIndices(list)
+    if (ready !== undefined) return new Uint32Array(ready)
+    await new Promise<void>((resume) => {
+      for (const pollable of list) pollable.watch()
+      waitingPolls.add({ list, resume })
     })
   }
 }

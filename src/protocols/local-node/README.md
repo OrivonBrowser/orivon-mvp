@@ -139,7 +139,11 @@ early refusal, and hands the pins to the process in its config. The process read
 (`readPinned`), hashes those bytes, and uses those same bytes: the glue is imported from a `data:` URL made of
 them (a file in a directory with no `package.json` would make Node guess its module type and warn on
 stderr), and each core module is compiled from them. A name that is not pinned is refused, so a file changed
-after main's check, or a core module the glue names that was never pinned, never runs.
+after main's check, or a core module the glue names that was never pinned, never runs. The bytes that run are
+the pinned bytes plus one fixed edit: jco's glue calls a debug log twice per import call (hundreds of sites),
+and the log reads `process.env` each time, which in Node is a native lookup. Unless `JCO_DEBUG` is set, the
+definition of that log, matched exactly and only when it occurs once, is replaced by a function that does
+nothing (`withoutDebugLog`, `component.ts`); a glue that does not match loads unchanged.
 
 **Test seams.** `LoaderSeams` lets a test run a fixture component in a process with no JSPI by
 default, as `src/shim/wasi-p2/tests/support/` does; a kind is a plain object, so a test supplies its
