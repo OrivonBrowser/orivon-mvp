@@ -79,7 +79,7 @@ describe('createLoader: an installed app at a name that moves', () => {
     expect(asked).toEqual([true])
   })
 
-  it('checks again as soon as a check could not read the new manifest', async () => {
+  it('reads a manifest it could not read again after the same 30 seconds', async () => {
     const storage = memoryStorage()
     await installedV1(storage)
     const clock = { now: 1_700_000_000_000 }
@@ -92,7 +92,10 @@ describe('createLoader: an installed app at a name that moves', () => {
     const loader = loaderOver(storage, flaky, () => ({ ...CONTENT, cid: NEXT_CID }), clock)
     expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('rejected')
     reachable = true
-    clock.now += 1
+    clock.now += 29 * SECOND
+    expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('up-to-date')
+    expect(next.seen).toEqual([])
+    clock.now += 1 * SECOND
     expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('update-available')
   })
 
@@ -130,6 +133,31 @@ describe('createLoader: an installed app at a name that moves', () => {
     expect(result.outcome).toBe('update-available')
     expect(next.seen.every((request) => request.root === NEXT_CID)).toBe(true)
     expect((await loaderOver(storage, next.fetch, () => CONTENT).pinFor(ORIGIN))?.content?.cid).toBe(CID)
+  })
+
+  it.each([
+    ['a new manifest', { version: '1.0.1' }],
+    ['the same manifest over other files', {}]
+  ])('costs one proof of the name while an offer of %s stays open', async (_offer, manifest) => {
+    const storage = memoryStorage()
+    await installedV1(storage)
+    const clock = { now: 1_700_000_000_000 }
+    const next = site('<!doctype html>v2', manifest)
+    let at: ContentAddress = { ...CONTENT, cid: NEXT_CID }
+    const loader = loaderOver(storage, next.fetch, () => at, clock)
+    expect((await loader.load(ORIGIN, NO_GRANTS)).outcome).toBe('update-available')
+    const requests = next.seen.length
+    expect(requests).toBeGreaterThan(0)
+
+    clock.now += 30 * SECOND
+    at = { ...at, pointersVerified: false }
+    expect(await loader.load(ORIGIN, NO_GRANTS)).toMatchObject({ outcome: 'update-available', toCid: NEXT_CID, pointersVerified: false })
+    expect(next.seen).toHaveLength(requests)
+
+    clock.now += 30 * SECOND
+    at = { ...at, cid: THIRD_CID }
+    expect(await loader.load(ORIGIN, NO_GRANTS)).toMatchObject({ outcome: 'update-available', toCid: THIRD_CID })
+    expect(next.seen.length).toBeGreaterThan(requests)
   })
 
   it('rejects a moved name whose new manifest is not valid, leaving the pin', async () => {

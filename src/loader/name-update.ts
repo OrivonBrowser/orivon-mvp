@@ -22,6 +22,8 @@ import { leafOf } from './leaf-hash.js'
 /** A name is looked up at most this often per origin, so that the tabs of one app opening together make one lookup; in memory, so a restart checks at once. */
 export const NAME_CHECK_INTERVAL_MS = 30_000
 
+type UpdateOffered = Extract<LoadResult, { outcome: 'update-available' }>
+
 /** What the update decision in `./index.ts` is given, so this file never imports it back. */
 export type DecideAndRoute = (
   canonicalOrigin: string,
@@ -71,6 +73,8 @@ export function createNameUpdates (
   decideAndRoute: DecideAndRoute
 ): NameUpdates {
   const checkedAt = new Map<string, number>()
+  /** The offer each origin's name last made. What a root holds never changes, so while the name stays there a check costs its proof alone, for however long the offer stays open. */
+  const offers = new Map<string, UpdateOffered>()
 
   /** The same files under a new root: the manifest is byte-identical to the pinned one. */
   async function sameManifest (origin: string, pin: PinRecord, bytes: Uint8Array): Promise<boolean> {
@@ -84,10 +88,9 @@ export function createNameUpdates (
     const content = await contentOf(origin)
     if (content !== undefined && 'outcome' in content) return content
     if (content === undefined) return undefined
-    const found = await comparedToPin(hintedUrl, origin, pin, content, context)
-    // A check that learned nothing does not hold the next one back.
-    if (found.outcome !== 'rejected') checkedAt.set(origin, options.now())
-    return found
+    // Only once the name has answered: one that could not be asked is asked again at the next hint.
+    checkedAt.set(origin, options.now())
+    return await comparedToPin(hintedUrl, origin, pin, content, context)
   }
 
   /** What `content`, the name's content now, means for the pin. */
@@ -98,6 +101,9 @@ export function createNameUpdates (
       await saveCheckRecord(options.storage, origin, checkRecord(options.now(), previous?.validators, previous?.manifestLeaf ?? await pinnedManifestLeaf(options.storage, origin)))
       return { outcome: 'up-to-date', canonicalOrigin: origin, atPinnedContent: true }
     }
+
+    const kept = offers.get(origin)
+    if (kept !== undefined && kept.fromCid === (fromCid ?? '') && kept.toCid === content.cid) return { ...kept, pointersVerified: content.pointersVerified }
 
     const read = await fetchManifestAtRoot(options.fetch, options.resolve, origin, content.cid)
     if (read.kind === 'unread') return { outcome: 'rejected', reason: `the manifest at ${origin}'s new content could not be read: ${read.reason}` }
@@ -111,7 +117,9 @@ export function createNameUpdates (
       }
       await options.storage.clearStaging(origin).catch(() => {})
     }
-    return { outcome: 'update-available', canonicalOrigin: origin, fromCid: fromCid ?? '', toCid: content.cid, manifest: read.manifest, pointersVerified: content.pointersVerified }
+    const offer: UpdateOffered = { outcome: 'update-available', canonicalOrigin: origin, fromCid: fromCid ?? '', toCid: content.cid, manifest: read.manifest, pointersVerified: content.pointersVerified }
+    offers.set(origin, offer)
+    return offer
   }
 
   async function apply (hintedUrl: string, origin: string, toCid: string, context: LoadContext): Promise<LoadResult> {

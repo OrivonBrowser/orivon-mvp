@@ -74,6 +74,8 @@ export class Sites {
   /** In order of last use, oldest first. */
   private readonly entries = new Map<string, Entry>()
   private readonly mounting = new Slots(MAX_CONCURRENT_MOUNTS)
+  /** `latest` asks one name at a time: a round of update checks holds one of the mount slots however many apps are open, so a page load never waits behind it. */
+  private readonly asking = new Slots(1)
 
   constructor (
     private readonly registry: ProtocolRegistry,
@@ -165,14 +167,20 @@ export class Sites {
 
   /**
    * The name as it reads now, for a caller asking whether it moved: a kept record cannot answer that, however fresh it is. What this proves
-   * is kept, so the requests that follow read the same root. Throws a ResolutionError and leaves what was kept alone; a mount already running is joined.
+   * is kept, so the requests that follow read the same root. Throws a ResolutionError and leaves what was kept alone; a mount already running
+   * is joined, and a name that has just failed is not asked again until its retry delay has passed.
    */
   async latest (host: string, partition: string): Promise<SiteRecord> {
-    const key = `${partition} ${host}`
-    const current = this.entries.get(key)
-    if (current?.good === undefined) return await this.get(host, partition)
-    this.use(key, current)
-    return await this.reprove(current, host, partition)
+    return await this.asking.run(async () => {
+      const key = `${partition} ${host}`
+      const current = this.entries.get(key)
+      if (current?.good === undefined || this.now() - current.good.mountedAt > STALE_SERVE_MS) return await this.get(host, partition)
+      if (current.revalidating === undefined && current.retryAt !== undefined && current.retryAt > this.now()) {
+        throw new ResolutionError('unavailable', `${host} could not be verified a moment ago`)
+      }
+      this.use(key, current)
+      return await this.reprove(current, host, partition)
+    })
   }
 
   /** The site currently mounted for `host` in `partition`, without

@@ -269,6 +269,68 @@ describe('Sites.latest: whether a name moved', () => {
     expect(calls.n).toBe(2)
   })
 
+  it('joins the mount running for a name too old to serve, and starts none of its own', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+
+    clock.now = STALE_SERVE_MS + 1
+    let answer!: () => void
+    resolve.current = async () => await new Promise<NameRecord[]>((resolve) => { answer = () => { resolve([record]) } })
+    const loading = sites.get('a.eth', P)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const asked = sites.latest('a.eth', P)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    answer()
+    expect(await asked).toBe(await loading)
+    expect(calls.n).toBe(2)
+  })
+
+  it('paces a name that cannot be proven, as a stale page load does', async () => {
+    const clock = { now: 0 }
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r, () => clock.now)
+    await sites.get('a.eth', P)
+
+    clock.now = 1
+    resolve.current = async () => { throw new Error('down') }
+    await expect(sites.latest('a.eth', P)).rejects.toThrow('down')
+    await expect(sites.latest('a.eth', P)).rejects.toThrow(ResolutionError)
+    expect(calls.n).toBe(2)
+
+    clock.now = 1 + FAILURE_TTL_MS
+    await expect(sites.latest('a.eth', P)).rejects.toThrow('down')
+    expect(calls.n).toBe(3)
+  })
+
+  it('asks one name at a time, so a page load never waits behind a round of checks', async () => {
+    const { registry: r, resolve, calls } = switchableRegistry()
+    const sites = new Sites(r)
+    const hosts = Array.from({ length: MAX_CONCURRENT_MOUNTS + 2 }, (_, index) => `name${String(index)}.eth`)
+    for (const host of hosts) await sites.get(host, P)
+
+    calls.n = 0
+    const answers: Array<() => void> = []
+    resolve.current = async () => await new Promise<NameRecord[]>((resolve) => { answers.push(() => { resolve([record]) }) })
+    const asked = Promise.all(hosts.map(async (host) => await sites.latest(host, P)))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.n).toBe(1)
+
+    const page = sites.get('cold.eth', P)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(calls.n).toBe(2)
+
+    answers[1]?.()
+    await page
+    answers[0]?.()
+    for (let done = 2; done <= hosts.length; done++) {
+      await vi.waitFor(() => { expect(calls.n).toBe(done + 1) })
+      answers[done]?.()
+    }
+    await asked
+  })
+
   it('mounts a name nothing holds, and keeps it', async () => {
     const { registry: r, calls } = switchableRegistry()
     const sites = new Sites(r)
