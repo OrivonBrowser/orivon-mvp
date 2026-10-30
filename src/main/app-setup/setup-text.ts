@@ -44,7 +44,7 @@ export function coverFor (state: CoverState): CoverText {
     case 'updating': {
       const to = displayVersion(state.toVersion)
       const from = state.fromVersion === undefined ? '' : displayVersion(state.fromVersion)
-      const versions = from === '' ? `Version ${to}.` : `Version ${from} to ${to}.`
+      const versions = state.fromVersion === state.toVersion ? `A new build of version ${to}.` : from === '' ? `Version ${to}.` : `Version ${from} to ${to}.`
       return { title: `Updating ${name}`, detail: `${versions} The app reloads when the new version is ready.`, busy: true }
     }
   }

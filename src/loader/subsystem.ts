@@ -62,7 +62,7 @@ export const loaderSubsystem: Subsystem = {
       serveLive: async (bundle) => { await serveLiveFor(bundle, ctx.broker) },
       endLive: endLiveFor,
       updateCheckIntervalMs: UPDATE_CHECK_INTERVAL_MS,
-      contentAddress: verifierContentAddress,
+      contentAddress: async (origin, latest) => await verifierContentAddress(origin, undefined, latest),
       // Read per load: an installed app the person routed is not asked about from this machine.
       updatesPaused: (origin) => ctx.routes?.hub.isRouted(origin) === true
     })

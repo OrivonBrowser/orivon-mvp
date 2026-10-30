@@ -1,6 +1,6 @@
 # ADR-0056: An installed app at a name moves to new content only when the person accepts; a judged level counts only at the domain its manifest names
 
-- **Status:** accepted
+- **Status:** accepted. The check intervals are amended by `d-0754`: at most every 30 seconds on a visit, every 5 minutes for an open tab, and the name is asked, not the verifier's record of it.
 - **Date:** 2026-10-05
 - **Type:** security
 - **Decided by:** AI recommendation accepted by default (the open questions on the plan stand on

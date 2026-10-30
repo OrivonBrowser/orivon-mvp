@@ -124,7 +124,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const answer = async (request: HostRequest): Promise<HostReplies[HostRequest['kind']]> => {
     switch (request.kind) {
       case 'status': return lightClient?.status() ?? { state: 'off' }
-      case 'mount': return provenanceOf(request.host, await sites.get(request.host, request.partition, request.route))
+      case 'mount': return provenanceOf(request.host, await (request.latest === true ? sites.latest(request.host, request.partition, request.route) : sites.get(request.host, request.partition, request.route)))
       case 'provenance': {
         const current = await sites.current(request.host, request.partition, request.route)
         return current === undefined ? null : provenanceOf(request.host, current)
