@@ -13,6 +13,7 @@ import type { GatheredFile } from '../../resolution/providers.js'
 import { MAX_ADDRESS_NAME } from '../../address.js'
 import type { ProtocolAddresses } from '../../address.js'
 import type { ProtocolRegistry } from '../../registry.js'
+import { MAX_ASSET_BYTES } from '../../../broker/policy/bundle-hash.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
 import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
@@ -21,6 +22,7 @@ import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { GatewayOffer } from './error-pages.js'
 import { CONSENT_PATH, GatewayConsent } from '../gateway-consent.js'
 import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
+import { BufferBudget, MAX_BUFFERED_BYTES } from './buffer-budget.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
 import { paceOf, routeOf } from './route-of.js'
@@ -28,32 +30,6 @@ import type { ServeRoutes } from './route-of.js'
 import { FILE_RETRIES, readWithRetries } from './retry.js'
 import { DIRECT_ROUTE } from '../../route-pace.js'
 import type { RoutePace } from '../../route-pace.js'
-
-/** A file up to this size is read and verified whole before its first byte is sent to a page, so a failure is an error page, never half a document. */
-export const MAX_BUFFERED_BYTES = 16 * 1024 * 1024
-
-/**
- * The most ONE partition's requests hold at once on the buffer-then-send
- * path below. A file's chunks are views into blocks the cache already owns,
- * so buffering one costs little beyond holding those references -- but a
- * page that opens many requests before reading any of them queues one
- * pending response per socket, and `MAX_BUFFERED_BYTES` alone only bounds
- * ONE of those, never their sum. Four files' worth covers ordinary
- * concurrent tabs on one site; past it, THAT site's own further requests are
- * refused with `503` rather than added to the pile -- never another site's,
- * which is exactly what one shared, unpartitioned budget would cost every
- * OTHER `.eth`/`ipfs://` page the moment one page opened enough requests
- * and never read them.
- */
-const MAX_PARTITION_BUFFERED_BYTES = 4 * MAX_BUFFERED_BYTES
-
-/**
- * The most every partition's requests hold at once, combined -- a backstop
- * against many partitions each spending up to their own share at the same
- * time, not a limit any single well-behaved partition should ever reach on
- * its own.
- */
-const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
 
 /**
  * How long a buffered response's reservation may be held waiting for the
@@ -67,50 +43,8 @@ const MAX_TOTAL_BUFFERED_BYTES = 16 * MAX_BUFFERED_BYTES
  */
 export const BUFFERED_RESPONSE_DEADLINE_MS = 30_000
 
-/** How long each chunk of a file whose leaf is checked waits for room in the buffer budget before the file is refused: a page loads many files at once, and a refused script breaks the app. The wait is counted per chunk, not from the start of the request, because on a slow route the chunks arrive minutes apart. */
+/** How long the oldest read of a site, among those holding a checked file as its bytes arrive, waits for room in the buffer budget with nothing in the budget moving before its file is refused: a refused script breaks the app. Time spent waiting for the file's bytes is not counted, and the reads behind it wait their turn with no limit of their own. */
 const LEAF_CHECK_WAIT_MS = 10_000
-const BUDGET_POLL_MS = 25
-
-/**
- * Buffered bytes held right now, kept per partition (the same key
- * `sites.ts` mounts by) so one page's unread requests cost only that
- * page's own budget, plus a combined total across every partition. A
- * request with no partition (`partitionOf` returning undefined) shares one
- * bucket, keyed by the empty string, which no real partition ever is.
- */
-class BufferBudget {
-  private readonly perPartition = new Map<string, number>()
-  private total = 0
-
-  /** True and reserved if both this partition's own budget and the global
-   * backstop have room; false and unchanged otherwise. */
-  reserve (partition: string | undefined, length: number): boolean {
-    const key = partition ?? ''
-    const current = this.perPartition.get(key) ?? 0
-    if (current + length > MAX_PARTITION_BUFFERED_BYTES || this.total + length > MAX_TOTAL_BUFFERED_BYTES) return false
-    this.perPartition.set(key, current + length)
-    this.total += length
-    return true
-  }
-
-  /** `reserve`, waiting up to `waitMs` for a response held by someone else to finish and free its share. */
-  async reserveWithin (partition: string | undefined, length: number, waitMs: number): Promise<boolean> {
-    const until = Date.now() + waitMs
-    while (!this.reserve(partition, length)) {
-      if (Date.now() >= until) return false
-      await new Promise((resolve) => setTimeout(resolve, BUDGET_POLL_MS))
-    }
-    return true
-  }
-
-  release (partition: string | undefined, length: number): void {
-    const key = partition ?? ''
-    const remaining = (this.perPartition.get(key) ?? 0) - length
-    if (remaining > 0) this.perPartition.set(key, remaining)
-    else this.perPartition.delete(key)
-    this.total -= length
-  }
-}
 
 /**
  * Every response says the page came from the public internet, whatever
@@ -284,22 +218,32 @@ async function sendBody (res: ServerResponse, status: number, headers: Record<st
   }
 }
 
+/** A file that is not the one the declared tree names: nothing of it is sent, and the answer says it was the tree that failed. */
+function sendNotDeclared (res: ServerResponse, path: string): void {
+  res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': SERVED_CONTENT_CSP, [FAILURE_HEADER]: DDOC_MISMATCH }).end(`${path} is not the file the declared tree names`)
+}
+
 /**
  * A file whose leaf the caller named: read whole (and so verified against its address) and hashed before a byte is
- * sent. A file of any size is held, up to the largest an app may carry, because a leaf cannot be known from a
- * prefix. On a mismatch nothing of it is sent and the answer says it was the declared tree that failed, which the
- * caller treats as bad data.
+ * sent. A file of any size an app may carry is held, because a leaf cannot be known from a prefix; a larger one cannot
+ * be a declared file and is answered as a mismatch without being read. On a mismatch nothing of it is sent and the
+ * answer says it was the declared tree that failed, which the caller treats as bad data.
  */
 async function sendChecked (res: ServerResponse, host: string, target: string, expected: string, status: number, headers: Record<string, string>, file: GatheredFile, reopen: () => Promise<GatheredFile>, range: { readonly start: number, readonly end: number } | undefined, head: boolean, budget: BufferBudget, partition: string | undefined, bufferedResponseDeadlineMs: number, plan: ReadPlan): Promise<void> {
+  if (file.size > MAX_ASSET_BYTES) {
+    sendNotDeclared(res, target.split(/[?#]/, 1)[0] ?? target)
+    return
+  }
   // Held against the app's own origin, never the shared key, and taken as the bytes arrive: a large cold file must not
   // keep its whole size from the scripts the page asked for beside it.
   const key = partition ?? `https://${host}`
+  const reader = budget.enter(key)
   let held = 0
   /** Every chunk of the file, or undefined once the buffer budget has no room for it. */
   const gather = async (source: GatheredFile): Promise<Uint8Array[] | undefined> => {
     const chunks: Uint8Array[] = []
     for await (const chunk of source.body) {
-      if (!await budget.reserveWithin(key, chunk.length, LEAF_CHECK_WAIT_MS)) return undefined
+      if (!await budget.takeWithin(key, chunk.length, LEAF_CHECK_WAIT_MS, reader, plan.left)) return undefined
       held += chunk.length
       chunks.push(chunk)
     }
@@ -312,13 +256,15 @@ async function sendChecked (res: ServerResponse, host: string, target: string, e
       held = 0
       return await gather(n === 0 ? file : await reopen())
     }, plan.route, plan.left, plan.retries)
+    budget.leave(key, reader)
     if (chunks === undefined) {
+      if (!plan.left.aborted) console.error('[verifier] a checked file was refused for lack of room in the buffer budget of its site')
       res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is holding too many responses right now')
       return
     }
     const verdict = await checkLeaf(host, target, file.size, chunks, expected)
     if (!verdict.ok) {
-      res.writeHead(502, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': SERVED_CONTENT_CSP, [FAILURE_HEADER]: DDOC_MISMATCH }).end(`${verdict.path} is not the file the declared tree names`)
+      sendNotDeclared(res, verdict.path)
       return
     }
     if (head) {
@@ -329,6 +275,7 @@ async function sendChecked (res: ServerResponse, host: string, target: string, e
     await writeBufferedChunks(res, range === undefined ? chunks : sliceChunks(chunks, range.start, range.end), bufferedResponseDeadlineMs)
   } finally {
     budget.release(key, held)
+    budget.leave(key, reader)
   }
 }
 
