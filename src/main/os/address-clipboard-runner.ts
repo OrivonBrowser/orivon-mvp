@@ -5,19 +5,33 @@ import type { AddressClip } from './address-clipboard.js'
 
 const blob = (text: string, type: string): Blob => new Blob([text], { type })
 
-/** Plain text goes through `writeText`, as it always did; a clip with a link is one item holding both formats, so a
- * program that pastes formatted text finds the link and every other finds the text. The main-process writes return
- * nothing, so they are called plainly: a `.catch` on the result throws. */
-export function writeClip (clip: AddressClip): void {
-  if (clip.html === undefined) clipboard.writeText(clip.text)
-  else clipboard.write([new ClipboardItem({ 'text/plain': blob(clip.text, 'text/plain'), 'text/html': blob(clip.html, 'text/html') })])
+/** Plain text goes through `writeText`; a clip with a link is one item holding both formats, so a program that pastes
+ * formatted text finds the link and every other finds the text. Both writes are awaited and a throw becomes a rejection,
+ * so a failed write reaches the caller: an unhandled rejection ends the browser, and a copy nobody waits for goes
+ * through `copyAddressLogged`. */
+export async function writeClip (clip: AddressClip): Promise<void> {
+  if (clip.html === undefined) await clipboard.writeText(clip.text)
+  else await clipboard.write([new ClipboardItem({ 'text/plain': blob(clip.text, 'text/plain'), 'text/html': blob(clip.html, 'text/html') })])
 }
 
 /** What every address copy of the shell calls: the address as text, with its web link where there is one. */
-export function copyAddress (address: string): void {
-  writeClip(addressClip(address))
+export async function copyAddress (address: string): Promise<void> {
+  await writeClip(addressClip(address))
 }
 
-export function copyAddresses (addresses: readonly string[]): void {
-  writeClip(addressesClip(addresses))
+export async function copyAddresses (addresses: readonly string[]): Promise<void> {
+  await writeClip(addressesClip(addresses))
+}
+
+/** A copy nobody waits for, from a menu or a page: a failure is logged and goes no further. */
+function logFailure (copy: Promise<void>): void {
+  copy.catch((error: unknown) => { console.error('[os] could not copy the address', error) })
+}
+
+export function copyAddressLogged (address: string): void {
+  logFailure(copyAddress(address))
+}
+
+export function copyAddressesLogged (addresses: readonly string[]): void {
+  logFailure(copyAddresses(addresses))
 }

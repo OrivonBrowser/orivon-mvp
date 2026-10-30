@@ -1,7 +1,7 @@
 // Pops a row's menu up at the pointer and puts a link on the clipboard: the two calls the pure menu needs from Electron.
 import { Menu } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
-import { copyAddress } from '../os/address-clipboard-runner.js'
+import { copyAddressLogged } from '../os/address-clipboard-runner.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 
 export function popupRowMenu (window: ShellWindow, template: MenuItemConstructorOptions[]): void {
@@ -10,5 +10,5 @@ export function popupRowMenu (window: ShellWindow, template: MenuItemConstructor
 }
 
 export function copyLink (url: string): void {
-  copyAddress(url)
+  copyAddressLogged(url)
 }

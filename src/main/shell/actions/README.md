@@ -10,8 +10,8 @@ which is reached from [`../window-actions.ts`](../window-actions.ts) after the c
 **Tied to Electron, partly.** An action takes plain values and the window context; only the code it calls touches
 Electron.
 
-**What it depends on.** `../chrome-actions.ts` for the type, and the shared pieces it drives (`../home.ts`,
-`../tab-commands.ts`).
+**What it depends on.** `../chrome-actions.ts` for the type, the shared pieces it drives (`../home.ts`,
+`../tab-commands.ts`) and `../../page-tools/toast.ts` (`address-copy.ts` tells the person a copy failed).
 
 **What it must never import.** A renderer, or [`../tabs.ts`](../tabs.ts) as a value.
 

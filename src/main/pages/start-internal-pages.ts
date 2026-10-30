@@ -1,7 +1,7 @@
 // Brings the shell's own pages to life once the shared services exist: the
 // channel they speak on, and the changes they hear about while open.
 import { app, session } from 'electron'
-import { copyAddress, copyAddresses } from '../os/address-clipboard-runner.js'
+import { copyAddressesLogged, copyAddressLogged } from '../os/address-clipboard-runner.js'
 import { allLocalPartitions } from '../local-files/partition.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import type { ShellServices } from '../shell/shell-services.js'
@@ -145,12 +145,12 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       windowOf: (contents) => services.windows.findTab(contents)?.window,
       open: (window, id, disposition) => openBookmark({ window, services }, id, disposition),
       openAll: (window, id) => openAll({ window, services }, id),
-      copyAddresses,
+      copyAddresses: copyAddressesLogged,
       importAvailable: () => commandById('import.open')?.pending !== true,
       runImport: (window) => { services.commands.run('import.open', window) },
       exportFile: exportBookmarksToFile
     }),
-    history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyAddress }),
+    history: historyDomain(services.history, { windows: services.windows, commands: services.commands, closedTabs: services.closedTabs, copyAddress: copyAddressLogged }),
     import: importDomain(importHost(services, (phase) => { services.internalPages.publish('import.progress', phase, ['import']) })),
     downloads: downloadsDomain(services.downloads, downloadsHost(services)),
     newTabBackground: backgroundDomain(services.newTabBackground, {

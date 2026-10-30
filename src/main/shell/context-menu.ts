@@ -7,7 +7,7 @@ import type { CommandId } from '../shortcuts/commands.js'
 import { engineLabelFor } from './context-menu-text.js'
 import { startNavigation } from './leave-page-prompt.js'
 import { downloadAsked } from '../downloads/asked-downloads.js'
-import { copyAddress } from '../os/address-clipboard-runner.js'
+import { copyAddressLogged } from '../os/address-clipboard-runner.js'
 import type { ShellServices } from './shell-services.js'
 import {
   DEFAULT_CONTEXT, editableGroup, imageGroup, linkGroup, mediaGroup, pageGroup, selectionGroup, spellingGroup
@@ -105,7 +105,7 @@ export function showContextMenu (wc: WebContents, params: ContextMenuParams, hos
     redo: onTab(() => { wc.redo() }),
     pasteAndMatchStyle: onTab(() => { wc.pasteAndMatchStyle() }),
     copyText: (text) => { clipboard.writeText(text) },
-    copyAddress,
+    copyAddress: copyAddressLogged,
     ...(kiosk ? {} : { openInNewTab: host.openInNewTab }),
     ...(kiosk || host.openLocalFile === undefined ? {} : { openLocalFile: host.openLocalFile }),
     ...(openInSplit === undefined ? {} : { openInSplit }),

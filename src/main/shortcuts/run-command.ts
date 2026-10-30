@@ -161,8 +161,8 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
     case 'page.viewSource': void viewSourceCommand(target).catch((error: unknown) => { console.error('[shortcuts] view source command failed:', error) }); return
     case 'page.reader': readerCommand(target, services); return
     case 'caret.toggle': toggleCaret({ window: target, services }); return
-    case 'share.copyLink': copyLinkCommand(target, realShareDeps); return
-    case 'share.copyWebLink': copyWebLinkCommand(target, realShareDeps); return
+    case 'share.copyLink': void copyLinkCommand(target, realShareDeps).catch((error: unknown) => { console.error('[shortcuts] copy link command failed:', error) }); return
+    case 'share.copyWebLink': void copyWebLinkCommand(target, realShareDeps).catch((error: unknown) => { console.error('[shortcuts] copy web link command failed:', error) }); return
     case 'share.email': void emailLinkCommand(target, realShareDeps).catch((error: unknown) => { console.error('[shortcuts] email link command failed:', error) }); return
     case 'site.certificate': openCertificate(target); return
     case 'site.shortcut': openShortcutSheet(target, services); return

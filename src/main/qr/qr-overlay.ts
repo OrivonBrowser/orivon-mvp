@@ -10,7 +10,8 @@ import type { SettingsStore } from '../settings/settings-store.js'
 const SHEET_WIDTH = 300
 
 export interface QrDeps extends Omit<QrSaveDeps, 'downloadsDir'> {
-  writeClipboard: (text: string) => void
+  /** Resolves once the address is on the clipboard and rejects when it could not be written. */
+  writeClipboard: (text: string) => Promise<void>
   /** The folder downloads go to, which follows the person's Downloads setting. */
   downloadsDir: (settings: Pick<SettingsStore, 'get'>) => string
 }
@@ -53,9 +54,8 @@ export function qrOverlayFor (deps: QrDeps): OverlayDef {
           const request = asCommand(command)
           if (request === undefined || address === undefined) return undefined
           if (request.type === 'copy') {
-            // The write is synchronous, so nothing here could cut a stalled one short: it either returns or throws.
             try {
-              deps.writeClipboard(address)
+              await deps.writeClipboard(address)
               return { ok: true }
             } catch {
               return { ok: false }

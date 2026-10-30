@@ -58,10 +58,16 @@ describe('addressesClip', () => {
     expect(addressesClip(['https://a.example/', 'orivon://settings'])).toEqual({ text: 'https://a.example/\norivon://settings' })
   })
 
-  it('links the addresses that have one and leaves the others as escaped text, one per line', () => {
-    expect(addressesClip(['https://a.example/?x=1&y=2', 'ipfs://vitalik.eth/b'])).toEqual({
-      text: 'https://a.example/?x=1&y=2\nipfs://vitalik.eth/b',
-      html: 'https://a.example/?x=1&amp;y=2<br><a href="https://vitalik.eth.limo/b">ipfs://vitalik.eth/b</a>'
+  it('links every address that has a web form once one of them has a link, and escapes the rest, one per line', () => {
+    expect(addressesClip(['https://a.example/?x=1&y=2', 'ipfs://vitalik.eth/b', 'orivon://settings?a=<b>'])).toEqual({
+      text: 'https://a.example/?x=1&y=2\nipfs://vitalik.eth/b\norivon://settings?a=<b>',
+      html: '<a href="https://a.example/?x=1&amp;y=2">https://a.example/?x=1&amp;y=2</a><br><a href="https://vitalik.eth.limo/b">ipfs://vitalik.eth/b</a><br>orivon://settings?a=&lt;b&gt;'
     })
+  })
+
+  it('builds no HTML at all when no address has a link of its own to give', () => {
+    const clip = addressesClip(['https://a.example/', 'https://b.example/x?y=1&z=2', 'orivon://settings'])
+    expect(clip).toEqual({ text: 'https://a.example/\nhttps://b.example/x?y=1&z=2\norivon://settings' })
+    expect('html' in clip).toBe(false)
   })
 })

@@ -11,7 +11,8 @@ import type { AddressClip } from './address-clipboard.js'
 import { mailtoFor, shareAddressFor, webLinkForTab } from './share.js'
 
 export interface ShareDeps {
-  writeClipboard: (clip: AddressClip) => void
+  /** Resolves once the clip is on the clipboard and rejects when it could not be written. */
+  writeClipboard: (clip: AddressClip) => Promise<void>
   /** The question the page-opened external links ask: true only when the person chose to go on. */
   confirm: (where: QuestionTarget, question: ExternalLinkQuestion) => Promise<boolean>
   openExternal: (url: string) => Promise<void>
@@ -23,11 +24,11 @@ function tabOf (target: Pick<ShellWindow, 'tabs'>, tabId: string | undefined): T
   return tabs.find((tab) => tab.id === id)
 }
 
-export function copyLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: string): void {
+export async function copyLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: string): Promise<void> {
   const address = shareAddressFor(tabOf(target, tabId))
   if (address === undefined) { showToast(target, 'noAddress'); return }
   try {
-    deps.writeClipboard(addressClip(address))
+    await deps.writeClipboard(addressClip(address))
     showToast(target, 'linkCopied')
   } catch (error) {
     console.error('[os] could not copy the link', error)
@@ -36,11 +37,11 @@ export function copyLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: s
 }
 
 /** Copies the https address any browser opens for the tab (`https://name.eth.limo/`), which is not the address Orivon shows and says nothing of being verified. */
-export function copyWebLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: string): void {
+export async function copyWebLinkCommand (target: ShellWindow, deps: ShareDeps, tabId?: string): Promise<void> {
   const link = webLinkForTab(tabOf(target, tabId))
   if (link === undefined) { showToast(target, 'noWebLink'); return }
   try {
-    deps.writeClipboard({ text: link })
+    await deps.writeClipboard({ text: link })
     showToast(target, 'webLinkCopied')
   } catch (error) {
     console.error('[os] could not copy the web link', error)

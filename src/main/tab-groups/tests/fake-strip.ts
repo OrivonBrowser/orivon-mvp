@@ -4,7 +4,7 @@ import { vi } from 'vitest'
 import { moveInOrder } from '../../shell/tab-order.js'
 import type { TabManager } from '../../shell/tabs.js'
 import type { TabRecord } from '../../shell/tab-types.js'
-import type { WindowContext } from '../../shell/window-context.js'
+import type { ChromeActionContext } from '../../shell/chrome-actions.js'
 import { tabGroupsHook } from '../groups-hook.js'
 import { groupsFor } from '../groups-model.js'
 
@@ -13,7 +13,7 @@ export interface FakeStrip {
   readonly order: string[]
   readonly records: Map<string, TabRecord>
   readonly pairs: Array<[string, string]>
-  readonly ctx: WindowContext
+  readonly ctx: ChromeActionContext
   readonly sent: unknown[]
   active: string | null
   created: number
@@ -74,7 +74,7 @@ export function fakeStrip (ids: string[], options: { pinned?: string[], pairs?: 
   Object.assign(strip, {
     tabs: tabs as unknown as TabManager,
     shape: () => order.map((id) => `${id}:${records.get(id)?.groupId ?? '-'}`).join(' '),
-    ctx: { window: { tabs, window: { getBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }) }, chrome: { webContents: { isDestroyed: () => false, send: (_channel: string, event: unknown) => { sent.push(event) } } }, overlays: { show: vi.fn() }, shortcutsSuspended: () => false }, services: {} } as unknown as WindowContext
+    ctx: { window: { tabs, window: { getBounds: () => ({ x: 0, y: 0, width: 800, height: 600 }) }, chrome: { webContents: { isDestroyed: () => false, send: (_channel: string, event: unknown) => { sent.push(event) } } }, overlays: { show: vi.fn() }, shortcutsSuspended: () => false }, services: {}, copyAddress: async () => {} } as unknown as ChromeActionContext
   })
   if (options.hook !== false) tabGroupsHook.opened?.(strip.ctx, {} as never)
   return strip

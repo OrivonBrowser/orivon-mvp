@@ -91,14 +91,12 @@ async function stubSystem (app: App): Promise<void> {
   await app.evaluate(({ app: electron, clipboard, shell }) => {
     const g = globalThis as unknown as { __os: Recorded }
     g.__os = { clipboard: [], links: [], opened: [], setDefault: [], isDefault: [] }
-    clipboard.writeText = ((text: string) => { g.__os.clipboard.push(text) }) as typeof clipboard.writeText
+    clipboard.writeText = (async (text: string) => { g.__os.clipboard.push(text) }) as typeof clipboard.writeText
     // An address with a web link is written as one item holding its text and a link.
-    const target = clipboard as unknown as { write: (items: Array<{ getType: (type: string) => Promise<Blob> }>) => void }
-    target.write = (items) => {
-      void (async () => {
-        g.__os.links.push(await (await items[0]?.getType('text/html'))?.text() ?? '')
-        g.__os.clipboard.push(await (await items[0]?.getType('text/plain'))?.text() ?? '')
-      })()
+    const target = clipboard as unknown as { write: (items: Array<{ getType: (type: string) => Promise<Blob> }>) => Promise<void> }
+    target.write = async (items) => {
+      g.__os.links.push(await (await items[0]?.getType('text/html'))?.text() ?? '')
+      g.__os.clipboard.push(await (await items[0]?.getType('text/plain'))?.text() ?? '')
     }
     shell.openExternal = (async (url: string) => { g.__os.opened.push(url) }) as typeof shell.openExternal
     electron.setAsDefaultProtocolClient = ((protocol: string) => {

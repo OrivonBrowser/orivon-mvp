@@ -1,6 +1,6 @@
 // Copying the address bar's whole address, in the running shell: Ctrl+C, the field's own Copy and a copy event all put
 // the address on the clipboard as text and, for a .eth address, as a link to its eth.limo form; a part of the
-// address is left to the browser, and an ordinary web address is written as plain text, as it always was. On Linux the
+// address is left to the browser, and an ordinary web address is written as plain text. On Linux the
 // clipboard calls are replaced in the main process and recorded, because a real clipboard round trip can hang under
 // a virtual display; on Windows and macOS a second spec reads the real clipboard back.
 import type { ElectronApplication, Page } from 'playwright'
@@ -30,19 +30,18 @@ type App = ElectronApplication
 /** What the main process was asked to put on the clipboard: each call, with the formats it carried. */
 interface Written { call: 'write' | 'writeText', formats: Record<string, string> }
 
-/** Replaces both clipboard writes in the main process with a recorder that never reaches the machine. */
+/** Replaces both clipboard writes in the main process with a recorder that never reaches the machine. Like the real
+ * methods, both are async and resolve once the write is done. */
 async function recordClipboard (app: App): Promise<void> {
   await app.evaluate(({ clipboard }) => {
     const g = globalThis as unknown as { __written: Array<Promise<Written>> }
     g.__written = []
-    const target = clipboard as unknown as { write: (items: Array<{ types: string[], getType: (type: string) => Promise<Blob> }>) => void, writeText: (text: string) => void }
-    target.writeText = (text) => { g.__written.push(Promise.resolve({ call: 'writeText', formats: { 'text/plain': text } })) }
-    target.write = (items) => {
-      g.__written.push((async () => {
-        const formats: Record<string, string> = {}
-        for (const item of items) for (const type of item.types) formats[type] = await (await item.getType(type)).text()
-        return { call: 'write', formats } as Written
-      })())
+    const target = clipboard as unknown as { write: (items: Array<{ types: string[], getType: (type: string) => Promise<Blob> }>) => Promise<void>, writeText: (text: string) => Promise<void> }
+    target.writeText = async (text) => { g.__written.push(Promise.resolve({ call: 'writeText', formats: { 'text/plain': text } })) }
+    target.write = async (items) => {
+      const formats: Record<string, string> = {}
+      for (const item of items) for (const type of item.types) formats[type] = await (await item.getType(type)).text()
+      g.__written.push(Promise.resolve({ call: 'write', formats } as Written))
     }
   })
 }

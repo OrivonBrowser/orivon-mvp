@@ -18,8 +18,8 @@ import type { WindowContext } from './window-context.js'
  * (press-stamps.ts), where the window keeps them. */
 export interface ChromeActionContext extends WindowContext {
   readonly takePress?: (button: PressButton) => number | undefined
-  /** Puts an address on the clipboard as text and, where it has one, as a link (the real clipboard; absent in a test). */
-  readonly copyAddress?: (address: string) => void
+  /** Puts an address on the clipboard as text and, where it has one, as a link; rejects when the write fails. */
+  readonly copyAddress: (address: string) => Promise<void>
 }
 
 /** A call from the chrome that carries arguments and is not a command. `payload` comes from a renderer:

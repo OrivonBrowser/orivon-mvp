@@ -117,14 +117,12 @@ it('offers Copy web link beside Copy Link Address for a .eth link only, and copi
       const g = globalThis as unknown as { __copied: string[], __copiedHtml: string[] }
       g.__copied = []
       g.__copiedHtml = []
-      clipboard.writeText = ((text: string) => { g.__copied.push(text) }) as typeof clipboard.writeText
+      clipboard.writeText = (async (text: string) => { g.__copied.push(text) }) as typeof clipboard.writeText
       // An address with a web link is written as an item holding its text and a link.
-      const target = clipboard as unknown as { write: (items: Array<{ getType: (type: string) => Promise<Blob> }>) => void }
-      target.write = (items) => {
-        void (async () => {
-          g.__copiedHtml.push(await (await items[0]?.getType('text/html'))?.text() ?? '')
-          g.__copied.push(await (await items[0]?.getType('text/plain'))?.text() ?? '')
-        })()
+      const target = clipboard as unknown as { write: (items: Array<{ getType: (type: string) => Promise<Blob> }>) => Promise<void> }
+      target.write = async (items) => {
+        g.__copiedHtml.push(await (await items[0]?.getType('text/html'))?.text() ?? '')
+        g.__copied.push(await (await items[0]?.getType('text/plain'))?.text() ?? '')
       }
     })
     const labels = labelsOf(await rightClick(app, page, '#web3-link'))
