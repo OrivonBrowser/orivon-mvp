@@ -140,20 +140,27 @@ describe('registerSiteInfoTabIpc', () => {
     expect(await dispatch({ type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example' })).toEqual({ ok: false, info: INFO })
   })
 
-  it('carries out the commands that change the tab in the order they were sent, however long the info takes', async () => {
+  it('carries out the commands that change the tab one at a time, in the order they were sent, however long the info takes', async () => {
+    const log: string[] = []
     let release: () => void = () => {}
     const slow = new Promise<void>((resolve) => { release = resolve })
-    const controller = fakeController({ tabInfoFor: vi.fn(async () => { await slow; return INFO }) })
+    let reads = 0
+    const tabInfoFor = vi.fn(async () => { if (reads++ === 0) await slow; return INFO })
+    const controller = fakeController({
+      tabInfoFor,
+      setSiteAlways: vi.fn(async (_tab: string, on: boolean) => { log.push(`start:${String(on)}`); await Promise.resolve(); log.push(`end:${String(on)}`); return true }),
+      setTabTunnel: vi.fn(async () => { log.push('start:tunnel'); log.push('end:tunnel'); return true })
+    })
     register(controller)
     const sent = [
       dispatch({ type: 'setSiteAlways', on: true, shownOrigin: 'https://news.example' }),
       dispatch({ type: 'setSiteAlways', on: false, shownOrigin: 'https://news.example' }),
       dispatch({ type: 'setTunnel', kind: 'nym', shownOrigin: 'https://news.example' })
     ]
-    expect(vi.mocked(controller.setSiteAlways).mock.calls.map((call) => call[1])).toEqual([true, false])
-    expect(controller.setTabTunnel).toHaveBeenCalledTimes(1)
+    expect(log, 'nothing starts before the first command has read the info it waits for').toEqual([])
     release()
     await Promise.all(sent)
+    expect(log).toEqual(['start:true', 'end:true', 'start:false', 'end:false', 'start:tunnel', 'end:tunnel'])
   })
 
   it('sizes and closes without waiting for the info of the tab', async () => {

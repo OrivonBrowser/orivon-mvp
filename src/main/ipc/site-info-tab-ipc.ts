@@ -14,7 +14,7 @@ import type { ProxyTestReply } from '../route/route-domain.js'
 import { isFromSiteInfoWindow } from './site-info-ipc.js'
 import type { ProxyAddressResult, SiteInfoCommand, TunnelResult } from './site-info-ipc.js'
 
-/** The commands whose answer is the popup's info as it is now: the others (closing, sizing, a test of the proxy) never wait for it. */
+/** The commands whose answer is the popup's info as it is now, and which change nothing about the tab: the others (closing, sizing, a test of the proxy) never wait for it. */
 const ANSWERS_WITH_INFO: ReadonlySet<string> = new Set(['get', 'setBrowserTunnel', 'setNodesTunnel', 'setProxyAddress'])
 
 export function registerSiteInfoTabIpc (
@@ -26,6 +26,12 @@ export function registerSiteInfoTabIpc (
   onContentHeight: (height: number) => void = () => {},
   closePopup: () => void = () => {}
 ): void {
+  let last: Promise<unknown> = Promise.resolve()
+  const inOrder = async <T>(job: () => Promise<T>): Promise<T> => {
+    const run = last.then(job, job)
+    last = run.catch(() => undefined)
+    return await run
+  }
   siteInfoWebContents.ipc.handle(SITE_INFO_COMMAND_CHANNEL, async (
     event: IpcMainInvokeEvent,
     command: SiteInfoCommand
@@ -36,18 +42,20 @@ export function registerSiteInfoTabIpc (
       const now = await controller.tabInfoFor(tabId)
       return now === undefined ? undefined : controller.withBrowserTunnel(now)
     }
-    // What the popup draws, read after the change the command made, whether it was made or not: the rows show what is true.
-    const answer = async (ok: boolean): Promise<TunnelResult | undefined> => {
-      const now = await infoNow()
-      return now === undefined ? undefined : { ok, info: now }
-    }
-    // The commands that change the tab act before anything is awaited, so two that arrive close together are carried out in the order they were sent.
-    if (command.type === 'setTunnel') {
-      if (command.kind !== null && command.kind !== 'nym' && command.kind !== 'socks5') return await answer(false)
-      return await answer(await controller.setTabTunnel(tabId, command.kind, typeof command.shownOrigin === 'string' ? command.shownOrigin : ''))
-    }
-    if (command.type === 'setSiteAlways') {
-      return await answer(typeof command.on === 'boolean' && typeof command.shownOrigin === 'string' && await controller.setSiteAlways(tabId, command.on, command.shownOrigin))
+    // The commands that change the tab or the website's entry go one at a time in the order they arrived: each reads what the one before left, and the answer to it is what the popup draws next.
+    if (command.type === 'setTunnel' || command.type === 'setSiteAlways') {
+      const change = command
+      return await inOrder(async (): Promise<TunnelResult | undefined> => {
+        const info = await infoNow()
+        if (info === undefined) return undefined
+        // Read again whether it was done or not: a move that could not be made gave the tab its choice back, and the rows show what is true.
+        const answer = async (ok: boolean): Promise<TunnelResult> => ({ ok, info: await infoNow() ?? info })
+        if (change.type === 'setTunnel') {
+          if (change.kind !== null && change.kind !== 'nym' && change.kind !== 'socks5') return { ok: false, info }
+          return await answer(await controller.setTabTunnel(tabId, change.kind, typeof change.shownOrigin === 'string' ? change.shownOrigin : ''))
+        }
+        return await answer(typeof change.on === 'boolean' && typeof change.shownOrigin === 'string' && await controller.setSiteAlways(tabId, change.on, change.shownOrigin))
+      })
     }
     const info = ANSWERS_WITH_INFO.has(command.type) ? await infoNow() : undefined
 
