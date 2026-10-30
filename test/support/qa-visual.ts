@@ -18,7 +18,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { LATEST_DIR, errorsSince, mark, snapshotWindows, windowGeometry } from './qa-evidence.mjs'
 import { mainOutput } from './launch-electron.mjs'
 import { layoutAudit } from './qa-layout-audit.mjs'
-import { findChrome, waitFor } from './smoke-helpers.mjs'
+import { delay, findChrome, waitFor } from './smoke-helpers.mjs'
 
 const { PNG } = pngjs
 
@@ -317,4 +317,40 @@ export function checkState (check: Check, r: StateReport): void {
   const b = r.baseline
   check(`${r.name}: matches its baseline (${b.status})`, b.status !== 'mismatch' && b.status !== 'size-mismatch',
     `${b.detail ?? ''}${b.ratio === undefined ? '' : ` (${(b.ratio * 100).toFixed(4)}% > ${(b.maxDiffRatio * 100).toFixed(4)}%)`} diff: ${b.diffPath ?? '-'}`)
+}
+
+/** The panel's card sits whole inside its own view: nothing is clipped at an edge and nothing scrolls. */
+export async function panelFits (panel: Page): Promise<{ fits: boolean, detail: string }> {
+  const m = await panel.evaluate(() => {
+    const card = (document.querySelector('.q') as HTMLElement).getBoundingClientRect()
+    const root = document.documentElement
+    const body = document.body.getBoundingClientRect()
+    return { left: card.left, top: card.top, right: window.innerWidth - card.right, bottom: window.innerHeight - card.bottom, scrolls: root.scrollHeight > root.clientHeight || root.scrollWidth > root.clientWidth, unpaintedRight: window.innerWidth - body.right, unpaintedBottom: window.innerHeight - body.bottom }
+  })
+  return { fits: m.left >= 0 && m.top >= 0 && m.right >= 0 && m.bottom >= 0 && !m.scrolls && m.unpaintedRight === 0 && m.unpaintedBottom === 0, detail: JSON.stringify(m) }
+}
+
+/** Waits until the popup view whose address contains `part` has kept one size for five polls: a popup is sized after its content reports its height, in more than one step. */
+export async function popupSized (app: ElectronApplication, part: string): Promise<boolean> {
+  let last = ''
+  let same = 0
+  return await waitFor(async () => {
+    const now = await app.evaluate(({ BaseWindow }, needle) => {
+      const [win] = BaseWindow.getAllWindows()
+      const views = (win?.contentView.children ?? []) as unknown as Array<{ getBounds: () => { x: number, y: number, width: number, height: number }, webContents?: { getURL: () => string } }>
+      const view = views.find((v) => (v.webContents?.getURL() ?? '').includes(needle))
+      return view === undefined ? '' : JSON.stringify(view.getBounds())
+    }, part)
+    same = now !== '' && now === last ? same + 1 : 0
+    last = now
+    await delay(100)
+    return same >= 5
+  })
+}
+
+/** The schemes every state is captured in. */
+const requested = (process.env['ORIVON_QA_SCHEMES'] ?? 'light,dark').split(',').map((s) => s.trim())
+export const SCHEMES = requested.filter((s): s is 'light' | 'dark' => s === 'light' || s === 'dark')
+if (SCHEMES.length === 0 || SCHEMES.length !== requested.length) {
+  throw new Error(`ORIVON_QA_SCHEMES must list "light" and/or "dark", comma-separated; got "${process.env['ORIVON_QA_SCHEMES'] ?? ''}"`)
 }

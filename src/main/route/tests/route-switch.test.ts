@@ -226,6 +226,19 @@ describe('a website that moves into a profile', () => {
     expect(dropServiceWorkers).toHaveBeenLastCalledWith(profilePartitionFor('direct', SITE), SITE)
   })
 
+  it('keeps its workers in the session a tab still runs it in when the entry is taken away, and drops them otherwise', async () => {
+    const dropServiceWorkers = vi.fn(async () => {})
+    const { routeSwitch } = setup({ world: { dropServiceWorkers } })
+    await routeSwitch.choose(SITE, 'nym')
+    dropServiceWorkers.mockClear()
+    await routeSwitch.forget(SITE, true)
+    expect(dropServiceWorkers, 'a tab holds the profile it was in').not.toHaveBeenCalled()
+    await routeSwitch.choose(SITE, 'nym')
+    dropServiceWorkers.mockClear()
+    await routeSwitch.forget(SITE)
+    expect(dropServiceWorkers).toHaveBeenCalledWith(profilePartitionFor('nym', SITE), SITE)
+  })
+
   it('is not undone by workers that cannot be unregistered', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { routeSwitch, store } = setup({ world: { dropServiceWorkers: async () => { throw new Error('busy') } } })
@@ -258,5 +271,30 @@ describe('a website whose storage in Nym\'s profile is the proxy\'s', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe('taking a website\'s entry away', () => {
+  it('drops the entry even while the whole browser is on a tunnel, where choosing none would write an off entry, and keeps its storage', async () => {
+    const { routeSwitch, store, settled } = setup({ everywhere: true })
+    await routeSwitch.choose(SITE, 'nym')
+    settled.mockClear()
+    await routeSwitch.forget(SITE)
+    expect(store.stateOf(SITE)).toBeUndefined()
+    expect(store.isApart(SITE, 'nym')).toBe(true)
+    expect(settled).toHaveBeenCalled()
+    await routeSwitch.choose(SITE, null)
+    expect(store.stateOf(SITE), 'choosing none is an entry there').toBe('off')
+    await routeSwitch.forget(SITE)
+    expect(store.stateOf(SITE)).toBeUndefined()
+  })
+
+  it('does nothing for an installed app, whose entry is set by its own switch, nor for this computer', async () => {
+    const { routeSwitch, store } = setup()
+    await routeSwitch.choose(APP, 'nym')
+    await routeSwitch.forget(APP)
+    expect(store.stateOf(APP)).toBe('nym')
+    await routeSwitch.forget('http://localhost:3000')
+    expect(store.stateOf('http://localhost:3000')).toBeUndefined()
   })
 })

@@ -24,6 +24,7 @@ import type { ShellServices } from './shell-services.js'
 import type { TabManager } from './tabs.js'
 import { openFromActiveTab } from './open-from-browser.js'
 import { browserTunnelTabs } from './tab-tunnel-facts.js'
+import { addressOfTab, openingAddressOf } from './tunnel-popover-tab.js'
 import { reloadFromCard } from './reload-from-card.js'
 import { firstVisitNow } from '../app-setup/tab-setup-ref.js'
 import { announceEntryChange } from '../app-setup/entry-changes.js'
@@ -60,7 +61,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
     // The proxy's address is set from the tunnel menu as Settings sets it: through the same store, so it is checked, saved and followed the same way.
     proxySetup(ctx, services.settings),
     // The tunnel popover opened for a tab reads and sets the tab's own choice: the same call a test seam makes, so nothing else decides it.
-    { choiceOf: (id) => { const record = tabs.record(id); return record === undefined ? undefined : { choice: record.tunnelChoice } }, set: (id, choice) => { tabs.setTunnelChoice(id, choice) } },
+    { choiceOf: (id) => { const record = tabs.record(id); const address = addressOfTab(tabs.getState(), id, openingAddressOf(tabs)); return record === undefined ? undefined : { choice: record.tunnelChoice, ...(address === undefined ? {} : { address }) } }, set: (id, choice) => { tabs.setTunnelChoice(id, choice) } },
     // The Browser-wide panel moves the same three settings Settings does, and lists the tabs of every window that keep a choice of their own.
     browserTunnels(services.settings, () => browserTunnelTabs(services.windows)))
 

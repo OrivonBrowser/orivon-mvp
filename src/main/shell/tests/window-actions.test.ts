@@ -102,14 +102,21 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     expect(closeOverlays).toHaveBeenCalled()
   })
 
-  it('opens it for the tab when the page shown is a website of a tab with a choice, and for the website when the tab has none', () => {
+  it('opens it for the tab on every website, whether or not the tab carries a choice', () => {
     const withChoice = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1')
     withChoice.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
     expect(withChoice.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
-    const plain = partsWith([{ id: 't1', isNewTab: false, isInternal: false }], 't1')
+    const plain = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false }], 't1')
     plain.actions.openSiteInfo(anchor, 'tunnels', 'https://news.example/a')
-    expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
-    expect(plain.sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+    expect(plain.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    expect(plain.sitePanel.toggle).not.toHaveBeenCalled()
+  })
+
+  it('opens it for the website a page of this computer is, as a page the tab\'s choice does not reach', () => {
+    const { actions, sitePanel } = partsWith([{ id: 't1', url: 'http://localhost:3000/', isNewTab: false, isInternal: false }], 't1')
+    actions.openSiteInfo(anchor, 'tunnels', 'http://localhost:3000/')
+    expect(sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(sitePanel.toggle).toHaveBeenCalledTimes(1)
   })
 
   it('opens it for the website when the page is in a session an app or a temporary route made, which keeps its tunnel whatever the tab chose', () => {
@@ -124,11 +131,11 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     expect(inProfile.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
   })
 
-  it('opens it for the website a tab with no page yet is opening, which the chrome cannot name, as it does once the page has come', () => {
+  it('opens the tab\'s list for the website a tab with no page yet is opening, which the chrome cannot name, as it does once the page has come', () => {
     const plain = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/a')
     plain.actions.openSiteInfo(anchor, 'tunnels', '')
-    expect(plain.sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
-    expect(plain.sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(plain.sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    expect(plain.sitePanel.toggle).not.toHaveBeenCalled()
     expect(plain.sitePanel.holdAgainstArrival, 'the list stays open when the page takes the keyboard as it commits').toHaveBeenCalledExactlyOnceWith({ id: 't1' })
     const withChoice = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false, tunnelChoice: 'nym' }], 't1', 'persist:tunnel-profile', true, 'https://news.example/a')
     withChoice.actions.openSiteInfo(anchor, 'tunnels', '')
@@ -137,16 +144,21 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     expect(withChoice.sitePanel.holdAgainstArrival).toHaveBeenCalledExactlyOnceWith({ id: 't1' })
   })
 
-  it('opens it for the website a redirect has led the tab to, which the record keeps as the target of the load, never the address it started at', () => {
+  it('decides from the website a redirect has led the tab to, which the record keeps as the target of the load, never the address it started at', () => {
     const { actions, sitePanel } = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/landing')
     actions.openSiteInfo(anchor, 'tunnels', '')
-    expect(sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+    expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
+    // The address it started at can go through a tunnel; the page it was led to is on this computer, which the tab's choice does not reach.
+    const local = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'http://localhost:3000/')
+    local.actions.openSiteInfo(anchor, 'tunnels', '')
+    expect(local.sitePanel.toggleTab).not.toHaveBeenCalled()
+    expect(local.sitePanel.toggle).toHaveBeenCalledTimes(1)
   })
 
-  it('opens it for the page the tab has committed since the chrome last drew it, when the chrome still sent no address', () => {
+  it('opens the tab\'s list for the page the tab has committed since the chrome last drew it, when the chrome still sent no address', () => {
     const { actions, sitePanel } = partsWith([{ id: 't1', url: 'https://news.example/a', isNewTab: false, isInternal: false }], 't1', undefined, true, undefined)
     actions.openSiteInfo(anchor, 'tunnels', '')
-    expect(sitePanel.toggle).toHaveBeenCalledExactlyOnceWith(anchor, 'https://news.example', 'tunnels', undefined)
+    expect(sitePanel.toggleTab).toHaveBeenCalledExactlyOnceWith(anchor, 't1', undefined)
     expect(sitePanel.holdAgainstArrival, 'the page has arrived, so there is nothing to hold against').not.toHaveBeenCalled()
   })
 
@@ -157,7 +169,7 @@ describe('shellActions openSiteInfo for the tunnel button', () => {
     expect(popup.sitePanel.toggleTab).not.toHaveBeenCalled()
     const severed = partsWith([{ id: 't1', url: '', isNewTab: false, isInternal: false }], 't1', undefined, true, 'https://news.example/a', null)
     severed.actions.openSiteInfo(anchor, 'tunnels', '')
-    expect(severed.sitePanel.toggle, 'a page opened with no opener is main\'s own').toHaveBeenCalledTimes(1)
+    expect(severed.sitePanel.toggleTab, 'a page opened with no opener is main\'s own').toHaveBeenCalledTimes(1)
   })
 
   it('opens the tab\'s list when a tab with a choice shows no page and opens none, and nothing for one with no choice', () => {

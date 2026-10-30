@@ -81,6 +81,30 @@ describe('the tunnel button look on a new tab', () => {
   })
 })
 
+describe('the tunnel button look on a website, which the button opens the tab\'s list for whatever the tab carries (ADR-0104)', () => {
+  it('says nothing of the tab for a website that has a tunnel of its own and a tab with no choice, which sets nothing for the tab', () => {
+    for (const via of ['nym', 'socks5'] as const) {
+      expect(tunnelButtonLook(site, 'on', via, true).label, via).not.toContain(TAB_CHOICE_NOTE)
+      expect(tunnelButtonLook(site, 'down', via, true).label, via).not.toContain(TAB_CHOICE_NOTE)
+    }
+    expect(tunnelButtonLook(site, 'on', 'nym', true).label).toBe('Tunnels. This page goes through Nym')
+  })
+
+  it('says nothing of the tab for a website that follows the browser, on a tunnel or direct', () => {
+    expect(tunnelButtonLook(site, 'on', 'socks5', true).label).toBe('Tunnels. This page goes through your proxy')
+    expect(tunnelButtonLook(site, null, null, true).label).toBe(TUNNEL_BUTTON_LABEL)
+  })
+
+  it('says a direct tab\'s sites go direct only while the page does, and not for a website that keeps its own tunnel in a direct tab', () => {
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, null, null, true).label).toBe(`Tunnels. ${TAB_TUNNEL_NOTES.direct}`)
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, 'on', 'nym', true).label).toBe('Tunnels. This page goes through Nym')
+  })
+
+  it('says the choice is the tab\'s for a website with an entry of its own while its tab carries the same tunnel: the tab does hold it', () => {
+    expect(tunnelButtonLook({ ...site, tunnelChoice: 'nym' }, 'on', 'nym', true).label).toBe(`Tunnels. This page goes through Nym. ${TAB_CHOICE_NOTE}`)
+  })
+})
+
 describe('the tunnel button look when the page is not on the tunnel its tab chose', () => {
   it('does not say the choice is the tab\'s for a page on a tunnel of its own in a direct tab, which a direct choice leaves it', () => {
     expect(tunnelButtonLook({ ...site, tunnelChoice: 'direct' }, 'on', 'socks5', true).label).toBe('Tunnels. This page goes through your proxy')

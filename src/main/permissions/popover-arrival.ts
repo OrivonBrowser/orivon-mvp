@@ -47,9 +47,11 @@ export function watchArrival (page: ArrivingPage, onEnd: () => void): ArrivalHol
 /**
  * Whether a popup opened for the tab `open.tab`, or for the website `open.origin` when that is null, is still about `arrived`, the
  * first page a tab committed (null for any other change of the tab in front or its origin). A list opened while a tab's page was
- * loading is right when the page comes; any other change leaves it stale.
+ * loading is right when the page comes; any other change leaves it stale. A popup of a tab drawn for a website (`open.shown`, ''
+ * for none) is right only when that website arrives: the rows, the storage notice and the "Always" switch are its.
  */
-export function popupIsAbout (open: { readonly tab: string | null, readonly origin: string }, arrived: FirstPage | null): boolean {
+export function popupIsAbout (open: { readonly tab: string | null, readonly origin: string, readonly shown?: string }, arrived: FirstPage | null): boolean {
   if (arrived === null) return false
-  return open.tab !== null ? open.tab === arrived.tabId : arrived.origin !== null && open.origin === arrived.origin
+  if (open.tab === null) return arrived.origin !== null && open.origin === arrived.origin
+  return open.tab === arrived.tabId && (open.shown === undefined || open.shown === '' || open.shown === arrived.origin)
 }

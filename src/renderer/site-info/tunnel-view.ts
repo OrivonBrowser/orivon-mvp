@@ -1,9 +1,9 @@
 import type { SiteInfo, SiteTunnel, SiteTunnelKind, SiteTunnelProfile } from '../../main/permissions/site-info.js'
 import { createSwitch } from './switch.js'
 import { tunnelIcon } from './icons.js'
-import { TAB_TUNNEL_FAILED } from './tab-words.js'
+import { ALWAYS_FAILED, TAB_TUNNEL_FAILED } from './tab-words.js'
 import { ADDRESS_PROBLEM, SETTINGS_LINK } from './tunnels-model.js'
-import type { AddressModel, TunnelListModel, TunnelRowModel } from './tunnels-model.js'
+import type { AddressModel, AlwaysModel, TunnelListModel, TunnelRowModel } from './tunnels-model.js'
 import { BROWSER_FAILED } from './browser-wide-model.js'
 import type { Panel } from './browser-wide-model.js'
 import { renderNodes, renderPanelTabs, renderPrompt } from './browser-wide-view.js'
@@ -70,6 +70,8 @@ export interface TunnelCallbacks {
   readonly onPanel: (panel: Panel) => void
   /** The nodes switch was moved: `next` is its position. */
   readonly onNodes: (next: boolean) => void
+  /** The "Always use for this site" switch was moved: `next` is its position. */
+  readonly onAlways: (next: boolean) => void
 }
 
 export interface TunnelViewState {
@@ -79,6 +81,8 @@ export interface TunnelViewState {
   readonly pending: SiteTunnelKind | null | undefined
   /** The last change did not take. */
   readonly failed: boolean
+  /** The last move of the "Always" switch did not take. */
+  readonly alwaysFailed?: boolean
   /** The panel drawn. */
   readonly panel: Panel
   /** The names of the two panels, or null while there is nothing to choose between (routes are not running). */
@@ -176,6 +180,31 @@ function renderAddress (address: AddressModel, callbacks: TunnelCallbacks): HTML
   return box
 }
 
+/** "Always use for this site", drawn like a tunnel's row without the logo. */
+function renderAlways (always: AlwaysModel, onToggle: (next: boolean) => void): HTMLElement {
+  const control = createSwitch(always.on, always.disabled, onToggle)
+  control.id = 'tunnel-switch-always'
+  control.setAttribute('aria-label', always.label)
+  const el = document.createElement('div')
+  el.className = 'tunnel-row tunnel-always'
+  const text = document.createElement('span')
+  text.className = 'tunnel-text'
+  const name = document.createElement('span')
+  name.className = 'tunnel-label'
+  name.textContent = always.label
+  text.append(name)
+  if (always.line !== '') {
+    const line = document.createElement('span')
+    line.className = 'tunnel-state'
+    line.id = 'tunnel-always-line'
+    line.textContent = always.line
+    text.append(line)
+    control.setAttribute('aria-describedby', line.id)
+  }
+  el.append(text, control)
+  return el
+}
+
 function renderRow (row: TunnelRowModel, scope: string, callbacks: TunnelCallbacks): HTMLElement {
   const el = document.createElement('div')
   el.className = 'tunnel-row'
@@ -205,8 +234,8 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
   title.className = 'site-origin'
   title.textContent = TUNNEL_PAGE_TITLE
   header.append(title)
-  // A tab is its own name on the first panel; a website or an app is named under the title. The whole browser has no name to give.
-  if (view.panel === 'first' && info.tunnel?.subject !== 'tab') {
+  // A tab is its own name on the first panel, unless it shows a website, which is named under the title as an app is. The whole browser has no name to give.
+  if (view.panel === 'first' && (info.tunnel?.subject !== 'tab' || info.tunnel.always !== undefined)) {
     const origin = document.createElement('div')
     origin.className = 'site-claim'
     origin.textContent = info.displayOrigin
@@ -234,9 +263,11 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
     }
     if (row.settingsLink !== null) section.append(link(`tunnel-settings-link-${row.kind.id}`, row.settingsLink, () => { callbacks.onOpenSettings(false) }))
   }
+  if (model.always !== null) section.append(renderAlways(model.always, callbacks.onAlways))
   if (model.nodes !== null) section.append(renderNodes(model.nodes, callbacks.onNodes))
   for (const note of model.notes) section.append(paragraph(note.down ? 'route-line route-line-down' : 'route-line', note.text))
   if (model.empty !== null) section.append(paragraph('route-line', model.empty))
+  if (view.alwaysFailed === true) section.append(paragraph('route-line route-line-down', ALWAYS_FAILED))
   if (view.failed) section.append(paragraph('route-line route-line-down', view.panel === 'browser' ? BROWSER_FAILED : noun === 'tab' ? TAB_TUNNEL_FAILED : TUNNEL_FAILED))
 
   if (view.notice !== null) {

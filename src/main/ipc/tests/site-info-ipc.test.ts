@@ -53,8 +53,10 @@ function fakeController (overrides: Partial<SiteInfoController> = {}): SiteInfoC
     withBrowserTunnel: vi.fn((info: SiteInfo) => info),
     siteTrustFor: vi.fn(async () => null),
     storageDeclarationFor: vi.fn(async () => null),
-    tabInfoFor: vi.fn(() => undefined),
-    setTabTunnel: vi.fn(() => false),
+    tabInfoFor: vi.fn(async () => undefined),
+    setTabTunnel: vi.fn(async () => false),
+    setSiteAlways: vi.fn(async () => false),
+    tabShownOrigin: vi.fn(() => ''),
     setBrowserTunnel: vi.fn(() => true),
     setNodesTunnel: vi.fn(() => true),
     setTunnel: vi.fn(async () => true),
@@ -131,6 +133,15 @@ describe('registerSiteInfoIpc -- applyUpdate', () => {
     await dispatch({ type: 'applyUpdate', cid: 'bafyexample' }, OTHER_FRAME_URL)
 
     expect(controller.applyUpdate).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerSiteInfoIpc -- the switch only a tab\'s popup has', () => {
+  it('answers nothing to "Always use for this site": a website\'s own popup keeps its entry with its switches', async () => {
+    const controller = fakeController()
+    register(controller)
+    expect(await dispatch({ type: 'setSiteAlways', on: true, shownOrigin: ORIGIN })).toBeUndefined()
+    expect(controller.setTunnel).not.toHaveBeenCalled()
   })
 })
 

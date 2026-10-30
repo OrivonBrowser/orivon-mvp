@@ -28,7 +28,8 @@ interface OrivonSiteInfo {
   setSitePermission: (kind: string, value: string) => Promise<SitePermissionsView | null>
   revokePickedPath: (pickId: string) => Promise<SiteInfo | null>
   applyUpdate: (cid: string) => Promise<ApplyOutcome>
-  setTunnel: (kind: 'nym' | 'socks5' | null) => Promise<TunnelResult | null>
+  setTunnel: (kind: 'nym' | 'socks5' | null, shownOrigin?: string) => Promise<TunnelResult | null>
+  setSiteAlways: (on: boolean, shownOrigin: string) => Promise<TunnelResult | null>
   setBrowserTunnel: (kind: 'nym' | 'socks5' | null) => Promise<TunnelResult | null>
   setNodesTunnel: (on: boolean) => Promise<TunnelResult | null>
   setProxyAddress: (text: string) => Promise<ProxyAddressResult | null>

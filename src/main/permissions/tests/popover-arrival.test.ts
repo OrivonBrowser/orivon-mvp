@@ -79,6 +79,15 @@ describe('whether a popup is still about the first page a tab committed', () => 
     expect(popupIsAbout(tabPopup, { tabId: 't1', origin: null })).toBe(true)
   })
 
+  it('is so for a popup opened for the website its tab was loading only when that website arrives: another one (a redirect) leaves the panel about the wrong website', () => {
+    const websitePopup = { tab: 't1', origin: '', shown: 'https://news.example' }
+    expect(popupIsAbout(websitePopup, { tabId: 't1', origin: 'https://news.example' })).toBe(true)
+    expect(popupIsAbout(websitePopup, { tabId: 't1', origin: 'https://other.example' })).toBe(false)
+    expect(popupIsAbout(websitePopup, { tabId: 't1', origin: null })).toBe(false)
+    expect(popupIsAbout(websitePopup, { tabId: 't2', origin: 'https://news.example' })).toBe(false)
+    expect(popupIsAbout({ tab: 't1', origin: '', shown: '' }, { tabId: 't1', origin: 'https://news.example' }), 'a panel drawn for no website is right for whatever arrives, as before').toBe(true)
+  })
+
   it('is not so for a popup opened for another tab', () => {
     expect(popupIsAbout(tabPopup, { tabId: 't2', origin: 'https://news.example' })).toBe(false)
   })

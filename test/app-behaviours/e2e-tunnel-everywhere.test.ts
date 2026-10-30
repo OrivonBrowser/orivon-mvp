@@ -1,10 +1,10 @@
 // "Send all of Orivon's traffic through the tunnel": with the setting on, a plain website with no setting of its own is
 // loaded in the shared session, which is then pointed at the shared front, so its page, a subresource from another host,
-// a WebSocket and its tab icon all arrive through the SOCKS5 fixture. A site the person sets to off from its popover moves
-// to the direct profile and arrives direct, from its own storage, and turning the setting off and on again moves no
-// website. With the fixture stopped, everything fails and nothing arrives direct. Every name has a decoy on the same port on
-// loopback: the host resolver maps the fixture's names there, so a request that skipped the proxy lands on a decoy and
-// counts a hit.
+// a WebSocket and its tab icon all arrive through the SOCKS5 fixture. A site the person sets to off from its popover and
+// keeps with "Always use for this site" moves to the direct profile and arrives direct, from its own storage, and turning
+// the setting off and on again moves no website. With the fixture stopped, everything fails and nothing arrives direct.
+// Every name has a decoy on the same port on loopback: the host resolver maps the fixture's names there, so a request that
+// skipped the proxy lands on a decoy and counts a hit.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-tunnel-everywhere.test.ts
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -22,7 +22,8 @@ import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { shoot } from '../support/auth-support.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
-import { activeTabInfo, delay, findViewShowing, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { closeTunnelList, pressAlways } from '../support/tunnel-popup.js'
 
 const PLAIN = 'plain.socks.test'
 const OFF = 'off.socks.test'
@@ -203,8 +204,21 @@ it('[app:tunnel-everywhere-leaves-a-site-set-to-off-direct] a site set to off mo
   expect(await cookies('direct-profile-memory', OFF), 'its cookie is in the direct profile').toEqual(['who=direct-profile'])
   expect(await cookies(undefined, OFF), 'the shared session keeps what it had').toEqual(['who=tunnel'])
   expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === null), 'the tunnel button is not purple').toBe(true)
+
+  // The row sent the tab direct; "Always use for this site" keeps that for the site, which the tests below rely on. It moves nothing.
+  const hitsBefore = hosts.offDecoy.hits
+  await pressAlways(app, chrome, 'socks5')
+  await closeTunnelList(app, chrome)
   await delay(500)
-  if (findPopup() !== undefined) await closePopover()
+  expect(hosts.offDecoy.hits, 'saving the choice did not load the page again').toBe(hitsBefore)
+  expect(await tabTitle()).toBe('direct')
+  expect(await sessionOfTab(offUrl()), 'and did not move it').toMatchObject({ isDefault: false, webrtc: 'default' })
+
+  // The row gave this tab the choice to go direct, and every site opened in it goes direct in the direct profile: the tests below
+  // open sites that follow the browser, so they open them in a tab that has no choice.
+  const tabCount = (await tabIds(chrome)).length
+  await chrome.click('#new-tab')
+  expect(await waitFor(async () => (await tabIds(chrome)).length === tabCount + 1), 'a new tab, which has no choice of its own').toBe(true)
 }, 4 * QA_TEST_TIMEOUT_MS)
 
 it('[app:tunnel-everywhere-leaves-a-site-set-to-off-direct] Settings lists the site under the direct profile, and the toggle is on', async () => {

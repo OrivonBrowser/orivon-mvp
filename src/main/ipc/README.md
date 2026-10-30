@@ -4,8 +4,8 @@
 `ipc.ts` (tab and toolbar commands, and what a menu, a split or a tab drag ask of the window; `act` carries a chrome module's own call to `shell/chrome-actions.ts`),
 `newtab-ipc.ts` (the dashboard's bookmarks and navigation), `networks-ipc.ts` (the Available networks
 popup), `site-info-ipc.ts` (the site-info popup, fixed to the one origin it was opened for, never a command
-field) and `site-info-tab-ipc.ts` (the same popup opened from the tunnel button of a new tab or of a tab that has a tunnel choice:
-fixed to one tab, and it answers only the tunnel commands). All but `newtab-ipc.ts` register on the `ipc` of the view they serve, so the handler goes with
+field) and `site-info-tab-ipc.ts` (the same popup opened from the tunnel button of a new tab or of a website in a tab:
+fixed to one tab, and it answers only the tunnel commands, the website of "Always use for this site" read from the tab, never from a command field). All but `newtab-ipc.ts` register on the `ipc` of the view they serve, so the handler goes with
 the view and each window has its own; `newtab-ipc.ts` serves every dashboard tab in every window and
 registers on `ipcMain` once per process. Each verifies `event.senderFrame` against a known frame
 before doing anything, because a webContents' handlers hear every frame in it; `ipc.ts`,
