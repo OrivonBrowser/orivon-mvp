@@ -1,5 +1,6 @@
 // What the About page shows, as plain rows: built from facts main has already
 // read, so the wording and the status mapping are tested without Electron.
+import { gpuMakerName } from '../diagnostics/webgpu-state.js'
 
 export interface AboutFacts {
   readonly orivon: string
@@ -130,17 +131,6 @@ export function featureRows (status: Readonly<Record<string, unknown>>): Feature
     .map(([key, value]) => ({ key, label: FEATURE_LABELS[key] ?? key, ...featureTone(value) }))
 }
 
-const VENDORS: Readonly<Record<number, string>> = {
-  0x8086: 'Intel',
-  0x10de: 'NVIDIA',
-  0x1002: 'AMD',
-  0x106b: 'Apple',
-  0x1414: 'Microsoft',
-  0x1ae0: 'Google (SwiftShader)',
-  0x5143: 'Qualcomm',
-  0x13b5: 'Arm'
-}
-
 function hex (value: unknown): string {
   return typeof value === 'number' ? `0x${value.toString(16).padStart(4, '0')}` : ''
 }
@@ -160,7 +150,7 @@ export function deviceRows (info: unknown): DeviceRow[] {
   return list.map((entry) => {
     const device = asRecord(entry)
     const vendorId = device['vendorId']
-    const vendorName = text(device['vendorString']) || (typeof vendorId === 'number' ? VENDORS[vendorId] : undefined) || ''
+    const vendorName = text(device['vendorString']) || (typeof vendorId === 'number' ? gpuMakerName(vendorId) : undefined) || ''
     const driver = [text(device['driverVendor']), text(device['driverVersion'])].filter((part) => part !== '').join(' ')
     return {
       vendor: [vendorName, vendorId === undefined ? '' : `(${hex(vendorId)})`].filter((part) => part !== '').join(' ') || 'Unknown',

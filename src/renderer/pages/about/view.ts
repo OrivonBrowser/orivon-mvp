@@ -2,7 +2,7 @@
 // bridge: the buttons call back into the state, which owns the requests.
 import { h } from '../shared/dom.js'
 import { inlineSegments } from './inline-markdown.js'
-import type { AboutRow, AboutState, DeviceRow, FeatureRow, GpuReport, NotesSection } from './state.js'
+import type { AboutRow, AboutState, DeviceRow, FeatureRow, GpuReport, Loadable, NotesSection, WebGpuReport } from './state.js'
 
 function skeletonCard (rows: number): HTMLElement {
   return h('div', { className: 'card', role: 'status', ariaLabel: 'Loading' },
@@ -44,6 +44,33 @@ function deviceCard (devices: readonly DeviceRow[], known: boolean): HTMLElement
   ]))
 }
 
+const WEBGPU_BADGES: Readonly<Record<WebGpuReport['state'], { text: string, tone: string }>> = {
+  available: { text: 'Works', tone: 'badge ok' },
+  unavailable: { text: 'Not available', tone: 'badge warn' },
+  unknown: { text: 'Not known', tone: 'badge' }
+}
+
+const plainRow = (label: string, value: string): HTMLElement => h('div', { className: 'row' },
+  h('span', { className: 'row-label', textContent: label }),
+  h('span', { className: 'value', textContent: value }))
+
+/** Whether WebGPU works here, and when it does not, the reason in a sentence. */
+function webGpuCard (webGpu: Loadable<WebGpuReport> | null): HTMLElement {
+  if (webGpu === null || webGpu.state === 'loading') return skeletonCard(1)
+  if (webGpu.state === 'error') return h('div', { className: 'card' }, plainRow('Status', 'Not known'))
+  const report = webGpu.value
+  const badge = WEBGPU_BADGES[report.state]
+  const status = h('div', { className: 'row' },
+    h('span', { className: 'row-label', textContent: 'Status' }),
+    h('span', { className: badge.tone, textContent: badge.text }))
+  if (report.state !== 'available') {
+    return h('div', { className: 'card' }, status, h('div', { className: 'row long' }, h('span', { className: 'value', textContent: report.sentence })))
+  }
+  return h('div', { className: 'card' }, status,
+    plainRow('Adapter vendor', report.vendor === '' ? 'Not reported' : report.vendor),
+    plainRow('Adapter architecture', report.architecture === '' ? 'Not reported' : report.architecture))
+}
+
 function rawReport (report: GpuReport, copy: (button: HTMLButtonElement) => void): HTMLElement {
   const button = h('button', { className: 'link-btn', type: 'button', textContent: 'Copy', onclick: () => { copy(button) } })
   return h('details', { className: 'raw' },
@@ -71,6 +98,8 @@ export function gpuBody (state: AboutState, retry: () => void, copyRaw: (button:
       h('button', { className: 'link-btn', type: 'button', textContent: 'Try again', onclick: retry }))
   }
   return h('div', { className: 'stack' },
+    h('h2', { className: 'group-label', textContent: 'WebGPU' }),
+    webGpuCard(state.webGpu),
     h('h2', { className: 'group-label', textContent: 'Feature status' }),
     featureCard(gpu.value.features),
     h('h2', { className: 'group-label', textContent: 'Graphics device' }),

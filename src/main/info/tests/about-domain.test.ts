@@ -10,7 +10,7 @@ const FACTS: AboutFacts = {
 const CALLER = {} as InternalCaller
 const RELEASE = { version: '1.0.0', notes: { version: '1.0.0', sections: [{ heading: 'Added', items: ['**A**: b'] }] } }
 
-function setup (gpu: () => Promise<{ status: unknown, info: unknown }> = async () => ({ status: { webgl: 'enabled' }, info: { gpuDevice: [{ active: true, vendorId: 0x8086 }] } })): {
+function setup (gpu: () => Promise<{ status: unknown, info: unknown, ozone: string }> = async () => ({ status: { webgl: 'enabled' }, info: { gpuDevice: [{ active: true, vendorId: 0x8086 }] }, ozone: 'x11' })): {
   call: (command: unknown) => Promise<unknown>, copy: ReturnType<typeof vi.fn>
 } {
   const copy = vi.fn()
@@ -20,12 +20,12 @@ function setup (gpu: () => Promise<{ status: unknown, info: unknown }> = async (
 
 describe('the About domain', () => {
   it('is for the About page alone', () => {
-    expect(infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {} }), copy: () => {}, release: () => RELEASE }).pages).toEqual(['about'])
+    expect(infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {}, ozone: '' }), copy: () => {}, release: () => RELEASE }).pages).toEqual(['about'])
   })
 
   it('answers what this version changed, and an empty list for a build with no notes', async () => {
     expect(await setup().call({ type: 'whatsnew' })).toEqual({ version: '1.0.0', sections: [{ heading: 'Added', items: ['**A**: b'] }] })
-    const bare = infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {} }), copy: () => {}, release: () => ({ version: '0.0.0', notes: null }) })
+    const bare = infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {}, ozone: '' }), copy: () => {}, release: () => ({ version: '0.0.0', notes: null }) })
     expect(await bare.handle({ type: 'whatsnew' }, CALLER)).toEqual({ version: '0.0.0', sections: [] })
   })
 
@@ -45,12 +45,41 @@ describe('the About domain', () => {
   })
 
   it('keeps the feature table when the device query gave nothing, and says the devices are not known', async () => {
-    const reply = await setup(async () => ({ status: { webgl: 'enabled' }, info: undefined })).call({ type: 'gpu' }) as { ok: boolean, devices: unknown[], devicesKnown: boolean }
+    const reply = await setup(async () => ({ status: { webgl: 'enabled' }, info: undefined, ozone: '' })).call({ type: 'gpu' }) as { ok: boolean, devices: unknown[], devicesKnown: boolean }
     expect(reply).toMatchObject({ ok: true, devices: [], devicesKnown: false })
   })
 
   it('says it failed when the graphics query throws', async () => {
     expect(await setup(async () => { throw new Error('no gpu') }).call({ type: 'gpu' })).toEqual({ ok: false })
+  })
+
+  describe('the WebGPU answer', () => {
+    const OFF = { webgpu: 'disabled_off', webgpu_on_vk_via_gl_interop: 'disabled_off', gpu_compositing: 'enabled' }
+    const reading = (ozone: string) => async () => ({ status: OFF, info: { gpuDevice: [{ active: true, vendorId: 0x10de, driverVendor: 'NVIDIA', driverVersion: '535.1' }] }, ozone })
+
+    it('gives the state, the reason and the sentence, for the platform the facts name', async () => {
+      expect(await setup(reading('x11')).call({ type: 'webgpu' })).toEqual({
+        ok: true,
+        state: 'unavailable',
+        reason: 'x11',
+        sentence: 'WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.'
+      })
+    })
+
+    it('says it works when the page got an adapter, and trusts nothing else the page sends', async () => {
+      expect(await setup(reading('x11')).call({ type: 'webgpu', adapter: { kind: 'adapter', reason: 'x11', state: 'unknown' } })).toEqual({
+        ok: true, state: 'available', reason: 'adapter', sentence: 'WebGPU works on this computer.'
+      })
+      expect(await setup(reading('x11')).call({ type: 'webgpu', adapter: { kind: 'working' } })).toMatchObject({ reason: 'x11' })
+    })
+
+    it('names the graphics card on Wayland', async () => {
+      expect(await setup(reading('wayland')).call({ type: 'webgpu' })).toMatchObject({ state: 'unavailable', reason: 'gpu-not-listed' })
+    })
+
+    it('says it failed when the graphics query throws', async () => {
+      expect(await setup(async () => { throw new Error('no gpu') }).call({ type: 'webgpu' })).toEqual({ ok: false })
+    })
   })
 
   it('copies the table it builds itself, for "version"', async () => {

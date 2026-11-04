@@ -13,6 +13,9 @@ import { activeTabInfo, delay, tabIds, waitFor, waitForTab } from '../support/sm
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 
+/** What a launch under a virtual display says about WebGPU: pages drawn in software when the display gives no graphics card, the X11 session when it gives one. */
+const WEBGPU_OFF_SENTENCE = /^(WebGPU needs a graphics card\. This computer draws pages on its processor, and Chromium does not allow WebGPU there\.|WebGPU is off because this computer runs an X11 session\. Chromium turns it off there for every graphics card\.)$/
+
 let server: FixtureServer
 
 beforeAll(async () => {
@@ -97,7 +100,14 @@ it('shows the version table and the graphics report, with Copy details, at real 
     // Either the status card or, on a machine that reports nothing, the banner with its retry.
     expect(await waitFor(async () => await about.locator('.badge, .banner.error').count() > 0)).toBe(true)
     if (await about.locator('.badge').count() > 0) {
-      expect(await about.locator('.group-label').allTextContents()).toEqual(['Feature status', 'Graphics device'])
+      expect(await about.locator('.group-label').allTextContents()).toEqual(['WebGPU', 'Feature status', 'Graphics device'])
+      // The section first shows a skeleton while the page asks for an adapter; this build's headless display has none to give.
+      expect(await waitFor(async () => await about.locator('.stack > .card').first().getAttribute('role') === null)).toBe(true)
+      const webGpu = about.locator('.stack > .card').first()
+      expect(await webGpu.locator('.row-label').first().textContent()).toBe('Status')
+      expect(await webGpu.locator('.badge').textContent()).toBe('Not available')
+      expect(await webGpu.locator('.badge').getAttribute('class')).toContain('warn')
+      expect(await webGpu.locator('.row.long .value').textContent()).toMatch(WEBGPU_OFF_SENTENCE)
       expect(await about.locator('.badge').first().textContent()).toMatch(/Hardware accelerated|Software only|Disabled|\S/)
       await about.locator('details.raw summary').click()
       expect((await about.locator('.raw-body').textContent() ?? '').length).toBeGreaterThan(20)

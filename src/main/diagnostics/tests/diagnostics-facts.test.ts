@@ -29,7 +29,18 @@ describe('buildDiagnostics', () => {
   })
 
   it('has no devices when the graphics report is unavailable', () => {
-    expect(buildDiagnostics({ ...FACTS, gpuInfo: undefined, gpuStatus: undefined }).gpu).toEqual({ features: {}, devices: [] })
+    expect(buildDiagnostics({ ...FACTS, gpuInfo: undefined, gpuStatus: undefined }).gpu).toEqual({ features: {}, devices: [], webgpu: { state: 'unknown', reason: 'unknown' } })
+  })
+
+  it('states whether WebGPU is off and why, as a state and a reason code and nothing else', () => {
+    expect(diagnostics.gpu.webgpu).toEqual({ state: 'unavailable', reason: 'software-only' })
+    const x11 = buildDiagnostics({
+      ...FACTS,
+      system: { ...FACTS.system, ozone: 'x11' },
+      gpuStatus: { webgpu: 'disabled_off', webgpu_on_vk_via_gl_interop: 'disabled_off', gpu_compositing: 'enabled' }
+    })
+    expect(x11.gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11' })
+    expect(Object.keys(x11.gpu.webgpu)).toEqual(['state', 'reason'])
   })
 
   it('groups the processes by type with their memory in MB', () => {

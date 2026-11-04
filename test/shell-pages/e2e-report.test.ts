@@ -124,6 +124,10 @@ it('shows the literal report, sends it only on Send, and deletes it from the ser
     // The literal preview is what was sent: the diagnostics and the log of the moment the page asked.
     expect(body['diagnostics']).toEqual(full['diagnostics'])
     expect(Object.keys(body['diagnostics'] as object)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
+    // Main states WebGPU's state and the reason in one word each; on a virtual display it is off.
+    const webgpu = (body['diagnostics'] as { gpu: { webgpu: Record<string, string> } }).gpu.webgpu
+    expect(Object.keys(webgpu)).toEqual(['state', 'reason'])
+    if (process.platform === 'linux') expect(webgpu).toEqual({ state: 'unavailable', reason: expect.stringMatching(/^(software-only|x11)$/) })
     const home = await app.evaluate(({ app: electronApp }) => electronApp.getPath('home'))
     expect(JSON.stringify(body)).not.toContain(home)
     await shoot(page, 'report-sent')

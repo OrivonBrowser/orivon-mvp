@@ -62,6 +62,7 @@ function render (): void {
 /** Asks for what a tab shows the first time it is opened. */
 function load (tab: Tab): void {
   if (tab === 'gpu' && state.gpu === null) void state.loadGpu()
+  if (tab === 'gpu' && state.webGpu === null) void state.loadWebGpu()
   if (tab === 'whatsnew' && state.whatsNew === null) void state.loadWhatsNew()
 }
 

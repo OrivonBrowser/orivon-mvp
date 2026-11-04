@@ -5,6 +5,8 @@ import { SETTINGS } from '../settings/schema.js'
 import type { SettingKey } from '../settings/schema.js'
 import { newest } from './crash-records.js'
 import type { CrashKind, CrashRecord } from './crash-records.js'
+import { webGpuInputsFrom, webGpuState } from './webgpu-state.js'
+import type { WebGpuReason, WebGpuStateName } from './webgpu-state.js'
 
 export type Channel = 'development' | 'source' | 'appimage' | 'linux-package' | 'windows' | 'macos'
 
@@ -105,7 +107,12 @@ export interface DiagnosticsFacts {
 export interface Diagnostics {
   readonly app: { readonly commit: string, readonly channel: Channel, readonly electron: string, readonly chromium: string, readonly node: string, readonly v8: string, readonly packaged: boolean, readonly uptimeSec: number }
   readonly system: DiagnosticsFacts['system']
-  readonly gpu: { readonly features: Readonly<Record<string, string>>, readonly devices: ReadonlyArray<{ readonly vendorId: number, readonly deviceId: number, readonly driverVersion: string, readonly active: boolean }> }
+  readonly gpu: {
+    readonly features: Readonly<Record<string, string>>
+    readonly devices: ReadonlyArray<{ readonly vendorId: number, readonly deviceId: number, readonly driverVersion: string, readonly active: boolean }>
+    /** Whether WebGPU works and why not, as far as main can tell: it cannot ask for an adapter, so a working computer reads `unknown`. */
+    readonly webgpu: { readonly state: WebGpuStateName, readonly reason: WebGpuReason }
+  }
   readonly displays: ReadonlyArray<{ readonly width: number, readonly height: number, readonly scale: number }>
   readonly processes: ReadonlyArray<{ readonly type: string, readonly count: number, readonly memoryMb: number }>
   readonly browser: DiagnosticsFacts['browser']
@@ -159,12 +166,17 @@ function groupProcesses (readings: readonly ProcessReading[]): Diagnostics['proc
   return [...groups].map(([type, { count, kb }]) => ({ type, count, memoryMb: Math.round(kb / 1024) }))
 }
 
+function webgpuOf (facts: DiagnosticsFacts): Diagnostics['gpu']['webgpu'] {
+  const { state, reason } = webGpuState(webGpuInputsFrom({ platform: facts.system.platform, ozone: facts.system.ozone, status: facts.gpuStatus, info: facts.gpuInfo }))
+  return { state, reason }
+}
+
 export function buildDiagnostics (facts: DiagnosticsFacts): Diagnostics {
   const features = Object.fromEntries(Object.entries(record(facts.gpuStatus)).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
   return {
     app: { commit: facts.commit, channel: facts.channel, ...facts.versions, packaged: facts.packaged, uptimeSec: Math.round(facts.uptimeSec) },
     system: facts.system,
-    gpu: { features, devices: gpuDevices(facts.gpuInfo) },
+    gpu: { features, devices: gpuDevices(facts.gpuInfo), webgpu: webgpuOf(facts) },
     displays: facts.displays.map((display) => ({ width: display.width, height: display.height, scale: display.scaleFactor })),
     processes: groupProcesses(facts.processes),
     browser: facts.browser,
