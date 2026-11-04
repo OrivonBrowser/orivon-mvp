@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SETTINGS } from '../../../main/settings/schema.js'
 import { performanceSection } from '../settings/sections/performance.js'
+import { graphicsRows } from '../settings/sections/rows/graphics.js'
 import { memoryRows } from '../settings/sections/rows/memory.js'
 import type { SettingsState } from '../settings/state.js'
 
@@ -9,7 +10,7 @@ const state = (saver: boolean): SettingsState => ({ value: (key: string) => key 
 describe('the Performance rows', () => {
   it('says what the section is for', () => {
     expect(performanceSection.intro).toBe('Orivon can free memory from tabs you are not using.')
-    expect(performanceSection.rows).toEqual([...memoryRows])
+    expect(performanceSection.rows).toEqual([...memoryRows, ...graphicsRows])
   })
 
   it('keys its rows to settings that exist, and lists sites by a control of its own', () => {

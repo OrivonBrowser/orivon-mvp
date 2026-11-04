@@ -5,6 +5,7 @@ import { cpus, freemem, homedir, release, totalmem } from 'node:os'
 import { app, clipboard, net, screen } from 'electron'
 import type { WebContents } from 'electron'
 import { devModeEnabled } from '../dev/dev-mode.js'
+import { currentOzonePlatform, x11VulkanReading } from '../graphics/x11-vulkan-runner.js'
 import { ownFetch } from '../route/own-requests.js'
 import type { SubsystemContext } from '../registry.js'
 import type { ShellServices } from '../shell/shell-services.js'
@@ -70,9 +71,10 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       locale: app.getLocale(),
       session: process.env['XDG_SESSION_TYPE'] ?? '',
       desktop: process.env['XDG_CURRENT_DESKTOP'] ?? '',
-      ozone: app.commandLine.getSwitchValue('ozone-platform')
+      ozone: currentOzonePlatform()
     },
     gpuStatus: app.getGPUFeatureStatus(),
+    x11Vulkan: x11VulkanReading(),
     gpuInfo,
     displays: screen.getAllDisplays().map((display) => ({ width: display.size.width, height: display.size.height, scaleFactor: display.scaleFactor })),
     processes: app.getAppMetrics().map((metric) => ({ type: metric.type, workingSetKb: metric.memory.workingSetSize })),

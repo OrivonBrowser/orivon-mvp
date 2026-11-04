@@ -15,7 +15,7 @@ rest is pure and runs under plain vitest.
 
 **What it depends on.** `electron`; [`../pages/`](../pages/) (the domain type and the page ids);
 [`../shell/`](../shell/) (the window registry and the app-tab set, read-only; `intro-state.ts` for the profile's last version); [`../self-update/`](../self-update/) (`github-release-version.ts`, the version order); [`../settings/`](../settings/)
-(the downloads folder shown in the table); [`../diagnostics/`](../diagnostics/) (`build-commit.ts`, the commit row; `crash-lookup.ts`, to say that a page the task manager ended is not a crash; `gpu-reading.ts`, the one parser of the graphics report and the maker names the graphics rows use; `webgpu-state.ts`, whether WebGPU works).
+(the downloads folder shown in the table); [`../graphics/`](../graphics/) (`x11-vulkan-runner.ts`'s reading of what the WebGPU-on-X11 setting did in this run and its one answer to which Ozone platform Orivon draws through, which `about-runner.ts` hands to `webgpu-state.ts`); [`../diagnostics/`](../diagnostics/) (`build-commit.ts`, the commit row; `crash-lookup.ts`, to say that a page the task manager ended is not a crash; `gpu-reading.ts`, the one parser of the graphics report and the maker names the graphics rows use; `webgpu-state.ts`, whether WebGPU works).
 
 **What it must never import.** [`../../renderer/`](../../renderer/), and anything in `../shell/` that
 would let it change a window other than activating a tab.

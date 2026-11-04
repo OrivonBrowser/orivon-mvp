@@ -100,8 +100,14 @@ Done. What it found is in the section above; the rest of this section says what 
 
 ## Step 3: the X11 setting (`d-0758`)
 
-- **The setting:** off by default, offered only on an X11 session, and it takes effect at the next start. Its words are
-  shown to the owner before it merges (new visible UI).
+Done. [`ADR-0105`](../decisions/ADR-0105-webgpu-on-an-x11-session-is-an-opt-in-setting-that-composites-through-vulkan-and-turns-itself-off-after-a-bad-run.md)
+records the decision.
+
+- **The setting:** `graphics.webgpuOnX11`, off by default, in Settings under Performance, group Graphics, shown only on
+  an X11 session. It is read when Orivon starts, so turning it on shows a "Start again to apply" row with a "Restart
+  Orivon" button. The switches apply where the row is shown: Ozone X11 on a session that is not Wayland, so not under
+  XWayland. The help reads "Turns on WebGPU for games and apps that need it. It may use more battery, and on some
+  laptops videos can go blank. Read when Orivon starts."; the switch is locked in a private window.
 - **What it does:** composite through Vulkan, so WebGPU needs no bridge. The set is
   `--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE`, measured below.
 - **What the measurements settled**, on the private Xwayland (a real X server with GL, so the closest to a desktop) and
@@ -138,15 +144,50 @@ Done. What it found is in the section above; the rest of this section says what 
   (`CDPScreenshotNewSurface`), so a spec cannot hand Orivon the features as launch arguments; they must be set by
   Orivon's main process, merged with what is already listed as `src/main/privacy/gpc-switch.ts` does. The same spec
   with the switches passed anyway shows `vulkan: disabled_off` and no adapter.
-- **Crash guard:** if the graphics process crashes while the setting is on, Orivon turns it off at the next start and
-  says so in `orivon://gpu`.
-- **Acceptance** on this machine's X11 session, on both GPUs:
-  - video, hardware-decoded on the NVIDIA GPU (the upstream reason for the block);
-  - a WebGL page;
-  - scrolling;
-  - screen capture;
-  - a WebGPU compute page.
-- **An ADR** (Rule 1): a setting that changes the compositor for every page.
+- **Crash guard:** the setting turns itself off, at once, and `x11-vulkan.json` in the profile keeps when and why,
+  in three cases:
+  - the graphics process ended badly in a run that set the switches (`gpu-crash`);
+  - ten seconds after the first window, pages are still drawn on the processor (`gpu-software`): with no usable Vulkan
+    driver the graphics process exits while it starts and starts again until Chromium gives up, and no end of a process
+    is reported (measured below);
+  - a run that set the switches never painted its first window, found by a start marker at the next start (`no-window`);
+    the window's `ready-to-show` clears it, the timer that shows the window after a second does not, and Orivon's own
+    failed starts clear it too.
+
+  The check of how pages are drawn runs ten seconds after the first window and again on every `gpu-info-update`; a GPU
+  end while Orivon quits or starts again never counts. A setting that reads on beside a revert in the record at start is
+  a turn-off whose save was lost: it stays off. Turning the setting on from Settings forgets the record at once.
+  Settings and `orivon://gpu` say one sentence for all three kinds ("Orivon turned off ... because graphics stopped
+  working while it was on."); the record keeps which. `orivon://gpu` says that (`x11-vulkan-reverted`), or that the
+  setting is on and the page still got no adapter (`x11-vulkan-no-adapter`), and the bug report carries the setting's
+  value at the start and the record.
+- **Acceptance.** Orivon itself, with the setting on in its profile, on a page of known colours; the pixels are read
+  from the X server's screen, not from Chromium. NVIDIA is Vulkan's default device here; Intel is reached with
+  `VK_ICD_FILENAMES` limited to Intel's driver. Each cell is one run; the control rows have the setting off.
+
+  | Check | xvfb, NVIDIA | xvfb, Intel | Xwayland, NVIDIA | Xwayland, Intel |
+  |---|---|---|---|---|
+  | `requestAdapter()` | `nvidia`, `ampere` | `intel`, `gen-12lp` | `nvidia`, `ampere` | `intel`, `gen-12lp` |
+  | Compute dispatch read back | 2, 4, 6, 8 | 2, 4, 6, 8 | 2, 4, 6, 8 | 2, 4, 6, 8 |
+  | WebGPU canvas of one colour, read from the screen | 20000 of 20000 pixels | 20000 of 20000 | 20000 of 20000 | 20000 of 20000 |
+  | WebGL canvas of one colour, read from the screen | 40000 of 40000 | 40000 of 40000 | 40000 of 40000 | 40000 of 40000 |
+  | WebGL renderer | ANGLE, Vulkan, RTX 3050 | ANGLE, Vulkan, Intel Iris Xe | the same as xvfb | the same as xvfb |
+  | Painted block, read from the screen | 40000 of 40000 | 40000 of 40000 | 40000 of 40000 | 40000 of 40000 |
+  | Scrolling by a wheel event | the block moved 300 px | 300 px | 300 px | 300 px |
+  | VP9 and H.264 video | `currentTime` advances, the picture is on screen | the same | the same | the same |
+  | `child-process-gone` | none | none | none | none |
+  | Guard record after the run | no revert | no revert | no revert | no revert |
+  | Control, setting off | no adapter, no WebGL (software drawing), video plays | | no adapter, WebGL through Intel's GL, video plays | |
+
+  With no usable Vulkan driver (`VK_ICD_FILENAMES` naming a file that does not exist) and the setting on, the graphics
+  process exits while it starts, again and again, pages are drawn on the processor, WebGL and WebGPU are off and the
+  page gets no adapter, with no `child-process-gone`; ten seconds after the first window the guard turns the setting off
+  and records `gpu-software`. A run with the graphics process killed by a signal records `gpu-crash`, and a profile
+  whose last run never painted its window records `no-window` (both in `test/page/e2e-webgpu-x11.test.ts`).
+- **Not measured.** A real Xorg session, which is the case upstream's block was written for (video composited blank on
+  an NVIDIA hybrid laptop): whether the decoder picks the integrated GPU there is *provisional*. A person on Xorg with
+  such a laptop who turns the setting on and reports through `orivon://report` would settle it. Hardware decoding of
+  the two videos was not told apart from software decoding, and screen capture was not run.
 - **The setting is retired** once Chromium turns the bridge back on under X11. Each Electron update checks for it.
 
 ## Step 4: Wayland, one GPU maker at a time (`d-0757`)

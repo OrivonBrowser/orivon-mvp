@@ -37,6 +37,8 @@ export interface ShellWindowOptions {
   readonly created?: ((win: BaseWindow) => void) | undefined
   /** Called once the window has been shown. */
   readonly shown?: (() => void) | undefined
+  /** Called once the window's page has rendered (`ready-to-show`): only the launch's first window, and never because the fallback timer showed it. */
+  readonly painted?: (() => void) | undefined
 }
 
 /** A window opened from another one sits a little down and to the right of it, so the two are told apart. */

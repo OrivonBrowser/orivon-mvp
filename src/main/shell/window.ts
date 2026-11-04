@@ -52,7 +52,7 @@ export function resolveDashboardUrl (): string {
  * `intro`: the process's first window on a launch that opens on the welcome
  * screen (./intro-state.ts). */
 export function createShellWindow (ctx: SubsystemContext, services: ShellServices, options: ShellWindowOptions = {}): BaseWindow {
-  const { intro, first, place, firstOfLaunch, maximized, inactive, shown, created } = options
+  const { intro, first, place, firstOfLaunch, maximized, inactive, shown, painted, created } = options
   // Every window of a kiosk process is a kiosk window: a popup's window must not bring the chrome back.
   const { kiosk } = services
   const frame = createWindowFrame(import.meta.dirname, place, services.profiles.isPrivate, kiosk)
@@ -305,7 +305,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   if (intro !== undefined) showIntro(win, tabs, intro, () => { services.commands.run('nav.focusAddress', entry) })
   runWindowHooks('opened', context, options)
 
-  showWhenReady(frame, { firstOfLaunch, maximized, inactive, onShown: shown })
+  showWhenReady(frame, { firstOfLaunch, maximized, inactive, onShown: shown, onPainted: painted })
 
   return win
 }

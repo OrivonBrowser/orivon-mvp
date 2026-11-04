@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { GpuDevice } from '../gpu-reading.js'
-import { adapterReading, webGpuState } from '../webgpu-state.js'
+import { adapterReading, webGpuState, x11VulkanReadingOf } from '../webgpu-state.js'
 import type { WebGpuInputs } from '../webgpu-state.js'
 
 function device (over: Partial<GpuDevice>): GpuDevice {
@@ -36,7 +36,7 @@ describe('webGpuState', () => {
     it('blames an X11 session on Linux for a page that got no adapter, though the bridge reads enabled', () => {
       const state = webGpuState(inputs({ session: 'x11', ozone: 'x11', devices: [NVIDIA], adapter: { kind: 'none' } }))
       expect(state).toMatchObject({ state: 'unavailable', reason: 'x11' })
-      expect(state.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.')
+      expect(state.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. You can turn it on in Settings, under Performance.')
     })
 
     it('says Orivon runs through XWayland when the session is Wayland and the browser is on X11', () => {
@@ -54,7 +54,7 @@ describe('webGpuState', () => {
       for (const session of ['', 'tty']) {
         const state = webGpuState(inputs({ session, ozone: 'x11' }))
         expect(state).toMatchObject({ state: 'unavailable', reason: 'x11' })
-        expect(state.sentence).toBe('WebGPU is off because Orivon is running on X11. Chromium turns it off there for every graphics card.')
+        expect(state.sentence).toBe('WebGPU is off because Orivon is running on X11. Chromium turns it off there for every graphics card. You can turn it on in Settings, under Performance.')
       }
     })
 
@@ -277,5 +277,90 @@ describe('adapterReading', () => {
     expect(adapterReading('adapter')).toBeUndefined()
     expect(adapterReading(null)).toBeUndefined()
     expect(adapterReading(undefined)).toBeUndefined()
+  })
+})
+
+
+describe('the X11 setting for WebGPU', () => {
+  const ON = { onAtStart: true, reverted: false }
+  const REVERTED = { onAtStart: false, reverted: true }
+  const x11 = (over: Partial<WebGpuInputs> = {}): WebGpuInputs => inputs({ session: 'x11', ozone: 'x11', devices: [NVIDIA], ...over })
+
+  it('says the setting found no card, in the owner\'s words, when it is on and the page got no adapter', () => {
+    const state = webGpuState(x11({ x11Vulkan: ON, adapter: { kind: 'none' } }))
+    expect(state).toMatchObject({ state: 'unavailable', reason: 'x11-vulkan-no-adapter' })
+    expect(state.sentence).toBe('WebGPU is still off with "Use the graphics card for WebGPU on X11" turned on: Chromium found no graphics card it could use through Vulkan.')
+  })
+
+  it('does not blame X11 for every card while the setting is on, and says nothing without a page', () => {
+    expect(webGpuState(x11({ x11Vulkan: ON })).reason).toBe('unknown')
+    expect(webGpuState(x11({ x11Vulkan: ON, adapter: { kind: 'no-api' } })).reason).toBe('no-adapter')
+  })
+
+  it('still answers available when the page got an adapter', () => {
+    expect(webGpuState(x11({ x11Vulkan: ON, adapter: { kind: 'adapter' } }))).toMatchObject({ state: 'available', reason: 'adapter' })
+  })
+
+  it('says Orivon turned the setting off, with the way back, when it did and WebGPU is still off', () => {
+    const state = webGpuState(x11({ x11Vulkan: REVERTED, adapter: { kind: 'none' } }))
+    expect(state).toMatchObject({ state: 'unavailable', reason: 'x11-vulkan-reverted' })
+    expect(state.sentence).toBe('Orivon turned off "Use the graphics card for WebGPU on X11" because graphics stopped working while it was on. You can turn it on again in Settings, under Performance.')
+    expect(webGpuState(x11({ x11Vulkan: REVERTED })).reason).toBe('x11-vulkan-reverted')
+  })
+
+  it('puts the revert before the processor check, since a bad run is what leaves pages drawn there', () => {
+    const software = { webgpu: 'disabled_off', gpu_compositing: 'disabled_software' }
+    expect(webGpuState(x11({ x11Vulkan: REVERTED, features: software, adapter: { kind: 'none' } })).reason).toBe('x11-vulkan-reverted')
+    expect(webGpuState(x11({ x11Vulkan: ON, features: software, adapter: { kind: 'none' } })).reason).toBe('software-only')
+  })
+
+  it('reads a revert in the run that went wrong and still has the switches when the page got none, or when pages are drawn on the processor', () => {
+    const wrong = { onAtStart: true, reverted: true }
+    const software = { webgpu: 'disabled_off', gpu_compositing: 'disabled_software' }
+    expect(webGpuState(x11({ x11Vulkan: wrong, adapter: { kind: 'none' } })).reason).toBe('x11-vulkan-reverted')
+    expect(webGpuState(x11({ x11Vulkan: wrong })).reason).toBe('unknown')
+    expect(webGpuState(x11({ x11Vulkan: wrong, features: software })).reason).toBe('x11-vulkan-reverted')
+    expect(webGpuState(x11({ x11Vulkan: wrong, features: software, adapter: { kind: 'none' } })).reason).toBe('x11-vulkan-reverted')
+  })
+
+  it('puts the revert before the processor check also when no page asked', () => {
+    const software = { webgpu: 'disabled_off', gpu_compositing: 'disabled_software' }
+    expect(webGpuState(x11({ x11Vulkan: REVERTED, features: software })).reason).toBe('x11-vulkan-reverted')
+  })
+
+  it('says one thing for every kind of revert: graphics stopped working', () => {
+    expect(webGpuState(x11({ x11Vulkan: REVERTED })).sentence).toBe('Orivon turned off "Use the graphics card for WebGPU on X11" because graphics stopped working while it was on. You can turn it on again in Settings, under Performance.')
+  })
+
+  it('leaves the way to turn it on out of the sentences of a private window, whose switch is locked', () => {
+    const x11Off = webGpuState(x11({ isPrivate: true, adapter: { kind: 'none' } }))
+    expect(x11Off.reason).toBe('x11')
+    expect(x11Off.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.')
+    const reverted = webGpuState(x11({ isPrivate: true, x11Vulkan: REVERTED, adapter: { kind: 'none' } }))
+    expect(reverted.sentence).toBe('Orivon turned off "Use the graphics card for WebGPU on X11" because graphics stopped working while it was on.')
+    expect(webGpuState(x11({ isPrivate: false, adapter: { kind: 'none' } })).sentence).toContain('You can turn it on in Settings, under Performance.')
+  })
+
+  it('leaves the way back out of the sentence where Settings does not offer the choice (XWayland)', () => {
+    const state = webGpuState(x11({ session: 'wayland', x11Vulkan: REVERTED, adapter: { kind: 'none' } }))
+    expect(state.reason).toBe('x11-vulkan-reverted')
+    expect(state.sentence).not.toContain('Settings')
+  })
+
+  it('names the setting only on X11 on Linux', () => {
+    expect(webGpuState(inputs({ ozone: 'wayland', x11Vulkan: REVERTED, adapter: { kind: 'none' } })).reason).toBe('gpu-not-listed')
+    expect(webGpuState({ platform: 'win32', session: '', ozone: '', features: WINDOWS_FEATURES, devices: [NVIDIA], adapter: { kind: 'none' }, x11Vulkan: REVERTED }).reason).toBe('no-adapter')
+    expect(webGpuState(x11({ x11Vulkan: { onAtStart: false, reverted: false }, adapter: { kind: 'none' } })).reason).toBe('x11')
+  })
+
+  it('does not give the XWayland sentence the line about Settings', () => {
+    expect(webGpuState(x11({ session: 'wayland', adapter: { kind: 'none' } })).sentence).not.toContain('Settings')
+  })
+})
+
+describe('x11VulkanReadingOf', () => {
+  it('keeps the start and turns a recorded revert into a flag, whatever its reason', () => {
+    expect(x11VulkanReadingOf({ onAtStart: true, revert: null })).toEqual({ onAtStart: true, reverted: false })
+    expect(x11VulkanReadingOf({ onAtStart: false, revert: { at: '2026-11-03T08:00:00.000Z', why: 'no-window' } })).toEqual({ onAtStart: false, reverted: true })
   })
 })

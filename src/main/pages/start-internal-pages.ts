@@ -54,6 +54,8 @@ import { tasksDomain } from '../info/tasks-domain.js'
 import { endProcess, focusTab, listTasks } from '../info/tasks-runner.js'
 import type { TasksEnv } from '../info/tasks-runner.js'
 import { passwordsDomainFor } from '../passwords/passwords-runner.js'
+import { graphicsDomain } from '../graphics/graphics-domain.js'
+import { x11VulkanOffer } from '../graphics/x11-vulkan-runner.js'
 import { privacyDomain } from '../privacy/privacy-domain.js'
 import { readerDomain } from '../reader/reader-domain.js'
 import { readerArticles } from '../reader/reader-store.js'
@@ -161,11 +163,12 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     }),
     info: infoDomain({
       facts: () => readAboutFacts(services.settings, services.isPrivate),
-      gpu: readGpu,
+      gpu: async () => await readGpu(services.isPrivate),
       copy: copyToClipboard,
       release: () => runningRelease(app.getVersion())
     }),
     profiles: profilesDomain(services.profiles),
+    graphics: graphicsDomain(x11VulkanOffer),
     reader: readerDomain({
       articles: readerArticles,
       settings: services.settings,

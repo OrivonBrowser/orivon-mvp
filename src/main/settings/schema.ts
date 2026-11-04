@@ -154,6 +154,8 @@ const SPECS = {
   // Sites that never go to sleep, one per line.
   'performance.keepAwake': { kind: 'text', default: '', maxLength: HOST_LIST_LENGTH, check: isHostList },
   'performance.energySaver': { kind: 'enum', options: ['off', 'battery'], default: 'off' },
+  // Whether an X11 session draws through Vulkan, which is what gives pages WebGPU there. Off: Chromium turns WebGPU off on X11 for every graphics card (src/main/graphics/README.md). Read when Orivon starts.
+  'graphics.webgpuOnX11': { kind: 'bool', default: false },
   // Load unpacked, Reload for an unpacked extension: off until the person turns it on.
   'extensions.developerMode': { kind: 'bool', default: false },
   // Whether an extension installed from now on gets a place on the toolbar.
