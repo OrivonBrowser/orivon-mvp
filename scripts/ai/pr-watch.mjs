@@ -95,6 +95,11 @@ export function nextStep ({ checks: all, state, reruns, maxReruns }) {
   return { step: 'wait' }
 }
 
+/** True for a `gh` error GitHub clears by itself: a 5xx answer, or a merge it is still carrying out. */
+export function githubWillRecover (text) {
+  return /\b50[0-4]\b|Bad Gateway|Internal Server Error|Service Unavailable|Merge already in progress/i.test(text)
+}
+
 /** The spec files and test names a vitest log reports as failed, colours and timestamps stripped. */
 export function failedSpecs (log) {
   const found = new Set()
@@ -164,8 +169,8 @@ function arg (name) {
 }
 
 function read (pr) {
-  const view = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefName,headRefOid,mergeStateStatus,statusCheckRollup'))
-  return { headRef: view.headRefName, head: view.headRefOid, state: view.mergeStateStatus, checks: view.statusCheckRollup.map(normalize) }
+  const view = JSON.parse(gh('pr', 'view', pr, '--json', 'headRefName,headRefOid,mergeStateStatus,state,statusCheckRollup'))
+  return { headRef: view.headRefName, head: view.headRefOid, state: view.mergeStateStatus, merged: view.state === 'MERGED', checks: view.statusCheckRollup.map(normalize) }
 }
 
 /** Prints each failed e2e shard's failed specs, and returns them all. */
@@ -181,8 +186,18 @@ function reportSpecs (checks) {
   return all
 }
 
+/** The first read, which the loop's own retry does not cover. */
+async function firstRead (pr) {
+  for (let tries = 1; ; tries += 1) {
+    try { return read(pr) } catch (error) {
+      if (tries === 5 || !githubWillRecover(String(error.stderr ?? error.message))) throw error
+      await sleep(POLL_MS)
+    }
+  }
+}
+
 async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
-  let { head } = read(pr)
+  let { head } = await firstRead(pr)
   if (worktree !== undefined) {
     const local = execFileSync('git', ['-C', worktree, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
     head = await headOnceSeen(() => read(pr).head, local, { budgetMs: PUSH_SEEN_MS, pollMs: 5000, sleep })
@@ -194,6 +209,7 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
   for (const deadline = Date.now() + TIMEOUT_MS; Date.now() < deadline; await sleep(POLL_MS)) {
     let now
     try { now = read(pr) } catch { continue }
+    if (now.merged) { console.log(`merged #${pr}`); return 0 }
     if (now.head !== head) { console.log(`head moved from ${head.slice(0, 8)} to ${now.head.slice(0, 8)}`); return 3 }
     const pending = now.checks.filter((check) => check.conclusion === '').length
     const line = `${now.state}, ${String(pending)} of ${String(now.checks.length)} checks pending`
@@ -214,9 +230,11 @@ async function watch (pr, { maxReruns, merge, squash, stop, worktree }) {
       try {
         gh('pr', 'merge', pr, squash ? '--squash' : '--merge')
       } catch (error) {
-        // Another merge landed between the read and this one: the next poll sees BEHIND and updates the branch.
-        if (!/Base branch was modified/i.test(String(error.stderr ?? error.message))) throw error
-        console.log('main moved while merging: watching again')
+        // Another merge landed between the read and this one: the next poll sees BEHIND and updates the branch. A merge
+        // GitHub failed to answer may still land: the next poll sees it merged, or tries again.
+        const text = String(error.stderr ?? error.message)
+        if (!/Base branch was modified/i.test(text) && !githubWillRecover(text)) throw error
+        console.log(githubWillRecover(text) ? 'GitHub did not finish the merge: watching again' : 'main moved while merging: watching again')
         said = ''
         continue
       }
