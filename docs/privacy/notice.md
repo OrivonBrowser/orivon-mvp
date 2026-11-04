@@ -168,13 +168,13 @@ What `diagnostics` holds: the build of Orivon (its source revision and how it wa
 Electron, Chromium, Node.js and V8 versions, and how long Orivon had been running; the operating
 system and its version, the processor type and count, the memory installed and free, the
 language, and the desktop session (X11 or Wayland, and the desktop's name); the graphics card's
-vendor and device numbers, its driver version, which graphics features are on, and whether WebGPU is off and why, as a fixed word such as `x11` or `software-only`; the size and
+vendor and device numbers, its driver version, which graphics features are on, and whether WebGPU is off and why, as a fixed word such as `x11` or `software-only`; whether the setting that gives an X11 session WebGPU was on when Orivon started, and when Orivon last turned it off by itself and why (a fixed word such as `gpu-crash`); the size and
 scaling of each screen; how much memory each kind of Orivon process uses; how many windows and
 tabs are open, how many of them are set to a tunnel and which one (a count, never an address),
 and whether the window is private; your installed extensions (name, identifier,
 version, on or off); for each of the eight apps holding the most network connections, how many it
 holds and how many it may (numbers only, never the app's name or address); the values of a few settings that change how Orivon behaves (theme, cookies,
-Global Privacy Control, Do Not Track, HTTPS-only, the secure DNS mode, memory and energy saver,
+Global Privacy Control, Do Not Track, HTTPS-only, the secure DNS mode, memory and energy saver, the WebGPU choice for X11,
 start-up mode, spell checking, developer tools, extension developer mode, update checks, the
 Ethereum light client and whether it asks Orivon's servers or your own, where `ipfs://` content
 comes from (your own IPFS node or public gateways), whether the IPFS lookup service and the Swarm

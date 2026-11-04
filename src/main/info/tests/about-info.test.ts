@@ -119,6 +119,11 @@ describe('the colour of the WebGPU badge', () => {
   it('warns only for an adapter that is missing for no reason the report shows', () => {
     expect(webGpuTone({ state: 'unavailable', reason: 'no-adapter' }, 'enabled')).toBe('warn')
   })
+
+  it('warns when the X11 setting was on and gave no adapter, or Orivon turned it off', () => {
+    expect(webGpuTone({ state: 'unavailable', reason: 'x11-vulkan-no-adapter' }, 'enabled')).toBe('warn')
+    expect(webGpuTone({ state: 'unavailable', reason: 'x11-vulkan-reverted' }, 'enabled')).toBe('warn')
+  })
 })
 
 describe('the graphics devices', () => {

@@ -67,12 +67,18 @@ describe('the About domain', () => {
       ...over
     })
 
+    it('says what the X11 setting did, when the reading carries it', async () => {
+      const x11 = (x11Vulkan: { onAtStart: boolean, reverted: boolean }): GpuReading => ({ ...READING, session: 'x11', ozone: 'x11', status: { webgpu: 'enabled', gpu_compositing: 'enabled' }, x11Vulkan })
+      expect(await setup(async () => x11({ onAtStart: true, reverted: false })).call({ type: 'webgpu', adapter: { kind: 'none' } })).toMatchObject({ reason: 'x11-vulkan-no-adapter', tone: 'warn' })
+      expect(await setup(async () => x11({ onAtStart: false, reverted: true })).call({ type: 'webgpu' })).toMatchObject({ reason: 'x11-vulkan-reverted', tone: 'warn' })
+    })
+
     it('gives the state, the reason, the sentence and the badge colour, for the platform the reading names', async () => {
       expect(await setup(reading({})).call({ type: 'webgpu' })).toEqual({
         ok: true,
         state: 'unavailable',
         reason: 'x11',
-        sentence: 'WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.',
+        sentence: 'WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. You can turn it on in Settings, under Performance.',
         tone: 'neutral'
       })
     })

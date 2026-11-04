@@ -14,7 +14,7 @@ import { activeTabInfo, delay, tabIds, waitFor, waitForTab } from '../support/sm
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 
 /** What a Linux launch under a virtual display says about WebGPU: pages drawn in software when the display gives no graphics card, the X11 session when it gives one. */
-const WEBGPU_OFF_SENTENCE = /^(WebGPU is off because this computer draws pages on its processor, and Chromium does not allow WebGPU there\. Chromium does that when there is no graphics card, when it blocks the card's driver, or after its graphics process has crashed several times\.|WebGPU is off because (this computer runs an X11 session|Orivon is running on X11)\. Chromium turns it off there for every graphics card\.|WebGPU is off because Orivon is running through X11 \(XWayland\) on this Wayland session\. WebGPU needs Orivon to run on Wayland\.)$/
+const WEBGPU_OFF_SENTENCE = /^(WebGPU is off because this computer draws pages on its processor, and Chromium does not allow WebGPU there\. Chromium does that when there is no graphics card, when it blocks the card's driver, or after its graphics process has crashed several times\.|WebGPU is off because (this computer runs an X11 session|Orivon is running on X11)\. Chromium turns it off there for every graphics card\. You can turn it on in Settings, under Performance\.|WebGPU is off because Orivon is running through X11 \(XWayland\) on this Wayland session\. WebGPU needs Orivon to run on Wayland\.)$/
 
 let server: FixtureServer
 

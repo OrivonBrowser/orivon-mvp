@@ -12,12 +12,22 @@ export type WebGpuReason =
   | 'adapter'
   | 'x11'
   | 'xwayland'
+  | 'x11-vulkan-no-adapter'
+  | 'x11-vulkan-reverted'
   | 'gpu-not-listed'
   | 'software-only'
   | 'webgpu-off'
   | 'maker-unsupported'
   | 'no-adapter'
   | 'unknown'
+
+/** What the setting that gives an X11 session WebGPU (src/main/graphics/README.md) did in this run. */
+export interface X11VulkanReading {
+  /** The run drew through Vulkan because the setting was on when Orivon started. */
+  readonly onAtStart: boolean
+  /** Orivon turned the setting off after a bad run, and it has not been turned on again. */
+  readonly reverted: boolean
+}
 
 /** What a page learned by asking for an adapter: it got one, it got none, or its `navigator.gpu` does not exist. */
 export type AdapterReading = { readonly kind: 'adapter' } | { readonly kind: 'none' } | { readonly kind: 'no-api' }
@@ -35,6 +45,8 @@ export interface WebGpuInputs {
   readonly devices: readonly GpuDevice[] | undefined
   /** What a page learned by asking for an adapter; undefined when no page asked. */
   readonly adapter?: AdapterReading | undefined
+  /** What the X11 setting did in this run; undefined where the reader has no such reading. */
+  readonly x11Vulkan?: X11VulkanReading | undefined
 }
 
 export interface WebGpuState {
@@ -98,25 +110,52 @@ function drawsInSoftware (inputs: WebGpuInputs): boolean {
   return devices !== undefined && devices.every(isSoftwareDevice)
 }
 
-/** Chromium's X11 platform never turns on the bridge WebGPU needs, so it is off for every card there. A Wayland
- * session whose browser runs through XWayland is told apart: the session allows WebGPU and the way Orivon was
- * started does not. */
+/** Where Settings offers the X11 setting: an X11 session. Under XWayland the way Orivon was started, not the setting, is what to change. */
+const offersSetting = (session: string): boolean => session !== 'wayland'
+
+const IN_SETTINGS = 'in Settings, under Performance.'
+
+/** Chromium's X11 platform never turns on the bridge WebGPU needs, so it is off for every card there unless the
+ * setting that draws through Vulkan is on. A Wayland session whose browser runs through XWayland is told apart: the
+ * session allows WebGPU and the way Orivon was started does not. */
 function x11Reason (session: string): WebGpuState {
-  if (session === 'wayland') {
+  if (!offersSetting(session)) {
     return result('unavailable', 'xwayland', 'WebGPU is off because Orivon is running through X11 (XWayland) on this Wayland session. WebGPU needs Orivon to run on Wayland.')
   }
   const where = session === 'x11' ? 'this computer runs an X11 session' : 'Orivon is running on X11'
-  return result('unavailable', 'x11', `WebGPU is off because ${where}. Chromium turns it off there for every graphics card.`)
+  return result('unavailable', 'x11', `WebGPU is off because ${where}. Chromium turns it off there for every graphics card. You can turn it on ${IN_SETTINGS}`)
+}
+
+/** The setting is on and the page still got no adapter: Vulkan found no card Chromium could use. */
+const vulkanFoundNone = (): WebGpuState =>
+  result('unavailable', 'x11-vulkan-no-adapter', 'WebGPU is still off with "Use the graphics card for WebGPU on X11" turned on: Chromium found no graphics card it could use through Vulkan.')
+
+/** Orivon turned the setting off after a bad run. The line about turning it on again is left out where Settings does not offer it. */
+function vulkanReverted (session: string): WebGpuState {
+  const again = offersSetting(session) ? ` You can turn it on again ${IN_SETTINGS}` : ''
+  return result('unavailable', 'x11-vulkan-reverted', `Orivon turned off "Use the graphics card for WebGPU on X11" because the graphics process crashed while it was on.${again}`)
+}
+
+/** A revert is the reason while the setting is off this run, or while the run that has it on got no adapter. It comes
+ * before the processor check: a bad run is what leaves pages drawn there. */
+function revertedReason (inputs: WebGpuInputs): WebGpuState | undefined {
+  const { x11Vulkan, adapter } = inputs
+  if (inputs.platform !== 'linux' || inputs.ozone !== 'x11' || x11Vulkan?.reverted !== true || adapter?.kind === 'no-api') return undefined
+  return x11Vulkan.onAtStart && adapter?.kind !== 'none' ? undefined : vulkanReverted(inputs.session)
 }
 
 /** On Linux the Ozone platform decides, and the `webgpu_on_vk_via_gl_interop` status is not read: it reads enabled on
  * real graphics cards under X11 and Wayland while the page's `requestAdapter()` still returns null (measured). On X11
- * main rules WebGPU out alone. On Wayland a listed card can get an adapter, so only a page that got none says so. A
- * page with no `navigator.gpu` says nothing about the platform. */
+ * main rules WebGPU out alone, unless the run draws through Vulkan: then only a page that got none says so. On Wayland
+ * a listed card can get an adapter, so only a page that got none says so. A page with no `navigator.gpu` says nothing
+ * about the platform. */
 function linuxReason (inputs: WebGpuInputs): WebGpuState | undefined {
   const asked = inputs.adapter?.kind
   if (inputs.platform !== 'linux' || asked === 'no-api') return undefined
-  if (inputs.ozone === 'x11') return x11Reason(inputs.session)
+  if (inputs.ozone === 'x11') {
+    if (inputs.x11Vulkan?.onAtStart !== true) return x11Reason(inputs.session)
+    return asked === 'none' ? vulkanFoundNone() : undefined
+  }
   return inputs.ozone === 'wayland' && asked === 'none' ? unlisted(inputs.devices) : undefined
 }
 
@@ -136,6 +175,8 @@ function windowsMaker (inputs: WebGpuInputs): WebGpuState | undefined {
  * rule WebGPU out, so a report with no page reading of a working computer reads 'unknown'. */
 export function webGpuState (inputs: WebGpuInputs): WebGpuState {
   if (inputs.adapter?.kind === 'adapter') return result('available', 'adapter', 'WebGPU works on this computer.')
+  const reverted = revertedReason(inputs)
+  if (reverted !== undefined) return reverted
   if (drawsInSoftware(inputs)) {
     return result('unavailable', 'software-only',
       'WebGPU is off because this computer draws pages on its processor, and Chromium does not allow WebGPU there. Chromium does that when there is no graphics card, when it blocks the card\'s driver, or after its graphics process has crashed several times.')

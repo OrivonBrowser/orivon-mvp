@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { appSocketReadings, buildDiagnostics, channelOf, REPORTED_APPS, REPORTED_SETTINGS, reportedSettings } from '../diagnostics-facts.js'
+import type { DiagnosticsFacts } from '../diagnostics-facts.js'
 import type { CrashRecord } from '../crash-records.js'
 import { CRASH, FACTS } from './report-fixtures.js'
 
@@ -29,7 +30,28 @@ describe('buildDiagnostics', () => {
   })
 
   it('has no devices when the graphics report is unavailable', () => {
-    expect(buildDiagnostics({ ...FACTS, gpuInfo: undefined, gpuStatus: undefined }).gpu).toEqual({ features: {}, devices: [], webgpu: { state: 'unknown', reason: 'unknown' } })
+    expect(buildDiagnostics({ ...FACTS, gpuInfo: undefined, gpuStatus: undefined }).gpu).toEqual({ features: {}, devices: [], webgpu: { state: 'unknown', reason: 'unknown' }, x11Vulkan: { onAtStart: false, revert: null } })
+  })
+
+  describe('the X11 setting for WebGPU', () => {
+    const REVERT = { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' }
+    const x11 = (x11Vulkan: DiagnosticsFacts['x11Vulkan'], session = 'x11'): ReturnType<typeof buildDiagnostics> =>
+      buildDiagnostics({ ...FACTS, system: { ...FACTS.system, session, ozone: 'x11' }, gpuStatus: { webgpu: 'enabled', gpu_compositing: 'enabled' }, x11Vulkan }, { kind: 'none' })
+
+    it('carries what the run did and the last revert, with the time and a fixed word for why', () => {
+      expect(x11({ onAtStart: true, revert: null }).gpu.x11Vulkan).toEqual({ onAtStart: true, revert: null })
+      expect(x11({ onAtStart: false, revert: REVERT }).gpu.x11Vulkan).toEqual({ onAtStart: false, revert: REVERT })
+    })
+
+    it('says the setting found no card when it is on and the page got no adapter, and that Orivon turned it off after a revert', () => {
+      expect(x11({ onAtStart: true, revert: null }).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11-vulkan-no-adapter' })
+      expect(x11({ onAtStart: false, revert: REVERT }).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11-vulkan-reverted' })
+      expect(x11({ onAtStart: false, revert: null }).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11' })
+    })
+
+    it('reports the setting among the settings it states', () => {
+      expect(REPORTED_SETTINGS).toContain('graphics.webgpuOnX11')
+    })
   })
 
   describe('the WebGPU entry', () => {

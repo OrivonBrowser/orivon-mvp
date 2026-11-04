@@ -67,6 +67,12 @@ export function appSocketReadings (usages: readonly AppSocketReading[]): AppSock
     .map(({ open, inFlight, allowance }) => ({ open, inFlight, allowance }))
 }
 
+/** The X11 setting for WebGPU: whether this run drew through Vulkan because it was on at the start, and the last time Orivon turned it off by itself (a fixed word for why). */
+export interface X11VulkanFact {
+  readonly onAtStart: boolean
+  readonly revert: { readonly at: string, readonly why: string } | null
+}
+
 export interface DiagnosticsFacts {
   readonly commit: string
   readonly channel: Channel
@@ -88,6 +94,8 @@ export interface DiagnosticsFacts {
   }
   /** `app.getGPUFeatureStatus()`. */
   readonly gpuStatus: unknown
+  /** What the setting that gives an X11 session WebGPU did in this run. */
+  readonly x11Vulkan: X11VulkanFact
   /** `app.getGPUInfo('basic')`, or undefined when it rejected. */
   readonly gpuInfo: unknown
   readonly displays: readonly DisplayReading[]
@@ -113,6 +121,7 @@ export interface Diagnostics {
     readonly devices: ReadonlyArray<{ readonly vendorId: number, readonly deviceId: number, readonly driverVersion: string, readonly active: boolean }>
     /** Whether WebGPU works and why not: main cannot ask for an adapter, so a working computer reads `unknown` unless the page that asked for the report got one. */
     readonly webgpu: { readonly state: WebGpuStateName, readonly reason: WebGpuReason }
+    readonly x11Vulkan: X11VulkanFact
   }
   readonly displays: ReadonlyArray<{ readonly width: number, readonly height: number, readonly scale: number }>
   readonly processes: ReadonlyArray<{ readonly type: string, readonly count: number, readonly memoryMb: number }>
@@ -126,7 +135,7 @@ export const RECENT_CRASHES = 10
 /** The settings a report states, as values only: a switch or one of a fixed list of choices, never an address, a path or text a person typed. `web3.*` joins whichever of its settings is a switch or a choice. */
 export const REPORTED_SETTINGS: readonly SettingKey[] = [
   'appearance.theme', 'privacy.cookies', 'privacy.globalPrivacyControl', 'privacy.doNotTrack', 'privacy.httpsOnly', 'privacy.secureDns',
-  'performance.memorySaver', 'performance.energySaver', 'startup.mode', 'spellcheck.enabled', 'developer.tools', 'extensions.developerMode', 'updates.check',
+  'performance.memorySaver', 'performance.energySaver', 'graphics.webgpuOnX11', 'startup.mode', 'spellcheck.enabled', 'developer.tools', 'extensions.developerMode', 'updates.check',
   'network.route.kind', 'network.nym.enabled', 'network.tunnel.everywhere',
   ...(Object.keys(SETTINGS) as SettingKey[]).filter((key) => key.startsWith('web3.') && (SETTINGS[key].kind === 'bool' || SETTINGS[key].kind === 'enum'))
 ]
@@ -153,14 +162,16 @@ export function buildDiagnostics (facts: DiagnosticsFacts, adapter?: AdapterRead
   const features = gpuFeaturesOf(facts.gpuStatus)
   const devices = gpuDevicesOf(facts.gpuInfo)
   const { platform, session, ozone } = facts.system
-  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter })
+  const { x11Vulkan } = facts
+  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter, x11Vulkan: { onAtStart: x11Vulkan.onAtStart, reverted: x11Vulkan.revert !== null } })
   return {
     app: { commit: facts.commit, channel: facts.channel, ...facts.versions, packaged: facts.packaged, uptimeSec: Math.round(facts.uptimeSec) },
     system: facts.system,
     gpu: {
       features,
       devices: (devices ?? []).map(({ vendorId, deviceId, driverVersion, active }) => ({ vendorId: vendorId ?? 0, deviceId: deviceId ?? 0, driverVersion, active })),
-      webgpu: { state: webgpu.state, reason: webgpu.reason }
+      webgpu: { state: webgpu.state, reason: webgpu.reason },
+      x11Vulkan
     },
     displays: facts.displays.map((display) => ({ width: display.width, height: display.height, scale: display.scaleFactor })),
     processes: groupProcesses(facts.processes),

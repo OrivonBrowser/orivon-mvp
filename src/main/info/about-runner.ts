@@ -5,6 +5,7 @@ import type { SettingsStore } from '../settings/settings-store.js'
 import type { AboutFacts } from './about-info.js'
 import type { GpuReading } from './about-domain.js'
 import { BUILD_COMMIT } from '../diagnostics/build-commit.js'
+import { x11VulkanReading } from '../graphics/x11-vulkan-runner.js'
 
 export function readAboutFacts (settings: Pick<SettingsStore, 'get'>, isPrivate: boolean): AboutFacts {
   const chosenDownloads = settings.get('downloads.folder')
@@ -41,7 +42,8 @@ export async function readGpu (): Promise<GpuReading> {
   const status: unknown = app.getGPUFeatureStatus()
   // Under a display with no graphics card this rejects, which leaves the feature table standing.
   const info = await app.getGPUInfo('basic').catch(() => undefined)
-  return { status, info, platform: process.platform, session: process.env['XDG_SESSION_TYPE'] ?? '', ozone: app.commandLine.getSwitchValue('ozone-platform') }
+  const { onAtStart, revert } = x11VulkanReading()
+  return { status, info, platform: process.platform, session: process.env['XDG_SESSION_TYPE'] ?? '', ozone: app.commandLine.getSwitchValue('ozone-platform'), x11Vulkan: { onAtStart, reverted: revert !== null } }
 }
 
 export function copyToClipboard (text: string): void {

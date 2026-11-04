@@ -133,10 +133,11 @@ export function featureRows (status: unknown): FeatureRow[] {
 /** The colour of the WebGPU badge, by the rule `featureTone` follows: a state that is expected on the computer is
  * neutral, and only a fault is coloured. Software drawing, an X11 session, a card Chromium does not list and a maker
  * it does not support are Chromium's design for that setup; a feature simply off is read from its own status, as
- * the WebGPU row of the feature table is; only an adapter that is missing for no reason the report shows is a warning. */
+ * the WebGPU row of the feature table is; an adapter that is missing for no reason the report shows is a warning, and
+ * so is the X11 setting that was turned on and gave none, or that Orivon had to turn off. */
 export function webGpuTone (answer: Pick<WebGpuState, 'state' | 'reason'>, webgpuStatus: string | undefined): FeatureTone {
   if (answer.state === 'available') return 'ok'
-  if (answer.reason === 'no-adapter') return 'warn'
+  if (answer.reason === 'no-adapter' || answer.reason === 'x11-vulkan-no-adapter' || answer.reason === 'x11-vulkan-reverted') return 'warn'
   if (answer.reason === 'webgpu-off') return featureTone(webgpuStatus ?? '').tone
   return 'neutral'
 }

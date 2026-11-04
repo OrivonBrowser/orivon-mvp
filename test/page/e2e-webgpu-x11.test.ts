@@ -5,7 +5,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { ElectronApplication } from 'playwright'
+import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visitWithoutPage } from '../support/qa-helpers.js'
@@ -135,6 +135,21 @@ describe('the setting on', () => {
   }, QA_TEST_TIMEOUT_MS)
 })
 
+describe.skipIf(!HAS_RENDER_NODE)('the setting on, where a graphics card is behind the display', () => {
+  it('has orivon://gpu say WebGPU works', async () => {
+    const { app, chrome } = await launchShell({ seedProfile: seed({ setting: true }) })
+    try {
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('about', '/gpu') })
+      expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://about')))).toBe(true)
+      const about = app.windows().find((w) => w.url().startsWith('orivon://about')) as Page
+      const badge = about.locator('.stack > .card').first().locator('.badge')
+      expect(await waitFor(async () => (await badge.count()) === 1 && await badge.textContent() === 'Works')).toBe(true)
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+})
+
 describe('the setting off', () => {
   it('sets no switch, and a page on an X11 session gets no adapter', async () => {
     const { app, dir } = await launched({})
@@ -181,6 +196,20 @@ describe.skipIf(!LINUX)('the guard', () => {
       expect(await waitFor(() => guardOf(dir)?.revert !== null && guardOf(dir)?.revert !== undefined, 60_000)).toBe(true)
       expect(['gpu-software', 'gpu-crash']).toContain(guardOf(dir)?.revert?.why)
       expect(await waitFor(() => settingOf(dir) !== true)).toBe(true)
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
+  it('says on orivon://gpu that Orivon turned the setting off, and where to turn it on again', async () => {
+    const { app, chrome } = await launchShell({ seedProfile: seed({ guard: { pendingWindow: false, revert: { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' } } }) })
+    try {
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string, path?: string) => void } }).orivonShell.openInternal('about', '/gpu') })
+      expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://about')))).toBe(true)
+      const about = app.windows().find((w) => w.url().startsWith('orivon://about')) as Page
+      const sentence = about.locator('.stack > .card').first().locator('.row.long .value')
+      expect(await waitFor(async () => (await sentence.count()) === 1)).toBe(true)
+      expect(await sentence.textContent()).toMatch(/^Orivon turned off "Use the graphics card for WebGPU on X11" because the graphics process crashed while it was on\.( You can turn it on again in Settings, under Performance\.)?$/)
     } finally {
       await closeElectron(app)
     }

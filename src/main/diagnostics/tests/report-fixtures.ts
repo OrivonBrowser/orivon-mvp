@@ -26,6 +26,7 @@ export const FACTS: DiagnosticsFacts = {
   uptimeSec: 12.4,
   system: { platform: 'linux', release: '7.0.0', arch: 'x64', cpus: 8, cpuModel: 'Test CPU', memoryMb: 16000, freeMemoryMb: 8000, locale: 'en-US', session: 'wayland', desktop: 'GNOME', ozone: '' },
   gpuStatus: { webgl: 'enabled', gpu_compositing: 'disabled_software', note: 3 },
+  x11Vulkan: { onAtStart: false, revert: null },
   gpuInfo: { gpuDevice: [{ vendorId: 32902, deviceId: 4680, driverVersion: '25.1', active: true, deviceString: 'ignored' }, {}] },
   displays: [{ width: 1920, height: 1080, scaleFactor: 1.25 }],
   processes: [{ type: 'Tab', workingSetKb: 2048 }, { type: 'Tab', workingSetKb: 1024 }, { type: 'GPU', workingSetKb: 512 }],
