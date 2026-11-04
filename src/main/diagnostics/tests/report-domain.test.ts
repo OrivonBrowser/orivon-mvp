@@ -44,7 +44,7 @@ function setup (overrides: Partial<ReportDeps> = {}): Harness {
       add: (entry) => { harness.sent.push(entry) },
       remove: (reportId) => { harness.sent = harness.sent.filter((entry) => entry.reportId !== reportId) }
     },
-    diagnostics: async () => buildDiagnostics(FACTS),
+    diagnostics: async (adapter) => buildDiagnostics(FACTS, adapter),
     logSource: (crash) => crash === undefined ? 'current' : 'previous',
     logLines: (source) => source === 'current' ? ['line one'] : ['line one', 'crash log'],
     readDump: () => { harness.dumpReads += 1; return 'AAECAw==' },
@@ -267,6 +267,35 @@ describe('the facts of a page', () => {
     const h = setup({ diagnostics: async () => { asked += 1; await new Promise((resolve) => setTimeout(resolve, 5)); return buildDiagnostics(FACTS) } })
     await Promise.all([h.handle({ type: 'preview', choices: CHOICES }, 8), h.handle({ type: 'preview', choices: CHOICES }, 8), h.handle({ type: 'copy', choices: CHOICES }, 8)])
     expect(asked).toBe(1)
+  })
+})
+
+describe('the WebGPU reading of a page', () => {
+  const WORKING = { ...FACTS, gpuStatus: { webgpu: 'enabled', webgpu_on_vk_via_gl_interop: 'enabled', gpu_compositing: 'enabled' } }
+  const webgpuOf = async (h: ReturnType<typeof setup>, id: number): Promise<unknown> => {
+    const { text } = await h.handle({ type: 'preview', choices: CHOICES }, id) as { text: string }
+    return (JSON.parse(text) as { diagnostics: { gpu: { webgpu: unknown } } }).diagnostics.gpu.webgpu
+  }
+
+  it('is taken with the request for the state, and puts what the page saw into the report', async () => {
+    const h = setup({ diagnostics: async (adapter) => buildDiagnostics(WORKING, adapter) })
+    await h.handle({ type: 'state', adapter: { kind: 'adapter', vendor: 'ignored' } }, 3)
+    expect(await webgpuOf(h, 3)).toEqual({ state: 'available', reason: 'adapter' })
+  })
+
+  it('is believed only when it is one of the three outcomes', async () => {
+    const h = setup({ diagnostics: async (adapter) => buildDiagnostics(WORKING, adapter) })
+    await h.handle({ type: 'state', adapter: { kind: 'working' } }, 3)
+    expect(await webgpuOf(h, 3)).toEqual({ state: 'unknown', reason: 'unknown' })
+  })
+
+  it('is kept for the facts taken again after a send, and replaced by the next request for the state', async () => {
+    const h = setup({ diagnostics: async (adapter) => buildDiagnostics(WORKING, adapter) })
+    await h.handle({ type: 'state', adapter: { kind: 'none' } }, 3)
+    await h.handle({ type: 'send', choices: CHOICES }, 3)
+    expect(await webgpuOf(h, 3)).toEqual({ state: 'unavailable', reason: 'no-adapter' })
+    await h.handle({ type: 'state' }, 3)
+    expect(await webgpuOf(h, 3)).toEqual({ state: 'unknown', reason: 'unknown' })
   })
 })
 

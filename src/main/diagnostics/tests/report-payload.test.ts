@@ -138,6 +138,14 @@ describe('the diagnostics limits', () => {
     expect(fitted.app).toEqual(base.app)
   })
 
+  it('keeps the WebGPU entry when it has to drop the graphics features, since the entry is what the features told', () => {
+    const base = buildDiagnostics(FACTS)
+    const settings = Object.fromEntries(Array.from({ length: 4000 }, (_, index) => [`setting.${index}`, 'x'.repeat(20)]))
+    const fitted = fitDiagnostics({ ...base, browser: { ...base.browser, settings } })
+    expect(fitted.gpu.features).toEqual({})
+    expect(fitted.gpu.webgpu).toEqual(base.gpu.webgpu)
+  })
+
   it('leaves a block that fits as it is', () => {
     const base = buildDiagnostics(FACTS)
     expect(fitDiagnostics(base)).toBe(base)

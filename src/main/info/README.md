@@ -2,8 +2,8 @@
 
 **What lives here.** The two diagnostic pages and what they ask of main. `about-info.ts` turns the facts
 of this build (versions, system, paths) and the graphics report into the rows the About page shows, and
-`about-domain.ts` answers the page's three requests (the version table, the graphics report, and to copy
-either); `about-runner.ts` reads the facts from the running process and writes the clipboard.
+`about-domain.ts` answers the page's requests (the version table, the graphics report, whether WebGPU works, what this version changed, and to copy
+either table); `about-runner.ts` reads the facts from the running process and writes the clipboard.
 What's new: `release-notes.ts` reads a version's shipped entries from `CHANGELOG.md` (the build calls it and folds the result in as `__ORIVON_RELEASE_NOTES__`), `running-release.ts` pairs the running version with those notes, `whats-new.ts` decides whether a start opens the page (new profile, same version, newer, older, no notes), and `whats-new-runner.ts` reads and writes the profile's last version, kept in `intro.json` beside the welcome screen's flag, and tells `index.ts` to open `orivon://about/whats-new` in the first window.
 `tasks-model.ts` joins the process metrics Electron reports with what main knows each process is showing,
 names the rows, and decides which may be ended; `tasks-domain.ts` answers the page's three requests (the
@@ -15,7 +15,7 @@ rest is pure and runs under plain vitest.
 
 **What it depends on.** `electron`; [`../pages/`](../pages/) (the domain type and the page ids);
 [`../shell/`](../shell/) (the window registry and the app-tab set, read-only; `intro-state.ts` for the profile's last version); [`../self-update/`](../self-update/) (`github-release-version.ts`, the version order); [`../settings/`](../settings/)
-(the downloads folder shown in the table); [`../diagnostics/`](../diagnostics/) (`build-commit.ts`, the commit row; `crash-lookup.ts`, to say that a page the task manager ended is not a crash).
+(the downloads folder shown in the table); [`../diagnostics/`](../diagnostics/) (`build-commit.ts`, the commit row; `crash-lookup.ts`, to say that a page the task manager ended is not a crash; `gpu-reading.ts`, the one parser of the graphics report and the maker names the graphics rows use; `webgpu-state.ts`, whether WebGPU works).
 
 **What it must never import.** [`../../renderer/`](../../renderer/), and anything in `../shell/` that
 would let it change a window other than activating a tab.

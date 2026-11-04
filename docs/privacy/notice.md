@@ -168,7 +168,7 @@ What `diagnostics` holds: the build of Orivon (its source revision and how it wa
 Electron, Chromium, Node.js and V8 versions, and how long Orivon had been running; the operating
 system and its version, the processor type and count, the memory installed and free, the
 language, and the desktop session (X11 or Wayland, and the desktop's name); the graphics card's
-vendor and device numbers, its driver version, and which graphics features are on; the size and
+vendor and device numbers, its driver version, which graphics features are on, and whether WebGPU is off and why, as a fixed word such as `x11` or `software-only`; the size and
 scaling of each screen; how much memory each kind of Orivon process uses; how many windows and
 tabs are open, how many of them are set to a tunnel and which one (a count, never an address),
 and whether the window is private; your installed extensions (name, identifier,

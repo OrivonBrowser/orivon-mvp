@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { OrivonInternal } from '../../shared/bridge.js'
+import type { AdapterProbe } from '../../shared/webgpu-probe.js'
 import { PREVIEW_DELAY_MS, ReportState } from '../state.js'
 
-interface Call { type: string }
+interface Call { type: string, adapter?: unknown }
 
 function bridge (info: Record<string, unknown>, previews: Array<() => Promise<unknown>>): { bridge: OrivonInternal, calls: Call[] } {
   const calls: Call[] = []
@@ -14,8 +15,8 @@ function bridge (info: Record<string, unknown>, previews: Array<() => Promise<un
       platform: 'linux',
       onEvent: () => () => {},
       request: async (_domain, command) => {
-        const { type } = command as Call
-        calls.push({ type })
+        const { type, adapter } = command as Call
+        calls.push(adapter === undefined ? { type } : { type, adapter })
         if (type === 'state') return info
         if (type === 'preview') { const next = previews[Math.min(index, previews.length - 1)]; index += 1; return await next?.() }
         return undefined
@@ -29,6 +30,24 @@ const READY = async (): Promise<unknown> => ({ text: '{}', sendable: true, bytes
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
+
+describe('the WebGPU reading', () => {
+  const load = async (probe: AdapterProbe): Promise<Call | undefined> => {
+    const { bridge: b, calls } = bridge(INFO, [READY])
+    await new ReportState(b, async () => probe).load(null)
+    return calls.find((call) => call.type === 'state')
+  }
+
+  it('is asked for by the form and sent with the request for the facts, as the outcome and nothing of the adapter', async () => {
+    expect(await load({ kind: 'adapter', vendor: 'intel', architecture: 'xe' })).toEqual({ type: 'state', adapter: { kind: 'adapter' } })
+    expect(await load({ kind: 'none' })).toEqual({ type: 'state', adapter: { kind: 'none' } })
+    expect(await load({ kind: 'no-api' })).toEqual({ type: 'state', adapter: { kind: 'no-api' } })
+  })
+
+  it('is left out when the browser did not answer in time, and the form still loads', async () => {
+    expect(await load({ kind: 'unread' })).toEqual({ type: 'state' })
+  })
+})
 
 describe('a private session', () => {
   it('starts with the log unticked, and a normal one with it ticked', async () => {

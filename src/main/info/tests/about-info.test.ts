@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aboutRows, aboutText, deviceRows, featureRows, featureTone, PRIVATE_PROFILE_TEXT, rawReport, withoutPrivateDirectory } from '../about-info.js'
+import { aboutRows, aboutText, deviceRows, featureRows, featureTone, PRIVATE_PROFILE_TEXT, rawReport, webGpuTone, withoutPrivateDirectory } from '../about-info.js'
 import type { AboutFacts } from '../about-info.js'
 
 const FACTS: AboutFacts = {
@@ -95,6 +95,29 @@ describe('the graphics feature badges', () => {
 
   it('skips a value that is not a status string', () => {
     expect(featureRows({ webgl: 'enabled', odd: 7, other: null })).toHaveLength(1)
+  })
+})
+
+describe('the colour of the WebGPU badge', () => {
+  it('is green when it works', () => {
+    expect(webGpuTone({ state: 'available', reason: 'adapter' }, 'enabled')).toBe('ok')
+  })
+
+  it('leaves the states Chromium decides for a setup neutral, as software rendering and a feature that is off are in the feature table', () => {
+    for (const reason of ['software-only', 'x11', 'xwayland', 'gpu-not-listed', 'maker-unsupported'] as const) {
+      expect(webGpuTone({ state: 'unavailable', reason }, 'disabled_off')).toBe('neutral')
+    }
+    expect(webGpuTone({ state: 'unknown', reason: 'unknown' }, undefined)).toBe('neutral')
+  })
+
+  it('reads a feature that is off from its own status, the way the feature table does', () => {
+    expect(webGpuTone({ state: 'unavailable', reason: 'webgpu-off' }, 'disabled_off')).toBe(featureTone('disabled_off').tone)
+    expect(webGpuTone({ state: 'unavailable', reason: 'webgpu-off' }, 'unavailable_off')).toBe('danger')
+    expect(webGpuTone({ state: 'unavailable', reason: 'webgpu-off' }, undefined)).toBe('neutral')
+  })
+
+  it('warns only for an adapter that is missing for no reason the report shows', () => {
+    expect(webGpuTone({ state: 'unavailable', reason: 'no-adapter' }, 'enabled')).toBe('warn')
   })
 })
 
