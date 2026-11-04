@@ -116,7 +116,8 @@ no notification, no sound (`test/support/launch-electron.mjs` silences every lau
 - No in-place branch switch or tree-wide discard: work in a worktree.
 - The machine is shared with the owner's editor and crashes under load: subagents may run in
   parallel, and every heavy command goes through `~/.claude/orivon-fleet/bin/heavy` (a hook
-  refuses it otherwise), which runs them one at a time.
+  refuses it otherwise), which starts each once its memory fits beside what runs, at idle CPU
+  priority; `heavy-why` beside it says why one waits.
 - A path in angle brackets resolves in the gitignored `.claude/local-paths.md`; a
   machine-absolute path never goes into a tracked file.
 
