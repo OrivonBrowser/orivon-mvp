@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { failedSpecs, headOnceSeen, nextStep, normalize, runIds, updateBranch } from '../ai/pr-watch.mjs'
+import { failedSpecs, githubWillRecover, headOnceSeen, nextStep, normalize, runIds, updateBranch } from '../ai/pr-watch.mjs'
 
 const pass = (name: string) => ({ name, conclusion: 'SUCCESS' })
 const fail = (name: string) => ({ name, conclusion: 'FAILURE' })
@@ -114,6 +114,21 @@ describe('headOnceSeen', () => {
     let reads = 0
     expect(await headOnceSeen(() => { reads += 1; return 'old' }, 'new', timing)).toBe('old')
     expect(reads).toBe(5)
+  })
+})
+
+describe('githubWillRecover', () => {
+  it('waits out a server error and a merge GitHub is still carrying out', () => {
+    expect(githubWillRecover('non-200 OK status code: 502 Bad Gateway body: "<html>"')).toBe(true)
+    expect(githubWillRecover('HTTP 500: Internal Server Error')).toBe(true)
+    expect(githubWillRecover('HTTP 503: Service Unavailable')).toBe(true)
+    expect(githubWillRecover('GraphQL: Merge already in progress (mergePullRequest)')).toBe(true)
+  })
+
+  it('stops on an error a later try meets again', () => {
+    expect(githubWillRecover('GraphQL: Could not resolve to a PullRequest with the number of 99999.')).toBe(false)
+    expect(githubWillRecover('HTTP 404: Not Found')).toBe(false)
+    expect(githubWillRecover('GraphQL: Pull request is not mergeable')).toBe(false)
   })
 })
 
