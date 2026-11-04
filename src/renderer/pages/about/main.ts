@@ -54,7 +54,7 @@ function render (): void {
     ? versionBody(state)
     : current === 'whatsnew'
       ? whatsNewBody(state)
-      : gpuBody(state, () => { void state.loadGpu() }, (button) => {
+      : gpuBody(state, () => { void state.reloadGraphics() }, (button) => {
         void state.copy('gpu').then((ok) => { flash(button, 'Copy', ok) })
       }))
 }

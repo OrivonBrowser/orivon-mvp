@@ -2,7 +2,7 @@
 // bridge: the buttons call back into the state, which owns the requests.
 import { h } from '../shared/dom.js'
 import { inlineSegments } from './inline-markdown.js'
-import type { AboutRow, AboutState, DeviceRow, FeatureRow, GpuReport, Loadable, NotesSection, WebGpuReport } from './state.js'
+import type { AboutRow, AboutState, DeviceRow, FeatureRow, GpuReport, Loadable, NotesSection, Tone, WebGpuReport } from './state.js'
 
 function skeletonCard (rows: number): HTMLElement {
   return h('div', { className: 'card', role: 'status', ariaLabel: 'Loading' },
@@ -22,10 +22,12 @@ function versionCard (rows: readonly AboutRow[]): HTMLElement {
     h('span', { className: row.mono ? 'value mono' : 'value', textContent: row.value }))))
 }
 
+const badgeClass = (tone: Tone): string => tone === 'neutral' ? 'badge' : `badge ${tone}`
+
 function featureCard (features: readonly FeatureRow[]): HTMLElement {
   return h('div', { className: 'card' }, ...features.map((feature) => h('div', { className: 'row' },
     h('span', { className: 'row-label', textContent: feature.label }),
-    h('span', { className: feature.tone === 'neutral' ? 'badge' : `badge ${feature.tone}`, textContent: feature.text }))))
+    h('span', { className: badgeClass(feature.tone), textContent: feature.text }))))
 }
 
 function deviceCard (devices: readonly DeviceRow[], known: boolean): HTMLElement {
@@ -44,25 +46,31 @@ function deviceCard (devices: readonly DeviceRow[], known: boolean): HTMLElement
   ]))
 }
 
-const WEBGPU_BADGES: Readonly<Record<WebGpuReport['state'], { text: string, tone: string }>> = {
-  available: { text: 'Works', tone: 'badge ok' },
-  unavailable: { text: 'Not available', tone: 'badge warn' },
-  unknown: { text: 'Not known', tone: 'badge' }
+const WEBGPU_BADGE_TEXT: Readonly<Record<WebGpuReport['state'], string>> = {
+  available: 'Works',
+  unavailable: 'Not available',
+  unknown: 'Not known'
 }
 
 const plainRow = (label: string, value: string): HTMLElement => h('div', { className: 'row' },
   h('span', { className: 'row-label', textContent: label }),
   h('span', { className: 'value', textContent: value }))
 
+const statusRow = (text: string, tone: Tone): HTMLElement => h('div', { className: 'row' },
+  h('span', { className: 'row-label', textContent: 'Status' }),
+  h('span', { className: badgeClass(tone), textContent: text }))
+
 /** Whether WebGPU works here, and when it does not, the reason in a sentence. */
-function webGpuCard (webGpu: Loadable<WebGpuReport> | null): HTMLElement {
+function webGpuCard (webGpu: Loadable<WebGpuReport> | null, retry: () => void): HTMLElement {
   if (webGpu === null || webGpu.state === 'loading') return skeletonCard(1)
-  if (webGpu.state === 'error') return h('div', { className: 'card' }, plainRow('Status', 'Not known'))
+  if (webGpu.state === 'error') {
+    return h('div', { className: 'card' }, statusRow(WEBGPU_BADGE_TEXT.unknown, 'neutral'),
+      h('div', { className: 'row long', role: 'alert' }, h('span', { className: 'value' },
+        'WebGPU could not be checked. ',
+        h('button', { className: 'link-btn', type: 'button', textContent: 'Try again', onclick: retry }))))
+  }
   const report = webGpu.value
-  const badge = WEBGPU_BADGES[report.state]
-  const status = h('div', { className: 'row' },
-    h('span', { className: 'row-label', textContent: 'Status' }),
-    h('span', { className: badge.tone, textContent: badge.text }))
+  const status = statusRow(WEBGPU_BADGE_TEXT[report.state], report.tone)
   if (report.state !== 'available') {
     return h('div', { className: 'card' }, status, h('div', { className: 'row long' }, h('span', { className: 'value', textContent: report.sentence })))
   }
@@ -86,25 +94,30 @@ export function versionBody (state: AboutState): HTMLElement {
   return versionCard(version.value)
 }
 
-export function gpuBody (state: AboutState, retry: () => void, copyRaw: (button: HTMLButtonElement) => void): HTMLElement {
-  const { gpu } = state
-  if (gpu === null || gpu.state === 'loading') {
-    return h('div', { className: 'stack' }, h('h2', { className: 'group-label', textContent: 'Feature status' }), skeletonCard(6))
-  }
+/** The feature table, the device and the raw report: the part of the Graphics tab that comes from `getGPUInfo`. */
+function graphicsReport (gpu: AboutState['gpu'], retry: () => void, copyRaw: (button: HTMLButtonElement) => void): HTMLElement[] {
+  if (gpu === null || gpu.state === 'loading') return [h('h2', { className: 'group-label', textContent: 'Feature status' }), skeletonCard(6)]
   const failed = gpu.state === 'error' || (gpu.value.features.length === 0 && gpu.value.devices.length === 0)
   if (failed) {
-    return h('div', { className: 'banner error', role: 'alert' },
+    return [h('div', { className: 'banner error', role: 'alert' },
       'Graphics information is not available. ',
-      h('button', { className: 'link-btn', type: 'button', textContent: 'Try again', onclick: retry }))
+      h('button', { className: 'link-btn', type: 'button', textContent: 'Try again', onclick: retry }))]
   }
-  return h('div', { className: 'stack' },
-    h('h2', { className: 'group-label', textContent: 'WebGPU' }),
-    webGpuCard(state.webGpu),
+  return [
     h('h2', { className: 'group-label', textContent: 'Feature status' }),
     featureCard(gpu.value.features),
     h('h2', { className: 'group-label', textContent: 'Graphics device' }),
     deviceCard(gpu.value.devices, gpu.value.devicesKnown),
-    rawReport(gpu.value, copyRaw))
+    rawReport(gpu.value, copyRaw)
+  ]
+}
+
+/** `retry` asks for both parts again: WebGPU's answer does not depend on the report, so either may show without the other. */
+export function gpuBody (state: AboutState, retry: () => void, copyRaw: (button: HTMLButtonElement) => void): HTMLElement {
+  return h('div', { className: 'stack' },
+    h('h2', { className: 'group-label', textContent: 'WebGPU' }),
+    webGpuCard(state.webGpu, retry),
+    ...graphicsReport(state.gpu, retry, copyRaw))
 }
 
 function noteItem (item: string): HTMLElement {

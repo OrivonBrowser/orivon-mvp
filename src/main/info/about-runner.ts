@@ -41,7 +41,7 @@ export async function readGpu (): Promise<GpuReading> {
   const status: unknown = app.getGPUFeatureStatus()
   // Under a display with no graphics card this rejects, which leaves the feature table standing.
   const info = await app.getGPUInfo('basic').catch(() => undefined)
-  return { status, info, ozone: app.commandLine.getSwitchValue('ozone-platform') }
+  return { status, info, platform: process.platform, session: process.env['XDG_SESSION_TYPE'] ?? '', ozone: app.commandLine.getSwitchValue('ozone-platform') }
 }
 
 export function copyToClipboard (text: string): void {

@@ -13,8 +13,8 @@ import { activeTabInfo, delay, tabIds, waitFor, waitForTab } from '../support/sm
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 
-/** What a launch under a virtual display says about WebGPU: pages drawn in software when the display gives no graphics card, the X11 session when it gives one. */
-const WEBGPU_OFF_SENTENCE = /^(WebGPU needs a graphics card\. This computer draws pages on its processor, and Chromium does not allow WebGPU there\.|WebGPU is off because this computer runs an X11 session\. Chromium turns it off there for every graphics card\.)$/
+/** What a Linux launch under a virtual display says about WebGPU: pages drawn in software when the display gives no graphics card, the X11 session when it gives one. */
+const WEBGPU_OFF_SENTENCE = /^(WebGPU is off because this computer draws pages on its processor, and Chromium does not allow WebGPU there\. Chromium does that when there is no graphics card, when it blocks the card's driver, or after its graphics process has crashed several times\.|WebGPU is off because (this computer runs an X11 session|Orivon is running on X11)\. Chromium turns it off there for every graphics card\.|WebGPU is off because Orivon is running through X11 \(XWayland\) on this Wayland session\. WebGPU needs Orivon to run on Wayland\.)$/
 
 let server: FixtureServer
 
@@ -97,18 +97,31 @@ it('shows the version table and the graphics report, with Copy details, at real 
 
     await about.getByRole('tab', { name: 'Graphics' }).click()
     expect(await addressReads(chrome, 'orivon://about/gpu')).toEqual({ ok: true, seen: expect.any(String) })
-    // Either the status card or, on a machine that reports nothing, the banner with its retry.
-    expect(await waitFor(async () => await about.locator('.badge, .banner.error').count() > 0)).toBe(true)
-    if (await about.locator('.badge').count() > 0) {
-      expect(await about.locator('.group-label').allTextContents()).toEqual(['WebGPU', 'Feature status', 'Graphics device'])
-      // The section first shows a skeleton while the page asks for an adapter; this build's headless display has none to give.
-      expect(await waitFor(async () => await about.locator('.stack > .card').first().getAttribute('role') === null)).toBe(true)
-      const webGpu = about.locator('.stack > .card').first()
-      expect(await webGpu.locator('.row-label').first().textContent()).toBe('Status')
-      expect(await webGpu.locator('.badge').textContent()).toBe('Not available')
-      expect(await webGpu.locator('.badge').getAttribute('class')).toContain('warn')
+    // The WebGPU section comes first and stands on its own: it first shows a skeleton while the page asks for an adapter.
+    const webGpu = about.locator('.stack > .card').first()
+    expect(await waitFor(async () => await webGpu.getAttribute('role') === null)).toBe(true)
+    expect(await about.locator('.group-label').first().textContent()).toBe('WebGPU')
+    expect(await webGpu.locator('.row-label').first().textContent()).toBe('Status')
+    const webGpuBadge = webGpu.locator('.badge')
+    if (process.platform === 'linux') {
+      // This build's headless display has no graphics card to give an adapter; the state is expected, so its badge is not coloured.
+      expect(await webGpuBadge.textContent()).toBe('Not available')
+      expect(await webGpuBadge.getAttribute('class')).toBe('badge')
       expect(await webGpu.locator('.row.long .value').textContent()).toMatch(WEBGPU_OFF_SENTENCE)
-      expect(await about.locator('.badge').first().textContent()).toMatch(/Hardware accelerated|Software only|Disabled|\S/)
+    } else {
+      // Another system may have a graphics card, or only a software adapter, to give.
+      const works = await webGpuBadge.textContent() === 'Works'
+      expect(['Works', 'Not available']).toContain(await webGpuBadge.textContent())
+      if (works) expect(await webGpu.locator('.row-label').allTextContents()).toEqual(['Status', 'Adapter vendor', 'Adapter architecture'])
+      else expect(await webGpu.locator('.row.long .value').textContent()).toMatch(/^WebGPU /)
+    }
+
+    // Either the graphics report or, on a machine that reports nothing, the banner with its retry.
+    expect(await waitFor(async () => await about.locator('details.raw, .banner.error').count() > 0)).toBe(true)
+    if (await about.locator('details.raw').count() > 0) {
+      expect(await about.locator('.group-label').allTextContents()).toEqual(['WebGPU', 'Feature status', 'Graphics device'])
+      const featureBadge = about.locator('.stack > .card').nth(1).locator('.badge').first()
+      expect(await featureBadge.textContent()).toMatch(/Hardware accelerated|Software only|Disabled|\S/)
       await about.locator('details.raw summary').click()
       expect((await about.locator('.raw-body').textContent() ?? '').length).toBeGreaterThan(20)
     } else {

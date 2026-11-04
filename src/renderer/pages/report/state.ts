@@ -3,6 +3,8 @@
 // from the choices, so the preview and the send cannot differ.
 import { internalBridge } from '../shared/bridge.js'
 import type { OrivonInternal } from '../shared/bridge.js'
+import { adapterClaim, probeAdapter } from '../shared/webgpu-probe.js'
+import type { AdapterProbe } from '../shared/webgpu-probe.js'
 
 export interface CrashRow {
   readonly id: string
@@ -46,6 +48,9 @@ export type TestKind = 'renderer' | 'main-error' | 'main-native'
 
 export const PREVIEW_DELAY_MS = 150
 
+/** How long the form waits for the page's own WebGPU adapter before it asks for the facts without one. */
+export const ADAPTER_WAIT_MS = 3_000
+
 export class ReportState {
   info: ReportInfo | null = null
   failed = false
@@ -60,7 +65,10 @@ export class ReportState {
   private shownSeq = 0
   private loaded = false
 
-  constructor (private readonly bridge: OrivonInternal = internalBridge()) {}
+  constructor (
+    private readonly bridge: OrivonInternal = internalBridge(),
+    private readonly probe: () => Promise<AdapterProbe> = async () => await probeAdapter(navigator as unknown as Parameters<typeof probeAdapter>[0], ADAPTER_WAIT_MS)
+  ) {}
 
   onChange (listener: () => void): void {
     this.listeners.add(listener)
@@ -82,7 +90,9 @@ export class ReportState {
 
   async load (preselect: string | null): Promise<void> {
     try {
-      const reply = await this.bridge.request('report', { type: 'state' }) as ReportInfo | undefined
+      // The report states whether WebGPU works, which only a page can find out: this one asks, and main takes the outcome with the facts.
+      const adapter = adapterClaim(await this.probe())
+      const reply = await this.bridge.request('report', { type: 'state', ...(adapter === undefined ? {} : { adapter }) }) as ReportInfo | undefined
       if (reply === undefined) throw new Error('no answer')
       this.info = reply
       this.failed = false

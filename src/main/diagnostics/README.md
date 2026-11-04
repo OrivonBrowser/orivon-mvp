@@ -6,7 +6,7 @@ about one. `log-ring.ts` and `log-file.ts` keep the main process's console outpu
 piped output into console lines and `host-fork.ts` forks every host that way; `crash-records.ts` and `crash-store.ts` the crash records (`crashes.json`, newest 30,
 dropped after 30 days) and the run marker (`running.json`) that says whether the last run ended in an orderly quit;
 `dumps.ts` and `dump-files.ts` the native crash dumps Crashpad leaves; `diagnostics-service.ts` composes them for one
-run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code; `orivon://gpu` shows its sentence), `report-payload.ts` builds the body and cuts
+run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `gpu-reading.ts` parses what Chromium reports about the graphics setup (the feature map, the device list and the names of a device) for every reader of it, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code; `orivon://gpu` shows its sentence), `report-payload.ts` builds the body and cuts
 every field to the length the server accepts, `report-text.ts` writes the Markdown for "Copy as text",
 `report-channel.ts` posts and reads the status, `sent-reports.ts` keeps the list of what was sent, and
 `report-domain.ts` is what [`orivon://report`](../../renderer/pages/report/) may ask. `diagnostics-runner.ts` and
@@ -16,7 +16,7 @@ session's copy is removed with its directory.
 **Tied to Electron, in the two runners and `host-fork.ts`.** `diagnostics-runner.ts`, `report-runner.ts` and `host-fork.ts` import `electron`; the rest
 is pure, or reads and writes plain files, and runs under plain vitest.
 
-**Durable: `webgpu-state.ts`.** It is a pure function over the platform, the Ozone platform, Chromium's feature statuses and the graphics devices, and takes the page's adapter result as an argument. Its reasons are Chromium's own, so they change with a Chromium update (`docs/planning/webgpu-plan.md`); the names it matches (`webgpu`, `webgpu_on_vk_via_gl_interop`, `gpu_compositing`) are the ones `app.getGPUFeatureStatus()` returns. Reading those values is tied to Electron and done in `../info/about-runner.ts` and `report-runner.ts`.
+**Durable: `gpu-reading.ts` and `webgpu-state.ts`.** `webgpu-state.ts` is a pure function over the platform, the desktop session, the Ozone platform, Chromium's feature statuses and the graphics devices (as `gpu-reading.ts` parses them), and takes the page's adapter result as an argument; a report's page (`orivon://report`) asks for an adapter as the Graphics tab does and sends the outcome with its request for the facts. Its reasons are Chromium's own, so they change with a Chromium update (`docs/planning/webgpu-plan.md`); the names it matches (`webgpu`, `webgpu_on_vk_via_gl_interop`, `gpu_compositing`) are the ones `app.getGPUFeatureStatus()` returns. Reading those values is tied to Electron and done in `../info/about-runner.ts` and `report-runner.ts`.
 
 **What it depends on.** `electron` (the runners); [`../pages/`](../pages/) (the internal-domain type, the page ids);
 [`../shell/`](../shell/) (the window registry and the shell scheme, types and one constant, and `tab-tunnel-facts.ts`'s counts of the tabs' tunnel choices, which reach `../route/` for the choice names); [`../settings/`](../settings/)

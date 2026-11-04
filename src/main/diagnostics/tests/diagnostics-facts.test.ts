@@ -32,15 +32,26 @@ describe('buildDiagnostics', () => {
     expect(buildDiagnostics({ ...FACTS, gpuInfo: undefined, gpuStatus: undefined }).gpu).toEqual({ features: {}, devices: [], webgpu: { state: 'unknown', reason: 'unknown' } })
   })
 
-  it('states whether WebGPU is off and why, as a state and a reason code and nothing else', () => {
-    expect(diagnostics.gpu.webgpu).toEqual({ state: 'unavailable', reason: 'software-only' })
-    const x11 = buildDiagnostics({
-      ...FACTS,
-      system: { ...FACTS.system, ozone: 'x11' },
-      gpuStatus: { webgpu: 'disabled_off', webgpu_on_vk_via_gl_interop: 'disabled_off', gpu_compositing: 'enabled' }
+  describe('the WebGPU entry', () => {
+    const BRIDGE_OFF = { webgpu: 'disabled_off', webgpu_on_vk_via_gl_interop: 'disabled_off', gpu_compositing: 'enabled' }
+    const onX11 = (session: string): ReturnType<typeof buildDiagnostics> => buildDiagnostics({ ...FACTS, system: { ...FACTS.system, session, ozone: 'x11' }, gpuStatus: BRIDGE_OFF })
+
+    it('states whether WebGPU is off and why, as a state and a reason code and nothing else', () => {
+      expect(diagnostics.gpu.webgpu).toEqual({ state: 'unavailable', reason: 'software-only' })
+      expect(onX11('x11').gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11' })
+      expect(Object.keys(onX11('x11').gpu.webgpu)).toEqual(['state', 'reason'])
     })
-    expect(x11.gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11' })
-    expect(Object.keys(x11.gpu.webgpu)).toEqual(['state', 'reason'])
+
+    it('reads the session the report already carries, to tell XWayland from an X11 session', () => {
+      expect(onX11('wayland').gpu.webgpu).toEqual({ state: 'unavailable', reason: 'xwayland' })
+    })
+
+    it('takes the outcome of the page that asked for the report, which is how a working computer reads available', () => {
+      const working = { ...FACTS, gpuStatus: { webgpu: 'enabled', webgpu_on_vk_via_gl_interop: 'enabled', gpu_compositing: 'enabled' } }
+      expect(buildDiagnostics(working).gpu.webgpu).toEqual({ state: 'unknown', reason: 'unknown' })
+      expect(buildDiagnostics(working, { kind: 'adapter' }).gpu.webgpu).toEqual({ state: 'available', reason: 'adapter' })
+      expect(buildDiagnostics(working, { kind: 'none' }).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'no-adapter' })
+    })
   })
 
   it('groups the processes by type with their memory in MB', () => {

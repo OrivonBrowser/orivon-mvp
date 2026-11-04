@@ -1,6 +1,7 @@
 // What the About page shows, as plain rows: built from facts main has already
 // read, so the wording and the status mapping are tested without Electron.
-import { gpuMakerName } from '../diagnostics/webgpu-state.js'
+import { driverOf, gpuDevicesOf, gpuFeaturesOf, hex4, makerNameOf } from '../diagnostics/gpu-reading.js'
+import type { WebGpuState } from '../diagnostics/webgpu-state.js'
 
 export interface AboutFacts {
   readonly orivon: string
@@ -125,38 +126,30 @@ export function featureTone (status: string): { text: string, tone: FeatureTone 
   return { text: status === '' ? 'Unknown' : status, tone: 'neutral' }
 }
 
-export function featureRows (status: Readonly<Record<string, unknown>>): FeatureRow[] {
-  return Object.entries(status)
-    .filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-    .map(([key, value]) => ({ key, label: FEATURE_LABELS[key] ?? key, ...featureTone(value) }))
+export function featureRows (status: unknown): FeatureRow[] {
+  return Object.entries(gpuFeaturesOf(status)).map(([key, value]) => ({ key, label: FEATURE_LABELS[key] ?? key, ...featureTone(value) }))
 }
 
-function hex (value: unknown): string {
-  return typeof value === 'number' ? `0x${value.toString(16).padStart(4, '0')}` : ''
-}
-
-function text (value: unknown): string {
-  return typeof value === 'string' ? value : ''
-}
-
-function asRecord (value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
+/** The colour of the WebGPU badge, by the rule `featureTone` follows: a state that is expected on the computer is
+ * neutral, and only a fault is coloured. Software drawing, an X11 session, a card Chromium does not list and a maker
+ * it does not support are Chromium's design for that setup; a feature simply off is read from its own status, as
+ * the WebGPU row of the feature table is; only an adapter that is missing for no reason the report shows is a warning. */
+export function webGpuTone (answer: Pick<WebGpuState, 'state' | 'reason'>, webgpuStatus: string | undefined): FeatureTone {
+  if (answer.state === 'available') return 'ok'
+  if (answer.reason === 'no-adapter') return 'warn'
+  if (answer.reason === 'webgpu-off') return featureTone(webgpuStatus ?? '').tone
+  return 'neutral'
 }
 
 /** The devices in `getGPUInfo('basic')`. Every field is optional there, and which ones a platform fills differs. */
 export function deviceRows (info: unknown): DeviceRow[] {
-  const list = asRecord(info)['gpuDevice']
-  if (!Array.isArray(list)) return []
-  return list.map((entry) => {
-    const device = asRecord(entry)
-    const vendorId = device['vendorId']
-    const vendorName = text(device['vendorString']) || (typeof vendorId === 'number' ? gpuMakerName(vendorId) : undefined) || ''
-    const driver = [text(device['driverVendor']), text(device['driverVersion'])].filter((part) => part !== '').join(' ')
+  return (gpuDevicesOf(info) ?? []).map((device) => {
+    const driver = driverOf(device)
     return {
-      vendor: [vendorName, vendorId === undefined ? '' : `(${hex(vendorId)})`].filter((part) => part !== '').join(' ') || 'Unknown',
-      device: text(device['deviceString']) || hex(device['deviceId']) || 'Unknown',
+      vendor: [makerNameOf(device), device.vendorId === undefined ? '' : `(${hex4(device.vendorId)})`].filter((part) => part !== '').join(' ') || 'Unknown',
+      device: device.deviceString || hex4(device.deviceId) || 'Unknown',
       driver: driver === '' ? 'Not reported' : driver,
-      active: device['active'] === true
+      active: device.active
     }
   })
 }

@@ -9,6 +9,8 @@ import type { DumpFile } from './dumps.js'
 import { newest } from './crash-records.js'
 import type { CrashRecord } from './crash-records.js'
 import type { Diagnostics } from './diagnostics-facts.js'
+import { adapterReading } from './webgpu-state.js'
+import type { AdapterReading } from './webgpu-state.js'
 import type { LogSource } from './diagnostics-service.js'
 import { eraseReport, FAILURE_TEXT, sendReport } from './report-channel.js'
 import type { Post } from './report-channel.js'
@@ -43,8 +45,8 @@ export interface ReportDeps {
   readonly ignoreCase: boolean
   readonly crashes: CrashSource
   readonly sent: SentSource
-  /** The facts about this computer and this build, read now. */
-  readonly diagnostics: () => Promise<Diagnostics>
+  /** The facts about this computer and this build, read now; `adapter` is what the report page saw when it asked for a WebGPU adapter. */
+  readonly diagnostics: (adapter: AdapterReading | undefined) => Promise<Diagnostics>
   /** Whose log a report about `crash` carries (this run's when there is no crash). */
   readonly logSource: (crash: CrashRecord | undefined) => LogSource
   readonly logLines: (source: LogSource) => string[]
@@ -68,6 +70,8 @@ interface Snapshot {
 /** The report ID a page will use: one per report, kept across a failed send of the same text so the server counts the retry once, and replaced when the text changed. */
 interface Pending {
   snapshot: Promise<Snapshot> | undefined
+  /** The page's own WebGPU reading, sent with its request for the state and kept for every snapshot of that page. */
+  adapter: AdapterReading | undefined
   fresh: string | undefined
   failed: { readonly fingerprint: string, readonly reportId: string } | undefined
 }
@@ -108,7 +112,7 @@ function crashRow (record: CrashRecord, dump: DumpFile | undefined): Record<stri
 export function reportDomain (deps: ReportDeps): InternalDomain {
   const pending = new Map<number, Pending>()
   const pendingFor = (contentsId: number): Pending => {
-    const entry = pending.get(contentsId) ?? { snapshot: undefined, fresh: undefined, failed: undefined }
+    const entry = pending.get(contentsId) ?? { snapshot: undefined, adapter: undefined, fresh: undefined, failed: undefined }
     // Moved to the newest end on every use: a page being used is never the one dropped for a newer one.
     pending.delete(contentsId)
     pending.set(contentsId, entry)
@@ -119,7 +123,7 @@ export function reportDomain (deps: ReportDeps): InternalDomain {
 
   /** The promise itself is kept, so requests that arrive together share one reading of the facts. */
   function snapshotOf (entry: Pending): Promise<Snapshot> {
-    const made = entry.snapshot ??= deps.diagnostics().then((diagnostics) => ({ diagnostics, logs: new Map<LogSource, string[]>() }))
+    const made = entry.snapshot ??= deps.diagnostics(entry.adapter).then((diagnostics) => ({ diagnostics, logs: new Map<LogSource, string[]>() }))
     made.catch(() => { if (entry.snapshot === made) entry.snapshot = undefined })
     return made
   }
@@ -162,6 +166,7 @@ export function reportDomain (deps: ReportDeps): InternalDomain {
       switch (request['type']) {
         case 'state': {
           entry.snapshot = undefined
+          entry.adapter = adapterReading(request['adapter'])
           await snapshotOf(entry)
           return {
             private: deps.isPrivate,

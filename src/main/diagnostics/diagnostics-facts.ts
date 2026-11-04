@@ -5,8 +5,9 @@ import { SETTINGS } from '../settings/schema.js'
 import type { SettingKey } from '../settings/schema.js'
 import { newest } from './crash-records.js'
 import type { CrashKind, CrashRecord } from './crash-records.js'
-import { webGpuInputsFrom, webGpuState } from './webgpu-state.js'
-import type { WebGpuReason, WebGpuStateName } from './webgpu-state.js'
+import { gpuDevicesOf, gpuFeaturesOf } from './gpu-reading.js'
+import { webGpuState } from './webgpu-state.js'
+import type { AdapterReading, WebGpuReason, WebGpuStateName } from './webgpu-state.js'
 
 export type Channel = 'development' | 'source' | 'appimage' | 'linux-package' | 'windows' | 'macos'
 
@@ -110,7 +111,7 @@ export interface Diagnostics {
   readonly gpu: {
     readonly features: Readonly<Record<string, string>>
     readonly devices: ReadonlyArray<{ readonly vendorId: number, readonly deviceId: number, readonly driverVersion: string, readonly active: boolean }>
-    /** Whether WebGPU works and why not, as far as main can tell: it cannot ask for an adapter, so a working computer reads `unknown`. */
+    /** Whether WebGPU works and why not: main cannot ask for an adapter, so a working computer reads `unknown` unless the page that asked for the report got one. */
     readonly webgpu: { readonly state: WebGpuStateName, readonly reason: WebGpuReason }
   }
   readonly displays: ReadonlyArray<{ readonly width: number, readonly height: number, readonly scale: number }>
@@ -139,24 +140,6 @@ export function reportedSettings (get: (key: SettingKey) => unknown): Record<str
   return values
 }
 
-function record (value: unknown): Record<string, unknown> {
-  return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
-}
-
-function gpuDevices (info: unknown): Diagnostics['gpu']['devices'] {
-  const list = record(info)['gpuDevice']
-  if (!Array.isArray(list)) return []
-  return list.map((entry) => {
-    const device = record(entry)
-    return {
-      vendorId: typeof device['vendorId'] === 'number' ? device['vendorId'] : 0,
-      deviceId: typeof device['deviceId'] === 'number' ? device['deviceId'] : 0,
-      driverVersion: typeof device['driverVersion'] === 'string' ? device['driverVersion'] : '',
-      active: device['active'] === true
-    }
-  })
-}
-
 function groupProcesses (readings: readonly ProcessReading[]): Diagnostics['processes'] {
   const groups = new Map<string, { count: number, kb: number }>()
   for (const reading of readings) {
@@ -166,17 +149,19 @@ function groupProcesses (readings: readonly ProcessReading[]): Diagnostics['proc
   return [...groups].map(([type, { count, kb }]) => ({ type, count, memoryMb: Math.round(kb / 1024) }))
 }
 
-function webgpuOf (facts: DiagnosticsFacts): Diagnostics['gpu']['webgpu'] {
-  const { state, reason } = webGpuState(webGpuInputsFrom({ platform: facts.system.platform, ozone: facts.system.ozone, status: facts.gpuStatus, info: facts.gpuInfo }))
-  return { state, reason }
-}
-
-export function buildDiagnostics (facts: DiagnosticsFacts): Diagnostics {
-  const features = Object.fromEntries(Object.entries(record(facts.gpuStatus)).filter((entry): entry is [string, string] => typeof entry[1] === 'string'))
+export function buildDiagnostics (facts: DiagnosticsFacts, adapter?: AdapterReading): Diagnostics {
+  const features = gpuFeaturesOf(facts.gpuStatus)
+  const devices = gpuDevicesOf(facts.gpuInfo)
+  const { platform, session, ozone } = facts.system
+  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter })
   return {
     app: { commit: facts.commit, channel: facts.channel, ...facts.versions, packaged: facts.packaged, uptimeSec: Math.round(facts.uptimeSec) },
     system: facts.system,
-    gpu: { features, devices: gpuDevices(facts.gpuInfo), webgpu: webgpuOf(facts) },
+    gpu: {
+      features,
+      devices: (devices ?? []).map(({ vendorId, deviceId, driverVersion, active }) => ({ vendorId: vendorId ?? 0, deviceId: deviceId ?? 0, driverVersion, active })),
+      webgpu: { state: webgpu.state, reason: webgpu.reason }
+    },
     displays: facts.displays.map((display) => ({ width: display.width, height: display.height, scale: display.scaleFactor })),
     processes: groupProcesses(facts.processes),
     browser: facts.browser,

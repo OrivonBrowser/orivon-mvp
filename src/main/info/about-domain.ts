@@ -3,17 +3,25 @@
 // facts, so a page cannot put anything of its own on the clipboard.
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import type { RunningRelease } from './running-release.js'
-import { adapterReading, webGpuInputsFrom, webGpuState } from '../diagnostics/webgpu-state.js'
-import { aboutRows, aboutText, deviceRows, featureRows, rawReport } from './about-info.js'
+import { gpuDevicesOf, gpuFeaturesOf } from '../diagnostics/gpu-reading.js'
+import { adapterReading, webGpuState } from '../diagnostics/webgpu-state.js'
+import { aboutRows, aboutText, deviceRows, featureRows, rawReport, webGpuTone } from './about-info.js'
 import type { AboutFacts } from './about-info.js'
 
 export interface GpuReading {
   readonly status: unknown
   /** `getGPUInfo('basic')`, or undefined when it rejected. */
   readonly info: unknown
+  /** `process.platform`. */
+  readonly platform: string
+  /** The desktop session (`XDG_SESSION_TYPE`), or '' when the system names none. */
+  readonly session: string
   /** The Ozone platform the browser runs on, or '' when there is none to name. */
   readonly ozone: string
 }
+
+/** The Graphics tab asks for the report and for WebGPU's state together: one reading younger than this serves both. */
+const SHARED_READING_MS = 2_000
 
 export interface AboutDomainDeps {
   readonly facts: () => AboutFacts
@@ -24,6 +32,17 @@ export interface AboutDomainDeps {
 }
 
 export function infoDomain (deps: AboutDomainDeps): InternalDomain {
+  let latest: { readonly at: number, readonly reading: Promise<GpuReading> } | undefined
+  /** The graphics reading of the last couple of seconds, or a new one; a failed one is not kept. */
+  const sharedReading = async (): Promise<GpuReading> => {
+    const now = Date.now()
+    if (latest === undefined || now - latest.at > SHARED_READING_MS) {
+      const taken = { at: now, reading: deps.gpu() }
+      taken.reading.catch(() => { if (latest === taken) latest = undefined })
+      latest = taken
+    }
+    return await latest.reading
+  }
   return {
     pages: ['about'],
     handle: async (command) => {
@@ -37,11 +56,10 @@ export function infoDomain (deps: AboutDomainDeps): InternalDomain {
         }
         case 'gpu': {
           try {
-            const { status, info } = await deps.gpu()
-            const statusRecord = typeof status === 'object' && status !== null ? status as Record<string, unknown> : {}
+            const { status, info } = await sharedReading()
             return {
               ok: true,
-              features: featureRows(statusRecord),
+              features: featureRows(status),
               devices: deviceRows(info),
               devicesKnown: info !== undefined,
               raw: rawReport(status, info)
@@ -52,9 +70,10 @@ export function infoDomain (deps: AboutDomainDeps): InternalDomain {
         }
         case 'webgpu': {
           try {
-            const { status, info, ozone } = await deps.gpu()
-            const adapter = adapterReading(request.adapter)
-            return { ok: true, ...webGpuState(webGpuInputsFrom({ platform: deps.facts().platform, ozone, status, info, adapter })) }
+            const { status, info, platform, session, ozone } = await sharedReading()
+            const features = gpuFeaturesOf(status)
+            const answer = webGpuState({ platform, session, ozone, features, devices: gpuDevicesOf(info), adapter: adapterReading(request.adapter) })
+            return { ok: true, ...answer, tone: webGpuTone(answer, features['webgpu']) }
           } catch {
             return { ok: false }
           }
