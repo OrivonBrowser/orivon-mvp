@@ -84,13 +84,16 @@ describe('the About domain', () => {
       expect(await setup(reading({})).call({ type: 'webgpu', adapter: { kind: 'working' } })).toMatchObject({ reason: 'x11' })
     })
 
-    it('names the graphics card on Wayland, and tells XWayland from an X11 session', async () => {
-      expect(await setup(reading({ session: 'wayland', ozone: 'wayland' })).call({ type: 'webgpu' })).toMatchObject({ state: 'unavailable', reason: 'gpu-not-listed' })
+    it('names the graphics card on Wayland once a page got no adapter, and tells XWayland from an X11 session', async () => {
+      const wayland = reading({ session: 'wayland', ozone: 'wayland' })
+      expect(await setup(wayland).call({ type: 'webgpu', adapter: { kind: 'none' } })).toMatchObject({ state: 'unavailable', reason: 'gpu-not-listed' })
+      const listed = reading({ status: { webgpu: 'enabled', gpu_compositing: 'enabled' }, session: 'wayland', ozone: 'wayland' })
+      expect(await setup(listed).call({ type: 'webgpu' })).toMatchObject({ state: 'unknown', reason: 'unknown' })
       expect(await setup(reading({ session: 'wayland' })).call({ type: 'webgpu' })).toMatchObject({ state: 'unavailable', reason: 'xwayland' })
     })
 
     it('colours a page\'s empty answer as a warning, since nothing in the report explains it', async () => {
-      const working = reading({ status: { webgpu: 'enabled', webgpu_on_vk_via_gl_interop: 'enabled', gpu_compositing: 'enabled' } })
+      const working = reading({ status: { webgpu: 'enabled', webgpu_on_vk_via_gl_interop: 'enabled', gpu_compositing: 'enabled' }, session: '', ozone: '' })
       expect(await setup(working).call({ type: 'webgpu', adapter: { kind: 'none' } })).toMatchObject({ reason: 'no-adapter', tone: 'warn' })
     })
 

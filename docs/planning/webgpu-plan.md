@@ -57,7 +57,8 @@ Why Linux is narrow:
   - whether a page gets an adapter, asked by a probe in the page that gives up after 10 seconds, and the adapter's vendor
     and architecture;
   - when there is none, the reason in plain words: an X11 session (or Orivon running through XWayland on a Wayland
-    session), a GPU and driver that are not on Chromium's list for Wayland, pages drawn on the processor, WebGPU turned
+    session), a GPU and driver Chromium gives no adapter on Linux because they are not on its list (said on Wayland once
+    the page got none), pages drawn on the processor, WebGPU turned
     off, a GPU maker Dawn refuses on Windows, or an adapter the page was refused for no reason the report shows.
 - **Not built:**
   - the adapter's backend: nothing this build reads states it, and one derived from the platform would be a claim this
@@ -66,7 +67,9 @@ Why Linux is narrow:
     installed (`vulkan` is the compositing feature, which is off by default on Linux);
   - the X11 setting turned off after a crash, which arrives with step 3.
 - **Durable:** working out the reason is a pure function over the platform, the desktop session, the Ozone platform, the
-  GPU feature status and the GPU info (`src/main/diagnostics/webgpu-state.ts`).
+  GPU feature status and the GPU info (`src/main/diagnostics/webgpu-state.ts`). On Linux it decides by the Ozone
+  platform: X11 is ruled out without a page, and on Wayland only a page that got no adapter says the GPU is not listed.
+  It does not read `webgpu_on_vk_via_gl_interop`, which reads `enabled` on real GPUs under both where no adapter exists.
 - **Tied to Electron:** reading those values.
 - **Bug reports** from `orivon://report` carry the state and a reason code. The report page runs the same probe and
   sends its outcome with its request for the facts, so a report tells a working computer from one whose page got no

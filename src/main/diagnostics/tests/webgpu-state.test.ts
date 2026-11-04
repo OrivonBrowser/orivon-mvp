@@ -33,70 +33,111 @@ describe('webGpuState', () => {
   })
 
   describe('X11', () => {
-    it('blames an X11 session on Linux when Chromium left the bridge off', () => {
-      const state = webGpuState(inputs({ session: 'x11', ozone: 'x11', features: BRIDGE_OFF, devices: [NVIDIA] }))
+    it('blames an X11 session on Linux for a page that got no adapter, though the bridge reads enabled', () => {
+      const state = webGpuState(inputs({ session: 'x11', ozone: 'x11', devices: [NVIDIA], adapter: { kind: 'none' } }))
       expect(state).toMatchObject({ state: 'unavailable', reason: 'x11' })
       expect(state.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.')
     })
 
     it('says Orivon runs through XWayland when the session is Wayland and the browser is on X11', () => {
-      const state = webGpuState(inputs({ session: 'wayland', ozone: 'x11', features: BRIDGE_OFF }))
+      const state = webGpuState(inputs({ session: 'wayland', ozone: 'x11', adapter: { kind: 'none' } }))
       expect(state).toMatchObject({ state: 'unavailable', reason: 'xwayland' })
       expect(state.sentence).toBe('WebGPU is off because Orivon is running through X11 (XWayland) on this Wayland session. WebGPU needs Orivon to run on Wayland.')
     })
 
+    it('rules WebGPU out on X11 without a page, since Chromium never turns it on there', () => {
+      expect(webGpuState(inputs({ session: 'x11', ozone: 'x11' }))).toMatchObject({ state: 'unavailable', reason: 'x11' })
+      expect(webGpuState(inputs({ session: 'wayland', ozone: 'x11' }))).toMatchObject({ state: 'unavailable', reason: 'xwayland' })
+    })
+
     it('does not call the computer an X11 session when the system names none', () => {
       for (const session of ['', 'tty']) {
-        const state = webGpuState(inputs({ session, ozone: 'x11', features: BRIDGE_OFF }))
+        const state = webGpuState(inputs({ session, ozone: 'x11' }))
         expect(state).toMatchObject({ state: 'unavailable', reason: 'x11' })
         expect(state.sentence).toBe('WebGPU is off because Orivon is running on X11. Chromium turns it off there for every graphics card.')
       }
     })
 
-    it('does not blame X11 when the bridge is on', () => {
-      expect(webGpuState(inputs({ ozone: 'x11' })).reason).not.toBe('x11')
+    it('does not read the bridge status, which reads enabled on real graphics cards where no adapter exists', () => {
+      for (const features of [GOOD_FEATURES, BRIDGE_OFF, { webgpu: 'enabled' }]) {
+        expect(webGpuState(inputs({ session: 'x11', ozone: 'x11', features, adapter: { kind: 'none' } })).reason).toBe('x11')
+      }
+    })
+
+    it('does not blame X11 for a page that has no WebGPU at all', () => {
+      expect(webGpuState(inputs({ ozone: 'x11', adapter: { kind: 'no-api' } }))).toMatchObject({ state: 'unavailable', reason: 'no-adapter' })
     })
 
     it('does not blame the session when it cannot tell which one it is', () => {
       expect(webGpuState(inputs({ ozone: '', features: BRIDGE_OFF })).state).toBe('unknown')
+      expect(webGpuState(inputs({ ozone: '', adapter: { kind: 'none' } })).reason).toBe('no-adapter')
     })
   })
 
-  describe('a graphics card Chromium does not list on Wayland', () => {
-    it('names the maker and the driver the way the device table does', () => {
-      const state = webGpuState(inputs({ features: BRIDGE_OFF, devices: [AMD, { ...NVIDIA, active: false }] }))
+  describe('a graphics card Chromium gives no adapter on Wayland', () => {
+    const TAIL = 'On Linux it does that for every card and driver not on its list.'
+    const asked = (devices: readonly GpuDevice[] | undefined, over: Partial<WebGpuInputs> = {}): ReturnType<typeof webGpuState> =>
+      webGpuState(inputs({ devices, adapter: { kind: 'none' }, ...over }))
+
+    it('names the maker and the driver the way the device table does, for one graphics card', () => {
+      const state = asked([AMD])
       expect(state).toMatchObject({ state: 'unavailable', reason: 'gpu-not-listed' })
-      expect(state.sentence).toBe('WebGPU is off because this graphics card (AMD) with this driver (24.2.1) is not on Chromium\'s list for Wayland.')
+      expect(state.sentence).toBe(`WebGPU is off because Chromium gave this graphics card (AMD) with this driver (24.2.1) no WebGPU adapter. ${TAIL}`)
     })
 
     it('names the driver vendor with its version when the report has one', () => {
-      const state = webGpuState(inputs({ features: { ...GOOD_FEATURES, webgpu_on_vk_via_gl_interop: 'unavailable_off' }, devices: [{ ...NVIDIA, active: false }, INTEL] }))
-      expect(state.sentence).toBe('WebGPU is off because this graphics card (Intel) with this driver (Mesa 25.1.3) is not on Chromium\'s list for Wayland.')
+      expect(asked([{ ...NVIDIA, driverVersion: '595.99.02' }]).sentence)
+        .toBe(`WebGPU is off because Chromium gave this graphics card (NVIDIA) with this driver (NVIDIA 595.99.02) no WebGPU adapter. ${TAIL}`)
+      expect(asked([INTEL]).sentence)
+        .toBe(`WebGPU is off because Chromium gave this graphics card (Intel) with this driver (Mesa 25.1.3) no WebGPU adapter. ${TAIL}`)
     })
 
     it('names the maker the way the device rows do: the report\'s own name first', () => {
-      const state = webGpuState(inputs({ features: BRIDGE_OFF, devices: [device({ vendorId: 0x8086, vendorString: 'Intel Corporation', driverVersion: '1' })] }))
-      expect(state.sentence).toContain('(Intel Corporation)')
+      expect(asked([device({ vendorId: 0x8086, vendorString: 'Intel Corporation', driverVersion: '1' })]).sentence).toContain('(Intel Corporation)')
     })
 
-    it('leaves out a maker the report does not name, and does not print a number for it', () => {
+    it('leaves out a maker or a driver the report does not give, and does not print a number for it', () => {
       for (const unnamed of [device({}), device({ vendorId: 0 }), device({ vendorId: 0xabcd })]) {
-        const state = webGpuState(inputs({ features: BRIDGE_OFF, devices: [unnamed] }))
+        const state = asked([unnamed])
         expect(state.reason).toBe('gpu-not-listed')
-        expect(state.sentence).toBe('WebGPU is off because this graphics card with this driver is not on Chromium\'s list for Wayland.')
+        expect(state.sentence).toBe(`WebGPU is off because Chromium gave this graphics card with this driver no WebGPU adapter. ${TAIL}`)
       }
+      expect(asked([device({ vendorId: 0x1002 })]).sentence)
+        .toBe(`WebGPU is off because Chromium gave this graphics card (AMD) with this driver no WebGPU adapter. ${TAIL}`)
     })
 
-    it('blames neither the driver alone nor Linux in general, since the list also looks at the card and matters only on Wayland', () => {
-      const state = webGpuState(inputs({ features: BRIDGE_OFF, devices: [INTEL] }))
-      expect(state.sentence).not.toMatch(/Linux|only a few graphics drivers/)
-      expect(state.sentence).toContain('this graphics card (Intel) with this driver (Mesa 25.1.3)')
+    it('names no card of a hybrid computer alone, and lists the makers in device order', () => {
+      const state = asked([{ ...NVIDIA, active: true }, { ...INTEL, active: false }])
+      expect(state).toMatchObject({ state: 'unavailable', reason: 'gpu-not-listed' })
+      expect(state.sentence).toBe(`WebGPU is off because Chromium gave none of this computer's graphics cards (NVIDIA, Intel) a WebGPU adapter. ${TAIL}`)
+      expect(asked([INTEL, NVIDIA]).sentence).toContain('(Intel, NVIDIA)')
+    })
+
+    it('names each maker once, and leaves out the ones the report does not name', () => {
+      expect(asked([INTEL, { ...INTEL, deviceId: 2 }]).sentence).toContain('graphics cards (Intel) a WebGPU adapter')
+      expect(asked([INTEL, device({ vendorId: 0xabcd }), NVIDIA]).sentence).toContain('graphics cards (Intel, NVIDIA) a WebGPU adapter')
+      expect(asked([device({}), device({ vendorId: 0xabcd })]).sentence)
+        .toBe(`WebGPU is off because Chromium gave none of this computer's graphics cards a WebGPU adapter. ${TAIL}`)
+    })
+
+    it('counts only graphics cards, so a software renderer beside one does not make it a hybrid', () => {
+      expect(asked([SWIFTSHADER, INTEL]).sentence)
+        .toBe(`WebGPU is off because Chromium gave this graphics card (Intel) with this driver (Mesa 25.1.3) no WebGPU adapter. ${TAIL}`)
     })
 
     it('still blames the graphics card when the device list is not known', () => {
-      const state = webGpuState(inputs({ features: BRIDGE_OFF, devices: undefined }))
+      const state = asked(undefined)
       expect(state.reason).toBe('gpu-not-listed')
-      expect(state.sentence).toBe('WebGPU is off because this graphics card with this driver is not on Chromium\'s list for Wayland.')
+      expect(state.sentence).toBe(`WebGPU is off because Chromium gave this graphics card no WebGPU adapter. ${TAIL}`)
+    })
+
+    it('does not read the bridge status, which reads enabled where no adapter exists', () => {
+      for (const features of [GOOD_FEATURES, BRIDGE_OFF]) expect(asked([INTEL], { features }).reason).toBe('gpu-not-listed')
+    })
+
+    it('makes no claim without a page that saw no adapter, since a listed graphics card can get one', () => {
+      expect(webGpuState(inputs({ devices: [INTEL, NVIDIA] }))).toMatchObject({ state: 'unknown', reason: 'unknown' })
+      expect(webGpuState(inputs({ devices: [INTEL], adapter: { kind: 'no-api' } })).reason).toBe('no-adapter')
     })
   })
 
@@ -108,10 +149,11 @@ describe('webGpuState', () => {
       .toBe('Chromium has turned WebGPU off on this computer.')
   })
 
-  it('gives the session as the reason when WebGPU is off and the bridge is too', () => {
-    const features = { ...BRIDGE_OFF, webgpu: 'disabled_off' }
+  it('gives the session as the reason when Chromium has turned WebGPU off as well', () => {
+    const features = { ...GOOD_FEATURES, webgpu: 'disabled_off' }
     expect(webGpuState(inputs({ session: 'x11', ozone: 'x11', features })).reason).toBe('x11')
-    expect(webGpuState(inputs({ ozone: 'wayland', features })).reason).toBe('gpu-not-listed')
+    expect(webGpuState(inputs({ ozone: 'wayland', features, adapter: { kind: 'none' } })).reason).toBe('gpu-not-listed')
+    expect(webGpuState(inputs({ ozone: 'wayland', features })).reason).toBe('webgpu-off')
   })
 
   describe('pages drawn on the processor', () => {
@@ -120,6 +162,8 @@ describe('webGpuState', () => {
     it('gives software rendering as the reason before the session, as a computer with no graphics card is on X11 too', () => {
       const features = { webgpu: 'disabled_off', webgpu_on_vk_via_gl_interop: 'disabled_off', gpu_compositing: 'disabled_software' }
       expect(webGpuState(inputs({ ozone: 'x11', features, devices: [INTEL] })).reason).toBe('software-only')
+      expect(webGpuState(inputs({ ozone: 'x11', features, devices: [INTEL], adapter: { kind: 'none' } })).reason).toBe('software-only')
+      expect(webGpuState(inputs({ ozone: 'wayland', features, devices: [INTEL], adapter: { kind: 'none' } })).reason).toBe('software-only')
     })
 
     it('does not say there is no graphics card, since Chromium also draws in software for a blocked driver or after crashes', () => {
@@ -194,7 +238,7 @@ describe('webGpuState', () => {
   })
 
   it('says the page got no adapter when that is all it knows', () => {
-    const state = webGpuState(inputs({ adapter: { kind: 'none' } }))
+    const state = webGpuState(inputs({ ozone: '', adapter: { kind: 'none' } }))
     expect(state).toMatchObject({ state: 'unavailable', reason: 'no-adapter' })
     expect(state.sentence).toBe('The page asked for a WebGPU adapter and got none. The graphics report does not say why.')
     expect(webGpuState(inputs({ adapter: { kind: 'no-api' } })).sentence)
@@ -202,7 +246,8 @@ describe('webGpuState', () => {
   })
 
   it('prefers a reason the report shows over the page\'s empty answer', () => {
-    expect(webGpuState(inputs({ session: 'x11', ozone: 'x11', features: BRIDGE_OFF, adapter: { kind: 'none' } })).reason).toBe('x11')
+    expect(webGpuState(inputs({ session: 'x11', ozone: 'x11', adapter: { kind: 'none' } })).reason).toBe('x11')
+    expect(webGpuState(inputs({ features: { ...GOOD_FEATURES, webgpu: 'disabled_off' }, ozone: '', adapter: { kind: 'none' } })).reason).toBe('webgpu-off')
   })
 
   it('is unknown when nothing in the report rules WebGPU out or explains it', () => {
@@ -217,7 +262,9 @@ describe('webGpuState', () => {
 
   it('does not apply a Linux reason on another system', () => {
     const features = { webgpu: 'enabled', webgpu_on_vk_via_gl_interop: 'disabled_off', gpu_compositing: 'enabled' }
-    expect(webGpuState({ platform: 'darwin', session: '', ozone: 'x11', features, devices: [{ ...INTEL, vendorId: 0x106b }] }).state).toBe('unknown')
+    const apple = [{ ...INTEL, vendorId: 0x106b }]
+    expect(webGpuState({ platform: 'darwin', session: '', ozone: 'x11', features, devices: apple }).state).toBe('unknown')
+    expect(webGpuState({ platform: 'darwin', session: 'wayland', ozone: 'wayland', features, devices: apple, adapter: { kind: 'none' } }).reason).toBe('no-adapter')
   })
 })
 
