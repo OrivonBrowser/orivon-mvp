@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  NO_GUARD_RECORD, applyX11Vulkan, guardRecordFrom, offersX11Setting, ozonePlatformOf, planStart, revertAfterEnd, runsOnX11, revertAfterStatus, sameGuardRecord, turnedOn, windowShown
+  NO_GUARD_RECORD, applyX11Vulkan, guardRecordFrom, offersX11Setting, ozonePlatformOf, planStart, revertAfterEnd, revertAfterStatus, sameGuardRecord, turnedOn, windowPainted
 } from '../x11-vulkan.js'
 import type { GuardRecord } from '../x11-vulkan.js'
 
@@ -8,39 +8,43 @@ const NOW = new Date('2026-11-04T12:00:00.000Z')
 const REVERT = { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' } as const
 
 describe('ozonePlatformOf', () => {
+  const on = (ozoneSwitch: string, sessionType: string, platform = 'linux'): string => ozonePlatformOf({ platform, ozoneSwitch, sessionType })
+
   it('takes the switch when one is set, whatever the session says', () => {
-    expect(ozonePlatformOf({ ozoneSwitch: 'x11', sessionType: 'wayland' })).toBe('x11')
-    expect(ozonePlatformOf({ ozoneSwitch: 'wayland', sessionType: 'x11' })).toBe('wayland')
-    expect(ozonePlatformOf({ ozoneSwitch: 'headless', sessionType: '' })).toBe('headless')
+    expect(on('x11', 'wayland')).toBe('x11')
+    expect(on('wayland', 'x11')).toBe('wayland')
+    expect(on('headless', '')).toBe('headless')
   })
 
   it('is Wayland on a Wayland session and X11 on every other session, as Chromium 152 decides with no switch', () => {
-    expect(ozonePlatformOf({ ozoneSwitch: '', sessionType: 'wayland' })).toBe('wayland')
-    expect(ozonePlatformOf({ ozoneSwitch: '', sessionType: 'x11' })).toBe('x11')
-    expect(ozonePlatformOf({ ozoneSwitch: '', sessionType: 'tty' })).toBe('x11')
-    expect(ozonePlatformOf({ ozoneSwitch: '', sessionType: '' })).toBe('x11')
+    expect(on('', 'wayland')).toBe('wayland')
+    expect(on('', 'x11')).toBe('x11')
+    expect(on('', 'tty')).toBe('x11')
+    expect(on('', '')).toBe('x11')
+  })
+
+  it('names no platform off Linux, where there is no Ozone', () => {
+    expect(on('', '', 'win32')).toBe('')
+    expect(on('x11', 'x11', 'darwin')).toBe('')
   })
 })
 
-describe('where the setting applies and where it is offered', () => {
+describe('where the setting applies and is offered', () => {
   const x11Session = { platform: 'linux', ozoneSwitch: 'x11', sessionType: 'x11' }
   const xwayland = { platform: 'linux', ozoneSwitch: 'x11', sessionType: 'wayland' }
 
-  it('applies on Linux when Chromium runs on X11, XWayland included, and nowhere else', () => {
-    expect(runsOnX11(x11Session)).toBe(true)
-    expect(runsOnX11(xwayland)).toBe(true)
-    expect(runsOnX11({ platform: 'linux', ozoneSwitch: 'wayland', sessionType: 'wayland' })).toBe(false)
-    expect(runsOnX11({ platform: 'linux', ozoneSwitch: '', sessionType: 'wayland' })).toBe(false)
-    expect(runsOnX11({ platform: 'win32', ozoneSwitch: 'x11', sessionType: '' })).toBe(false)
-    expect(runsOnX11({ platform: 'darwin', ozoneSwitch: '', sessionType: '' })).toBe(false)
-  })
-
-  it('offers the choice on an X11 session, not through XWayland, not on Wayland, not off Linux', () => {
+  it('is an X11 session on Linux: Ozone X11 and a session that is not Wayland', () => {
     expect(offersX11Setting(x11Session)).toBe(true)
     expect(offersX11Setting({ platform: 'linux', ozoneSwitch: '', sessionType: '' })).toBe(true)
+    expect(offersX11Setting({ platform: 'linux', ozoneSwitch: '', sessionType: 'tty' })).toBe(true)
+  })
+
+  it('is not Orivon on X11 inside a Wayland session (XWayland), not Wayland, not off Linux', () => {
     expect(offersX11Setting(xwayland)).toBe(false)
+    expect(offersX11Setting({ platform: 'linux', ozoneSwitch: '', sessionType: 'wayland' })).toBe(false)
     expect(offersX11Setting({ platform: 'linux', ozoneSwitch: 'wayland', sessionType: 'wayland' })).toBe(false)
     expect(offersX11Setting({ platform: 'win32', ozoneSwitch: '', sessionType: '' })).toBe(false)
+    expect(offersX11Setting({ platform: 'darwin', ozoneSwitch: 'x11', sessionType: '' })).toBe(false)
   })
 })
 
@@ -110,8 +114,13 @@ describe('planStart', () => {
     expect(planStart({ onX11: true, setting: true, record: NO_GUARD_RECORD, now: NOW })).toEqual({ applySwitches: true, turnOff: false, record: pending })
   })
 
-  it('forgets a revert the setting outlived', () => {
-    expect(planStart({ onX11: true, setting: true, record: reverted, now: NOW }).record).toEqual(pending)
+  it('treats a setting that is on beside a revert as turned off, because the save of the turn-off was lost: no switches, off again, the record kept', () => {
+    expect(planStart({ onX11: true, setting: true, record: reverted, now: NOW })).toEqual({ applySwitches: false, turnOff: true, record: reverted })
+  })
+
+  it('keeps the revert that explains a run when that run also left its marker, and does not add a second one', () => {
+    const both: GuardRecord = { pendingWindow: true, revert: REVERT }
+    expect(planStart({ onX11: true, setting: true, record: both, now: NOW })).toEqual({ applySwitches: false, turnOff: true, record: reverted })
   })
 
   it('reverts, with the time, when the last run set the switches and never showed its window', () => {
@@ -129,10 +138,10 @@ describe('planStart', () => {
 })
 
 describe('the record through a run', () => {
-  it('is cleared of its marker when the first window is shown, and only then', () => {
-    expect(windowShown({ pendingWindow: true, revert: null })).toEqual(NO_GUARD_RECORD)
+  it('is cleared of its marker when the first window has painted, and only then', () => {
+    expect(windowPainted({ pendingWindow: true, revert: null })).toEqual(NO_GUARD_RECORD)
     const record: GuardRecord = { pendingWindow: false, revert: REVERT }
-    expect(windowShown(record)).toBe(record)
+    expect(windowPainted(record)).toBe(record)
   })
 
   it('forgets the revert when the setting is turned on again', () => {
@@ -181,5 +190,11 @@ describe('revertAfterEnd', () => {
     expect(revertAfterEnd({ ...end, processType: 'Utility' })).toBeUndefined()
     expect(revertAfterEnd({ ...end, processType: 'Tab' })).toBeUndefined()
     expect(revertAfterEnd({ ...end, applied: false })).toBeUndefined()
+  })
+
+  it('does not revert for any end while Orivon quits or starts again, however the system reports it', () => {
+    for (const reason of ['crashed', 'abnormal-exit', 'launch-failed', 'oom', 'integrity-failure', 'killed']) {
+      expect(revertAfterEnd({ ...end, reason, quitting: true }), reason).toBeUndefined()
+    }
   })
 })

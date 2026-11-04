@@ -111,6 +111,39 @@ describe('showWhenReady', () => {
     }
   })
 
+  it('tells the launch\'s first window\'s caller that it painted when ready-to-show comes, once', () => {
+    vi.useFakeTimers()
+    try {
+      const { win, ready } = fakeWindow()
+      const onPainted = vi.fn()
+      showWhenReady({ win, initialBounds: bounds, kiosk: false }, { firstOfLaunch: true, onPainted })
+      expect(onPainted).not.toHaveBeenCalled()
+      ready()
+      vi.advanceTimersByTime(2000)
+      expect(onPainted).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not say the window painted when only the fallback timer showed it, and says so if ready-to-show comes late', () => {
+    vi.useFakeTimers()
+    try {
+      const { win, ready } = fakeWindow()
+      const onShown = vi.fn()
+      const onPainted = vi.fn()
+      showWhenReady({ win, initialBounds: bounds, kiosk: false }, { firstOfLaunch: true, onShown, onPainted })
+      vi.advanceTimersByTime(1000)
+      expect(onShown).toHaveBeenCalledTimes(1)
+      expect(onPainted).not.toHaveBeenCalled()
+      ready()
+      expect(onShown).toHaveBeenCalledTimes(1)
+      expect(onPainted).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('shows the launch\'s first window after the fallback delay when ready-to-show never comes', () => {
     vi.useFakeTimers()
     try {

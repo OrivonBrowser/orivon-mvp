@@ -115,7 +115,7 @@ describe('the setting on', () => {
       if (LINUX) {
         expect(angle).toBe('vulkan')
         expect(features).toEqual(expect.arrayContaining(['Vulkan', 'VulkanFromANGLE']))
-        // The run marks itself until the first window shows, and clears the mark when it has.
+        // The run marks itself until the first window has painted, and clears the mark when it has.
         expect(await waitFor(() => guardOf(dir)?.pendingWindow === false)).toBe(true)
         const page = await pageOf(app)
         console.log(`WEBGPU-X11-ON ${JSON.stringify({ page, renderNode: HAS_RENDER_NODE })}`)
@@ -209,7 +209,7 @@ describe.skipIf(!LINUX)('the guard', () => {
       const about = app.windows().find((w) => w.url().startsWith('orivon://about')) as Page
       const sentence = about.locator('.stack > .card').first().locator('.row.long .value')
       expect(await waitFor(async () => (await sentence.count()) === 1)).toBe(true)
-      expect(await sentence.textContent()).toMatch(/^Orivon turned off "Use the graphics card for WebGPU on X11" because the graphics process crashed while it was on\.( You can turn it on again in Settings, under Performance\.)?$/)
+      expect(await sentence.textContent()).toBe('Orivon turned off "Use the graphics card for WebGPU on X11" because graphics stopped working while it was on. You can turn it on again in Settings, under Performance.')
     } finally {
       await closeElectron(app)
     }
@@ -229,12 +229,15 @@ describe.skipIf(!LINUX)('the guard', () => {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it('forgets a revert when the setting is on again and the run starts clean', async () => {
-    const { app, dir } = await launched({ setting: true, guard: { pendingWindow: false, revert: { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' } } })
+  it('turns the setting off again, and keeps the record, when it reads on beside a revert because the save of the turn-off was lost', async () => {
+    const revert = { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' }
+    const { app, dir } = await launched({ setting: true, guard: { pendingWindow: false, revert } })
     try {
-      const { angle } = await switchesOf(app)
-      expect(angle).toBe('vulkan')
-      expect(await waitFor(() => guardOf(dir)?.pendingWindow === false && guardOf(dir)?.revert === null)).toBe(true)
+      const { angle, features } = await switchesOf(app)
+      expect(angle).toBe('')
+      expect(features).not.toContain('VulkanFromANGLE')
+      expect(await waitFor(() => settingOf(dir) !== true)).toBe(true)
+      expect(guardOf(dir)).toEqual({ pendingWindow: false, revert })
     } finally {
       await closeElectron(app)
     }

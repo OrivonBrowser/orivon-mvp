@@ -1,13 +1,14 @@
 // Carries out the WebGPU-on-X11 setting in this process: the switches before Chromium reads them, the start marker
-// that the first window clears, and the revert when the graphics process ends badly. What each step decides is in
+// that the first painted window clears, and the revert when graphics go wrong. What each step decides is in
 // x11-vulkan.ts. Tied to Electron: the command line, the process events and the settings store.
 import { join } from 'node:path'
 import { app } from 'electron'
 import { forceSettingsFile, readSettingBeforeReady } from '../settings/settings-file.js'
 import type { SettingsStore } from '../settings/settings-store.js'
 import { GUARD_FILE, readGuardRecord, writeGuardRecord } from './guard-file.js'
-import { NO_GUARD_RECORD, SOFTWARE_CHECK_MS, applyX11Vulkan, offersX11Setting, planStart, revertAfterEnd, revertAfterStatus, runsOnX11, sameGuardRecord, turnedOn, windowShown } from './x11-vulkan.js'
+import { NO_GUARD_RECORD, SOFTWARE_CHECK_MS, applyX11Vulkan, offersX11Setting, ozonePlatformOf, planStart, revertAfterEnd, revertAfterStatus, sameGuardRecord, turnedOn, windowPainted } from './x11-vulkan.js'
 import type { DisplayServer, GuardRecord, Revert, X11Reading } from './x11-vulkan.js'
+import type { X11Offer } from './graphics-domain.js'
 
 export const X11_SETTING = 'graphics.webgpuOnX11'
 
@@ -27,6 +28,11 @@ let quitting = false
 
 function currentDisplay (): DisplayServer {
   return { platform: process.platform, ozoneSwitch: app.commandLine.getSwitchValue('ozone-platform'), sessionType: process.env['XDG_SESSION_TYPE'] ?? '' }
+}
+
+/** The Ozone platform this process draws through ('' off Linux): the one answer for the guard, About and a report. */
+export function currentOzonePlatform (): string {
+  return ozonePlatformOf(currentDisplay())
 }
 
 function keep (state: Run, record: GuardRecord): void {
@@ -54,8 +60,12 @@ function onChildEnd (state: Run, processType: string, reason: string): void {
 }
 
 function checkCompositing (state: Run): void {
-  const { gpu_compositing: compositing } = app.getGPUFeatureStatus()
-  revertRun(state, revertAfterStatus({ applied: state.applied, compositing, now: new Date() }))
+  try {
+    const { gpu_compositing: compositing } = app.getGPUFeatureStatus()
+    revertRun(state, revertAfterStatus({ applied: state.applied, compositing, now: new Date() }))
+  } catch (error) {
+    console.error('[graphics] the WebGPU-on-X11 guard could not read the graphics status:', error)
+  }
 }
 
 /**
@@ -67,7 +77,7 @@ export function startX11Vulkan (dir: string): void {
     const display = currentDisplay()
     const settingsFile = join(dir, 'settings.json')
     const file = join(dir, GUARD_FILE)
-    const onX11 = runsOnX11(display)
+    const onX11 = offersX11Setting(display)
     const before = onX11 ? readGuardRecord(file) : NO_GUARD_RECORD
     const plan = planStart({ onX11, setting: onX11 && readSettingBeforeReady(settingsFile, X11_SETTING), record: before, now: new Date() })
     if (plan.turnOff) {
@@ -77,7 +87,7 @@ export function startX11Vulkan (dir: string): void {
         console.error('[graphics] the WebGPU-on-X11 setting could not be turned off:', error)
       }
     }
-    const state: Run = { file, offered: offersX11Setting(display), applied: plan.applySwitches, record: before, settings: undefined, turnOffWhenStored: false, publish: () => {} }
+    const state: Run = { file, offered: onX11, applied: plan.applySwitches, record: before, settings: undefined, turnOffWhenStored: false, publish: () => {} }
     if (onX11) keep(state, plan.record)
     run = state
     if (!plan.applySwitches) return
@@ -103,12 +113,42 @@ export function attachX11Vulkan (settings: Pick<SettingsStore, 'set' | 'onChange
   })
 }
 
-/** The launch's first window was shown: the run got as far as the guard asks, and a little later the guard looks at how pages are drawn. */
+/**
+ * The launch's first window painted. This is the signal that clears the start marker, and only this one: Electron's
+ * `ready-to-show` follows a rendered page, whereas the window is also shown by a fallback timer one second after its
+ * creation whether or not anything was drawn (window-frame.ts), and a run whose window only the timer showed has not
+ * proved the switches let a window draw.
+ */
+export function x11VulkanWindowPainted (): void {
+  clearStartMarker()
+}
+
+/** Orivon itself ended the start before its first window (a subsystem it cannot run without failed): that is not the switches' doing, so the marker goes. A kill or a hang during start-up leaves it. */
+export function x11VulkanStartAborted (): void {
+  clearStartMarker()
+}
+
+function clearStartMarker (): void {
+  const state = run
+  if (state === undefined || !state.applied) return
+  keep(state, windowPainted(state.record))
+}
+
+/**
+ * The launch's first window was shown: a little later the guard looks at how pages are drawn, and again whenever
+ * Chromium updates its graphics report, so a fall back to the processor after that is seen as well.
+ */
 export function x11VulkanWindowShown (): void {
   const state = run
   if (state === undefined || !state.applied) return
-  keep(state, windowShown(state.record))
-  setTimeout(() => { try { checkCompositing(state) } catch (error) { console.error('[graphics] the WebGPU-on-X11 guard could not read the graphics status:', error) } }, SOFTWARE_CHECK_MS).unref()
+  setTimeout(() => {
+    checkCompositing(state)
+    const recheck = (): void => {
+      checkCompositing(state)
+      if (state.record.revert !== null) app.off('gpu-info-update', recheck)
+    }
+    app.on('gpu-info-update', recheck)
+  }, SOFTWARE_CHECK_MS).unref()
 }
 
 /** What this run did, for a report and `orivon://gpu`. */
@@ -117,6 +157,6 @@ export function x11VulkanReading (): X11Reading {
 }
 
 /** What Settings needs: whether to offer the choice, and the last revert. */
-export function x11VulkanOffer (): { readonly offered: boolean, readonly revert: Revert | null } {
+export function x11VulkanOffer (): X11Offer {
   return { offered: run?.offered ?? false, revert: run?.record.revert ?? null }
 }

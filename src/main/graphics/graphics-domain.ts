@@ -14,8 +14,7 @@ export function graphicsDomain (offer: () => X11Offer): InternalDomain {
     handle: (command) => {
       const type = typeof command === 'object' && command !== null ? (command as { type?: unknown }).type : undefined
       if (type !== 'x11Vulkan') return undefined
-      const { offered, revert } = offer()
-      return { offered, revert }
+      return offer()
     }
   }
 }

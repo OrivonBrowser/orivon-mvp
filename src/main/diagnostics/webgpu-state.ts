@@ -3,6 +3,8 @@
 //
 // The reasons are the ones Chromium 152 gives (docs/planning/webgpu-plan.md, "Why Linux is narrow"). A fact the
 // inputs cannot show is never a reason: the answer is then 'unknown'.
+import { offersX11Setting } from '../graphics/x11-vulkan.js'
+import type { X11Reading } from '../graphics/x11-vulkan.js'
 import { driverOf, hex4, makerNameOf } from './gpu-reading.js'
 import type { GpuDevice } from './gpu-reading.js'
 
@@ -29,6 +31,9 @@ export interface X11VulkanReading {
   readonly reverted: boolean
 }
 
+/** The reading the graphics module keeps (a revert has a time and a reason), as this function needs it: whether one exists. */
+export const x11VulkanReadingOf = ({ onAtStart, revert }: X11Reading): X11VulkanReading => ({ onAtStart, reverted: revert !== null })
+
 /** What a page learned by asking for an adapter: it got one, it got none, or its `navigator.gpu` does not exist. */
 export type AdapterReading = { readonly kind: 'adapter' } | { readonly kind: 'none' } | { readonly kind: 'no-api' }
 
@@ -47,6 +52,8 @@ export interface WebGpuInputs {
   readonly adapter?: AdapterReading | undefined
   /** What the X11 setting did in this run; undefined where the reader has no such reading. */
   readonly x11Vulkan?: X11VulkanReading | undefined
+  /** The reading is for a private window, whose Settings switch is locked: no sentence sends the person there. */
+  readonly isPrivate?: boolean | undefined
 }
 
 export interface WebGpuState {
@@ -110,38 +117,44 @@ function drawsInSoftware (inputs: WebGpuInputs): boolean {
   return devices !== undefined && devices.every(isSoftwareDevice)
 }
 
-/** Where Settings offers the X11 setting: an X11 session. Under XWayland the way Orivon was started, not the setting, is what to change. */
-const offersSetting = (session: string): boolean => session !== 'wayland'
-
 const IN_SETTINGS = 'in Settings, under Performance.'
+
+/** Where Settings offers the switch: the one rule (`graphics/x11-vulkan.ts`). Under XWayland the way Orivon was started, not the setting, is what to change. */
+const offersSetting = (inputs: WebGpuInputs): boolean => offersX11Setting({ platform: inputs.platform, ozoneSwitch: inputs.ozone, sessionType: inputs.session })
+
+/** Whether a sentence may send the person to the switch: where it is offered, and not in a private window, where it is locked. */
+const canTurnOn = (inputs: WebGpuInputs): boolean => offersSetting(inputs) && inputs.isPrivate !== true
 
 /** Chromium's X11 platform never turns on the bridge WebGPU needs, so it is off for every card there unless the
  * setting that draws through Vulkan is on. A Wayland session whose browser runs through XWayland is told apart: the
  * session allows WebGPU and the way Orivon was started does not. */
-function x11Reason (session: string): WebGpuState {
-  if (!offersSetting(session)) {
+function x11Reason (inputs: WebGpuInputs): WebGpuState {
+  if (!offersSetting(inputs)) {
     return result('unavailable', 'xwayland', 'WebGPU is off because Orivon is running through X11 (XWayland) on this Wayland session. WebGPU needs Orivon to run on Wayland.')
   }
-  const where = session === 'x11' ? 'this computer runs an X11 session' : 'Orivon is running on X11'
-  return result('unavailable', 'x11', `WebGPU is off because ${where}. Chromium turns it off there for every graphics card. You can turn it on ${IN_SETTINGS}`)
+  const where = inputs.session === 'x11' ? 'this computer runs an X11 session' : 'Orivon is running on X11'
+  const way = canTurnOn(inputs) ? ` You can turn it on ${IN_SETTINGS}` : ''
+  return result('unavailable', 'x11', `WebGPU is off because ${where}. Chromium turns it off there for every graphics card.${way}`)
 }
 
 /** The setting is on and the page still got no adapter: Vulkan found no card Chromium could use. */
 const vulkanFoundNone = (): WebGpuState =>
   result('unavailable', 'x11-vulkan-no-adapter', 'WebGPU is still off with "Use the graphics card for WebGPU on X11" turned on: Chromium found no graphics card it could use through Vulkan.')
 
-/** Orivon turned the setting off after a bad run. The line about turning it on again is left out where Settings does not offer it. */
-function vulkanReverted (session: string): WebGpuState {
-  const again = offersSetting(session) ? ` You can turn it on again ${IN_SETTINGS}` : ''
-  return result('unavailable', 'x11-vulkan-reverted', `Orivon turned off "Use the graphics card for WebGPU on X11" because the graphics process crashed while it was on.${again}`)
+/** Orivon turned the setting off after a run that went wrong, whichever way (the record keeps which, for a report). */
+function vulkanReverted (inputs: WebGpuInputs): WebGpuState {
+  const again = canTurnOn(inputs) ? ` You can turn it on again ${IN_SETTINGS}` : ''
+  return result('unavailable', 'x11-vulkan-reverted', `Orivon turned off "Use the graphics card for WebGPU on X11" because graphics stopped working while it was on.${again}`)
 }
 
-/** A revert is the reason while the setting is off this run, or while the run that has it on got no adapter. It comes
- * before the processor check: a bad run is what leaves pages drawn there. */
+/** A revert is the reason while the setting is off this run. In the run that has the switches and went wrong it is the
+ * reason once a page got no adapter or pages are drawn on the processor, which is how that run fell over. It comes
+ * before the processor check either way, with or without a page's reading. */
 function revertedReason (inputs: WebGpuInputs): WebGpuState | undefined {
   const { x11Vulkan, adapter } = inputs
   if (inputs.platform !== 'linux' || inputs.ozone !== 'x11' || x11Vulkan?.reverted !== true || adapter?.kind === 'no-api') return undefined
-  return x11Vulkan.onAtStart && adapter?.kind !== 'none' ? undefined : vulkanReverted(inputs.session)
+  const stillOn = x11Vulkan.onAtStart && adapter?.kind !== 'none' && !drawsInSoftware(inputs)
+  return stillOn ? undefined : vulkanReverted(inputs)
 }
 
 /** On Linux the Ozone platform decides, and the `webgpu_on_vk_via_gl_interop` status is not read: it reads enabled on
@@ -153,7 +166,7 @@ function linuxReason (inputs: WebGpuInputs): WebGpuState | undefined {
   const asked = inputs.adapter?.kind
   if (inputs.platform !== 'linux' || asked === 'no-api') return undefined
   if (inputs.ozone === 'x11') {
-    if (inputs.x11Vulkan?.onAtStart !== true) return x11Reason(inputs.session)
+    if (inputs.x11Vulkan?.onAtStart !== true) return x11Reason(inputs)
     return asked === 'none' ? vulkanFoundNone() : undefined
   }
   return inputs.ozone === 'wayland' && asked === 'none' ? unlisted(inputs.devices) : undefined

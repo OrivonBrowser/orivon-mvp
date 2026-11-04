@@ -21,6 +21,8 @@ export interface GpuReading {
   readonly ozone: string
   /** What the X11 setting for WebGPU did in this run; absent where nothing reads it. */
   readonly x11Vulkan?: X11VulkanReading
+  /** This is a private window, whose Settings switch for it is locked. */
+  readonly isPrivate?: boolean
 }
 
 /** The Graphics tab asks for the report and for WebGPU's state together: one reading younger than this serves both. */
@@ -73,9 +75,9 @@ export function infoDomain (deps: AboutDomainDeps): InternalDomain {
         }
         case 'webgpu': {
           try {
-            const { status, info, platform, session, ozone, x11Vulkan } = await sharedReading()
+            const { status, info, platform, session, ozone, x11Vulkan, isPrivate } = await sharedReading()
             const features = gpuFeaturesOf(status)
-            const answer = webGpuState({ platform, session, ozone, features, devices: gpuDevicesOf(info), adapter: adapterReading(request.adapter), x11Vulkan })
+            const answer = webGpuState({ platform, session, ozone, features, devices: gpuDevicesOf(info), adapter: adapterReading(request.adapter), x11Vulkan, isPrivate })
             return { ok: true, ...answer, tone: webGpuTone(answer, features['webgpu']) }
           } catch {
             return { ok: false }

@@ -1,12 +1,13 @@
 // The `diagnostics` block of a report: what this computer and this build are, shaped from facts main has already
 // read. Every field is a plain number, a flag, or a short name; there is no address, path or free text in it, and
 // the notice lists the groups (docs/privacy/notice.md, "Bug reports you send"). Pure, so the shape is tested.
+import type { X11Reading } from '../graphics/x11-vulkan.js'
 import { SETTINGS } from '../settings/schema.js'
 import type { SettingKey } from '../settings/schema.js'
 import { newest } from './crash-records.js'
 import type { CrashKind, CrashRecord } from './crash-records.js'
 import { gpuDevicesOf, gpuFeaturesOf } from './gpu-reading.js'
-import { webGpuState } from './webgpu-state.js'
+import { webGpuState, x11VulkanReadingOf } from './webgpu-state.js'
 import type { AdapterReading, WebGpuReason, WebGpuStateName } from './webgpu-state.js'
 
 export type Channel = 'development' | 'source' | 'appimage' | 'linux-package' | 'windows' | 'macos'
@@ -67,12 +68,6 @@ export function appSocketReadings (usages: readonly AppSocketReading[]): AppSock
     .map(({ open, inFlight, allowance }) => ({ open, inFlight, allowance }))
 }
 
-/** The X11 setting for WebGPU: whether this run drew through Vulkan because it was on at the start, and the last time Orivon turned it off by itself (a fixed word for why). */
-export interface X11VulkanFact {
-  readonly onAtStart: boolean
-  readonly revert: { readonly at: string, readonly why: string } | null
-}
-
 export interface DiagnosticsFacts {
   readonly commit: string
   readonly channel: Channel
@@ -95,7 +90,7 @@ export interface DiagnosticsFacts {
   /** `app.getGPUFeatureStatus()`. */
   readonly gpuStatus: unknown
   /** What the setting that gives an X11 session WebGPU did in this run. */
-  readonly x11Vulkan: X11VulkanFact
+  readonly x11Vulkan: X11Reading
   /** `app.getGPUInfo('basic')`, or undefined when it rejected. */
   readonly gpuInfo: unknown
   readonly displays: readonly DisplayReading[]
@@ -121,7 +116,8 @@ export interface Diagnostics {
     readonly devices: ReadonlyArray<{ readonly vendorId: number, readonly deviceId: number, readonly driverVersion: string, readonly active: boolean }>
     /** Whether WebGPU works and why not: main cannot ask for an adapter, so a working computer reads `unknown` unless the page that asked for the report got one. */
     readonly webgpu: { readonly state: WebGpuStateName, readonly reason: WebGpuReason }
-    readonly x11Vulkan: X11VulkanFact
+    /** The X11 setting for WebGPU: whether this run drew through Vulkan because it was on at the start, and the last time Orivon turned it off by itself (a fixed word for why). */
+    readonly x11Vulkan: X11Reading
   }
   readonly displays: ReadonlyArray<{ readonly width: number, readonly height: number, readonly scale: number }>
   readonly processes: ReadonlyArray<{ readonly type: string, readonly count: number, readonly memoryMb: number }>
@@ -163,7 +159,7 @@ export function buildDiagnostics (facts: DiagnosticsFacts, adapter?: AdapterRead
   const devices = gpuDevicesOf(facts.gpuInfo)
   const { platform, session, ozone } = facts.system
   const { x11Vulkan } = facts
-  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter, x11Vulkan: { onAtStart: x11Vulkan.onAtStart, reverted: x11Vulkan.revert !== null } })
+  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter, x11Vulkan: x11VulkanReadingOf(x11Vulkan) })
   return {
     app: { commit: facts.commit, channel: facts.channel, ...facts.versions, packaged: facts.packaged, uptimeSec: Math.round(facts.uptimeSec) },
     system: facts.system,

@@ -168,6 +168,8 @@ export interface ShowOptions {
   inactive?: boolean | undefined
   /** Called once the window has been shown. */
   onShown?: (() => void) | undefined
+  /** Called once, when the page has rendered (`ready-to-show`), and not when the fallback timer shows the window: that one may show nothing drawn. Only a window that waits for its first paint has one. */
+  onPainted?: (() => void) | undefined
 }
 
 /** Shows the window, once only. The launch's first window, and a window that comes up behind (`inactive`), wait for
@@ -227,6 +229,6 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
     return
   }
   ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
-    .once('ready-to-show', showOnce)
+    .once('ready-to-show', () => { showOnce(); options.onPainted?.() })
   setTimeout(showOnce, 1000)
 }

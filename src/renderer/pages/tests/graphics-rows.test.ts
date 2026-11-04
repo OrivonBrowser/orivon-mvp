@@ -27,7 +27,7 @@ const row = (id: string): Row => graphicsRows.find((candidate) => candidate.id =
 describe('the WebGPU-on-X11 rows', () => {
   it('say what the owner approved, word for word', () => {
     expect(row('webgpu-on-x11').label).toBe('Use the graphics card for WebGPU on X11')
-    expect(row('webgpu-on-x11').help).toBe('Turns on WebGPU, which some games and apps need, by drawing Orivon through Vulkan. On a laptop with two graphics cards this uses the stronger one, which drains the battery faster, and on some of them videos can show a blank picture, which is why Chromium leaves it off on X11. If the graphics process crashes, Orivon turns this off by itself. It is read when Orivon starts.')
+    expect(row('webgpu-on-x11').help).toBe('Turns on WebGPU for games and apps that need it. It may use more battery, and on some laptops videos can go blank. Read when Orivon starts.')
     const restart = row('webgpu-on-x11-restart')
     expect(restart.label).toBe('Start again to apply')
     expect(restart.help).toBe('The choice above is read when Orivon starts. Your tabs and windows are not restored.')
@@ -66,7 +66,7 @@ describe('the WebGPU-on-X11 rows', () => {
   })
 
   it('add the revert line to the help after Orivon turned the choice off, and not otherwise', async () => {
-    const line = 'Orivon turned this off because the graphics process crashed while it was on.'
+    const line = 'Orivon turned this off because graphics stopped working while it was on.'
     const help = row('webgpu-on-x11').helpFor
     expect(help?.((await loaded({ value: false, atStart: true, revert: REVERT })).state)).toBe(`${row('webgpu-on-x11').help ?? ''} ${line}`)
     expect(help?.((await loaded({ value: false, atStart: false, revert: null })).state)).toBe(row('webgpu-on-x11').help)

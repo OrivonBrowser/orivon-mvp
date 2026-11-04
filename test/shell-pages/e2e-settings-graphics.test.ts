@@ -30,7 +30,7 @@ async function themed (page: Page, name: string): Promise<void> {
 const KEY = 'graphics.webgpuOnX11'
 const LINUX = process.platform === 'linux'
 const LABEL = 'Use the graphics card for WebGPU on X11'
-const REVERTED = 'Orivon turned this off because the graphics process crashed while it was on.'
+const REVERTED = 'Orivon turned this off because graphics stopped working while it was on.'
 
 interface Seeded {
   readonly setting?: boolean
@@ -55,6 +55,10 @@ async function performancePage (seeded: Seeded): Promise<{ app: ElectronApplicat
     await closeElectron(app)
     throw error
   }
+}
+
+const revertIn = async (dir: string): Promise<unknown> => {
+  try { return (JSON.parse(await readFile(join(dir, 'x11-vulkan.json'), 'utf8')) as { revert?: unknown }).revert } catch { return undefined }
 }
 
 const settingIn = async (dir: string): Promise<unknown> => {
@@ -101,13 +105,14 @@ it.skipIf(!LINUX)('turns on, saves the choice, and asks to start again; turning 
 }, QA_TEST_TIMEOUT_MS)
 
 it.skipIf(!LINUX)('says why after Orivon turned the choice off by itself, and the line goes when the choice is turned on again', async () => {
-  const { app, page } = await performancePage({ revert: { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' } })
+  const { app, page, dir } = await performancePage({ revert: { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' } })
   try {
     expect(await page.locator('#row-webgpu-on-x11 .row-help').textContent()).toContain(REVERTED)
     await page.locator('#row-webgpu-on-x11').scrollIntoViewIfNeeded()
     await themed(page, 'graphics-reverted')
     await page.locator('#row-webgpu-on-x11 .switch').click()
     expect(await waitFor(async () => !((await page.locator('#row-webgpu-on-x11 .row-help').textContent()) ?? '').includes(REVERTED))).toBe(true)
+    expect(await waitFor(async () => await revertIn(dir) === null)).toBe(true)
   } finally {
     await closeElectron(app)
   }

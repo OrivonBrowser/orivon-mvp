@@ -54,7 +54,7 @@ import { isOriginPinnedSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
 import { decideDefaultProfile } from './default-profile/profile-start.js'
 import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
-import { attachX11Vulkan, startX11Vulkan, x11VulkanWindowShown } from './graphics/x11-vulkan-runner.js'
+import { attachX11Vulkan, startX11Vulkan, x11VulkanStartAborted, x11VulkanWindowPainted, x11VulkanWindowShown } from './graphics/x11-vulkan-runner.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really
@@ -131,8 +131,9 @@ const SWEEP_DELAY_MS = 20_000
 /** `web-contents-created` takes a listener from each installer; past Node's default of ten it warns of a leak that is not one. */
 const APP_LISTENER_ROOM = 24
 
-/** Called by `start.ts` when an error ends the process: the crash record the next start offers a report for. */
+/** Called by `start.ts` when an error ends the process: the crash record the next start offers a report for. An error of Orivon's own is not the WebGPU-on-X11 switches' doing, so a start it ends does not count against them. */
 export function recordFatal (kind: string, error: unknown): void {
+  x11VulkanStartAborted()
   recordFatalCrash(kind, error)
 }
 
@@ -196,6 +197,7 @@ export function boot (runtime: Runtime): void {
     const fatal = criticalFailureMessage([...beforeReadyFailures, ...afterReadyFailures])
     if (fatal !== null) {
       dialog.showErrorBox('Orivon failed to start', fatal)
+      x11VulkanStartAborted()
       app.exit(1)
       return
     }
@@ -313,7 +315,7 @@ export function boot (runtime: Runtime): void {
         // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
         const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
         if (plan.localFiles === true) await fileProtocolFuse()
-        createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true, shown: x11VulkanWindowShown })
+        createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true, shown: x11VulkanWindowShown, painted: x11VulkanWindowPainted })
       } finally {
         markStarted()
       }
@@ -328,7 +330,7 @@ export function boot (runtime: Runtime): void {
         // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
         if (plan.localFiles === true) await fileProtocolFuse()
         const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true, shown: x11VulkanWindowShown })
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true, shown: x11VulkanWindowShown, painted: x11VulkanWindowPainted })
         afterWelcome.windowOpened(intro)
         const after = plan.after
         // The first start of a newer version shows what it changed, once, in front of what the window opened on.

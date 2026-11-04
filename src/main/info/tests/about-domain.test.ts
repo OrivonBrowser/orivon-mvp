@@ -73,6 +73,11 @@ describe('the About domain', () => {
       expect(await setup(async () => x11({ onAtStart: false, reverted: true })).call({ type: 'webgpu' })).toMatchObject({ reason: 'x11-vulkan-reverted', tone: 'warn' })
     })
 
+    it('leaves the way to turn the X11 setting on out of a private window\'s sentence, where the switch is locked', async () => {
+      const reply = await setup(reading({ isPrivate: true })).call({ type: 'webgpu' }) as { sentence: string }
+      expect(reply.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.')
+    })
+
     it('gives the state, the reason, the sentence and the badge colour, for the platform the reading names', async () => {
       expect(await setup(reading({})).call({ type: 'webgpu' })).toEqual({
         ok: true,

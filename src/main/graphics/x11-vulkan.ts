@@ -20,21 +20,21 @@ export interface DisplayServer {
   readonly sessionType: string
 }
 
-/** The platform Chromium 152 runs on when the command line names none: Wayland on a Wayland session, X11 otherwise.
- * A switch that is set is what Chromium resolved, or what the person asked for, and wins. */
-export function ozonePlatformOf ({ ozoneSwitch, sessionType }: Pick<DisplayServer, 'ozoneSwitch' | 'sessionType'>): string {
+/**
+ * The Ozone platform Chromium draws through, or '' off Linux. A switch that is set is what Chromium resolved, or what the
+ * person asked for, and wins. With none, Electron 44 (Chromium 152.0.7977.130) has `ElectronMainDelegate` call
+ * `SetOzonePlatformForLinuxIfNeeded` before any script runs: Wayland when `XDG_SESSION_TYPE` is `wayland`, X11 otherwise.
+ * `WAYLAND_DISPLAY` is not read there (it belongs to `--ozone-platform-hint=auto`, which Electron does not use).
+ */
+export function ozonePlatformOf ({ platform, ozoneSwitch, sessionType }: DisplayServer): string {
+  if (platform !== 'linux') return ''
   if (ozoneSwitch !== '') return ozoneSwitch
   return sessionType === 'wayland' ? 'wayland' : 'x11'
 }
 
-/** Whether Chromium draws through Ozone X11: where the switches apply. */
-export function runsOnX11 (display: DisplayServer): boolean {
-  return display.platform === 'linux' && ozonePlatformOf(display) === 'x11'
-}
-
-/** Whether Settings offers the choice: an X11 session. Orivon on X11 inside a Wayland session (XWayland) is told to run on Wayland instead. */
+/** Where the setting applies and Settings offers it: Ozone X11 on a session that is not Wayland. Orivon on X11 inside a Wayland session (XWayland) is told to run on Wayland instead, so neither the row nor the switches reach it. */
 export function offersX11Setting (display: DisplayServer): boolean {
-  return runsOnX11(display) && display.sessionType !== 'wayland'
+  return ozonePlatformOf(display) === 'x11' && display.sessionType !== 'wayland'
 }
 
 /** Composites through Vulkan, so the adapter needs no GL bridge. The features already listed stay. */
@@ -54,7 +54,7 @@ export interface Revert {
 
 /** What the profile keeps between runs for the guard. */
 export interface GuardRecord {
-  /** A run applied the switches and has not shown its first window. */
+  /** A run applied the switches and its first window has not painted. */
   readonly pendingWindow: boolean
   readonly revert: Revert | null
 }
@@ -84,23 +84,29 @@ export interface StartPlan {
   readonly record: GuardRecord
 }
 
-/** What a start does. Off an X11 session the setting means nothing and the record is left as it was. */
+/**
+ * What a start does. Off an X11 session the setting means nothing and the record is left as it was. A setting that reads
+ * on beside a revert in the record is a turn-off the settings store did not save in time (it saves after a delay):
+ * the switches stay off, the setting is turned off again and the record stays. Turning the setting on from Settings
+ * clears the record at once (`turnedOn`), so a revert still there means that was not the case.
+ */
 export function planStart ({ onX11, setting, record, now }: { readonly onX11: boolean, readonly setting: boolean, readonly record: GuardRecord, readonly now: Date }): StartPlan {
   if (!onX11) return { applySwitches: false, turnOff: false, record }
   if (!setting) return { applySwitches: false, turnOff: false, record: { ...record, pendingWindow: false } }
+  if (record.revert !== null) return { applySwitches: false, turnOff: true, record: { pendingWindow: false, revert: record.revert } }
   if (record.pendingWindow) return { applySwitches: false, turnOff: true, record: { pendingWindow: false, revert: { at: now.toISOString(), why: 'no-window' } } }
   return { applySwitches: true, turnOff: false, record: { pendingWindow: true, revert: null } }
 }
 
-/** The first window of a run was shown. */
-export const windowShown = (record: GuardRecord): GuardRecord => record.pendingWindow ? { ...record, pendingWindow: false } : record
+/** The first window of a run painted, or Orivon itself ended the start: the run got as far as the guard asks. */
+export const windowPainted = (record: GuardRecord): GuardRecord => record.pendingWindow ? { ...record, pendingWindow: false } : record
 
 /** The setting was turned on again: the last revert no longer describes it. */
 export const turnedOn = (record: GuardRecord): GuardRecord => record.revert === null ? record : { ...record, revert: null }
 
-/** The revert a child process's end calls for: only the graphics process, only in a run that set the switches, and only an end the diagnostics also count as a problem. */
+/** The revert a child process's end calls for: only the graphics process, only in a run that set the switches, never while Orivon quits or starts again (every process ends then, whatever the reason says), and only an end the diagnostics also count as a problem. */
 export function revertAfterEnd ({ applied, processType, reason, quitting, now }: { readonly applied: boolean, readonly processType: string, readonly reason: string, readonly quitting: boolean, readonly now: Date }): Revert | undefined {
-  if (!applied || processType !== 'GPU' || isOrdinaryEnd('child', reason, quitting)) return undefined
+  if (!applied || quitting || processType !== 'GPU' || isOrdinaryEnd('child', reason, quitting)) return undefined
   return { at: now.toISOString(), why: 'gpu-crash' }
 }
 

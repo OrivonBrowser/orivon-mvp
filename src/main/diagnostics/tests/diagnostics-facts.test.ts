@@ -34,7 +34,7 @@ describe('buildDiagnostics', () => {
   })
 
   describe('the X11 setting for WebGPU', () => {
-    const REVERT = { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' }
+    const REVERT = { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' } as const
     const x11 = (x11Vulkan: DiagnosticsFacts['x11Vulkan'], session = 'x11'): ReturnType<typeof buildDiagnostics> =>
       buildDiagnostics({ ...FACTS, system: { ...FACTS.system, session, ozone: 'x11' }, gpuStatus: { webgpu: 'enabled', gpu_compositing: 'enabled' }, x11Vulkan }, { kind: 'none' })
 

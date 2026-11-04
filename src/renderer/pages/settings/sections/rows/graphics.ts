@@ -5,8 +5,8 @@ import type { SettingsState } from '../../state.js'
 const GROUP = 'Graphics'
 const KEY = 'graphics.webgpuOnX11'
 
-const HELP = 'Turns on WebGPU, which some games and apps need, by drawing Orivon through Vulkan. On a laptop with two graphics cards this uses the stronger one, which drains the battery faster, and on some of them videos can show a blank picture, which is why Chromium leaves it off on X11. If the graphics process crashes, Orivon turns this off by itself. It is read when Orivon starts.'
-const REVERTED = 'Orivon turned this off because the graphics process crashed while it was on.'
+const HELP = 'Turns on WebGPU for games and apps that need it. It may use more battery, and on some laptops videos can go blank. Read when Orivon starts.'
+const REVERTED = 'Orivon turned this off because graphics stopped working while it was on.'
 
 const graphics = (state: SettingsState): GraphicsPart => state.part<GraphicsPart>('graphics')
 const offered = (state: SettingsState): boolean => graphics(state).offered
