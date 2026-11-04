@@ -1,6 +1,8 @@
 // The WebGPU-on-X11 row in Settings, under Performance: shown on an X11 session and on no other platform, it turns the
 // setting on and asks to start again, and after Orivon turned it off by itself it says why. The switches themselves
-// are proved in test/page/e2e-webgpu-x11.test.ts.
+// are proved in test/page/e2e-webgpu-x11.test.ts. Screenshots of each state, in both themes, go to the directory named
+// by ORIVON_SETTINGS_GRAPHICS_SHOTS when it is set.
+import { mkdirSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
@@ -10,6 +12,20 @@ import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
 afterAll(async () => { expect(await assertNoElectronSurvivors()).toEqual([]) })
+
+const SHOTS = process.env['ORIVON_SETTINGS_GRAPHICS_SHOTS']
+if (SHOTS !== undefined) mkdirSync(SHOTS, { recursive: true })
+
+async function themed (page: Page, name: string): Promise<void> {
+  if (SHOTS === undefined) return
+  for (const theme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: theme })
+    await waitFor(async () => await page.evaluate((t) => matchMedia('(prefers-color-scheme: dark)').matches === (t === 'dark'), theme))
+    await page.waitForTimeout(250)
+    await page.screenshot({ path: join(SHOTS, `${name}-${theme}.png`) })
+  }
+  await page.emulateMedia({ colorScheme: null })
+}
 
 const KEY = 'graphics.webgpuOnX11'
 const LINUX = process.platform === 'linux'
@@ -59,6 +75,8 @@ it('shows the row on an X11 session, off, with no restart asked for, and on no o
     expect(await page.locator('#row-webgpu-on-x11 input').isChecked()).toBe(false)
     expect(await page.locator('h3.group-label', { hasText: 'Graphics' }).count()).toBe(1)
     expect(await page.locator('#row-webgpu-on-x11 .row-help').textContent()).not.toContain(REVERTED)
+    await page.locator('#row-webgpu-on-x11').scrollIntoViewIfNeeded()
+    await themed(page, 'graphics-off')
   } finally {
     await closeElectron(app)
   }
@@ -72,6 +90,8 @@ it.skipIf(!LINUX)('turns on, saves the choice, and asks to start again; turning 
     expect(await page.locator('#row-webgpu-on-x11-restart .row-label').textContent()).toBe('Start again to apply')
     expect(await page.locator('#row-webgpu-on-x11-restart .row-help').textContent()).toBe('The choice above is read when Orivon starts. Your tabs and windows are not restored.')
     expect(await page.locator('#row-webgpu-on-x11-restart button').textContent()).toBe('Restart Orivon')
+    await page.locator('#row-webgpu-on-x11-restart').scrollIntoViewIfNeeded()
+    await themed(page, 'graphics-on-restart')
     expect(await waitFor(async () => await settingIn(dir) === true)).toBe(true)
     await page.locator('#row-webgpu-on-x11 .switch').click()
     expect(await waitFor(async () => (await page.locator('#row-webgpu-on-x11-restart').count()) === 0)).toBe(true)
@@ -84,6 +104,8 @@ it.skipIf(!LINUX)('says why after Orivon turned the choice off by itself, and th
   const { app, page } = await performancePage({ revert: { at: '2026-11-03T08:00:00.000Z', why: 'gpu-crash' } })
   try {
     expect(await page.locator('#row-webgpu-on-x11 .row-help').textContent()).toContain(REVERTED)
+    await page.locator('#row-webgpu-on-x11').scrollIntoViewIfNeeded()
+    await themed(page, 'graphics-reverted')
     await page.locator('#row-webgpu-on-x11 .switch').click()
     expect(await waitFor(async () => !((await page.locator('#row-webgpu-on-x11 .row-help').textContent()) ?? '').includes(REVERTED))).toBe(true)
   } finally {
