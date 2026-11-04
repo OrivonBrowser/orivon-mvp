@@ -54,6 +54,7 @@ import { isOriginPinnedSync } from '../loader/electron/serve.js'
 import type { Runtime } from './launch/start-launch.js'
 import { decideDefaultProfile } from './default-profile/profile-start.js'
 import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
+import { attachX11Vulkan, startX11Vulkan, x11VulkanWindowShown } from './graphics/x11-vulkan-runner.js'
 
 // Do not add `ozone-platform: x11` here without solving its GPU crash on
 // this machine first -- the window-visibility bug it was chasing is really
@@ -144,6 +145,8 @@ export function boot (runtime: Runtime): void {
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
   // Chromium reads the feature at start, so the saved choice is read here, before the settings store exists.
   applyGlobalPrivacyControl(app.commandLine, readSettingBeforeReady(join(runtime.dir, 'settings.json'), 'privacy.globalPrivacyControl'))
+  // The same, for the opt-in that gives an X11 session WebGPU (graphics/README.md).
+  startX11Vulkan(runtime.dir)
   const beforeReadyFailures = runBeforeReady(subsystems)
   report(beforeReadyFailures)
 
@@ -268,6 +271,7 @@ export function boot (runtime: Runtime): void {
     })
     shell.history.prune()
     startInternalPages(shell, ctx)
+    attachX11Vulkan(shell.settings, () => { shell.internalPages.publish('graphics.changed', undefined, ['settings']) })
     setPageClassifier((contents) => ({ internalPage: shell.internalPages.pageOf(contents), isTab: shell.windows.findTab(contents) !== null }))
     // Another profile's own process can rename, add, remove or start one --
     // profiles-watcher.ts's own header on why this is the one store the
@@ -309,7 +313,7 @@ export function boot (runtime: Runtime): void {
         // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
         const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
         if (plan.localFiles === true) await fileProtocolFuse()
-        createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true })
+        createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true, shown: x11VulkanWindowShown })
       } finally {
         markStarted()
       }
@@ -324,7 +328,7 @@ export function boot (runtime: Runtime): void {
         // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
         if (plan.localFiles === true) await fileProtocolFuse()
         const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true })
+        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true, shown: x11VulkanWindowShown })
         afterWelcome.windowOpened(intro)
         const after = plan.after
         // The first start of a newer version shows what it changed, once, in front of what the window opened on.

@@ -22,7 +22,7 @@ export function withFeature (listed: string, feature: string): string {
 }
 
 /** `appendSwitch` replaces a switch's value, so what another part already listed is read first and kept. */
-function listFeature (commandLine: FeatureSwitches, switchName: string, feature: string): void {
+export function listFeature (commandLine: FeatureSwitches, switchName: string, feature: string): void {
   commandLine.appendSwitch(switchName, withFeature(commandLine.getSwitchValue(switchName), feature))
 }
 

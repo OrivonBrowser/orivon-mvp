@@ -60,6 +60,7 @@
     { "prefix": "src/main/flavour", "run": ["shell-pages", "window"] },
     { "prefix": "src/main/newtab", "run": ["window", "shell-pages"] },
     { "prefix": "src/main/focus", "run": ["page", "window"] },
+    { "prefix": "src/main/graphics", "run": ["page", "shell-pages"] },
     { "prefix": "src/main/history", "run": ["library", "toolbar"] },
     { "prefix": "src/main/import", "run": ["library"] },
     { "prefix": "src/main/diagnostics", "run": ["shell-pages", "tabs", "window"] },
