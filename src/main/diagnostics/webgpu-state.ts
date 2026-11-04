@@ -33,6 +33,7 @@ export interface WebGpuInputs {
   readonly features: Readonly<Record<string, string>>
   /** The devices in `getGPUInfo('basic')`; undefined when that report could not be read. */
   readonly devices: readonly GpuDevice[] | undefined
+  /** What a page learned by asking for an adapter; undefined when no page asked. */
   readonly adapter?: AdapterReading | undefined
 }
 
@@ -49,8 +50,6 @@ const SOFTWARE_VENDORS: ReadonlySet<number> = new Set([0x1ae0, 0x10005])
 /** The makers whose adapters Chromium's Dawn accepts on Windows: AMD, Intel, NVIDIA, Qualcomm (only with recent drivers, which a report cannot show) and Microsoft, whose WARP is a software renderer Dawn takes. */
 const WINDOWS_MAKERS: ReadonlySet<number> = new Set([0x1002, 0x8086, 0x10de, 0x5143, 0x1414])
 
-const isOn = (status: string | undefined): boolean => status !== undefined && status.startsWith('enabled')
-
 /** A feature Chromium reports as off, as opposed to one it does not report at all. */
 const isOff = (status: string | undefined): boolean => status !== undefined && (status.startsWith('disabled') || status.startsWith('unavailable') || status.includes('blocklisted'))
 
@@ -65,13 +64,29 @@ function mainDevice (devices: readonly GpuDevice[]): GpuDevice | undefined {
   return devices.find((device) => device.active) ?? devices[0]
 }
 
+const isSoftwareDevice = (device: GpuDevice): boolean => device.vendorId !== undefined && SOFTWARE_VENDORS.has(device.vendorId)
+
+/** The card in "Chromium gave <this card> no WebGPU adapter": its maker and driver when the report names them. */
+function oneCard (device: GpuDevice | undefined): string {
+  if (device === undefined) return 'this graphics card'
+  const maker = makerNameOf(device)
+  const driver = driverOf(device)
+  return `${maker === '' ? 'this graphics card' : `this graphics card (${maker})`} with ${driver === '' ? 'this driver' : `this driver (${driver})`}`
+}
+
+/** Each maker once, in device order, for "none of this computer's graphics cards". */
+function noneOf (cards: readonly GpuDevice[]): string {
+  const makers = [...new Set(cards.map(makerNameOf).filter((maker) => maker !== ''))]
+  return `none of this computer's graphics cards${makers.length === 0 ? '' : ` (${makers.join(', ')})`}`
+}
+
+/** Linux gives no adapter to a card or driver that is not on Chromium's list. The report does not say which card the
+ * page was offered (on a hybrid computer `active` can mark a card other than the one compositing uses), so two or
+ * more cards are named together, never one of them. */
 function unlisted (devices: readonly GpuDevice[] | undefined): WebGpuState {
-  const device = devices === undefined ? undefined : mainDevice(devices)
-  const maker = device === undefined ? '' : makerNameOf(device)
-  const driver = device === undefined ? '' : driverOf(device)
-  const card = maker === '' ? 'this graphics card' : `this graphics card (${maker})`
-  const withDriver = driver === '' ? 'this driver' : `this driver (${driver})`
-  return result('unavailable', 'gpu-not-listed', `WebGPU is off because ${card} with ${withDriver} is not on Chromium's list for Wayland.`)
+  const cards = (devices ?? []).filter((device) => !isSoftwareDevice(device))
+  const gave = cards.length > 1 ? `${noneOf(cards)} a WebGPU adapter` : `${oneCard(cards[0])} no WebGPU adapter`
+  return result('unavailable', 'gpu-not-listed', `WebGPU is off because Chromium gave ${gave}. On Linux it does that for every card and driver not on its list.`)
 }
 
 /** Whether pages are drawn on the processor: Chromium blocks WebGPU there. Windows is left out because its software
@@ -80,11 +95,12 @@ function drawsInSoftware (inputs: WebGpuInputs): boolean {
   if (inputs.platform === 'win32') return false
   const { features, devices } = inputs
   if (isSoftware(features['gpu_compositing']) || isSoftware(features['webgpu'])) return true
-  return devices !== undefined && devices.every((device) => device.vendorId !== undefined && SOFTWARE_VENDORS.has(device.vendorId))
+  return devices !== undefined && devices.every(isSoftwareDevice)
 }
 
-/** On X11 the bridge is off for every card. A Wayland session whose browser runs through XWayland is told apart:
- * there the session allows WebGPU and the way Orivon was started does not. */
+/** Chromium's X11 platform never turns on the bridge WebGPU needs, so it is off for every card there. A Wayland
+ * session whose browser runs through XWayland is told apart: the session allows WebGPU and the way Orivon was
+ * started does not. */
 function x11Reason (session: string): WebGpuState {
   if (session === 'wayland') {
     return result('unavailable', 'xwayland', 'WebGPU is off because Orivon is running through X11 (XWayland) on this Wayland session. WebGPU needs Orivon to run on Wayland.')
@@ -93,12 +109,15 @@ function x11Reason (session: string): WebGpuState {
   return result('unavailable', 'x11', `WebGPU is off because ${where}. Chromium turns it off there for every graphics card.`)
 }
 
-/** Linux reaches the graphics card through a bridge Chromium sets only on Wayland, and only for listed drivers. */
-function linuxBridge (inputs: WebGpuInputs): WebGpuState | undefined {
-  const bridge = inputs.features['webgpu_on_vk_via_gl_interop']
-  if (inputs.platform !== 'linux' || bridge === undefined || isOn(bridge)) return undefined
+/** On Linux the Ozone platform decides, and the `webgpu_on_vk_via_gl_interop` status is not read: it reads enabled on
+ * real graphics cards under X11 and Wayland while the page's `requestAdapter()` still returns null (measured). On X11
+ * main rules WebGPU out alone. On Wayland a listed card can get an adapter, so only a page that got none says so. A
+ * page with no `navigator.gpu` says nothing about the platform. */
+function linuxReason (inputs: WebGpuInputs): WebGpuState | undefined {
+  const asked = inputs.adapter?.kind
+  if (inputs.platform !== 'linux' || asked === 'no-api') return undefined
   if (inputs.ozone === 'x11') return x11Reason(inputs.session)
-  return inputs.ozone === 'wayland' ? unlisted(inputs.devices) : undefined
+  return inputs.ozone === 'wayland' && asked === 'none' ? unlisted(inputs.devices) : undefined
 }
 
 /** A maker Dawn refuses leaves no adapter, but WARP may still give one, so the claim needs a page that saw none. */
@@ -121,8 +140,8 @@ export function webGpuState (inputs: WebGpuInputs): WebGpuState {
     return result('unavailable', 'software-only',
       'WebGPU is off because this computer draws pages on its processor, and Chromium does not allow WebGPU there. Chromium does that when there is no graphics card, when it blocks the card\'s driver, or after its graphics process has crashed several times.')
   }
-  const bridge = linuxBridge(inputs)
-  if (bridge !== undefined) return bridge
+  const linux = linuxReason(inputs)
+  if (linux !== undefined) return linux
   if (isOff(inputs.features['webgpu'])) return result('unavailable', 'webgpu-off', 'Chromium has turned WebGPU off on this computer.')
   const maker = windowsMaker(inputs)
   if (maker !== undefined) return maker
