@@ -65,19 +65,41 @@ async function seenIn (app: ElectronApplication, origin: string): Promise<{ page
   return { page: page as PageSeen, status }
 }
 
+const DOUBLED = [2, 4, 6, 8]
+
 it('gives a page the WebGPU this platform is known to give', async () => {
   const { app, chrome } = await launchShell()
   try {
     await visitWithoutPage(app, chrome, `${server.origin}/`)
     const { page, status } = await seenIn(app, server.origin)
-    const gpus = await app.evaluate(async ({ app: electron }) => (await electron.getGPUInfo('basic') as { gpuDevice?: unknown }).gpuDevice)
+    // Chromium refuses GPU info once it has fallen back to software, which is itself the answer on such a platform.
+    const gpus = await app.evaluate(async ({ app: electron }) => {
+      try { return (await electron.getGPUInfo('basic') as { gpuDevice?: unknown }).gpuDevice } catch (error) { return String(error) }
+    })
     console.log(`WEBGPU-SEEN ${process.platform} ${JSON.stringify({ page, status, gpus })}`)
+
+    // On every platform: a page on a loopback origin sees the API, and an adapter comes only where Chromium says WebGPU
+    // is on (the status can say on and still give none, so the reverse is not asserted).
     expect(page.secure).toBe(true)
     expect(page.hasGpu).toBe(true)
+    if (page.adapter !== null) expect(status['webgpu']).toBe('enabled')
+    expect(page.compute).toEqual(page.adapter === null ? null : DOUBLED)
+
     if (process.platform === 'linux') {
+      // The launch runs on a virtual display with no GPU behind it, and Chromium offers a page no adapter on one.
       expect(page.adapter).toBeNull()
-      expect(page.compute).toBeNull()
+      expect(status['webgpu']).not.toBe('enabled')
       expect(status['webgpu_on_vk_via_gl_interop']).not.toBe('enabled')
+    } else if (process.platform === 'darwin') {
+      // Metal: a Mac, and a runner's virtual device, answer an adapter.
+      expect(page.adapter).not.toBeNull()
+      expect(status['webgpu']).toBe('enabled')
+      expect(status['gpu_compositing']).toBe('enabled')
+    } else if (process.platform === 'win32' && process.env['CI'] === 'true') {
+      // A GitHub runner has only Microsoft's Basic Render Driver: Chromium composites in software and offers no adapter.
+      // A computer with a GPU answers one, which is why this is pinned on the runner alone.
+      expect(page.adapter).toBeNull()
+      expect(status['webgpu']).toBe('unavailable_software')
     }
   } finally {
     await closeElectron(app)
