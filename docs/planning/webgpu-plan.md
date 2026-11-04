@@ -10,46 +10,69 @@ fallback).
 
 ## Where WebGPU stands in this build
 
-Orivon sets no GPU switch, so it runs Chromium 152's defaults (Electron 44.7). This was read from Chromium's source at
-tag `152.0.7977.130`, not measured; step 1 measures it.
+Orivon sets no GPU switch, so it runs Chromium 152's defaults (Electron 44.7.0, Chromium 152.0.7977.130). Step 1
+measured what a page gets, with a probe page that asks `requestAdapter()` and reads one compute dispatch back, on this
+machine (an Intel Tiger Lake GPU on Mesa 25 and an NVIDIA RTX 3050 on driver 595.99.02, a hybrid laptop) and on
+GitHub's Windows and macOS runners. Rows marked *source* were read from Chromium's source at that tag and not run.
 
-| Where | WebGPU |
-|---|---|
-| macOS 13 and later (Chromium 152's minimum) | On, through Metal |
-| Windows | On, through D3D12, for AMD, Intel, NVIDIA and Microsoft's software renderer (WARP), and for Qualcomm with recent drivers. Other GPU makers are refused by Dawn's adapter blocklist |
-| Linux, Wayland | On for Intel Gen12 and later on Mesa 22 or later, and for NVIDIA's driver 535.183.01 or later. Off for every other GPU |
-| Linux, X11 | Off for every GPU |
-| No usable GPU (a virtual machine, Qubes, an old computer) | Off: Dawn's adapter blocklist refuses CPU adapters |
+| Where | WebGPU by default | How known |
+|---|---|---|
+| macOS 13 and later | On, through Metal. The runner's virtual Apple GPU gives an adapter (vendor `apple`) and a compute dispatch reads back; `gpu_compositing` is `enabled` | measured on the runner; a Mac with real GPUs *source* |
+| Windows with a GPU | On, through D3D12, for AMD, Intel, NVIDIA and, with recent drivers, Qualcomm. Other GPU makers are refused by Dawn's adapter blocklist | *source* |
+| Windows with no GPU (a runner, a virtual machine) | Off. The only adapter is Microsoft's Basic Render Driver (WARP); Chromium composites in software (`gpu_compositing` is `disabled_software`), reports `webgpu` as `unavailable_software`, and a page gets no WebGL and no adapter | measured on the runner |
+| Linux, Wayland | Off on this machine, though Chromium reports it on: `webgpu` and `webgpu_on_vk_via_gl_interop` read `enabled`, `requestAdapter()` returns null (console: "No available adapters."), in all 7 runs that did not crash (the default, the Intel render node, each Vulkan driver alone, Mesa's software Vulkan). WebGL, compositing and video work on the Intel GPU. Whether a computer with one GPU gets an adapter through the exceptions below is not measured: this machine has two | measured |
+| Linux, X11 on a real GPU (Xwayland) | Off: WebGL works on Intel through Mesa, the page paints, video plays, `requestAdapter()` returns null | measured |
+| Linux, X11 on a virtual display with no GL (xvfb, the CI runners) | Off: the GPU process cannot start, compositing is software and `webgl` is `disabled_off` | measured |
+| No usable GPU | Off, on every system | measured on Linux and Windows runners |
 
-Why Linux is narrow:
+What the measurements corrected in the first reading of the source:
+- **A status that reads "enabled" is not an adapter.** On Wayland the browser reports both `webgpu` and the bridge as
+  `enabled` while a page gets none. On X11, `--use-angle=vulkan` alone makes the bridge read `enabled` and gives no
+  adapter either. `orivon://gpu` and the bug report (step 2) must test the adapter itself (a page-side or GPU-process
+  fact), never only these two words.
+- **WARP is not offered.** The first reading expected WebGPU through WARP on a Windows computer with no GPU.
+- **Wayland needs more than the exceptions on this machine.** `--ignore-gpu-blocklist=186` alone gives an adapter
+  (NVIDIA Ampere; Intel Gen12 when Vulkan is limited to Intel's ICD, `VK_ICD_FILENAMES=.../intel_icd.json`),
+  `compute` reads back and WebGL stays on Intel (5 of 5 runs where Chromium picked its own GPU). So entry 186 is what refuses the real
+  GPUs here, and the exceptions below did not apply to this hybrid laptop.
+- **The switch's value is a list of entry ids**, as the source says: `ParseGpuPreferences` reads a comma-separated list
+  from `--ignore-gpu-blocklist=<ids>` and ignores exactly those entries; with no value it ignores the whole list.
+
+Why Linux is narrow (from the source, still the reading the measurements agree with):
 - The WebGPU service is on by default in the code (`kWebGPUService`, `gpu/config/gpu_finch_features.cc`), not through a
   field trial. Electron, which has no field trials, gets it.
 - The adapter needs Vulkan, and Linux composites with GL. The bridge between them is the GPU feature
   `webgpu_on_vk_via_gl_interop`. Without it the backend is `Null` (`webgpu_decoder_impl.cc`).
-- The bridge is set only by Ozone Wayland (`ozone_platform_wayland.cc`). Upstream turned it off on X11 as a temporary
+- The bridge is set by Ozone Wayland (`ozone_platform_wayland.cc`). Upstream turned it off on X11 as a temporary
   fix: on X11, creating a Vulkan device made the video decoder pick the integrated GPU, so video on an NVIDIA GPU
   composited blank (crbug 500609035).
 - Blocklist entry 186 (`gpu/config/software_rendering_list.json`) refuses the bridge everywhere except two exceptions:
   - Intel: GPU generation 12 or later, driver vendor Mesa, Mesa 22.0 or later;
   - NVIDIA: driver 535.183.01 or later.
-- `--enable-unsafe-webgpu` does not lift entry 186. It turns off timestamp quantization and Dawn's adapter blocklist,
-  and exposes experimental features. Chrome warns that it lets a page read GPU data of other Chromium processes. Orivon
-  never sets it.
+- `--enable-unsafe-webgpu` does not lift entry 186: on Wayland it gave a SwiftShader adapter (a CPU adapter,
+  `fallback: true`) and still none on the Intel or NVIDIA GPU. It turns off timestamp quantization and Dawn's adapter
+  blocklist, which is what let the CPU adapter through, and exposes experimental features. Chrome warns that it lets a
+  page read GPU data of other Chromium processes. Orivon never sets it.
 
 ## Step 1: measure, and pin what each platform gets
+
+Done. What it found is in the section above; the rest of this section says what was run.
 
 - **Probe** in a page:
   - `navigator.gpu`;
   - `requestAdapter()` and the adapter's `info`;
   - one compute dispatch read back;
-  - `app.getGPUFeatureStatus()`.
-- **Where the probe runs:**
-  - this machine, with its Intel Gen12 and NVIDIA GPUs, under both a private headless Wayland session and X11, for the
-    default and for each switch set step 3 considers;
-  - GitHub's Windows and macOS runners, through `scripts/ci/cross-os.mjs`. Windows should get WARP, and macOS a
-    virtual Metal device if the runner has one.
-- **An e2e spec** pins the result per platform on CI, so a Chromium update that changes it fails a check, not a user.
-- **The compatibility-matrix row** "WebGL / WebGPU" gets the measured values in place of the ones read from source.
+  - `app.getGPUFeatureStatus()`, and the GPU process's crashes (`child-process-gone`);
+  - for X11 candidates also a WebGL context, a painted page and two short videos (VP9 and H.264) whose `currentTime`
+    advances, with pixels read back from the screen of the X server.
+- **Where it ran:**
+  - this machine, under a private headless GNOME Wayland session, under Xwayland inside it (a standalone Xwayland on a
+    display number of its own; GNOME's built-in Xwayland takes the display numbers of a running desktop, so it is not
+    run on a machine someone is using), and under xvfb;
+  - GitHub's Windows and macOS runners, through `scripts/ci/cross-os.mjs`.
+- **An e2e spec** (`test/page/e2e-webgpu.test.ts`) pins the result per platform on CI, so a Chromium update that changes
+  it fails a check, not a user. It launches Orivon, so it pins what Orivon gets, not what bare Electron gets.
+- **The compatibility-matrix row** "WebGL / WebGPU" carries the measured values.
 
 ## Step 2: say why WebGPU is off (Rule 24)
 
@@ -79,8 +102,42 @@ Why Linux is narrow:
 
 - **The setting:** off by default, offered only on an X11 session, and it takes effect at the next start. Its words are
   shown to the owner before it merges (new visible UI).
-- **What it does:** composite through Vulkan, so WebGPU needs no bridge. The candidate set is
-  `--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE,DefaultANGLEVulkan`; step 1 settles the exact set.
+- **What it does:** composite through Vulkan, so WebGPU needs no bridge. The set is
+  `--use-angle=vulkan --enable-features=Vulkan,VulkanFromANGLE`, measured below.
+- **What the measurements settled**, on the private Xwayland (a real X server with GL, so the closest to a desktop) and
+  on xvfb, each cell one run, the four finalists repeated:
+
+  | Switches | Xwayland | xvfb |
+  |---|---|---|
+  | none | no adapter; WebGL, painting and both videos work | software only: no WebGL, no adapter |
+  | `--use-angle=vulkan` and `Vulkan,VulkanFromANGLE` | adapter, WebGL, painting, both videos | the same |
+  | `Vulkan,VulkanFromANGLE,DefaultANGLEVulkan`, no `--use-angle` | the same | the same |
+  | `--use-angle=vulkan` and all three features | the same | the same |
+  | `--use-angle=vulkan` and `Vulkan,DefaultANGLEVulkan` | adapter, **no WebGL** | the same as the row above |
+  | `--use-angle=vulkan` and `Vulkan` | adapter, **no WebGL** | the same as the row above |
+  | `Vulkan` alone | adapter, WebGL (Intel GL), painting, videos | software only |
+  | `--use-angle=vulkan` and `VulkanFromANGLE,DefaultANGLEVulkan`, or `--use-angle=vulkan` alone | **no adapter** (the bridge reads `enabled`) | no adapter |
+  | `Vulkan,VulkanFromANGLE`, no `--use-angle` | no adapter | software only |
+
+  The smallest set that gives an adapter and keeps painting, WebGL and both videos on both is the second row; the third
+  works as well. The second names the ANGLE backend, which the third leaves to a feature that may be renamed. The
+  `Vulkan` feature is what makes an adapter appear; `VulkanFromANGLE` is what keeps WebGL working with it.
+- **Which GPU:** the Vulkan device is the NVIDIA one on this hybrid machine whatever `--render-node-override` says (the
+  adapter, and the ANGLE renderer string, name the RTX 3050). Intel is reached only by limiting Vulkan to its driver
+  (`VK_ICD_FILENAMES`, which is no Chromium switch): adapter vendor `intel`, architecture `gen-12lp`. Acceptance on
+  "both GPUs" therefore runs with and without that variable, and the setting itself offers no GPU choice.
+- **Crashes:** no `child-process-gone` event in any of the 38 runs under Xwayland and xvfb (28 of them with the `Vulkan`
+  feature on). The warning in `src/main/index.ts` (ozone x11 segfaults the GPU process under XWayland on this machine) did
+  not reproduce on a standalone Xwayland, with or without the set; GNOME's built-in Xwayland, the setup that warning
+  describes, was not run (see step 1).
+- **Video:** both videos play (`currentTime` advances; 0 to 16 frames dropped of 82 to 101 in the first 2.5 seconds) and the pixels read from the X
+  server show the picture, not a blank, with the set on the NVIDIA Vulkan device. Whether the decoder is the NVIDIA
+  one, which is upstream's reason for the block, is not measured: it needs a real X11 session (Xorg), which the
+  acceptance below runs on.
+- **A trap for the tests:** Playwright's Electron launcher replaces a command-line `--enable-features` with its own
+  (`CDPScreenshotNewSurface`), so a spec cannot hand Orivon the features as launch arguments; they must be set by
+  Orivon's main process, merged with what is already listed as `src/main/privacy/gpc-switch.ts` does. The same spec
+  with the switches passed anyway shows `vulkan: disabled_off` and no adapter.
 - **Crash guard:** if the graphics process crashes while the setting is on, Orivon turns it off at the next start and
   says so in `orivon://gpu`.
 - **Acceptance** on this machine's X11 session, on both GPUs:
@@ -100,7 +157,11 @@ Why Linux is narrow:
   `fs`, no native module).
 - **The driver version** comes from the previous run's `app.getGPUInfo('complete')`, kept in the profile. So a newly
   covered computer gets WebGPU from its second start.
-- **Hybrid laptops:** the switch applies only when the GPU Chromium used last run is tested.
+- **Hybrid laptops:** the switch applies only when the GPU Chromium used last run is tested. "The GPU Chromium used"
+  is not `app.getGPUInfo()`'s `active` flag: on this machine it marks the NVIDIA GPU while WebGL, compositing and
+  video run on the Intel one (the ANGLE renderer string says so) and, with the switch, the adapter is the NVIDIA one.
+  The list therefore keys on the adapter's own vendor and architecture, and its test includes a WebGPU canvas page
+  (step 1 measured compute only), because the adapter may sit on a different GPU than the compositor.
 - **The crash guard** of step 3 applies.
 - **One PR per GPU maker added:** one row in the tested list, plus the evidence of the test (which GPU, which driver,
   what ran, and who ran it).
@@ -112,8 +173,13 @@ Why Linux is narrow:
 - **Testers:** this machine has none of these GPUs. A tester is either a user who reports through `orivon://report`, or
   a rented cloud machine with an AMD GPU. Renting one is the owner's call on cost.
 - **The step starts** with the first GPU maker someone has tested; the mechanism is not built ahead of it.
-- **Mesa's software Vulkan** (`lvp_icd.json`) exercises the switch in tests but never joins the tested list: it is a
-  CPU adapter.
+- **Mesa's software Vulkan** (`lvp_icd.json`) cannot exercise the switch in tests: with
+  `--ignore-gpu-blocklist=186` and only that driver visible, the graphics process crashed three times (exit 139) and
+  Chromium fell back to software. The switch is exercised on a real GPU instead: this machine gets an adapter with it
+  and none without it. A GPU process that crashes with the switch on is what the crash guard above is for.
+- **`--render-node-override` to the NVIDIA node** is not a way to pick a GPU on a hybrid laptop under Wayland: the
+  compositor renders on Intel, and the browser process died with a Wayland protocol error ("failed to import supplied
+  dmabufs") in every run.
 
 ## Not planned
 
