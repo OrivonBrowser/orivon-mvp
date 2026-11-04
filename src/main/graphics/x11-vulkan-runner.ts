@@ -54,8 +54,8 @@ function onChildEnd (state: Run, processType: string, reason: string): void {
 }
 
 function checkCompositing (state: Run): void {
-  const compositing = (app.getGPUFeatureStatus() as Record<string, unknown>)['gpu_compositing']
-  revertRun(state, revertAfterStatus({ applied: state.applied, compositing: typeof compositing === 'string' ? compositing : undefined, now: new Date() }))
+  const { gpu_compositing: compositing } = app.getGPUFeatureStatus()
+  revertRun(state, revertAfterStatus({ applied: state.applied, compositing, now: new Date() }))
 }
 
 /**
