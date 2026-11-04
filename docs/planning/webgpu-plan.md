@@ -54,14 +54,23 @@ Why Linux is narrow:
 ## Step 2: say why WebGPU is off (Rule 24)
 
 - **`orivon://gpu` gets a WebGPU section:**
-  - whether a page gets an adapter;
-  - its backend, vendor and architecture;
-  - when there is none, the reason in plain words: an X11 session, a GPU not on Chromium's list, no Vulkan driver, or
-    the X11 setting turned off after a crash.
-- **Durable:** working out the reason is a pure function over the GPU feature status, the Ozone platform and the GPU
-  info.
+  - whether a page gets an adapter, asked by a probe in the page that gives up after 10 seconds, and the adapter's vendor
+    and architecture;
+  - when there is none, the reason in plain words: an X11 session (or Orivon running through XWayland on a Wayland
+    session), a GPU and driver that are not on Chromium's list for Wayland, pages drawn on the processor, WebGPU turned
+    off, a GPU maker Dawn refuses on Windows, or an adapter the page was refused for no reason the report shows.
+- **Not built:**
+  - the adapter's backend: nothing this build reads states it, and one derived from the platform would be a claim this
+    build never checks;
+  - "no Vulkan driver": no field of the feature status or the basic GPU info is known to say whether a Vulkan driver is
+    installed (`vulkan` is the compositing feature, which is off by default on Linux);
+  - the X11 setting turned off after a crash, which arrives with step 3.
+- **Durable:** working out the reason is a pure function over the platform, the desktop session, the Ozone platform, the
+  GPU feature status and the GPU info (`src/main/diagnostics/webgpu-state.ts`).
 - **Tied to Electron:** reading those values.
-- **Bug reports** from `orivon://report` carry the same section.
+- **Bug reports** from `orivon://report` carry the state and a reason code. The report page runs the same probe and
+  sends its outcome with its request for the facts, so a report tells a working computer from one whose page got no
+  adapter.
 
 ## Step 3: the X11 setting (`d-0758`)
 

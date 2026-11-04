@@ -2,6 +2,8 @@
 // report and what this version changed, loaded the first time their tabs are opened.
 import { internalBridge } from '../shared/bridge.js'
 import type { OrivonInternal } from '../shared/bridge.js'
+import { adapterClaim, probeAdapter } from '../shared/webgpu-probe.js'
+import type { AdapterProbe } from '../shared/webgpu-probe.js'
 
 export interface AboutRow {
   readonly label: string
@@ -9,11 +11,15 @@ export interface AboutRow {
   readonly mono: boolean
 }
 
+export type Tone = 'ok' | 'warn' | 'danger' | 'neutral'
+
+const TONES: readonly string[] = ['ok', 'warn', 'danger', 'neutral']
+
 export interface FeatureRow {
   readonly key: string
   readonly label: string
   readonly text: string
-  readonly tone: 'ok' | 'warn' | 'danger' | 'neutral'
+  readonly tone: Tone
 }
 
 export interface DeviceRow {
@@ -30,6 +36,18 @@ export interface GpuReport {
   readonly raw: string
 }
 
+/** Main's answer about WebGPU, with the adapter's own words when the page got one. */
+export interface WebGpuReport {
+  readonly state: 'available' | 'unavailable' | 'unknown'
+  readonly sentence: string
+  /** The badge's colour, chosen by main by the rule the feature table follows. */
+  readonly tone: Tone
+  readonly vendor: string
+  readonly architecture: string
+}
+
+const WEBGPU_STATES: readonly string[] = ['available', 'unavailable', 'unknown']
+
 export interface NotesSection {
   readonly heading: string
   readonly items: readonly string[]
@@ -45,10 +63,14 @@ export type Loadable<T> = { readonly state: 'loading' } | { readonly state: 'err
 export class AboutState {
   version: Loadable<readonly AboutRow[]> = { state: 'loading' }
   gpu: Loadable<GpuReport> | null = null
+  webGpu: Loadable<WebGpuReport> | null = null
   whatsNew: Loadable<WhatsNew> | null = null
   private readonly listeners = new Set<() => void>()
 
-  constructor (private readonly bridge: OrivonInternal = internalBridge()) {}
+  constructor (
+    private readonly bridge: OrivonInternal = internalBridge(),
+    private readonly probe: () => Promise<AdapterProbe> = async () => await probeAdapter(navigator as unknown as Parameters<typeof probeAdapter>[0])
+  ) {}
 
   onChange (listener: () => void): void {
     this.listeners.add(listener)
@@ -92,6 +114,37 @@ export class AboutState {
       this.gpu = { state: 'error' }
     }
     this.changed()
+  }
+
+  /** Asks this page's WebGPU for an adapter and main what that means. The graphics report does not wait for it. */
+  async loadWebGpu (): Promise<void> {
+    this.webGpu = { state: 'loading' }
+    this.changed()
+    try {
+      const found = await this.probe()
+      const adapter = adapterClaim(found)
+      const reply = await this.bridge.request('info', { type: 'webgpu', ...(adapter === undefined ? {} : { adapter }) }) as { ok?: boolean, state?: unknown, sentence?: unknown, tone?: unknown } | undefined
+      this.webGpu = reply?.ok === true && typeof reply.state === 'string' && WEBGPU_STATES.includes(reply.state) && typeof reply.sentence === 'string'
+        ? {
+            state: 'ready',
+            value: {
+              state: reply.state as WebGpuReport['state'],
+              sentence: reply.sentence,
+              tone: typeof reply.tone === 'string' && TONES.includes(reply.tone) ? reply.tone as Tone : 'neutral',
+              vendor: found.kind === 'adapter' ? found.vendor : '',
+              architecture: found.kind === 'adapter' ? found.architecture : ''
+            }
+          }
+        : { state: 'error' }
+    } catch {
+      this.webGpu = { state: 'error' }
+    }
+    this.changed()
+  }
+
+  /** Both parts of the Graphics tab again: the report and WebGPU's answer are asked for apart, and fail apart. */
+  async reloadGraphics (): Promise<void> {
+    await Promise.all([this.loadGpu(), this.loadWebGpu()])
   }
 
   /** Whether main put the text on the clipboard. */

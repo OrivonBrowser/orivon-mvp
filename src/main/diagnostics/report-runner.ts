@@ -126,7 +126,7 @@ export function reportDomainFor (services: ShellServices, ctx: SubsystemContext)
       markReported: (crashId, reportId) => { service?.markReported(crashId, reportId) }
     },
     sent: { all: () => sent.all(), add: (entry) => { sent.add(entry) }, remove: (reportId) => { sent.remove(reportId) } },
-    diagnostics: async () => buildDiagnostics(await readFacts(services, ctx)),
+    diagnostics: async (adapter) => buildDiagnostics(await readFacts(services, ctx), adapter),
     logSource: (crash) => service?.logSourceOf(crash) ?? 'current',
     logLines: (source) => service?.logLinesFrom(source) ?? [],
     readDump: readDumpBase64,

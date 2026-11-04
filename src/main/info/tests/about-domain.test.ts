@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { InternalCaller } from '../../pages/internal-ipc.js'
 import { infoDomain } from '../about-domain.js'
+import type { GpuReading } from '../about-domain.js'
 import type { AboutFacts } from '../about-info.js'
 
 const FACTS: AboutFacts = {
@@ -10,7 +11,9 @@ const FACTS: AboutFacts = {
 const CALLER = {} as InternalCaller
 const RELEASE = { version: '1.0.0', notes: { version: '1.0.0', sections: [{ heading: 'Added', items: ['**A**: b'] }] } }
 
-function setup (gpu: () => Promise<{ status: unknown, info: unknown }> = async () => ({ status: { webgl: 'enabled' }, info: { gpuDevice: [{ active: true, vendorId: 0x8086 }] } })): {
+const READING: GpuReading = { status: { webgl: 'enabled' }, info: { gpuDevice: [{ active: true, vendorId: 0x8086 }] }, platform: 'linux', session: 'x11', ozone: 'x11' }
+
+function setup (gpu: () => Promise<GpuReading> = async () => READING): {
   call: (command: unknown) => Promise<unknown>, copy: ReturnType<typeof vi.fn>
 } {
   const copy = vi.fn()
@@ -20,12 +23,12 @@ function setup (gpu: () => Promise<{ status: unknown, info: unknown }> = async (
 
 describe('the About domain', () => {
   it('is for the About page alone', () => {
-    expect(infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {} }), copy: () => {}, release: () => RELEASE }).pages).toEqual(['about'])
+    expect(infoDomain({ facts: () => FACTS, gpu: async () => ({ ...READING, status: {}, info: {} }), copy: () => {}, release: () => RELEASE }).pages).toEqual(['about'])
   })
 
   it('answers what this version changed, and an empty list for a build with no notes', async () => {
     expect(await setup().call({ type: 'whatsnew' })).toEqual({ version: '1.0.0', sections: [{ heading: 'Added', items: ['**A**: b'] }] })
-    const bare = infoDomain({ facts: () => FACTS, gpu: async () => ({ status: {}, info: {} }), copy: () => {}, release: () => ({ version: '0.0.0', notes: null }) })
+    const bare = infoDomain({ facts: () => FACTS, gpu: async () => ({ ...READING, status: {}, info: {} }), copy: () => {}, release: () => ({ version: '0.0.0', notes: null }) })
     expect(await bare.handle({ type: 'whatsnew' }, CALLER)).toEqual({ version: '0.0.0', sections: [] })
   })
 
@@ -45,12 +48,92 @@ describe('the About domain', () => {
   })
 
   it('keeps the feature table when the device query gave nothing, and says the devices are not known', async () => {
-    const reply = await setup(async () => ({ status: { webgl: 'enabled' }, info: undefined })).call({ type: 'gpu' }) as { ok: boolean, devices: unknown[], devicesKnown: boolean }
+    const reply = await setup(async () => ({ ...READING, info: undefined })).call({ type: 'gpu' }) as { ok: boolean, devices: unknown[], devicesKnown: boolean }
     expect(reply).toMatchObject({ ok: true, devices: [], devicesKnown: false })
   })
 
   it('says it failed when the graphics query throws', async () => {
     expect(await setup(async () => { throw new Error('no gpu') }).call({ type: 'gpu' })).toEqual({ ok: false })
+  })
+
+  describe('the WebGPU answer', () => {
+    const OFF = { webgpu: 'disabled_off', webgpu_on_vk_via_gl_interop: 'disabled_off', gpu_compositing: 'enabled' }
+    const reading = (over: Partial<GpuReading>) => async (): Promise<GpuReading> => ({
+      status: OFF,
+      info: { gpuDevice: [{ active: true, vendorId: 0x10de, driverVendor: 'NVIDIA', driverVersion: '535.1' }] },
+      platform: 'linux',
+      session: 'x11',
+      ozone: 'x11',
+      ...over
+    })
+
+    it('gives the state, the reason, the sentence and the badge colour, for the platform the reading names', async () => {
+      expect(await setup(reading({})).call({ type: 'webgpu' })).toEqual({
+        ok: true,
+        state: 'unavailable',
+        reason: 'x11',
+        sentence: 'WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.',
+        tone: 'neutral'
+      })
+    })
+
+    it('says it works when the page got an adapter, and trusts nothing else the page sends', async () => {
+      expect(await setup(reading({})).call({ type: 'webgpu', adapter: { kind: 'adapter', reason: 'x11', state: 'unknown' } })).toEqual({
+        ok: true, state: 'available', reason: 'adapter', sentence: 'WebGPU works on this computer.', tone: 'ok'
+      })
+      expect(await setup(reading({})).call({ type: 'webgpu', adapter: { kind: 'working' } })).toMatchObject({ reason: 'x11' })
+    })
+
+    it('names the graphics card on Wayland, and tells XWayland from an X11 session', async () => {
+      expect(await setup(reading({ session: 'wayland', ozone: 'wayland' })).call({ type: 'webgpu' })).toMatchObject({ state: 'unavailable', reason: 'gpu-not-listed' })
+      expect(await setup(reading({ session: 'wayland' })).call({ type: 'webgpu' })).toMatchObject({ state: 'unavailable', reason: 'xwayland' })
+    })
+
+    it('colours a page\'s empty answer as a warning, since nothing in the report explains it', async () => {
+      const working = reading({ status: { webgpu: 'enabled', webgpu_on_vk_via_gl_interop: 'enabled', gpu_compositing: 'enabled' } })
+      expect(await setup(working).call({ type: 'webgpu', adapter: { kind: 'none' } })).toMatchObject({ reason: 'no-adapter', tone: 'warn' })
+    })
+
+    it('says it failed when the graphics query throws', async () => {
+      expect(await setup(async () => { throw new Error('no gpu') }).call({ type: 'webgpu' })).toEqual({ ok: false })
+    })
+  })
+
+  describe('the graphics reading', () => {
+    const counted = (): { gpu: () => Promise<GpuReading>, reads: () => number } => {
+      let reads = 0
+      return { gpu: async () => { reads += 1; return READING }, reads: () => reads }
+    }
+
+    it('is taken once for the report and WebGPU\'s answer the Graphics tab asks for together', async () => {
+      const { gpu, reads } = counted()
+      const { call } = setup(gpu)
+      await Promise.all([call({ type: 'gpu' }), call({ type: 'webgpu' })])
+      await call({ type: 'webgpu', adapter: { kind: 'none' } })
+      expect(reads()).toBe(1)
+    })
+
+    it('is taken again once the last one is old, so Try again reads the computer anew', async () => {
+      vi.useFakeTimers()
+      try {
+        const { gpu, reads } = counted()
+        const { call } = setup(gpu)
+        await call({ type: 'gpu' })
+        await vi.advanceTimersByTimeAsync(2_500)
+        await call({ type: 'gpu' })
+        expect(reads()).toBe(2)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('is not kept when it failed, so the next request tries again at once', async () => {
+      let reads = 0
+      const { call } = setup(async () => { reads += 1; if (reads === 1) throw new Error('no gpu'); return READING })
+      expect(await call({ type: 'gpu' })).toEqual({ ok: false })
+      expect(await call({ type: 'gpu' })).toMatchObject({ ok: true })
+      expect(reads).toBe(2)
+    })
   })
 
   it('copies the table it builds itself, for "version"', async () => {
