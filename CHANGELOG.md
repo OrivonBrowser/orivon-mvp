@@ -21,7 +21,13 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
+- **The Web3 / Web2 switch and the tunnel button on Orivon's own pages**: on `orivon://settings` and the others, the switch shows all the time and the tunnel button is drawn, reading as it does on a new tab; its popup is the Browser-wide panel alone.
 - **A website asks before it gets WebGPU**: "wants to use your graphics card for WebGPU", with Block and Grant WebGPU, kept per site in Settings, Sites. On an X11 session, granting also turns on "Use the graphics card for WebGPU on X11" and offers Restart Orivon, which reopens the site by its origin (your tabs and windows too when Orivon continues where it left off, and no site for a tab with a tunnel of its own). The bug report counts the sites allowed and blocked, never which.
+
+### Changed
+
+- **Split view has no ring**: the purple line round the pane in use is gone and the panes meet the edges of their area; the lit tab in the strip shows which one you are in, and the gap between the panes is the toolbar's colour.
+- **New-tab pictures keep their own colours**: nothing dark lies over the Orivon picture or your own any more; the text on it has a soft shadow instead.
 
 ### Fixed
 

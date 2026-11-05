@@ -154,8 +154,8 @@ for (const mode of ['light', 'dark'] as const) {
       })
       expect(seen).toEqual([`view ${DASHBOARD[mode]}`, `window ${DASHBOARD[mode]}`])
 
-      // The page: its root colour is the backing colour, and with its picture taken off, the wash over its base layer
-      // composites to the same colour, so the step from the view's colour to the page's first frame is none. A view
+      // The page: its root colour is the backing colour, and with its picture taken off, the page shows that colour,
+      // so the step from the view's colour to the page's first frame is none. A view
       // that is off the screen cannot paint and its capture waits out its timeout, so only the pages that can be read are.
       const pages = app.windows().filter((p) => p.url().includes('/newtab/'))
       expect(pages.length).toBe(2)
@@ -163,9 +163,8 @@ for (const mode of ['light', 'dark'] as const) {
       for (const page of pages) {
         const root = await page.evaluate(() => {
           const style = getComputedStyle(document.documentElement)
-          const withoutPicture = style.backgroundImage.replace(/,\s*url\([^)]*\)/, '')
           const sheet = document.createElement('style')
-          sheet.textContent = `html { background-image: ${withoutPicture} !important; }`
+          sheet.textContent = 'html { background-image: none !important; }'
           document.head.append(sheet)
           return { colour: style.backgroundColor }
         })

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemContext } from '../../registry.js'
-import { GAP, MARGIN } from '../split-model.js'
+import { GAP } from '../split-model.js'
 import { HtmlFullscreen } from '../fullscreen.js'
 
 // A tab manager over fake views, with a content view that keeps the order its
@@ -136,11 +136,14 @@ describe('two tabs in a split', () => {
 
     const [viewA, viewB] = createdViews as [RecordedView, RecordedView]
     expect(names(children)).toEqual(['backdrop', viewA.name, viewB.name])
-    const room = AREA.width - 2 * MARGIN - GAP
-    expect(boundsOf(viewA)).toEqual({ x: MARGIN, y: AREA.y + MARGIN, width: room / 2, height: AREA.height - 2 * MARGIN })
-    expect(boundsOf(viewB)).toMatchObject({ x: MARGIN + room / 2 + GAP, width: room / 2 })
+    const room = AREA.width - GAP
+    // The panes meet the edges of their area; only the gap between them shows the backdrop.
+    expect(boundsOf(viewA)).toEqual({ x: 0, y: AREA.y, width: room / 2, height: AREA.height })
+    expect(boundsOf(viewB)).toEqual({ x: room / 2 + GAP, y: AREA.y, width: room / 2, height: AREA.height })
     expect(backdrop.view.setBounds).toHaveBeenLastCalledWith(AREA)
-    expect(backdrop.update).toHaveBeenLastCalledWith(expect.objectContaining({ orientation: 'row', active: 'b' }))
+    expect(backdrop.update).toHaveBeenLastCalledWith(expect.objectContaining({ orientation: 'row' }))
+    // What it is told to draw holds the divider and the drop place, and no ring round a pane.
+    expect(Object.keys(backdrop.update.mock.lastCall?.[0] as object).sort()).toEqual(['area', 'divider', 'orientation', 'placeholder'])
     expect(manager.getState().activeTabId).toBe(b)
   })
 
@@ -195,11 +198,12 @@ describe('two tabs in a split', () => {
     manager.splits.split(a, b, 'right')
     const [viewA] = createdViews as [RecordedView]
     const calls = viewA.setBounds.mock.calls.length
+    const drawn = backdrop.update.mock.lastCall?.[0]
 
     manager.activateTab(a)
 
     expect(manager.getState().activeTabId).toBe(a)
-    expect(backdrop.update).toHaveBeenLastCalledWith(expect.objectContaining({ active: 'a' }))
+    expect(backdrop.update).toHaveBeenLastCalledWith(drawn)
     expect(viewA.setBounds.mock.calls.length).toBe(calls + 1)
     expect((manager as unknown as { panes: { shown: Map<string, unknown> } }).panes.shown.size).toBe(2)
   })
@@ -318,7 +322,7 @@ describe('two tabs in a split', () => {
     manager.splits.rotate(a)
 
     expect(backdrop.update).toHaveBeenLastCalledWith(expect.objectContaining({ orientation: 'column' }))
-    expect(boundsOf(createdViews[1] as RecordedView)).toMatchObject({ x: MARGIN, width: AREA.width - 2 * MARGIN })
+    expect(boundsOf(createdViews[1] as RecordedView)).toMatchObject({ x: 0, width: AREA.width })
   })
 
   it('are resized by the divider, within limits, and put back to half', () => {
@@ -329,11 +333,11 @@ describe('two tabs in a split', () => {
     const viewA = createdViews[0] as RecordedView
 
     manager.splits.setRatio(a, 0.3)
-    expect((boundsOf(viewA) as { width: number }).width).toBe(Math.round((AREA.width - 2 * MARGIN - GAP) * 0.3))
+    expect((boundsOf(viewA) as { width: number }).width).toBe(Math.round((AREA.width - GAP) * 0.3))
     manager.splits.setRatio(a, 0.01)
-    expect((boundsOf(viewA) as { width: number }).width).toBe(Math.round((AREA.width - 2 * MARGIN - GAP) * 0.2))
+    expect((boundsOf(viewA) as { width: number }).width).toBe(Math.round((AREA.width - GAP) * 0.2))
     manager.splits.resetRatio(a)
-    expect((boundsOf(viewA) as { width: number }).width).toBe((AREA.width - 2 * MARGIN - GAP) / 2)
+    expect((boundsOf(viewA) as { width: number }).width).toBe((AREA.width - GAP) / 2)
   })
 
   it('toggle: join with the next tab, a new one when there is none, and break up again', () => {
@@ -417,7 +421,7 @@ describe('a pane whose tab moves to another session', () => {
 })
 
 describe('a tab dragged over the page', () => {
-  it('shrinks the page to the other half and marks where it would go, then goes back', () => {
+  it('shrinks the page to the pane it would keep and marks the pane the dropped tab would take, with the gap between them, then goes back', () => {
     const { manager, backdrop, children } = rig()
     const a = manager.createTab('https://a.example/')
     manager.createTab('https://b.example/')
@@ -425,14 +429,30 @@ describe('a tab dragged over the page', () => {
 
     manager.splits.setPreview('left')
 
-    expect(boundsOf(createdViews[0] as RecordedView)).toEqual({ x: 500 + MARGIN, y: 100 + MARGIN, width: 500 - 2 * MARGIN, height: 600 - 2 * MARGIN })
-    expect(backdrop.update).toHaveBeenLastCalledWith(expect.objectContaining({ placeholder: { x: MARGIN, y: 100 + MARGIN, width: 500 - 2 * MARGIN, height: 600 - 2 * MARGIN }, divider: null }))
+    const room = AREA.width - GAP
+    expect(boundsOf(createdViews[0] as RecordedView)).toEqual({ x: room / 2 + GAP, y: AREA.y, width: room / 2, height: AREA.height })
+    expect(backdrop.update).toHaveBeenLastCalledWith(expect.objectContaining({ placeholder: { x: 0, y: AREA.y, width: room / 2, height: AREA.height }, divider: null }))
     expect(names(children)[0]).toBe('backdrop')
 
     manager.splits.setPreview(null)
 
     expect(boundsOf(createdViews[0] as RecordedView)).toEqual(AREA)
     expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
+  })
+
+  it('shows no preview where the drop would not split, so the page stays whole in an area too small for two panes', () => {
+    const { manager, backdrop, area, children } = rig()
+    const a = manager.createTab('https://a.example/')
+    manager.createTab('https://b.example/')
+    manager.activateTab(a)
+    area.current = { x: 0, y: 100, width: 400, height: 600 }
+    backdrop.update.mockClear()
+
+    manager.splits.setPreview('left')
+
+    expect(boundsOf(createdViews[0] as RecordedView)).toEqual(area.current)
+    expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
+    expect(backdrop.update).not.toHaveBeenCalled()
   })
 
   it('splits when it is dropped, the dropped tab on the side it was dropped', () => {

@@ -447,6 +447,31 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
+  it(`a split shows two pages edge to edge with only the gap between them (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme })
+    try {
+      await runPhase('visual state of a split', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await prepareWindow(app)
+        await visit(app, chrome, `${server.origin}/`)
+        // With no tab beside it, the split opens a new one: the dashboard is the right pane, and the person is in it.
+        await runCommand(chrome, 'split.toggle')
+        expect(await waitFor(async () => (await chrome.locator('.tab.joined').count()) === 2)).toBe(true)
+        const frame = (): Page | undefined => app.windows().find((w) => w.url().includes('/split-frame/'))
+        expect(await waitFor(() => frame() !== undefined)).toBe(true)
+        await (frame() as Page).waitForSelector('#divider:not([hidden])')
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await (dashboardOf(app) as Page).waitForSelector('html[data-settled="1"]')
+        await state(check, app, `split-view-${scheme}`, {
+          expected: 'Two pages side by side under the toolbar, each running to the window edge on its outer side and down to the window bottom: on the left the plain "Fixture page" page, on the right the new-tab dashboard with its picture in full colour and its text readable on it. Between them a gap of one flat colour, the toolbar\'s own, with a short vertical bar in the middle of it, grey or, while the pointer rests on it, in the accent colour. No coloured line, ring or border round either page, and no strip of window background between a page and the toolbar or the window edge. In the tab strip the two tabs form one joined pill, the right one (the new tab) lit.',
+          action: 'Opened the fixture page, then ran Split view with no other tab, which opens a new tab as the right pane.'
+        })
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
   it(`the question panel shows a consent question and a page's confirm() (${scheme})`, async () => {
     // The consent fixture advertises a manifest, so visiting it asks for its grants; the dialog fixture asks nothing until clicked.
     const consent = await startServer((req, res) => {
@@ -685,9 +710,9 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
         const toggle = web3.locator('#row-web3-light-client input[type=checkbox]')
         const stateLine = (await web3.locator('#row-web3-state .value').textContent()) ?? ''
         check('Settings > Web3: the light-client switch is off and disabled while this run forces it off, and its state line is a sentence', await toggle.isDisabled() && !(await toggle.isChecked()) && /^[A-Z]/.test(stateLine) && !/^[a-z]+: /.test(stateLine), stateLine)
-        check('the key, the tunnel button and the Web2 pill stay away from a Settings page', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#tunnel-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()))
+        check('the key and the site\'s Web2 pill stay away from a Settings page, which shows the Web3 / Web2 switch and the tunnel button instead', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()) && await chrome.locator('#search-mode').isVisible() && await chrome.locator('#tunnel-btn').isVisible())
         await state(check, app, `settings-web3-${scheme}`, {
-          expected: 'orivon://settings/web3 is open with Web3 selected in the navigation. A light-client row shows its switch OFF and greyed out, labelled "Off for this run" because this run forces it off; the state row below it is a full sentence beginning with a capital letter, not a "code: value" pair. No key button sits in the address field.',
+          expected: 'orivon://settings/web3 is open with Web3 selected in the navigation. A light-client row shows its switch OFF and greyed out, labelled "Off for this run" because this run forces it off; the state row below it is a full sentence beginning with a capital letter, not a "code: value" pair. No key button sits in the address field; the Web3 / Web2 switch and the tunnel button are at its right end.',
           action: 'Opened orivon://settings/web3 in a run that forces the light client off.',
           ignore: [CHECKPOINT_AGE]
         })

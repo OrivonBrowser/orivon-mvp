@@ -15,7 +15,7 @@ import { runChromeAction } from './chrome-actions.js'
 import { createPressStamps } from './press-stamps.js'
 import type { ShellServices } from './shell-services.js'
 import { tabDragActions } from './tab-drag-actions.js'
-import { addressOfFrontTab, openingAddressOf, tabForTunnelPopover } from './tunnel-popover-tab.js'
+import { addressOfFrontTab, openingAddressOf, shellPageTabForTunnelPopover, tabForTunnelPopover } from './tunnel-popover-tab.js'
 import { moveToNewWindow, moveToWindow } from './tab-move.js'
 import { closeOthers, closeToRight, duplicateTab, newTabToRight, tabMenuFlags, toggleMute, togglePin } from './tab-commands.js'
 import { sleepBackgroundTab } from '../memory-saver/sleep-command.js'
@@ -64,7 +64,11 @@ export function shellActions (parts: WindowParts): ShellActions {
     const contents = front?.url === '' ? tabs.liveWebContents(front.id) : undefined
     if (contents !== undefined) panels.siteInfo.holdAgainstArrival(contents)
   }
-  const aboutTab = (): string | undefined => tabForTunnelPopover(tabs.getState(), (id) => tabs.partitionOf(id), isOriginServedFromCacheSync, openingAddress)
+  /** The tab the tunnels popup opens for: the tab's own list, or on a page of the shell the tab whose popup is the browser's alone (the controller tells them apart from the tab's record). */
+  const aboutTab = (): string | undefined => {
+    const state = tabs.getState()
+    return tabForTunnelPopover(state, (id) => tabs.partitionOf(id), isOriginServedFromCacheSync, openingAddress) ?? shellPageTabForTunnelPopover(state)
+  }
 
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()
@@ -116,7 +120,7 @@ export function shellActions (parts: WindowParts): ShellActions {
     },
     openSiteInfo: (anchor, page, url) => {
       const pressedAt = presses.take(page)
-      // The tunnel button of a new tab and of every website that can go through a tunnel is about the tab (an installed app, a page of this computer and a shell page are not).
+      // The tunnel button of a new tab and of every website that can go through a tunnel is about the tab (an installed app and a page of this computer are not); on a shell page it is about the browser alone.
       const tabId = page === 'tunnels' ? aboutTab() : undefined
       if (tabId !== undefined) {
         if (waitingList?.tabId === tabId) return

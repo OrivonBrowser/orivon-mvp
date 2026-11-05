@@ -4,8 +4,10 @@
 // script's navigation, a redirect, a sized and a featureless `window.open`, a middle-click into a new tab, an address opened in a new tab from the address bar with Alt+Enter and the source of one, Back and Forward
 // across a page outside the profile, and the wake of a tab that was asleep when it was given the choice. Every name has a decoy on the same port on loopback
 // (the host resolver maps the fixture's names there), so a request that skipped the tunnel lands on the decoy and counts a
-// hit. The last case runs with the whole browser on the tunnel: a direct tab reaches the website outside it, and keeps the
-// tunnel a website has of its own.
+// hit, and the failure message lists what the decoy saw. The last case runs with the whole browser on the tunnel: a direct tab
+// reaches the website outside it, and keeps the tunnel a website has of its own. There the direct page's own `/favicon.ico` is the
+// one request the decoy does not count, because main fetches it at a moment of its own and it is no leak; the icon of a website that
+// should be tunnelled counts like any other request.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-tab-tunnel.test.ts
 import { writeFileSync } from 'node:fs'
@@ -20,18 +22,26 @@ import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
-import { activeTabInfo, delay, findViewShowing, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, delay, popoverShown, readTabDocument, tabIds, tabViews, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const A = 'plain.socks.test'
 const B = 'other.socks.test'
 const MIN = 60_000
 type Choice = 'nym' | 'socks5' | 'direct'
 
-interface Hosted { port: number, hits: number, close: () => Promise<void> }
+interface Hosted { port: number, hits: number, /** `host` and path of each request counted in `hits`, in the order they came. */ seen: string[], close: () => Promise<void> }
 
-async function host (answer: (request: IncomingMessage, response: ServerResponse) => void): Promise<Hosted> {
-  const hosted: Hosted = { port: 0, hits: 0, close: async () => {} }
-  const server = createServer((request, response) => { hosted.hits += 1; answer(request, response) })
+/** Hosts whose own `/favicon.ico` the decoy answers 404 and does not count: a page that is meant to go direct has its icon fetched by main whenever it likes. */
+const directIcons = new Set<string>()
+
+async function host (answer: (request: IncomingMessage, response: ServerResponse) => void, uncounted: (name: string, path: string) => boolean = () => false): Promise<Hosted> {
+  const hosted: Hosted = { port: 0, hits: 0, seen: [], close: async () => {} }
+  const server = createServer((request, response) => {
+    if (uncounted((request.headers.host ?? '').split(':')[0] ?? '', request.url ?? '')) { response.writeHead(404).end(); return }
+    hosted.hits += 1
+    hosted.seen.push(`${request.headers.host ?? ''}${request.url ?? ''}`)
+    answer(request, response)
+  })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
   hosted.port = (server.address() as AddressInfo).port
   hosted.close = async () => { await new Promise<void>((resolve) => { server.close(() => { resolve() }); server.closeAllConnections() }) }
@@ -58,7 +68,7 @@ document.getElementById('bare').addEventListener('click', () => { window.open('$
 </script></body>`
 
 beforeAll(async () => {
-  hosts.decoy = await host((_request, response) => { response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end('<!doctype html><title>direct</title><body>direct</body>') })
+  hosts.decoy = await host((_request, response) => { response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' }).end('<!doctype html><title>direct</title><body>direct</body>') }, (name, path) => path === '/favicon.ico' && directIcons.has(name))
   hosts.real = await host((request, response) => {
     const name = (request.headers.host ?? '').split(':')[0]
     if (request.url === '/redirect') { response.writeHead(302, { location: urlB(), 'cache-control': 'no-store' }).end(); return }
@@ -97,12 +107,27 @@ async function giveChoice (app: ElectronApplication, tabId: string, choice: Choi
   expect(done, 'the test seam found the tab').toBe(true)
 }
 
+/**
+ * The tab view whose document is at `url`, read from the page itself (`location.href`). Playwright's cached `Page.url()` can stay on the
+ * page a tab navigated away from, with the new document already showing, so it cannot say which view shows the website.
+ */
+async function viewShowing (app: ElectronApplication, chrome: Page, url: string): Promise<Page | undefined> {
+  for (const view of tabViews(app, chrome) as Page[]) {
+    try {
+      if ((await readTabDocument(view) as { href?: string } | undefined)?.href === url) return view
+    } catch {
+      // a view that closed under the read is not the one
+    }
+  }
+  return undefined
+}
+
 /** Types `url` into the address bar and waits for the page titled `title` to show. */
 async function open (app: ElectronApplication, chrome: Page, url: string, title: string): Promise<Page> {
   await clickAddressBarRetrying(chrome, url)
   expect((await waitForTab(chrome, { address: url, title })).ok, `${url} shows "${title}"`).toBe(true)
-  expect(await waitFor(() => findViewShowing(app, chrome, url) !== undefined)).toBe(true)
-  const page = findViewShowing(app, chrome, url) as Page
+  expect(await waitFor(async () => await viewShowing(app, chrome, url) !== undefined), `a view shows ${url}`).toBe(true)
+  const page = await viewShowing(app, chrome, url) as Page
   await page.waitForLoadState('load')
   return page
 }
@@ -123,7 +148,8 @@ async function onlyTab (chrome: Page, keep: string): Promise<void> {
 async function viaTunnel (name: string, before: number, directBefore: number, what: string): Promise<void> {
   expect(await waitFor(() => asked(name) > before, 30_000), `${what}: ${name} was asked of the tunnel`).toBe(true)
   await delay(1000)
-  expect(hosts.decoy.hits - directBefore, `${what}: the first request never reached the website directly`).toBe(0)
+  const direct = hosts.decoy.seen.slice(directBefore)
+  expect(hosts.decoy.hits - directBefore, `${what}: the first request never reached the website directly (the decoy saw: ${direct.length === 0 ? 'nothing' : direct.join(', ')})`).toBe(0)
 }
 
 /** Presses `selector` in `page` and checks the website `name` it leads to is reached through the tunnel. */
@@ -281,6 +307,7 @@ it('[app:tab-tunnel-direct-tab-keeps-a-sites-own-tunnel] with the whole browser 
   const { app, chrome } = await start({ settings: { 'network.tunnel.everywhere': true }, routes })
   try {
     await giveChoice(app, await activeId(chrome), 'direct')
+    directIcons.add(A)
 
     const tunnelledA = asked(A)
     const decoyBefore = hosts.decoy.hits
@@ -293,12 +320,14 @@ it('[app:tab-tunnel-direct-tab-keeps-a-sites-own-tunnel] with the whole browser 
     await open(app, chrome, urlB(), 'tunnelled-b')
     await viaTunnel(B, before, directBefore, 'a website with a tunnel of its own, in a direct tab')
 
-    // The control: a tab with no choice goes through the tunnel the whole browser is on.
+    // The control: a tab with no choice goes through the tunnel the whole browser is on, so A is no longer a host whose icon the decoy lets through.
+    directIcons.delete(A)
     const control = asked(A)
     await chrome.click('#new-tab')
     await open(app, chrome, urlA(), 'tunnelled')
     expect(asked(A) - control, 'a tab with no choice follows the whole browser onto the tunnel').toBeGreaterThan(0)
   } finally {
+    directIcons.clear()
     await closeElectron(app)
   }
 }, 4 * QA_TEST_TIMEOUT_MS)
