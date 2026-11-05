@@ -4,7 +4,9 @@
 // (src/main/site-settings/webgpu-ask-ipc.ts) whether the page may have what came back, saying only whether Chromium
 // gave an adapter. The page gets the adapter only when main answers exactly `true`; any other answer, and any failure
 // to ask, gives it `null`, which is what a computer without WebGPU gives, so a site's own fallback runs. The wrapper is
-// not a boundary: a frame and a worker of the page are not wrapped, and a page that tampers with it only fools itself.
+// the question, not a boundary: a page that changes its own globals (a `then` on `GPUAdapter.prototype` or
+// `Object.prototype` takes the adapter as Chromium resolves it), a frame, a worker, a page shown in an embed and an
+// extension's page all get the adapter unasked.
 import { contextBridge, ipcRenderer } from 'electron'
 import { WEBGPU_ASK_CHANNEL } from '../main/channels.js'
 import { inMainFrame } from './frame.js'
@@ -33,6 +35,8 @@ function wrapRequestAdapter (askMain: (adapter: boolean) => Promise<unknown>): v
   const call = Reflect.apply
   const define = Object.defineProperty
   const nativeThen = Promise.prototype.then
+  /** A promise for null the page cannot reach: made by the `Promise` of install time, never through `then` or a `constructor` the page may have changed. */
+  const resolveNull = Promise.resolve.bind(Promise)
 
   /** The adapter, when main says the page may have it; otherwise null. */
   const settle = (adapter: unknown): unknown => {
@@ -50,7 +54,8 @@ function wrapRequestAdapter (askMain: (adapter: boolean) => Promise<unknown>): v
       try {
         return call(nativeThen, result as Promise<unknown>, [settle])
       } catch {
-        return result
+        // `then` failed (a page can make it throw by breaking `Promise.prototype.constructor`): the adapter in `result` is not handed over unasked.
+        return resolveNull(null)
       }
     }
   })

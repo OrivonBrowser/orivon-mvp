@@ -131,6 +131,20 @@ describe('a call to requestAdapter', () => {
     expect(await notAPromise.call(new FakeGpu())).toBeNull()
   })
 
+  it('gives the page null, and never the platform\'s promise, when the page has made then throw', async () => {
+    const request = wrapped(async () => await Promise.resolve(true))
+    const original = Object.getOwnPropertyDescriptor(Promise.prototype, 'constructor') as PropertyDescriptor
+    let result: unknown
+    // A species that is no constructor makes the platform's `then` throw while the wrapper chains on the adapter.
+    Reflect.defineProperty(Promise.prototype, 'constructor', { value: { [Symbol.species]: 0 }, configurable: true, writable: true })
+    try {
+      result = request.call(new FakeGpu())
+    } finally {
+      Reflect.defineProperty(Promise.prototype, 'constructor', original)
+    }
+    expect(await result).toBeNull()
+  })
+
   it('tells main that no adapter was given and still gives the page null, whatever main answers', async () => {
     const ask = vi.fn(async () => await Promise.resolve(true))
     const request = wrapped(ask)

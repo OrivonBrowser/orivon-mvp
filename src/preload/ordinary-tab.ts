@@ -41,7 +41,7 @@ export function exposeOrdinaryTabSurface (): void {
   // A page that checks `navigator.permissions.query` before it asks reads `prompt` for what it would be asked about,
   // not the engine's `denied` -- ./permission-query.ts.
   installPermissionQuery()
-  // ADR-0106: the page's WebGPU adapter is kept from it unless the person allows the site -- ./webgpu-ask.ts.
+  // ADR-0106: a website's page asks for its WebGPU adapter through the person's answer for the site -- ./webgpu-ask.ts.
   installWebGpuAsk()
   // ADR-0068: tells the page's navigator.hid a device the person just allowed has connected. Idle until main sends.
   installHidAnnounce()
