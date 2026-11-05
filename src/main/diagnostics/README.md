@@ -6,7 +6,7 @@ about one. `log-ring.ts` and `log-file.ts` keep the main process's console outpu
 piped output into console lines and `host-fork.ts` forks every host that way; `crash-records.ts` and `crash-store.ts` the crash records (`crashes.json`, newest 30,
 dropped after 30 days) and the run marker (`running.json`) that says whether the last run ended in an orderly quit;
 `dumps.ts` and `dump-files.ts` the native crash dumps Crashpad leaves; `diagnostics-service.ts` composes them for one
-run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `gpu-reading.ts` parses what Chromium reports about the graphics setup (the feature map, the device list and the names of a device) for every reader of it, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code; `orivon://gpu` shows its sentence), `report-payload.ts` builds the body and cuts
+run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `gpu-reading.ts` parses what Chromium reports about the graphics setup (the feature map, the device list and the names of a device) for every reader of it, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code; `orivon://gpu` shows its sentence; the block also carries the WebGPU question's default and how many sites are allowed and blocked for it, counts only, `siteAnswerCounts`), `report-payload.ts` builds the body and cuts
 every field to the length the server accepts, `report-text.ts` writes the Markdown for "Copy as text",
 `report-channel.ts` posts and reads the status, `sent-reports.ts` keeps the list of what was sent, and
 `report-domain.ts` is what [`orivon://report`](../../renderer/pages/report/) may ask. `diagnostics-runner.ts` and

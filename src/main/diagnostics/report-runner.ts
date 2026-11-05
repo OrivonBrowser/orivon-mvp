@@ -13,7 +13,7 @@ import { tabChoiceCounts } from '../shell/tab-tunnel-facts.js'
 import { IS_TEST_BUILD, ingestBaseUrl, modeInputsFromEnv, testOverrides } from '../../telemetry/mode.js'
 import type { InternalDomain } from '../pages/internal-ipc.js'
 import { BUILD_COMMIT } from './build-commit.js'
-import { appSocketReadings, buildDiagnostics, channelOf, reportedSettings } from './diagnostics-facts.js'
+import { appSocketReadings, buildDiagnostics, channelOf, reportedSettings, siteAnswerCounts } from './diagnostics-facts.js'
 import type { DiagnosticsFacts } from './diagnostics-facts.js'
 import { diagnostics } from './diagnostics-runner.js'
 import { readDumpBase64 } from './dump-files.js'
@@ -75,6 +75,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
     },
     gpuStatus: app.getGPUFeatureStatus(),
     x11Vulkan: x11VulkanReading(),
+    webgpuSites: { default: String(services.settings.get('sites.webgpu')), ...siteAnswerCounts(services.siteSettings.entries(), 'webgpu') },
     gpuInfo,
     displays: screen.getAllDisplays().map((display) => ({ width: display.size.width, height: display.size.height, scaleFactor: display.scaleFactor })),
     processes: app.getAppMetrics().map((metric) => ({ type: metric.type, workingSetKb: metric.memory.workingSetSize })),

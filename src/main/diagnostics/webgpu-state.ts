@@ -133,7 +133,7 @@ function x11Reason (inputs: WebGpuInputs): WebGpuState {
     return result('unavailable', 'xwayland', 'WebGPU is off because Orivon is running through X11 (XWayland) on this Wayland session. WebGPU needs Orivon to run on Wayland.')
   }
   const where = inputs.session === 'x11' ? 'this computer runs an X11 session' : 'Orivon is running on X11'
-  const way = canTurnOn(inputs) ? ` You can turn it on ${IN_SETTINGS}` : ''
+  const way = canTurnOn(inputs) ? ` A site that needs WebGPU asks you for it. You can also turn it on ${IN_SETTINGS}` : ''
   return result('unavailable', 'x11', `WebGPU is off because ${where}. Chromium turns it off there for every graphics card.${way}`)
 }
 

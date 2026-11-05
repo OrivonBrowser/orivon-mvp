@@ -36,7 +36,7 @@ describe('webGpuState', () => {
     it('blames an X11 session on Linux for a page that got no adapter, though the bridge reads enabled', () => {
       const state = webGpuState(inputs({ session: 'x11', ozone: 'x11', devices: [NVIDIA], adapter: { kind: 'none' } }))
       expect(state).toMatchObject({ state: 'unavailable', reason: 'x11' })
-      expect(state.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. You can turn it on in Settings, under Performance.')
+      expect(state.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. A site that needs WebGPU asks you for it. You can also turn it on in Settings, under Performance.')
     })
 
     it('says Orivon runs through XWayland when the session is Wayland and the browser is on X11', () => {
@@ -54,7 +54,7 @@ describe('webGpuState', () => {
       for (const session of ['', 'tty']) {
         const state = webGpuState(inputs({ session, ozone: 'x11' }))
         expect(state).toMatchObject({ state: 'unavailable', reason: 'x11' })
-        expect(state.sentence).toBe('WebGPU is off because Orivon is running on X11. Chromium turns it off there for every graphics card. You can turn it on in Settings, under Performance.')
+        expect(state.sentence).toBe('WebGPU is off because Orivon is running on X11. Chromium turns it off there for every graphics card. A site that needs WebGPU asks you for it. You can also turn it on in Settings, under Performance.')
       }
     })
 
@@ -338,7 +338,7 @@ describe('the X11 setting for WebGPU', () => {
     expect(x11Off.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.')
     const reverted = webGpuState(x11({ isPrivate: true, x11Vulkan: REVERTED, adapter: { kind: 'none' } }))
     expect(reverted.sentence).toBe('Orivon turned off "Use the graphics card for WebGPU on X11" because graphics stopped working while it was on.')
-    expect(webGpuState(x11({ isPrivate: false, adapter: { kind: 'none' } })).sentence).toContain('You can turn it on in Settings, under Performance.')
+    expect(webGpuState(x11({ isPrivate: false, adapter: { kind: 'none' } })).sentence).toContain('You can also turn it on in Settings, under Performance.')
   })
 
   it('leaves the way back out of the sentence where Settings does not offer the choice (XWayland)', () => {

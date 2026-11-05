@@ -183,7 +183,7 @@ stato installato), le versioni di Electron, Chromium, Node.js e V8, e da quanto 
 esecuzione; il sistema operativo e la sua versione, il tipo e il numero di processori, la memoria
 installata e libera, la lingua, e la sessione del desktop (X11 o Wayland, e il nome del desktop); i
 numeri del produttore e del modello della scheda grafica, la versione del suo driver, quali
-funzioni grafiche sono attive, e se WebGPU è disattivato e perché, come una parola fissa quale `x11` o `software-only`; se l'impostazione che dà WebGPU a una sessione X11 era attiva all'avvio di Orivon, e quando Orivon l'ha disattivata da solo l'ultima volta e perché (una parola fissa quale `gpu-crash`); le dimensioni e la scala di ogni schermo; quanta memoria usa ogni
+funzioni grafiche sono attive, e se WebGPU è disattivato e perché, come una parola fissa quale `x11` o `software-only`; se l'impostazione che dà WebGPU a una sessione X11 era attiva all'avvio di Orivon, e quando Orivon l'ha disattivata da solo l'ultima volta e perché (una parola fissa quale `gpu-crash`); se a un sito web si chiede il permesso prima di dargli WebGPU o glielo si blocca per impostazione predefinita, e quanti siti hai consentito e quanti hai bloccato (tre valori, mai quali siti); le dimensioni e la scala di ogni schermo; quanta memoria usa ogni
 tipo di processo di Orivon; quante finestre e schede sono aperte, quante di esse usano un tunnel e quale (un conteggio, mai un indirizzo), e se la finestra è privata; le
 estensioni installate (nome, identificativo, versione, attiva o no); per ciascuna delle otto app con più
 connessioni di rete, quante ne tiene aperte e quante ne può tenere (solo numeri, mai il nome o l'indirizzo dell'app); i valori di alcune
