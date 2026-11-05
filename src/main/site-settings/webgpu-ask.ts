@@ -5,6 +5,7 @@
 // tested without a window. `webgpu-ask-ipc.ts` is where the page's message arrives.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { NavigatingTab } from './page-access.js'
+import type { RestartReopens } from './site-prompt-text.js'
 import type { SiteAsksEngine } from './site-asks-engine.js'
 import type { SiteDecision } from './site-settings-store.js'
 
@@ -23,19 +24,40 @@ export function x11QuestionApplies (state: X11State, isPrivate: boolean): boolea
   return state.offered && !state.onAtStart && !state.reverted && !isPrivate
 }
 
+/**
+ * What the start that follows a restart offer brings back. The saved session when the start-up choice restores it: this page is in
+ * it, and its tab keeps a tunnel choice of its own. Otherwise this page, opened from the command line, unless the tab has such a
+ * choice: a launch address carries none, so the page would be fetched over the default route, and it is not reopened.
+ */
+export function reopensAfterRestart (state: { readonly restoresSession: boolean, readonly tabHasTunnel: boolean }): RestartReopens {
+  if (state.restoresSession) return 'session'
+  return state.tabHasTunnel ? 'none' : 'page'
+}
+
+/** The page the restart names on the command line: only the one a start that reopens `page` should open. */
+export function addressAfterRestart (reopens: RestartReopens, page: string | undefined): string | undefined {
+  return reopens === 'page' ? page : undefined
+}
+
 export interface WebGpuAskDeps<T extends NavigatingTab & object> {
   /** The engine's `request`: undefined when `contents` is not an ordinary tab. */
   request: SiteAsksEngine<T>['request']
   /** The origin holds grants, so its permissions are its manifest's and no question asks for more. */
   isApp: (origin: string) => boolean
+  /** The person's default for WebGPU is Block: it refuses a site with no answer, and an origin that holds grants too. */
+  blockedByDefault: () => boolean
   /** What the person already told the site: a site with an answer is not asked again. */
   stored: (origin: string) => SiteDecision | undefined
   isPrivate: boolean
   x11: () => X11State
   /** Turns the mode on; false when the setting could not be changed. */
   turnOnX11: () => boolean
-  /** Offers the person a restart for `contents`'s page. */
-  offerRestart: (contents: T) => void
+  /** The start-up choice brings the saved tabs and windows back. */
+  restoresSession: () => boolean
+  /** `contents`'s tab carries a tunnel choice of its own, which only that tab holds. */
+  tabHasTunnel: (contents: T) => boolean
+  /** Offers the person a restart for `contents`'s page, saying what the start that follows brings back. */
+  offerRestart: (contents: T, reopens: RestartReopens) => void
 }
 
 /** Whether the page gets the adapter it asked for: `frameOrigin` is read by main from the sender frame, `adapter` is whether Chromium gave one. */
@@ -48,7 +70,7 @@ export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuA
   return async (contents, frameOrigin, adapter) => {
     const origin = originFromUrl(frameOrigin)
     if (origin === null) return false
-    if (deps.isApp(origin)) return true
+    if (deps.isApp(origin)) return !deps.blockedByDefault()
     const details = { isMainFrame: true, requestingUrl: origin }
     if (adapter) return await deps.request({ kinds: ['webgpu'], sysex: false }, contents, details) ?? false
 
@@ -58,7 +80,7 @@ export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuA
     const granted = await deps.request({ kinds: ['webgpu'], sysex: false, restart: true }, contents, details)
     if (granted !== true || offered.get(contents) === origin) return false
     offered.set(contents, origin)
-    if (deps.turnOnX11()) deps.offerRestart(contents)
+    if (deps.turnOnX11()) deps.offerRestart(contents, reopensAfterRestart({ restoresSession: deps.restoresSession(), tabHasTunnel: deps.tabHasTunnel(contents) }))
     return false
   }
 }

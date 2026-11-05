@@ -140,7 +140,7 @@ describe('offering a restart', () => {
   it('shows the offer under the address bar, holding the way to restart by a random id', () => {
     const { offer, shows, contents, window } = offerRig()
     const run = vi.fn()
-    offer(contents, { restoresSession: false, run })
+    offer(contents, { reopens: 'page', run })
     expect(shows).toHaveLength(1)
     expect(shows[0]?.overlay).toBe(SITE_PROMPT_OVERLAY)
     const payload = shows[0]?.payload as { mode: string, id: string }
@@ -148,28 +148,28 @@ describe('offering a restart', () => {
     expect(payload.id).toMatch(/^[0-9a-f]{24}$/)
     const held = pendingRestart(payload.id)
     expect(held?.window).toBe(window)
-    expect(held?.restoresSession).toBe(false)
+    expect(held?.reopens).toBe('page')
     held?.run()
     expect(run).toHaveBeenCalledTimes(1)
     // It is not a question: nothing is held under that id as one.
     expect(pendingAsk(payload.id)).toBeUndefined()
   })
 
-  it('holds that the start brings the session back, for the view and the restart to agree', () => {
+  it.each(['session', 'page', 'none'] as const)('holds what the start brings back (%s), for the view and the restart to agree', (reopens) => {
     const { offer, shows, contents } = offerRig()
-    offer(contents, { restoresSession: true, run: () => {} })
-    expect(pendingRestart((shows[0]?.payload as { id: string }).id)?.restoresSession).toBe(true)
+    offer(contents, { reopens, run: () => {} })
+    expect(pendingRestart((shows[0]?.payload as { id: string }).id)?.reopens).toBe(reopens)
   })
 
   it('ends with the page it was made on, and is forgotten when its surface closes', () => {
     const { offer, tab, shows, contents, window } = offerRig()
-    offer(contents, { restoresSession: false, run: () => {} })
+    offer(contents, { reopens: 'page', run: () => {} })
     const id = (shows[0]?.payload as { id: string }).id
     tab.emit('did-navigate')
     expect(pendingRestart(id)).toBeUndefined()
     expect(tab.listenerCount('did-navigate')).toBe(0)
     const second = offerRig()
-    second.offer(second.contents, { restoresSession: false, run: () => {} })
+    second.offer(second.contents, { reopens: 'page', run: () => {} })
     const secondId = (second.shows[0]?.payload as { id: string }).id
     slotClosed(second.window, SITE_PROMPT_OVERLAY, 'escape')
     expect(pendingRestart(secondId)).toBeUndefined()
@@ -179,7 +179,7 @@ describe('offering a restart', () => {
 
   it('offers nothing for contents no window owns, and knows no id it never issued', () => {
     const { offer, shows } = offerRig()
-    offer(new FakeTab() as unknown as WebContents, { restoresSession: false, run: () => {} })
+    offer(new FakeTab() as unknown as WebContents, { reopens: 'page', run: () => {} })
     expect(shows).toEqual([])
     expect(pendingRestart('nope')).toBeUndefined()
     expect(pendingRestart(7)).toBeUndefined()

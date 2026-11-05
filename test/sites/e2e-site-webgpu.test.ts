@@ -2,8 +2,8 @@
 // for WebGPU", with Block and Grant WebGPU, and the answer is kept per site. CI runs this on an X11 session with no
 // graphics card behind it: Chromium gives no adapter there, so the question is the one that turns the graphics mode on
 // and offers a restart. That path is what the spec drives: the question, the grant (the setting turned on, the allow
-// kept, the page told it has no adapter, the offer to start again), the block, an origin that holds grants and a
-// private window, which are never asked. Restart Orivon is never pressed. The path with an adapter to give is run by
+// kept, the page told it has no adapter, the offer to start again), the block, an origin that holds grants, which
+// is not asked, and a private window, which is not asked to restart. Restart Orivon is never pressed. The path with an adapter to give is run by
 // test/page/e2e-webgpu-x11.test.ts on a computer that has a card. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
 import { mkdirSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -16,7 +16,7 @@ import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support
 import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { nativeDialogsAsked as dialogsAsked, stubNativeDialogs as stubDialogs } from '../support/question-support.js'
-import { delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, delay, findViewShowing, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
 const E2E_TIMEOUT_MS = 180_000
@@ -179,7 +179,7 @@ it('[app:webgpu-asked-per-site] asks a website that wants WebGPU, turns the grap
   }
 }, E2E_TIMEOUT_MS)
 
-it('[app:webgpu-asked-per-site] never asks an installed app that holds grants for WebGPU, and asks one that holds none as a website', async () => {
+it('[app:webgpu-asked-per-site] does not ask an installed app that holds grants for WebGPU, and asks one that holds none as a website', async () => {
   const { app, chrome } = await launchShell()
   try {
     const manifestOf = (id: string, capabilities: Manifest['capabilities']): Manifest => ({ orivonApiVersion: 0, id: `app.orivon.behaviour.${id}`, name: `Behaviour ${id}`, version: '1.0.0', entry: 'index.html', capabilities })
@@ -236,6 +236,31 @@ it('[app:webgpu-asked-per-site] says the tabs and windows open again when Orivon
     expect(await textOf(offer, '.sp-restart-note')).toEqual(['Your tabs and windows open again.'])
     expect(await textOf(offer, '.btn-row .btn')).toEqual(['Later', 'Restart Orivon'])
     expect(await waitFor(() => settingOf(dir) === true)).toBe(true)
+    await offer.waitForSelector('.site-prompt:not(.arming)')
+    await offer.click('.btn-row .btn:text-is("Later")')
+    expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
+    expect(await app.evaluate(({ app: electron }) => electron.isReady())).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('[app:webgpu-asked-per-site] says nothing of this page opening again when its tab carries a tunnel choice of its own, which a launch tab would lose', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await visit(app, chrome, `${origins.a}/`)
+    const tabId = (await activeTabInfo(chrome)).activeId as string
+    const kept = await app.evaluate((_electron, id) => (globalThis as unknown as { __orivonDevTabTunnel?: { set: (tab: string, choice: string | null) => boolean } }).__orivonDevTabTunnel?.set(id as string, 'direct'), tabId)
+    expect(kept, 'the test seam found the tab').toBe(true)
+    // The choice moves the tab to a session of its own, so the page loads again there.
+    expect(await waitFor(() => findViewShowing(app, chrome, `${origins.a}/`) !== undefined)).toBe(true)
+    const view = findViewShowing(app, chrome, `${origins.a}/`) as Page
+    await view.waitForLoadState('load')
+    await view.click('#gpu')
+    const prompt = await waitAsk(app)
+    await press(prompt, 'Grant WebGPU')
+    const offer = await waitRestartOffer(app)
+    expect(await textOf(offer, '.sp-restart-note')).toEqual(['Your tabs and windows are not restored.'])
     await offer.waitForSelector('.site-prompt:not(.arming)')
     await offer.click('.btn-row .btn:text-is("Later")')
     expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)

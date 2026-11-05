@@ -62,6 +62,12 @@ export const RESTART_NOTE = 'Orivon restarts to turn WebGPU on. It may use more 
 export const RESTART_LINE = 'WebGPU starts after Orivon restarts.'
 export const RESTART_OFFER_NOTE = 'Orivon opens this page again. Your other tabs and windows are not restored.'
 export const RESTART_RESTORED_NOTE = 'Your tabs and windows open again.'
+export const RESTART_BLANK_NOTE = 'Your tabs and windows are not restored.'
+
+/** What the start that follows a restart offer brings back: the saved tabs and windows, this page alone, or none of them. */
+export type RestartReopens = 'session' | 'page' | 'none'
+
+const RESTART_NOTES: Readonly<Record<RestartReopens, string>> = { session: RESTART_RESTORED_NOTE, page: RESTART_OFFER_NOTE, none: RESTART_BLANK_NOTE }
 
 const WANTS: Readonly<Partial<Record<SiteKind, string>>> = {
   camera: 'wants to use your camera',
@@ -106,9 +112,8 @@ export function askView (id: string, origin: string, kinds: readonly SiteKind[],
   }
 }
 
-/** `restoresSession`: the start-up choice brings the tabs and windows back, so the page needs no opening of its own. */
-export function restartView (id: string, restoresSession: boolean, guardMs: number): RestartView {
-  return { mode: 'restart', id, line: RESTART_LINE, note: restoresSession ? RESTART_RESTORED_NOTE : RESTART_OFFER_NOTE, guardMs }
+export function restartView (id: string, reopens: RestartReopens, guardMs: number): RestartView {
+  return { mode: 'restart', id, line: RESTART_LINE, note: RESTART_NOTES[reopens], guardMs }
 }
 
 export function reviewView (origin: string, rows: readonly ReviewRow[], settingsLink: boolean): ReviewView {

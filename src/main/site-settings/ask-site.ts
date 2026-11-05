@@ -10,6 +10,7 @@ import { crossingAnchor } from '../shell/actions/prompt-anchor.js'
 import type { ShellWindow, WindowRegistry } from '../shell/window-registry.js'
 import type { SiteKind } from './kinds.js'
 import type { SiteAnswer } from './site-asks-engine.js'
+import type { RestartReopens } from './site-prompt-text.js'
 
 export const SITE_PROMPT_OVERLAY = 'site-prompt'
 
@@ -32,7 +33,7 @@ export interface PendingRestart {
   readonly id: string
   readonly window: ShellWindow
   /** Decided when the offer is made and shown by the view; `run` was built with the same answer, so what the person reads is what happens. */
-  readonly restoresSession: boolean
+  readonly reopens: RestartReopens
   readonly run: () => void
 }
 
@@ -90,10 +91,10 @@ export function createAskSite (deps: AskSiteDeps): AskSite {
 }
 
 /** Offers `tab` to start Orivon again with `run`, under the address bar; the offer ends with the page it was made on. */
-export type OfferRestart = (tab: WebContents, offer: { readonly restoresSession: boolean, readonly run: () => void }) => void
+export type OfferRestart = (tab: WebContents, offer: { readonly reopens: RestartReopens, readonly run: () => void }) => void
 
 export function createOfferRestart (deps: AskSiteDeps): OfferRestart {
-  return (tab, { restoresSession, run }) => {
+  return (tab, { reopens, run }) => {
     const found = deps.windows.findTab(tab)
     if (found === null) return
     const id = randomBytes(12).toString('hex')
@@ -107,7 +108,7 @@ export function createOfferRestart (deps: AskSiteDeps): OfferRestart {
       forget()
     }
     tab.once('did-navigate', onNavigate)
-    restarts.set(id, { id, window: found.window, restoresSession, run })
+    restarts.set(id, { id, window: found.window, reopens, run })
     handle = requestSlot({
       window: found.window,
       tabId: found.tabId,

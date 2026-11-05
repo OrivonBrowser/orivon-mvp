@@ -7,7 +7,7 @@
 // comes from the page's own preload.
 import { ipcMain, type WebContents } from 'electron'
 import { X11_SETTING, x11VulkanOffer, x11VulkanReading } from '../graphics/x11-vulkan-runner.js'
-import { restartOnPage } from '../launch/relaunch.js'
+import { restartOrivon } from '../launch/relaunch.js'
 import { configureSiteNotifications, setNotificationsBlockedCheck } from '../sessions/permission-gate.js'
 import { registerPermissionQueryIpc } from '../sessions/permission-query-ipc.js'
 import { siteAsks } from '../sessions/site-asks.js'
@@ -21,7 +21,7 @@ import { siteKindById, type SiteKind } from './kinds.js'
 import { pageAccess } from './page-access.js'
 import { createSiteAsker } from './site-asker.js'
 import { createSiteAsksEngine } from './site-asks-engine.js'
-import { createWebGpuAsk } from './webgpu-ask.js'
+import { addressAfterRestart, createWebGpuAsk } from './webgpu-ask.js'
 import { registerWebGpuAskIpc } from './webgpu-ask-ipc.js'
 
 /** The page a tab shows now, to open again after a restart; none when the tab is gone. */
@@ -62,6 +62,7 @@ export const installSitePermissions: ShellInstaller = {
       ask: createWebGpuAsk<WebContents>({
         request: (request, contents, details) => engine.request(request, contents, details),
         isApp: (origin) => isAppOrigin(ctx, origin),
+        blockedByDefault: () => services.settings.get('sites.webgpu') === 'block',
         stored: (origin) => services.siteSettings.get(origin, 'webgpu'),
         isPrivate: services.isPrivate,
         x11: () => {
@@ -69,10 +70,13 @@ export const installSitePermissions: ShellInstaller = {
           return { offered, onAtStart: x11VulkanReading().onAtStart, reverted: revert !== null }
         },
         turnOnX11: () => services.settings.set(X11_SETTING, true).ok,
-        offerRestart: (tab) => {
-          const restoresSession = startupRestoresSession(services.settings.get('startup.mode'), services.isPrivate)
-          offerRestart(tab, { restoresSession, run: () => { restartOnPage(app, process.argv, pageOf(tab), restoresSession) } })
-        }
+        restoresSession: () => startupRestoresSession(services.settings.get('startup.mode'), services.isPrivate),
+        tabHasTunnel: (tab) => {
+          const found = services.windows.findTab(tab)
+          return found?.window.tabs.record(found.tabId)?.tunnelChoice !== undefined
+        },
+        // `reopens` is decided once: the question the person reads and the command line the restart runs both follow it.
+        offerRestart: (tab, reopens) => { offerRestart(tab, { reopens, run: () => { restartOrivon(app, process.argv, addressAfterRestart(reopens, pageOf(tab))) } }) }
       })
     })
     siteAsks.add(createWakeLockAsker({ isTab: (contents) => services.windows.findTab(contents) !== null }))
