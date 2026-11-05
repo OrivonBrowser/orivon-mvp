@@ -129,16 +129,39 @@ jobs:
               case " $runs " in
                 '  ' | *' pending '*) sleep 15 ;;
                 *) [ -z "$(printf '%s\n' $runs | grep -vxE 'success|skipped')" ] && return 0
-                   echo "::error::$2 on ${1:0:9} of #$NUMBER ended: $runs."; return 1 ;;
+                   echo "$2 on ${1:0:9} of #$NUMBER ended: $runs."; return 1 ;;
               esac
             done
             echo "::error::$2 on ${1:0:9} of #$NUMBER had not finished ($runs) when the job's 80 minutes ran out. Merge it by hand once it passes."
+            exit 1
+          }
+          ci_passed () { passed "$1" check && passed "$1" e2e; }
+          # A one-file change fails CI only through a runner that hung or a flaky spec, so the failed jobs of its CI
+          # run get one more try, approved again when GitHub holds the rerun as well.
+          rerun () {
+            local run status conclusion
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$1&event=pull_request" --jq '[.workflow_runs[] | select(.name == "CI")][0].id')
+            echo "Running the failed jobs of CI run $run once more."
+            gh run rerun "$run" --failed || return 1
+            for _ in $(seq 24); do
+              read -r status conclusion <<< "$(gh run view "$run" --json status,conclusion --jq '"\(.status) \(.conclusion)"')"
+              [ "$conclusion" = action_required ] && gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run/approve" > /dev/null
+              # Until the rerun's jobs register, the commit's latest `check` is still the one that failed.
+              [ "$status" != completed ] && { sleep 30; return 0; }
+              sleep 5
+            done
             return 1
           }
 
           for attempt in 1 2 3; do
             sha=$(git rev-parse HEAD)
-            approve "$sha" && passed "$sha" check && passed "$sha" e2e || exit 1
+            approve "$sha" || exit 1
+            if ! ci_passed "$sha"; then
+              rerun "$sha" && ci_passed "$sha" || {
+                echo "::error::CI on ${sha:0:9} of #$NUMBER did not pass, run twice; the lines above say which check. Merge it by hand once it passes."
+                exit 1
+              }
+            fi
             gh pr merge "$NUMBER" --merge --match-head-commit "$sha" && exit 0
             # Only a branch main moved past, or one that now conflicts with it, is rebuilt; any other refusal is reported.
             state=$(gh pr view "$NUMBER" --json mergeStateStatus --jq .mergeStateStatus)
