@@ -32,7 +32,9 @@ function rig (options: Options = {}) {
   const request = vi.fn((_request: SiteRequest, _contents: EventEmitter | null, _details: object): Promise<boolean> | undefined =>
     'answer' in options && options.answer === undefined ? undefined : Promise.resolve(options.answer ?? true))
   const turnOnX11 = vi.fn(() => options.turnedOn ?? true)
-  const offerRestart = vi.fn((_contents: EventEmitter, _offer: RestartOffer) => {})
+  /** The tabs whose restart offer is up, which ends when a test takes the tab out. */
+  const open = new Set<EventEmitter>()
+  const offerRestart = vi.fn((contents: EventEmitter, _offer: RestartOffer) => { open.add(contents) })
   const ask = createWebGpuAsk<EventEmitter>({
     request,
     isApp: (origin) => options.apps?.includes(origin) === true,
@@ -44,11 +46,12 @@ function rig (options: Options = {}) {
     restoresSession: () => now.restoresSession,
     tabHasTunnel: () => now.tabHasTunnel,
     pageOf: () => now.page,
+    restartOffered: (contents) => open.has(contents),
     offerRestart
   })
   /** What the restart opens if it is pressed now, from the offer the page's grant made. */
   const addressNow = (): string | undefined => offerRestart.mock.calls[0]?.[1].address()
-  return { ask, tab, request, turnOnX11, offerRestart, now, addressNow }
+  return { ask, tab, request, turnOnX11, offerRestart, now, addressNow, open }
 }
 
 describe('where an adapter exists', () => {
@@ -218,11 +221,37 @@ describe('where Chromium gave no adapter', () => {
     expect(request).not.toHaveBeenCalled()
   })
 
-  it('offers one restart when the page asks twice while the question is open', async () => {
+  it('offers one restart and changes the setting once when the page asks twice while the question is open', async () => {
     const { ask, tab, offerRestart, turnOnX11 } = rig({ answer: true })
     expect(await Promise.all([ask(tab, SITE, false), ask(tab, SITE, false)])).toEqual([false, false])
     expect(turnOnX11).toHaveBeenCalledTimes(1)
     expect(offerRestart).toHaveBeenCalledTimes(1)
+  })
+
+  it('makes no second offer, and changes nothing again, for a tab whose offer is still up', async () => {
+    const { ask, tab, offerRestart, turnOnX11 } = rig({ answer: true })
+    await ask(tab, SITE, false)
+    await ask(tab, SITE, false)
+    await ask(tab, 'https://other.example', false)
+    expect(turnOnX11).toHaveBeenCalledTimes(1)
+    expect(offerRestart).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers again for the same site in the same tab once the offer ended, as a later grant (the answer was reset, say) turns the mode on and offers a restart', async () => {
+    const { ask, tab, offerRestart, turnOnX11, open } = rig({ answer: true })
+    await ask(tab, SITE, false)
+    open.delete(tab)
+    await ask(tab, SITE, false)
+    expect(turnOnX11).toHaveBeenCalledTimes(2)
+    expect(offerRestart).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps an offer per tab, not one for them all', async () => {
+    const one = rig({ answer: true })
+    const other = new EventEmitter()
+    await one.ask(one.tab, SITE, false)
+    await one.ask(other, SITE, false)
+    expect(one.offerRestart).toHaveBeenCalledTimes(2)
   })
 })
 

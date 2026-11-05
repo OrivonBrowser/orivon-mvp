@@ -16,7 +16,7 @@ import type { ShellInstaller } from '../shell/shell-installers.js'
 import { windowShowing } from '../shell/showing-window.js'
 import { startupRestoresSession } from '../startup/startup-plan.js'
 import { isAppOrigin } from './app-origin.js'
-import { bindAskSite, createAskSite, createOfferRestart } from './ask-site.js'
+import { bindAskSite, createAskSite, createOfferRestart, restartOfferOpen } from './ask-site.js'
 import { siteKindById, type SiteKind } from './kinds.js'
 import { pageAccess } from './page-access.js'
 import { createSiteAsker } from './site-asker.js'
@@ -76,6 +76,7 @@ export const installSitePermissions: ShellInstaller = {
           return found?.window.tabs.record(found.tabId)?.tunnelChoice !== undefined
         },
         pageOf,
+        restartOffered: restartOfferOpen,
         // The note says what the offer was made with; the command line is read when Restart is pressed.
         offerRestart: (tab, { reopens, address }) => { offerRestart(tab, { reopens, run: () => { restartOrivon(app, process.argv, address()) } }) }
       })

@@ -65,6 +65,8 @@ export interface WebGpuAskDeps<T extends NavigatingTab & object> {
   tabHasTunnel: (contents: T) => boolean
   /** The address `contents` shows now, which the restart opens again by its origin; undefined when the tab is gone. */
   pageOf: (contents: T) => string | undefined
+  /** `contents`'s tab has a restart offer that is still up; a tab holds at most one. */
+  restartOffered: (contents: T) => boolean
   /** Offers the person a restart for `contents`'s site. */
   offerRestart: (contents: T, offer: RestartOffer) => void
 }
@@ -73,9 +75,6 @@ export interface WebGpuAskDeps<T extends NavigatingTab & object> {
 export type WebGpuAsk<T extends NavigatingTab & object> = (contents: T, frameOrigin: string, adapter: boolean) => Promise<boolean>
 
 export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuAskDeps<T>): WebGpuAsk<T> {
-  /** The site each tab was last offered a restart for: a page that asks twice while the question is open shares one offer. */
-  const offered = new WeakMap<T, string>()
-
   return async (contents, frameOrigin, adapter) => {
     const origin = originFromUrl(frameOrigin)
     // The question is for websites. A page with no web origin (a local file, an opaque origin) has no site to remember an
@@ -97,8 +96,8 @@ export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuA
     // Nothing stored: nobody is asked unless a restart would give an adapter.
     if (!x11QuestionApplies(deps.x11(), deps.isPrivate)) return false
     const granted = await deps.request({ ...plain, restart: true }, contents, details)
-    if (granted !== true || offered.get(contents) === origin) return false
-    offered.set(contents, origin)
+    // Two calls that shared the question both arrive here with the grant: the first makes the offer, which the second finds up.
+    if (granted !== true || deps.restartOffered(contents)) return false
     if (!deps.turnOnX11()) return false
     // Said once, when the offer is made; what the restart opens is decided again when it is pressed, and by the safe side: the
     // tab may have been given a tunnel, and the start-up choice changed, since.
