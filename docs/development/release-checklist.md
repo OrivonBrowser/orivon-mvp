@@ -230,8 +230,9 @@ forgotten.
 - [ ] **`node scripts/release-preflight.mjs --tag v<x.y.z>` on `main` prints no error.** It checks the next two
       items the way the Release workflow will, which refuses the release otherwise.
 - [ ] **The `.eth` light client's checkpoint is under 7 days old.** The scheduled workflow
-      `refresh-eth-checkpoint.yml` opens a pull request with a fresh one every Monday and Thursday;
-      merge it, or run `node scripts/refresh-eth-checkpoint.mjs --write` and commit the result. The
+      `refresh-eth-checkpoint.yml` merges a fresh one every Monday and Thursday once its CI passes; a
+      pull request of it still open names why on its run's page. Merge that, or run
+      `node scripts/refresh-eth-checkpoint.mjs --write` and commit the result. The
       Release workflow refuses a checkpoint over 7 days old, because the app refuses one over 14;
       an install of a release past that fetches a fresh one from two beacon servers when they are
       reachable and agree, and verifies no `.eth` name when they are not.

@@ -542,9 +542,11 @@ terminal (the same README, section Live sessions).
 
 **The scheduled checkpoint refresh.** [`refresh-eth-checkpoint.yml`](../../.github/workflows/refresh-eth-checkpoint.yml)
 runs every Monday and Thursday (and on demand): it reads a finalized checkpoint with
-`scripts/refresh-eth-checkpoint.mjs`, pushes `automation/eth-checkpoint` and opens, or updates, one pull request.
-A pull request opened with the workflow's `GITHUB_TOKEN` starts no `pull_request` workflow, so the workflow
-dispatches `ci.yml` on the branch, and that run's `check` appears on the pull request. It needs the repository
+`scripts/refresh-eth-checkpoint.mjs`, pushes `automation/eth-checkpoint`, opens or updates one pull request, and
+merges it once its `check` and `e2e` pass. GitHub holds the `pull_request` runs of a pull request opened with the
+workflow's `GITHUB_TOKEN` until they are approved, and only they satisfy `main`'s required `check`, so the workflow
+approves them; when `main` moved past the branch meanwhile, it rebuilds the branch on `main` and goes again, three
+times at most. A run that stops leaves the pull request open and says why on its page. It needs the repository
 setting Actions > General > "Allow GitHub Actions to create and approve pull requests"; with it off, the branch
 is pushed and the run fails with that message.
 
