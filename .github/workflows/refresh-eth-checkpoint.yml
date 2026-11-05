@@ -119,10 +119,12 @@ jobs:
             done
           }
           # Every run named $2 on commit $1, waited for: passed once each succeeded or was skipped (`e2e` is, when
-          # CI selected no area).
+          # CI selected no area). The waits share one deadline inside the job's timeout, so a slow run ends here
+          # with a reason instead of being killed silently.
+          deadline=$(( $(date +%s) + 80 * 60 ))
           passed () {
             local runs
-            for _ in $(seq 240); do
+            while [ "$(date +%s)" -lt "$deadline" ]; do
               runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$1/check-runs?check_name=$2" --jq '[.check_runs[] | .conclusion // "pending"] | join(" ")')
               case " $runs " in
                 '  ' | *' pending '*) sleep 15 ;;
@@ -130,7 +132,7 @@ jobs:
                    echo "::error::$2 on ${1:0:9} of #$NUMBER ended: $runs."; return 1 ;;
               esac
             done
-            echo "::error::$2 on ${1:0:9} of #$NUMBER did not finish within an hour."
+            echo "::error::$2 on ${1:0:9} of #$NUMBER had not finished ($runs) when the job's 80 minutes ran out. Merge it by hand once it passes."
             return 1
           }
 
@@ -138,6 +140,12 @@ jobs:
             sha=$(git rev-parse HEAD)
             approve "$sha" && passed "$sha" check && passed "$sha" e2e || exit 1
             gh pr merge "$NUMBER" --merge --match-head-commit "$sha" && exit 0
+            # Only a branch main moved past, or one that now conflicts with it, is rebuilt; any other refusal is reported.
+            state=$(gh pr view "$NUMBER" --json mergeStateStatus --jq .mergeStateStatus)
+            case "$state" in
+              BEHIND | DIRTY) ;;
+              *) echo "::error::GitHub refused to merge #$NUMBER (merge state $state) although check and e2e passed. Merge it by hand."; exit 1 ;;
+            esac
             git fetch -q origin main
             git switch -q -C "$BRANCH" FETCH_HEAD
             cp "$RUNNER_TEMP/checkpoint.json" "$CHECKPOINT"
