@@ -249,11 +249,29 @@ describe('request', () => {
     expect(blocked.ask).not.toHaveBeenCalled()
   })
 
-  it('shares one question between a page that asks for an adapter twice and one that asks with the restart flag', async () => {
+  it('shares one question between a page that asks for an adapter twice', async () => {
+    const { engine, ask, tab } = rig({ answer: 'allow' })
+    const calls = [engine.request({ kinds: ['webgpu'], sysex: false }, tab, MAIN), engine.request({ kinds: ['webgpu'], sysex: false }, tab, MAIN)]
+    expect(await Promise.all(calls)).toEqual([true, true])
+    expect(ask).toHaveBeenCalledTimes(1)
+    expect(ask).toHaveBeenCalledWith(['webgpu'], tab, { sysex: false, restart: false })
+  })
+
+  it('shares one question between two requests that both carry the restart flag', async () => {
     const { engine, ask, tab } = rig({ answer: 'allow' })
     const calls = [engine.request({ kinds: ['webgpu'], sysex: false, restart: true }, tab, MAIN), engine.request({ kinds: ['webgpu'], sysex: false, restart: true }, tab, MAIN)]
     expect(await Promise.all(calls)).toEqual([true, true])
     expect(ask).toHaveBeenCalledTimes(1)
+    expect(ask).toHaveBeenCalledWith(['webgpu'], tab, { sysex: false, restart: true })
+  })
+
+  it('asks a request with the restart flag and one without as two questions, since only one of them tells the person Orivon restarts', async () => {
+    const { engine, ask, tab } = rig({ answer: 'allow' })
+    const calls = [engine.request({ kinds: ['webgpu'], sysex: false }, tab, MAIN), engine.request({ kinds: ['webgpu'], sysex: false, restart: true }, tab, MAIN)]
+    expect(await Promise.all(calls)).toEqual([true, true])
+    expect(ask).toHaveBeenCalledTimes(2)
+    expect(ask).toHaveBeenCalledWith(['webgpu'], tab, { sysex: false, restart: false })
+    expect(ask).toHaveBeenCalledWith(['webgpu'], tab, { sysex: false, restart: true })
   })
 
   it('carries the MIDI wording through to the prompt', async () => {
