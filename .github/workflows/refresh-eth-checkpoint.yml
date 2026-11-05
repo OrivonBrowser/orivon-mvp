@@ -2,11 +2,11 @@ name: Refresh .eth checkpoint
 
 # Keeps the light client's bundled root of trust fresh on main: twice a week it runs
 # scripts/refresh-eth-checkpoint.mjs (a finalized root two beacon APIs agree on) and, when the file changed,
-# pushes automation/eth-checkpoint and opens a pull request, or updates the one that is open. A pull request
-# opened with GITHUB_TOKEN starts no pull_request workflow, so this one starts CI on the branch itself
-# (workflow_dispatch of ci.yml, which the token may do); its `check` run is then on the commit the pull request
-# shows. Opening a pull request needs the repository setting "Allow GitHub Actions to create and approve pull
-# requests"; without it the branch is still pushed and this run fails with that message.
+# pushes automation/eth-checkpoint, opens a pull request (or updates the one that is open) and merges it once its
+# CI passes. GitHub holds the pull_request runs of a pull request the workflow token opened until someone approves
+# them, and only those runs satisfy main's required `check`, so the job approves them itself. Opening a pull request
+# needs the repository setting "Allow GitHub Actions to create and approve pull requests"; without it the branch is
+# still pushed and this run fails with that message.
 on:
   schedule:
     - cron: '23 5 * * 1,4'
@@ -27,7 +27,7 @@ jobs:
   refresh:
     if: github.repository == 'OrivonBrowser/orivon-mvp'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 90
     permissions:
       contents: write
       pull-requests: write
@@ -47,6 +47,7 @@ jobs:
         run: node scripts/refresh-eth-checkpoint.mjs --write
 
       - name: Push the branch and open or update the pull request
+        id: push
         run: |
           if git diff --quiet -- "$CHECKPOINT"; then
             echo "The checkpoint on main is already the finalized one."
@@ -59,6 +60,7 @@ jobs:
           git commit -m 'Refresh the bundled .eth light-client checkpoint' \
             -m 'A finalized root two independent beacon APIs agree on, read by scripts/refresh-eth-checkpoint.mjs.'
           git push --force origin "HEAD:refs/heads/$BRANCH"
+          cp "$CHECKPOINT" "$RUNNER_TEMP/checkpoint.json"
 
           number=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')
           if [ -z "$number" ]; then
@@ -73,11 +75,11 @@ jobs:
 
           - **Goal**. Keep the light client's root of trust on `main` younger than a release may ship.
           - **What it achieves**. `src/main/verifier/mainnet-checkpoint.json` holds a finalized root two independent beacon APIs agreed on.
-          - **How it works**. The scheduled workflow `refresh-eth-checkpoint.yml` ran `scripts/refresh-eth-checkpoint.mjs --write`. A pull request opened with the workflow token starts no pull-request workflow, so the workflow started CI on the branch itself. If `check` is missing here, run `gh workflow run ci.yml --ref automation/eth-checkpoint`.
+          - **How it works**. The scheduled workflow `refresh-eth-checkpoint.yml` ran `scripts/refresh-eth-checkpoint.mjs --write`, approved this pull request's CI runs, which GitHub holds for a pull request the workflow token opened, and merges it once `check` and `e2e` pass. If it is still open, that run's page says why.
 
           ## How it was verified
 
-          The script refuses unless both APIs return the same finalized root and slot. CI runs on the branch.
+          The script refuses unless both APIs return the same finalized root and slot. CI runs on this pull request.
           BODY
             gh pr create --base main --head "$BRANCH" \
               --title 'Refresh the bundled .eth light-client checkpoint' \
@@ -88,6 +90,96 @@ jobs:
           else
             echo "Pull request #$number already carries this branch; the push updated it."
           fi
+          echo "number=$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number // empty')" >> "$GITHUB_OUTPUT"
 
-          # The push or the new pull request started no workflow: run CI on the branch so `check` reports on it.
-          gh workflow run ci.yml --ref "$BRANCH"
+      # main takes only an up-to-date branch whose `check` passed, and the e2e shards CI selected are kept green by
+      # whoever merges (testing.md), so both have to pass. When main moved past the branch meanwhile, the branch is
+      # rebuilt on main and its checks run again.
+      - name: Merge the pull request once its checks pass
+        if: steps.push.outputs.number != ''
+        env:
+          NUMBER: ${{ steps.push.outputs.number }}
+        run: |
+          approve () {
+            local ids='' id
+            for _ in $(seq 30); do
+              ids=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$1&event=pull_request&status=action_required" --jq '.workflow_runs[].id')
+              [ -n "$ids" ] && break
+              sleep 10
+            done
+            if [ -z "$ids" ]; then
+              echo "::error::No pull_request run of ${1:0:9} waits for approval, so nothing reports check on #$NUMBER. Approve its runs on the pull request's Checks tab, or run CI on it, and merge it by hand."
+              return 1
+            fi
+            for id in $ids; do
+              gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/approve" > /dev/null || {
+                echo "::error::The workflow token may not approve run $id of #$NUMBER. Approve its runs on the pull request's Checks tab and merge it by hand."
+                return 1
+              }
+            done
+          }
+          # Every run named $2 on commit $1, waited for: passed once each succeeded or was skipped (`e2e` is, when
+          # CI selected no area). The waits share one deadline inside the job's timeout, so a slow run ends here
+          # with a reason instead of being killed silently.
+          deadline=$(( $(date +%s) + 80 * 60 ))
+          passed () {
+            local runs
+            while [ "$(date +%s)" -lt "$deadline" ]; do
+              runs=$(gh api "repos/$GITHUB_REPOSITORY/commits/$1/check-runs?check_name=$2" --jq '[.check_runs[] | .conclusion // "pending"] | join(" ")')
+              case " $runs " in
+                '  ' | *' pending '*) sleep 15 ;;
+                *) [ -z "$(printf '%s\n' $runs | grep -vxE 'success|skipped')" ] && return 0
+                   echo "$2 on ${1:0:9} of #$NUMBER ended: $runs."; return 1 ;;
+              esac
+            done
+            echo "::error::$2 on ${1:0:9} of #$NUMBER had not finished ($runs) when the job's 80 minutes ran out. Merge it by hand once it passes."
+            exit 1
+          }
+          ci_passed () { passed "$1" check && passed "$1" e2e; }
+          # A one-file change fails CI only through a runner that hung or a flaky spec, so the failed jobs of its CI
+          # run get one more try, approved again when GitHub holds the rerun as well.
+          rerun () {
+            local run status conclusion
+            run=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$1&event=pull_request" --jq '[.workflow_runs[] | select(.name == "CI")][0].id')
+            echo "Running the failed jobs of CI run $run once more."
+            gh run rerun "$run" --failed || return 1
+            for _ in $(seq 24); do
+              read -r status conclusion <<< "$(gh run view "$run" --json status,conclusion --jq '"\(.status) \(.conclusion)"')"
+              [ "$conclusion" = action_required ] && gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$run/approve" > /dev/null
+              # Until the rerun's jobs register, the commit's latest `check` is still the one that failed.
+              [ "$status" != completed ] && { sleep 30; return 0; }
+              sleep 5
+            done
+            return 1
+          }
+
+          for attempt in 1 2 3; do
+            sha=$(git rev-parse HEAD)
+            approve "$sha" || exit 1
+            if ! ci_passed "$sha"; then
+              rerun "$sha" && ci_passed "$sha" || {
+                echo "::error::CI on ${sha:0:9} of #$NUMBER did not pass, run twice; the lines above say which check. Merge it by hand once it passes."
+                exit 1
+              }
+            fi
+            gh pr merge "$NUMBER" --merge --match-head-commit "$sha" && exit 0
+            # Only a branch main moved past, or one that now conflicts with it, is rebuilt; any other refusal is reported.
+            state=$(gh pr view "$NUMBER" --json mergeStateStatus --jq .mergeStateStatus)
+            case "$state" in
+              BEHIND | DIRTY) ;;
+              *) echo "::error::GitHub refused to merge #$NUMBER (merge state $state) although check and e2e passed. Merge it by hand."; exit 1 ;;
+            esac
+            git fetch -q origin main
+            git switch -q -C "$BRANCH" FETCH_HEAD
+            cp "$RUNNER_TEMP/checkpoint.json" "$CHECKPOINT"
+            if git diff --quiet -- "$CHECKPOINT"; then
+              echo "main already carries this checkpoint."
+              exit 0
+            fi
+            git add "$CHECKPOINT"
+            git commit -q -m 'Refresh the bundled .eth light-client checkpoint' \
+              -m 'A finalized root two independent beacon APIs agree on, read by scripts/refresh-eth-checkpoint.mjs.'
+            git push --force origin "HEAD:refs/heads/$BRANCH"
+          done
+          echo "::error::main moved past #$NUMBER three times while its checks ran. Merge it by hand."
+          exit 1
