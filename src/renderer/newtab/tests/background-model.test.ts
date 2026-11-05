@@ -23,8 +23,8 @@ describe('readBackground', () => {
 })
 
 describe('pictureUrlOf', () => {
-  it('finds the picture under the wash', () => {
-    expect(pictureUrlOf('linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)), url("orivon-shell://renderer/assets/intro-background-abc.webp")'))
+  it('finds the picture in a computed background-image', () => {
+    expect(pictureUrlOf('url("orivon-shell://renderer/assets/intro-background-abc.webp")'))
       .toBe('orivon-shell://renderer/assets/intro-background-abc.webp')
     expect(pictureUrlOf('linear-gradient(red, blue), url("blob:null/1234-5678")')).toBe('blob:null/1234-5678')
     expect(pictureUrlOf("url('a.png')")).toBe('a.png')

@@ -45,42 +45,33 @@ body {
 
 /* Behind the page: the welcome screen's picture, the person's own, or the plain base colour, chosen by the
    data-background attribute that main.ts sets from the Settings choice. Until it is set the page shows the base
-   colour the shell backs the view with (main's theme-colors.ts, DASHBOARD_BACKGROUND). A picture lies under a
-   dark wash, in both themes: only the search box and tiles follow the OS scheme, so whatever sits on the picture
-   itself (.wordmark, .tile-section-title) has fixed light colours below. The wash is orivon-browser-v2's
-   new-tab one. `fixed` keeps a tall bookmark grid from scrolling or tiling the picture. */
+   colour the shell backs the view with (main's theme-colors.ts, DASHBOARD_BACKGROUND). A picture is drawn as it is,
+   in its own colours, with nothing laid over it: only the search box and tiles follow the OS scheme, so whatever sits
+   on the picture itself (.wordmark, .tile-section-title, .link-button) has fixed light colours and a soft shadow below,
+   which keeps it readable on a bright picture too. `fixed` keeps a tall bookmark grid from scrolling or tiling the
+   picture. */
 html {
   background: #0d0e14;
+  --text-on-picture-shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 0 8px rgba(0, 0, 0, 0.6), 0 0 22px rgba(0, 0, 0, 0.5);
 }
 html[data-background="orivon"] {
-  background:
-    linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
-    url('../assets/intro-background.webp') center / cover no-repeat fixed #0d0e14;
+  background: url('../assets/intro-background.webp') center / cover no-repeat fixed #0d0e14;
 }
 html[data-background="custom"] {
-  background:
-    linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
-    var(--new-tab-picture) center / cover no-repeat fixed #0d0e14;
+  background: var(--new-tab-picture) center / cover no-repeat fixed #0d0e14;
 }
 
-/* Beside a light window a near-black first frame reads as a flash. Under a light scheme the page is #394244
-   (the mean of the Orivon picture under its wash) until a picture has decoded, and with no picture: a lighter
-   base layer under the wash composites to it. */
+/* Beside a light window a near-black first frame reads as a flash, so under a light scheme the base colour is the
+   lighter #394244 (main's DASHBOARD_BACKGROUND): the page is that until a picture has decoded, and with no picture. */
 @media (prefers-color-scheme: light) {
   html {
     background: #394244;
   }
   html[data-background="orivon"] {
-    background:
-      linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
-      url('../assets/intro-background.webp') center / cover no-repeat fixed,
-      linear-gradient(#768a86, #768a86) #394244;
+    background: url('../assets/intro-background.webp') center / cover no-repeat fixed #394244;
   }
   html[data-background="custom"] {
-    background:
-      linear-gradient(rgba(13, 14, 20, 0.58), rgba(13, 14, 20, 0.58)),
-      var(--new-tab-picture) center / cover no-repeat fixed,
-      linear-gradient(#768a86, #768a86) #394244;
+    background: var(--new-tab-picture) center / cover no-repeat fixed #394244;
   }
 }
 
@@ -131,6 +122,7 @@ input:focus-visible {
   font-weight: 700;
   letter-spacing: -0.01em;
   color: #e2e8f0;
+  text-shadow: var(--text-on-picture-shadow);
 }
 
 .search-form {
@@ -159,7 +151,8 @@ input:focus-visible {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(226, 232, 240, 0.6);
+  color: rgba(226, 232, 240, 0.95);
+  text-shadow: var(--text-on-picture-shadow);
 }
 .tile-grid {
   display: grid;
@@ -243,8 +236,9 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   margin-top: 12px;
   padding: 2px 4px;
   font-size: 12px;
-  color: rgba(226, 232, 240, 0.7);
+  color: rgba(226, 232, 240, 0.9);
   text-decoration: underline;
+  text-shadow: var(--text-on-picture-shadow);
 }
 .link-button:hover { color: #e2e8f0; }
 
@@ -263,8 +257,8 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   padding: 0 12px 0 10px;
   border-radius: 15px;
   border: 1px solid rgba(226, 232, 240, 0.18);
-  background: rgba(13, 14, 20, 0.45);
-  color: rgba(226, 232, 240, 0.75);
+  background: rgba(13, 14, 20, 0.7);
+  color: rgba(226, 232, 240, 0.85);
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -274,6 +268,6 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
 .report-bug:hover {
   color: #e2e8f0;
   border-color: rgba(226, 232, 240, 0.35);
-  background: rgba(13, 14, 20, 0.65);
+  background: rgba(13, 14, 20, 0.82);
 }
 .report-bug svg { width: 14px; height: 14px; flex: none; }

@@ -15,8 +15,7 @@ export interface SplitGroup {
   ratio: number
 }
 
-/** The border round the panes, and the gap between them: the gap is what a person drags to resize. */
-export const MARGIN = 4
+/** The gap between the panes: what a person drags to resize. The panes themselves meet the edges of their area. */
 export const GAP = 8
 export const MIN_RATIO = 0.2
 export const MAX_RATIO = 0.8
@@ -35,33 +34,29 @@ export function clampRatio (ratio: number): number {
 
 /** Where the two panes and the divider go in `area`, or null when the area is too small for two panes. */
 export function paneRects (area: Bounds, orientation: Orientation, ratio: number): PaneRects | null {
-  const along = orientation === 'row' ? area.width : area.height
-  const room = along - 2 * MARGIN - GAP
+  const room = (orientation === 'row' ? area.width : area.height) - GAP
   if (room < 2 * MIN_PANE_PX) return null
   const first = Math.round(room * clampRatio(ratio))
   const second = room - first
-  const across = (orientation === 'row' ? area.height : area.width) - 2 * MARGIN
   if (orientation === 'row') {
-    const y = area.y + MARGIN
     return {
-      a: { x: area.x + MARGIN, y, width: first, height: across },
-      b: { x: area.x + MARGIN + first + GAP, y, width: second, height: across },
-      divider: { x: area.x + MARGIN + first, y, width: GAP, height: across }
+      a: { x: area.x, y: area.y, width: first, height: area.height },
+      b: { x: area.x + first + GAP, y: area.y, width: second, height: area.height },
+      divider: { x: area.x + first, y: area.y, width: GAP, height: area.height }
     }
   }
-  const x = area.x + MARGIN
   return {
-    a: { x, y: area.y + MARGIN, width: across, height: first },
-    b: { x, y: area.y + MARGIN + first + GAP, width: across, height: second },
-    divider: { x, y: area.y + MARGIN + first, width: across, height: GAP }
+    a: { x: area.x, y: area.y, width: area.width, height: first },
+    b: { x: area.x, y: area.y + first + GAP, width: area.width, height: second },
+    divider: { x: area.x, y: area.y + first, width: area.width, height: GAP }
   }
 }
 
 /** The ratio a divider dragged to `pointer` (along the window's row or column) gives. */
 export function ratioAt (area: Bounds, orientation: Orientation, pointer: number): number {
-  const room = (orientation === 'row' ? area.width : area.height) - 2 * MARGIN - GAP
+  const room = (orientation === 'row' ? area.width : area.height) - GAP
   if (room <= 0) return 0.5
-  return clampRatio((pointer - (orientation === 'row' ? area.x : area.y) - MARGIN - GAP / 2) / room)
+  return clampRatio((pointer - (orientation === 'row' ? area.x : area.y) - GAP / 2) / room)
 }
 
 /** Which edge of `area` a pointer is near enough to for a tab dropped there to split it, or null in the middle. */
@@ -73,18 +68,6 @@ export function zoneAt (area: Bounds, point: { x: number, y: number }, share = 0
   const candidates: Array<[Zone, number]> = [['left', fx], ['right', 1 - fx], ['top', fy], ['bottom', 1 - fy]]
   const nearest = candidates.reduce((best, next) => (next[1] < best[1] ? next : best))
   return nearest[1] < share ? nearest[0] : null
-}
-
-/** The half of `area` a zone names, for showing where a dropped tab would go. */
-export function zoneHalf (area: Bounds, zone: Zone): Bounds {
-  const halfW = Math.round(area.width / 2)
-  const halfH = Math.round(area.height / 2)
-  switch (zone) {
-    case 'left': return { x: area.x, y: area.y, width: halfW, height: area.height }
-    case 'right': return { x: area.x + halfW, y: area.y, width: area.width - halfW, height: area.height }
-    case 'top': return { x: area.x, y: area.y, width: area.width, height: halfH }
-    case 'bottom': return { x: area.x, y: area.y + halfH, width: area.width, height: area.height - halfH }
-  }
 }
 
 export const orientationOf = (zone: Zone): Orientation => (zone === 'left' || zone === 'right' ? 'row' : 'column')

@@ -9,9 +9,12 @@ import type { FrameState } from '../main/shell/split-controller.js'
 // view's top frame and checks the number.
 const URL_PREFIX = '--orivon-split-frame-url='
 const expectedUrl = process.argv.find((arg) => arg.startsWith(URL_PREFIX))?.slice(URL_PREFIX.length)
+// Given at creation, so the page is tinted like its window's chrome from its first paint.
+const isPrivate = process.argv.includes('--orivon-split-frame-private')
 
 if (expectedUrl !== undefined && location.href === expectedUrl) {
   contextBridge.exposeInMainWorld('orivonSplit', {
+    isPrivate,
     /** Returns the unsubscribe. */
     onState: (listener: (state: FrameState) => void): (() => void) => {
       const handler = (_event: Electron.IpcRendererEvent, state: FrameState): void => { listener(state) }

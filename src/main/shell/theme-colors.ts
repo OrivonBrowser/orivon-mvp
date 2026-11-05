@@ -24,9 +24,11 @@ export interface ThemeColorPair {
 export const APP_DARK_WASH = '#0d0e14'
 
 /** What the new-tab dashboard shows before its page has painted, and what the
- * page itself starts on (newtab/style.css). Dark is the app's wash, the base
- * colour under the picture. Light is the mean of the picture under its wash,
- * so a new tab beside a light window does not open on a near-black frame. */
+ * page itself starts on (newtab/style.css): under its picture until the picture
+ * has decoded, and alone when no picture is chosen. The text on that page is a
+ * fixed light colour, so its base stays dark enough to keep the text's contrast.
+ * Dark is the app's dark base. Light is a dark teal grey, lighter than that, so a
+ * new tab beside a light window does not open on a near-black frame. */
 export const DASHBOARD_BACKGROUND: ThemeColorPair = { light: '#394244', dark: APP_DARK_WASH }
 
 /** Electron's own default: what a WebContentsView paints before anything

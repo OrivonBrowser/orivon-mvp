@@ -1,6 +1,6 @@
 // Split view in the running shell: two tabs side by side or stacked, each in
-// its pane, with a divider that resizes, a pane that is the one the person is in,
-// and the gestures that make and unmake one. Read off the real window: which
+// its pane, with a divider that resizes, the pane the person is in shown by its
+// lit tab, and the gestures that make and unmake one. Read off the real window: which
 // views are in it, and where.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -12,6 +12,7 @@ import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
 import type { Manifest } from '../../src/contracts/index.js'
+import { GAP } from '../../src/main/shell/split-model.js'
 
 const { PNG } = pngjs
 
@@ -134,6 +135,12 @@ it('shows two tabs side by side, each in its pane, with the divider between them
     expect(left.y).toBe(right.y)
     expect(left.height).toBe(right.height)
     expect(Math.abs(left.width - right.width)).toBeLessThanOrEqual(1)
+    // The panes meet the edges of their area, and only the gap between them shows the backdrop.
+    expect(left.x).toBe(backdrop.x)
+    expect(left.y).toBe(backdrop.y)
+    expect(left.height).toBe(backdrop.height)
+    expect(right.x + right.width).toBe(backdrop.x + backdrop.width)
+    expect(right.x - (left.x + left.width)).toBe(GAP)
     // The backdrop is under the panes: it came first among the window's views.
     expect(views.findIndex((view) => view.url.includes('/split-frame/'))).toBeLessThan(views.findIndex((view) => view.url.includes(`${origin}/a`)))
     // The pane that joined sits above the one that was already there, in the order they read.
@@ -141,6 +148,12 @@ it('shows two tabs side by side, each in its pane, with the divider between them
     // The tab in front is the one the person was in.
     expect(await activeId(chrome)).toBe(a)
     expect(await chrome.locator('.tab.joined-first .title').textContent()).toBe('Page /a')
+    // No ring is drawn round the pane the person is in: the backdrop holds the divider and nothing else.
+    const frameOf = (): Page | undefined => app.windows().find((w) => w.url().includes('/split-frame/'))
+    expect(await waitFor(() => frameOf() !== undefined)).toBe(true)
+    const frame = frameOf() as Page
+    await frame.waitForSelector('#divider:not([hidden])')
+    expect(await frame.evaluate(() => [...document.body.children].filter((el) => !(el as HTMLElement).hidden).map((el) => el.id))).toEqual(['divider'])
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
