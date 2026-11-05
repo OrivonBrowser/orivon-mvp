@@ -7,6 +7,7 @@
 import type { IpcMainInvokeEvent } from 'electron'
 import { PERMISSION_QUERY_CHANNEL } from '../channels.js'
 import type { QueryState, SiteAsks } from './site-asks.js'
+import { topFrameOrigin } from './top-frame-origin.js'
 
 /** Longer than any permission name; a longer string is not one. */
 const NAME_MAX = 64
@@ -30,14 +31,11 @@ export interface PermissionQueryIpcDeps {
 export function registerPermissionQueryIpc (deps: PermissionQueryIpcDeps): void {
   deps.ipc.handle(PERMISSION_QUERY_CHANNEL, (event, raw): QueryState | null => {
     const name = readQuery(raw)
-    const contents = event.sender
-    const frame = event.senderFrame
-    if (name === undefined || contents.isDestroyed() || frame === null || frame !== contents.mainFrame) return null
+    if (name === undefined) return null
+    const origin = topFrameOrigin(event)
+    if (origin === undefined) return null
     try {
-      // The committed origin of the frame that called, which the page cannot set; a frame destroyed under the call throws.
-      const origin: unknown = frame.origin
-      if (typeof origin !== 'string') return null
-      const state = deps.asks.query(contents, name, origin)
+      const state = deps.asks.query(event.sender, name, origin)
       return state !== undefined && STATES.includes(state) ? state : null
     } catch {
       return null

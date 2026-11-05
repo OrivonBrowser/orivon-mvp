@@ -29,7 +29,7 @@
 **What it depends on.** `electron` (types), [`../shell/`](../shell/) (`ShellInstaller`, `ShellServices`, the
 window registry, the prompt anchor, `signals/audio.ts`'s `applyMuted`, `open-from-browser.ts`'s `openFromActiveTab`), [`../downloads/`](../downloads/) (`StartInfo`),
 [`../sessions/notification-decisions.ts`](../sessions/notification-decisions.ts) (through the runner), [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts) (the one owner of the default session's request events), [`../overlays/`](../overlays/) (`requestSlot`),
-[`../sessions/site-asks.ts`](../sessions/site-asks.ts) (the registry the asker joins),
+[`../sessions/site-asks.ts`](../sessions/site-asks.ts) (the registry the asker joins), [`../sessions/top-frame-origin.ts`](../sessions/top-frame-origin.ts) (the top frame a page's message speaks for),
 [`../consent/grant-prompt-origin.ts`](../consent/grant-prompt-origin.ts) (how a site is written for the person),
 [`../graphics/x11-vulkan-runner.ts`](../graphics/x11-vulkan-runner.ts) (what this run did with the WebGPU-on-X11 setting, and its name, for `install-site-permissions.ts`), [`../launch/relaunch.ts`](../launch/relaunch.ts) (the restart the offer runs), [`../startup/startup-plan.ts`](../startup/startup-plan.ts) (`startupRestoresSession`, whether the next start brings the tabs back),
 [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts).

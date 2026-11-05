@@ -3,6 +3,7 @@
 // origin (never from the message) and answers `true` only when the page may keep the adapter it was given.
 import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import { WEBGPU_ASK_CHANNEL } from '../channels.js'
+import { topFrameOrigin } from '../sessions/top-frame-origin.js'
 import type { WebGpuAsk } from './webgpu-ask.js'
 
 /** `{ adapter }` and nothing else, or undefined. */
@@ -21,14 +22,11 @@ export interface WebGpuAskIpcDeps {
 export function registerWebGpuAskIpc (deps: WebGpuAskIpcDeps): void {
   deps.ipc.handle(WEBGPU_ASK_CHANNEL, async (event, raw): Promise<boolean> => {
     const message = readWebGpuAsk(raw)
-    const contents = event.sender
-    const frame = event.senderFrame
-    if (message === undefined || contents.isDestroyed() || frame === null || frame !== contents.mainFrame) return false
+    if (message === undefined) return false
+    const origin = topFrameOrigin(event)
+    if (origin === undefined) return false
     try {
-      // The committed origin of the frame that called, which the page cannot set; a frame destroyed under the call throws.
-      const origin: unknown = frame.origin
-      if (typeof origin !== 'string') return false
-      return await deps.ask(contents, origin, message.adapter)
+      return await deps.ask(event.sender, origin, message.adapter)
     } catch {
       return false
     }
