@@ -95,6 +95,11 @@ const result = async (view: Page): Promise<unknown> => {
 }
 const clear = async (view: Page): Promise<void> => { await view.evaluate(() => { delete (window as unknown as { __r: Record<string, unknown> }).__r['gpu'] }) }
 
+const chipHidden = async (chrome: Page): Promise<boolean> => await chrome.evaluate(() => {
+  const chip = document.querySelector<HTMLButtonElement>('#site-access-chip')
+  return chip === null || chip.hidden
+})
+
 const userDataOf = async (app: App): Promise<string> => await app.evaluate(({ app: electron }) => electron.getPath('userData'))
 
 const readJson = (file: string): unknown => { try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null } }
@@ -264,6 +269,48 @@ it('[app:webgpu-asked-per-site] says nothing of this page opening again when its
     await offer.waitForSelector('.site-prompt:not(.arming)')
     await offer.click('.btn-row .btn:text-is("Later")')
     expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
+    expect(await app.evaluate(({ app: electron }) => electron.isReady())).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('[app:webgpu-asked-per-site] keeps the restart offer up through a press on the address bar\'s chip and the site\'s own pages, lists WebGPU on the chip after one, and ends the offer when the tab goes to another site', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const view = await visit(app, chrome, `${origins.a}/`)
+    await view.click('#gpu')
+    await press(await waitAsk(app), 'Grant WebGPU')
+    await waitRestartOffer(app)
+    expect(await result(view)).toBe('null')
+
+    // A press on the chip, which toggles the bubble of what the page was asked, does not end the offer.
+    expect(await waitFor(async () => !(await chipHidden(chrome)))).toBe(true)
+    await chrome.click('#site-access-chip')
+    await delay(1_200)
+    expect(await promptShown(app)).toBe(true)
+    expect(await textOf(await waitRestartOffer(app), '.sp-restart')).toEqual(['WebGPU starts after Orivon restarts.'])
+
+    // The page got no adapter, so a game may move to its own page for a computer without WebGPU. The allow is kept, so
+    // nothing would offer again: the offer has to outlive the page it was made on.
+    await view.evaluate(() => { location.href = '/webgpu-unsupported' })
+    expect(await waitFor(() => view.url() === `${origins.a}/webgpu-unsupported`)).toBe(true)
+    await view.waitForLoadState('load')
+    await delay(1_200)
+    expect(await promptShown(app)).toBe(true)
+    expect(await textOf(await waitRestartOffer(app), '.sp-restart-note')).toEqual(['Orivon opens this site again. Your other tabs and windows are not restored.'])
+
+    // The new page asks again and is not asked: its answer is stored, and the chip lists WebGPU for it all the same.
+    await clear(view)
+    await view.click('#gpu')
+    expect(await result(view)).toBe('null')
+    expect(await waitFor(async () => !(await chipHidden(chrome)))).toBe(true)
+    expect(await promptShown(app)).toBe(true)
+
+    // Leaving the site ends the offer for good.
+    await view.evaluate((url) => { location.href = url }, `${origins.b}/`)
+    expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
+    await expectNoPrompt(app)
     expect(await app.evaluate(({ app: electron }) => electron.isReady())).toBe(true)
   } finally {
     await closeElectron(app)
