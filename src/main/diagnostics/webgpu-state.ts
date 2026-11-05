@@ -54,6 +54,8 @@ export interface WebGpuInputs {
   readonly x11Vulkan?: X11VulkanReading | undefined
   /** The reading is for a private window, whose Settings switch is locked: no sentence sends the person there. */
   readonly isPrivate?: boolean | undefined
+  /** The person's default for WebGPU in Settings, Sites is Block, so no site is asked for it; undefined reads as Ask. */
+  readonly webgpuDefaultBlocks?: boolean | undefined
 }
 
 export interface WebGpuState {
@@ -133,7 +135,10 @@ function x11Reason (inputs: WebGpuInputs): WebGpuState {
     return result('unavailable', 'xwayland', 'WebGPU is off because Orivon is running through X11 (XWayland) on this Wayland session. WebGPU needs Orivon to run on Wayland.')
   }
   const where = inputs.session === 'x11' ? 'this computer runs an X11 session' : 'Orivon is running on X11'
-  const way = canTurnOn(inputs) ? ` A site that needs WebGPU asks you for it. You can also turn it on ${IN_SETTINGS}` : ''
+  const asks = inputs.webgpuDefaultBlocks === true
+    ? 'No site is asked for WebGPU while its default in Settings, Sites is Block. You can turn it on'
+    : 'A site that needs WebGPU asks you for it. You can also turn it on'
+  const way = canTurnOn(inputs) ? ` ${asks} ${IN_SETTINGS}` : ''
   return result('unavailable', 'x11', `WebGPU is off because ${where}. Chromium turns it off there for every graphics card.${way}`)
 }
 

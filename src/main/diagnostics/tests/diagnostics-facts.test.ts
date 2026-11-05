@@ -74,6 +74,14 @@ describe('buildDiagnostics', () => {
       expect(x11({ onAtStart: false, revert: null }).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11' })
     })
 
+    it('gives the same state and reason whatever the WebGPU default is: only the sentence on orivon://gpu depends on it, and a report carries no sentence', () => {
+      const reading = (webgpuSites: DiagnosticsFacts['webgpuSites']): ReturnType<typeof buildDiagnostics> =>
+        buildDiagnostics({ ...FACTS, system: { ...FACTS.system, session: 'x11', ozone: 'x11' }, gpuStatus: { webgpu: 'enabled', gpu_compositing: 'enabled' }, webgpuSites }, { kind: 'none' })
+      for (const sites of [{ default: 'ask', allowed: 0, blocked: 0 }, { default: 'block', allowed: 0, blocked: 0 }]) {
+        expect(reading(sites).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11' })
+      }
+    })
+
     it('reports the setting among the settings it states', () => {
       expect(REPORTED_SETTINGS).toContain('graphics.webgpuOnX11')
     })

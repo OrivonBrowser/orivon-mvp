@@ -73,6 +73,11 @@ describe('the About domain', () => {
       expect(await setup(async () => x11({ onAtStart: false, reverted: true })).call({ type: 'webgpu' })).toMatchObject({ reason: 'x11-vulkan-reverted', tone: 'warn' })
     })
 
+    it('says no site is asked when the reading carries a WebGPU default of Block', async () => {
+      const reply = await setup(reading({ webgpuDefaultBlocks: true })).call({ type: 'webgpu' }) as { sentence: string }
+      expect(reply.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. No site is asked for WebGPU while its default in Settings, Sites is Block. You can turn it on in Settings, under Performance.')
+    })
+
     it('leaves the way to turn the X11 setting on out of a private window\'s sentence, where the switch is locked', async () => {
       const reply = await setup(reading({ isPrivate: true })).call({ type: 'webgpu' }) as { sentence: string }
       expect(reply.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.')

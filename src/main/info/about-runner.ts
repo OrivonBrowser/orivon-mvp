@@ -39,11 +39,11 @@ function safeDownloadsPath (): string {
   }
 }
 
-export async function readGpu (isPrivate: boolean): Promise<GpuReading> {
+export async function readGpu (isPrivate: boolean, webgpuDefaultBlocks: boolean): Promise<GpuReading> {
   const status: unknown = app.getGPUFeatureStatus()
   // Under a display with no graphics card this rejects, which leaves the feature table standing.
   const info = await app.getGPUInfo('basic').catch(() => undefined)
-  return { status, info, platform: process.platform, session: process.env['XDG_SESSION_TYPE'] ?? '', ozone: currentOzonePlatform(), x11Vulkan: x11VulkanReadingOf(x11VulkanReading()), isPrivate }
+  return { status, info, platform: process.platform, session: process.env['XDG_SESSION_TYPE'] ?? '', ozone: currentOzonePlatform(), x11Vulkan: x11VulkanReadingOf(x11VulkanReading()), isPrivate, webgpuDefaultBlocks }
 }
 
 export function copyToClipboard (text: string): void {

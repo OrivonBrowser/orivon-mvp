@@ -163,7 +163,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
     }),
     info: infoDomain({
       facts: () => readAboutFacts(services.settings, services.isPrivate),
-      gpu: async () => await readGpu(services.isPrivate),
+      gpu: async () => await readGpu(services.isPrivate, services.settings.get('sites.webgpu') === 'block'),
       copy: copyToClipboard,
       release: () => runningRelease(app.getVersion())
     }),

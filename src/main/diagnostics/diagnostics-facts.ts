@@ -182,7 +182,7 @@ export function buildDiagnostics (facts: DiagnosticsFacts, adapter?: AdapterRead
   const devices = gpuDevicesOf(facts.gpuInfo)
   const { platform, session, ozone } = facts.system
   const { x11Vulkan } = facts
-  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter, x11Vulkan: x11VulkanReadingOf(x11Vulkan) })
+  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter, x11Vulkan: x11VulkanReadingOf(x11Vulkan), webgpuDefaultBlocks: facts.webgpuSites.default === 'block' })
   return {
     app: { commit: facts.commit, channel: facts.channel, ...facts.versions, packaged: facts.packaged, uptimeSec: Math.round(facts.uptimeSec) },
     system: facts.system,
