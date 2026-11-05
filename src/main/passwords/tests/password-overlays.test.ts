@@ -7,7 +7,7 @@ import { FORM_FILL_CHANNEL } from '../../channels.js'
 import { formsFor } from '../forms-registry.js'
 import { passwordFillOverlay, passwordSuggestOverlay } from '../chooser-overlays.js'
 import { passwordSaveOverlay, PROMPT_IDLE_MS } from '../password-overlays.js'
-import { FILL_OVERLAY, SUGGEST_OVERLAY } from '../window-forms.js'
+import { BLUR_GRACE_MS, FILL_OVERLAY, SUGGEST_OVERLAY } from '../window-forms.js'
 import { memoryVault } from '../vault.js'
 import type { PasswordVault } from '../vault.js'
 
@@ -363,7 +363,35 @@ describe('the chooser', () => {
     const { handler } = attach(passwordFillOverlay, r)
     await onLoginPage(r, false)
     handler.show?.(undefined)
-    expect(await handler.request({ type: 'generate' })).toBeUndefined()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(await handler.request({ type: 'generate' })).toEqual({ ok: false })
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual(['[passwords] a choice in the sign-in list filled nothing: the list holds no strong password'])
+    } finally {
+      warn.mockRestore()
+    }
+    expect(r.sends).toEqual([])
+  })
+
+  it('names why a strong password was not sent: the page is not at a web address, or moved before it was sent', async () => {
+    const r = rig()
+    const { handler } = attach(passwordFillOverlay, r)
+    await onLoginPage(r, true)
+    handler.show?.(undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      r.frame.url = 'about:blank'
+      expect(await handler.request({ type: 'generate' })).toEqual({ ok: false })
+      let reads = 0
+      Object.defineProperty(r.frame, 'url', { get: () => (reads += 1) <= 1 ? `${ORIGIN}/signup` : 'https://evil.example/' })
+      expect(await handler.request({ type: 'generate' })).toEqual({ ok: false })
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+        '[passwords] a choice in the sign-in list filled nothing: the page is not at a web address',
+        '[passwords] a choice in the sign-in list filled nothing: the page moved before the strong password was sent'
+      ])
+    } finally {
+      warn.mockRestore()
+    }
     expect(r.sends).toEqual([])
   })
 
@@ -516,8 +544,10 @@ describe('the chooser under a focused box', () => {
     const forms = formsFor(r.window, r.services)
     handler.focused?.()
     forms.blur(sender(r))
+    await vi.advanceTimersByTimeAsync(BLUR_GRACE_MS)
     expect(r.closes).toEqual([])
     forms.blur(sender(r))
+    await vi.advanceTimersByTimeAsync(BLUR_GRACE_MS)
     expect(r.closes).toEqual([SUGGEST_OVERLAY])
   })
 
@@ -543,6 +573,7 @@ describe('the chooser under a focused box', () => {
     handler.show?.(undefined)
     handler.focused?.()
     formsFor(r.window, r.services).blur(sender(r))
+    await vi.advanceTimersByTimeAsync(BLUR_GRACE_MS)
     expect(r.closes).toEqual([SUGGEST_OVERLAY])
   })
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { autocompleteTokens, canBeUsername, choosePassword, chooseUsername, fillScope, groupByScope, isRevealControl, isSignUp, isVisibleBox, newPasswordBoxes, pageIsSignUp, SCOPE_LEVELS, scopeLevel } from '../login-fields.js'
+import { autocompleteTokens, canBeUsername, choosePassword, chooseUsername, fillScope, groupByScope, isRevealControl, isSignUp, isVisibleBox, newPasswordBoxes, pageIsSignUp } from '../login-fields.js'
 import type { FieldInfo } from '../login-fields.js'
 
 const field = (over: Partial<FieldInfo> = {}): FieldInfo => ({ type: 'text', autocomplete: '', value: '', disabled: false, readOnly: false, visible: true, ...over })
@@ -124,19 +124,6 @@ describe('fillScope', () => {
   })
 })
 
-describe('scopeLevel', () => {
-  it('is the nearest ancestor that holds another box', () => {
-    expect(scopeLevel([false, false, true, true])).toBe(2)
-    expect(scopeLevel([true])).toBe(0)
-  })
-
-  it('falls back to the parent when no ancestor within the levels holds one', () => {
-    expect(scopeLevel([])).toBe(0)
-    expect(scopeLevel([false, false])).toBe(0)
-    expect(scopeLevel([...new Array<boolean>(SCOPE_LEVELS).fill(false), true])).toBe(0)
-  })
-})
-
 describe('groupByScope', () => {
   interface Node { name: string, parent: Node | null }
   const node = (name: string, parent: Node | null = null): Node => ({ name, parent })
@@ -180,29 +167,47 @@ describe('groupByScope', () => {
 describe('newPasswordBoxes', () => {
   const pw = (autocomplete = ''): FieldInfo => field({ type: 'password', autocomplete })
 
-  it('is every box of a form of two, a password and its confirmation', () => {
+  it('is a password and its confirmation, whichever the person is in', () => {
     expect(newPasswordBoxes([pw(), pw()], 0)).toEqual([0, 1])
     expect(newPasswordBoxes([pw(), pw()], 1)).toEqual([0, 1])
-  })
-
-  it('reaches a confirmation the page does not call new, as most pages leave it', () => {
-    expect(newPasswordBoxes([pw('new-password'), pw()], 0)).toEqual([0, 1])
+    expect(newPasswordBoxes([pw('new-password'), pw()], -1)).toEqual([0, 1])
     expect(newPasswordBoxes([pw('new-password'), pw('off')], 0)).toEqual([0, 1])
   })
 
-  it('leaves a box the page calls current alone, unless the person is in it', () => {
+  it('never reaches a box the page calls current, not even the one the person is in or the first with nothing in', () => {
     expect(newPasswordBoxes([pw('current-password'), pw('new-password'), pw('new-password')], 1)).toEqual([1, 2])
-    expect(newPasswordBoxes([pw('current-password'), pw()], 1)).toEqual([1])
-    expect(newPasswordBoxes([pw('current-password'), pw()], 0)).toEqual([0, 1])
+    expect(newPasswordBoxes([pw('current-password'), pw('new-password'), pw('new-password')], 0)).toEqual([1, 2])
+    expect(newPasswordBoxes([pw('current-password'), pw('new-password'), pw('new-password')], -1)).toEqual([1, 2])
+    expect(newPasswordBoxes([pw('current-password'), pw()], 0)).toEqual([1])
+    expect(newPasswordBoxes([pw('current-password')], -1)).toEqual([])
   })
 
-  it('is the last two of three when the first is not called new: current, new, repeat', () => {
+  it('is the last two of three when none is called new: current, new, repeat', () => {
+    expect(newPasswordBoxes([pw(), pw(), pw()], -1)).toEqual([1, 2])
     expect(newPasswordBoxes([pw(), pw(), pw()], 1)).toEqual([1, 2])
-    expect(newPasswordBoxes([pw(), pw('new-password'), pw()], 1)).toEqual([1, 2])
-    expect(newPasswordBoxes([pw('new-password'), pw(), pw()], 0)).toEqual([0, 1, 2])
+    expect(newPasswordBoxes([pw(), pw(), pw()], 2)).toEqual([1, 2])
   })
 
-  it('is the one box of a form of one, and none when there is none', () => {
+  it('is the pair around the box the person is in when that is outside the usual one', () => {
+    expect(newPasswordBoxes([pw(), pw(), pw()], 0)).toEqual([0, 1])
+  })
+
+  it('is password and confirmation, not the box after them, whichever of the two the person started in', () => {
+    const signUp = [pw('new-password'), pw('new-password'), pw('one-time-code')]
+    expect(newPasswordBoxes(signUp, 0)).toEqual([0, 1])
+    expect(newPasswordBoxes(signUp, 1)).toEqual([0, 1])
+    expect(newPasswordBoxes(signUp, -1)).toEqual([0, 1])
+  })
+
+  it('stays with the page\'s new password when a login of the header shares its group', () => {
+    const header = [pw(), pw('new-password'), pw('new-password')]
+    for (const touched of [-1, 1, 2]) expect(newPasswordBoxes(header, touched)).toEqual([1, 2])
+    const bare = [pw(), pw(), pw()]
+    for (const touched of [-1, 1, 2]) expect(newPasswordBoxes(bare, touched)).toEqual([1, 2])
+  })
+
+  it('is two boxes at most, and the one box of a form of one', () => {
+    expect(newPasswordBoxes([pw('current-password'), pw(), pw(), pw()], 1)).toEqual([1, 2])
     expect(newPasswordBoxes([pw('new-password')], 0)).toEqual([0])
     expect(newPasswordBoxes([], -1)).toEqual([])
   })

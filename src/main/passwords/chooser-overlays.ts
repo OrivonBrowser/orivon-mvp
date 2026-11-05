@@ -41,8 +41,10 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
     const contents = window.tabs.liveWebContents(tabId)
     if (contents === undefined) return 'the tab is gone'
     if (choice.kind === 'login') return await fillLogin(contents, services.passwords, choice.id) ? null : 'the page is not at the login\'s site any more, or the login has no password'
+    if (generated === null) return 'the list holds no strong password'
     const origin = originFromUrl(contents.mainFrame.url)
-    return generated !== null && origin !== null && fillGenerated(contents, origin, generated) ? null : 'the page moved before the strong password was sent'
+    if (origin === null) return 'the page is not at a web address'
+    return fillGenerated(contents, origin, generated) ? null : 'the page moved before the strong password was sent'
   }
 
   async function pick (choice: Choice): Promise<boolean> {
@@ -104,7 +106,7 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
           return typeof id === 'string' ? { ok: await pick({ kind: 'login', id }) } : undefined
         }
         case 'generate':
-          return generated === null ? undefined : { ok: await pick({ kind: 'generate' }) }
+          return { ok: await pick({ kind: 'generate' }) }
         case 'manage':
           close()
           services.commands.run('passwords.open', window)

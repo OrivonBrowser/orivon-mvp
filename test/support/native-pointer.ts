@@ -20,19 +20,33 @@ export function pressPointer (x: number, y: number, button: number): void {
   execFileSync('python3', ['-c', script, String(Math.round(x)), String(Math.round(y)), String(button)], { timeout: 15_000 })
 }
 
-/** A real left press on the centre of the first element `selector` names in `page`, a tab's or an overlay's: the window's content area, plus the view's place in it, plus the element's place in the view. */
+/**
+ * A real left press on the centre of the first element `selector` names in `page`, a tab's or an overlay's: the window's
+ * content area, plus the view's place in it, plus the element's place in the view, scaled by the view's zoom and the
+ * display's scale factor into the screen pixels the pointer moves in. Throws when no view, or more than one that is
+ * showing, has the page's address: a press then could land on the wrong one.
+ */
 export async function pointerPressOn (app: ElectronApplication, page: Page, selector: string): Promise<void> {
   const box = await page.locator(selector).first().boundingBox()
   if (box === null) throw new Error(`${selector} has no box`)
-  const origin = await app.evaluate(({ BaseWindow }, url) => {
+  const at = await app.evaluate(({ BaseWindow, screen }, wanted) => {
+    const found: Array<{ visible: boolean, x: number, y: number }> = []
     for (const win of BaseWindow.getAllWindows()) {
       const content = win.getContentBounds()
-      const view = win.contentView.children.find((child) => (child as unknown as { webContents?: { getURL: () => string } }).webContents?.getURL() === url)
-      const at = view?.getBounds()
-      if (at !== undefined) return { x: content.x + at.x, y: content.y + at.y }
+      for (const child of win.contentView.children) {
+        const contents = (child as unknown as { webContents?: { getURL: () => string, getZoomFactor: () => number } }).webContents
+        if (contents?.getURL() !== wanted.url) continue
+        const place = child.getBounds()
+        const zoom = contents.getZoomFactor()
+        const dip = { x: content.x + place.x + wanted.x * zoom, y: content.y + place.y + wanted.y * zoom }
+        const pixels = typeof screen.dipToScreenPoint === 'function' ? screen.dipToScreenPoint(dip) : dip
+        found.push({ visible: child.getVisible(), ...pixels })
+      }
     }
-    return null
-  }, page.url())
-  if (origin === null) throw new Error(`no view shows ${page.url()}`)
-  pressPointer(origin.x + box.x + box.width / 2, origin.y + box.y + box.height / 2, 1)
+    return found
+  }, { url: page.url(), x: box.x + box.width / 2, y: box.y + box.height / 2 })
+  const showing = at.length > 1 ? at.filter((view) => view.visible) : at
+  const target = showing[0]
+  if (target === undefined || showing.length !== 1) throw new Error(`${String(showing.length)} views show ${page.url()}; a press needs exactly one`)
+  pressPointer(target.x, target.y, 1)
 }

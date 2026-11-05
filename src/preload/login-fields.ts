@@ -93,15 +93,6 @@ export function fillScope (signUps: readonly boolean[], both: boolean): number {
 /** How many ancestors above a box that has no form are searched for the one that scopes it. */
 export const SCOPE_LEVELS = 6
 
-/**
- * Which ancestor scopes a box that has no form, given for each ancestor, nearest first, whether it holds another box of
- * the sign-in kind: the nearest that does within `SCOPE_LEVELS`, else the parent (0).
- */
-export function scopeLevel (holdsOther: readonly boolean[]): number {
-  const at = holdsOther.slice(0, SCOPE_LEVELS).indexOf(true)
-  return at === -1 ? 0 : at
-}
-
 /** Password boxes that belong together, and the scope that holds them all. */
 export interface ScopeGroup<T> { readonly scope: T, readonly members: readonly number[] }
 
@@ -131,11 +122,22 @@ export function groupByScope<T> (scopes: readonly T[], holds: (outer: T, inner: 
 }
 
 /**
- * Which of a sign-up form's password boxes get a strong password: all but a box the page says is the current one and, in
- * a form of three (current, new, repeat), the first unless the page calls it new. The box the person is in always does.
+ * Which of a group's password boxes get a strong password: the new password and its confirmation, two boxes at most, and
+ * never a box the page calls current. The new password is the first box the page calls new, else the middle one of three
+ * (current, new, repeat), else the first; its confirmation is the next box, or the one before it when it is the last. The
+ * box the person is in decides only when it is outside that pair: it and its own neighbour then.
  */
 export function newPasswordBoxes (passwords: readonly FieldInfo[], touched: number): number[] {
   const says = (index: number, token: string): boolean => autocompleteTokens(passwords[index]?.autocomplete ?? '').includes(token)
-  const kept = (index: number): boolean => !says(index, 'current-password') && !(passwords.length === 3 && index === 0 && !says(0, 'new-password'))
-  return passwords.map((_, index) => index).filter((index) => index === touched || kept(index))
+  const open = passwords.map((_, index) => index).filter((index) => !says(index, 'current-password'))
+  const leader = open.find((index) => says(index, 'new-password')) ?? (passwords.length === 3 && open.includes(1) ? 1 : open[0])
+  if (leader === undefined) return []
+  const pairOf = (at: number): number[] => {
+    const next = open.find((index) => index > at)
+    if (next !== undefined) return [at, next]
+    const before = open.filter((index) => index < at).at(-1)
+    return before === undefined ? [at] : [before, at]
+  }
+  const usual = pairOf(leader)
+  return open.includes(touched) && !usual.includes(touched) ? pairOf(touched) : usual
 }

@@ -48,6 +48,14 @@ const CHANGE = `<!doctype html><title>Change password</title><body style="font:1
 <input id="new1" type="password" autocomplete="new-password" ${FIELD}>
 <input id="new2" type="password" autocomplete="new-password" ${FIELD}></form></body>`
 
+/** A password, its confirmation and a box that is neither, such as a PIN. */
+const WITH_PIN = `<!doctype html><title>Create account</title><body style="font:16px sans-serif"><form method="post" action="/welcome">
+<input id="new1" type="password" autocomplete="new-password" ${FIELD}><input id="new2" type="password" autocomplete="new-password" ${FIELD}>
+<input id="pin" type="password" autocomplete="off" ${FIELD}></form></body>`
+/** A login in the page's header beside a sign-up that has no <form> and an account box of its own: the strong password is for the sign-up. */
+const HEADER_LOGIN = `<!doctype html><title>Create account</title><body style="font:16px sans-serif"><div id="hdr"><input id="hu" type="text" ${FIELD}><input id="hp" type="password" ${FIELD}></div>
+<input id="user" type="text" ${FIELD}><div><input id="new1" type="password" ${FIELD}></div><div><input id="new2" type="password" ${FIELD}></div></body>`
+
 /** The boxes grow over a quarter of a second as they take the focus, as the fields of many sign-up pages do: a box is not where it was first reported by the time the keyboard comes back from a press. */
 const GROWING = `<!doctype html><title>Create account</title><style>input{display:block;box-sizing:border-box;margin:12px;width:260px;height:30px;transition:width .25s,height .25s}input:focus{width:320px;height:46px}</style>
 <body style="font:16px sans-serif"><form method="post" action="/welcome"><input id="user" type="text" autocomplete="username">
@@ -68,6 +76,8 @@ function handler (request: IncomingMessage, response: ServerResponse): void {
   else if (path === '/signup-steps') html(response, SIGN_UP_STEPS)
   else if (path === '/change') html(response, CHANGE)
   else if (path === '/growing') html(response, GROWING)
+  else if (path === '/with-pin') html(response, WITH_PIN)
+  else if (path === '/header-login') html(response, HEADER_LOGIN)
   else html(response, '<!doctype html><title>Other</title><p>Other</p>')
 }
 
@@ -147,9 +157,9 @@ const pressRow = async (app: App, overlay: Page, selector: string, pointer: Poin
 }
 
 /** Opens the strong-password row of `path` under the focused box and presses it. */
-async function pressStrongUnderBox (app: App, chrome: Page, origin: string, path: string, boxes: string[], pointer: Pointer = 'playwright'): Promise<Page> {
+async function pressStrongUnderBox (app: App, chrome: Page, origin: string, path: string, boxes: string[], pointer: Pointer = 'playwright', start = '#new1'): Promise<Page> {
   const view = await visitFocused(app, chrome, `${origin}${path}`)
-  await clickBox(app, view, '#new1', pointer)
+  await clickBox(app, view, start, pointer)
   const suggest = await waitShown(app, 'password-suggest')
   const rows = await titles(suggest)
   expect(rows[0]).toBe('Use a strong password')
@@ -265,6 +275,49 @@ for (const [layout, path] of LAYOUTS) {
     }
   }, TEST_TIMEOUT_MS)
 }
+
+it.skipIf(!underVirtualDisplay())('fills the password and its confirmation and nothing past them, whichever of the two the person starts in', async () => {
+  const { app, chrome } = await launchShell({ env: SEAM })
+  try {
+    for (const start of ['#new1', '#new2']) {
+      const view = await pressStrongUnderBox(app, chrome, bare.origin, '/with-pin', ['#new1', '#new2'], 'playwright', start)
+      expect(await view.inputValue('#pin'), `a press started in ${start} leaves the PIN box`).toBe('')
+    }
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it.skipIf(!underVirtualDisplay())('fills the sign-up and leaves a login in the page\'s header', async () => {
+  const { app, chrome } = await launchShell({ env: SEAM })
+  try {
+    for (const start of ['#new1', '#new2']) {
+      const view = await pressStrongUnderBox(app, chrome, bare.origin, '/header-login', ['#new1', '#new2'], 'playwright', start)
+      expect(await view.inputValue('#hp'), `a press started in ${start} leaves the header's password`).toBe('')
+    }
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it.skipIf(!underVirtualDisplay())('fills the new password and its repeat from the password button with nothing focused, and leaves the current one', async () => {
+  const { app, chrome } = await launchShell({ env: SEAM })
+  try {
+    const change = await visitFocused(app, chrome, `${bare.origin}/change`)
+    expect(await waitFor(async () => await chrome.evaluate(() => { const key = document.querySelector<HTMLElement>('#password-key'); return key !== null && !key.hidden }))).toBe(true)
+    await chrome.click('#password-key')
+    const strong = await waitShown(app, 'password-fill')
+    const generated = (await strong.locator('.listbox-item .pf-code').first().textContent()) ?? ''
+    await closing(pressOn(app, strong, '.listbox-item:first-child'))
+    for (const box of ['#new1', '#new2']) expect(await waitFor(async () => (await change.inputValue(box)) === generated), `${box} holds the generated password`).toBe(true)
+    expect(await change.inputValue('#old')).toBe('')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
 
 it.skipIf(!underVirtualDisplay())('fills the new password and its repeat of a change-password form, and leaves the current one', async () => {
   const { app, chrome } = await launchShell({ env: SEAM })

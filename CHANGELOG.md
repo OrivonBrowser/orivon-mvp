@@ -25,7 +25,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
-- **A strong password fills the password and its confirmation** on sign-up pages with no `<form>` or with each box in layers of its own, and leaves the current-password box of a change-password form as typed. A press on the sign-in list under a box that grows or moves as it takes the focus no longer opens the list again with another password before the click lands. A press that fills nothing leaves a line in the bug report saying why.
+- **A strong password fills the password and its confirmation, and nothing else,** on sign-up pages with no `<form>` or with each box in layers of its own: a PIN after them, a login in the page's header and the current-password box of a change-password form stay as they were, also from the password button. A press on the sign-in list under a box that grows or moves as it takes the focus no longer opens the list again with another password before the click lands. A press that fills nothing leaves a line in the bug report saying why.
 - **Restart Orivon from an AppImage** starts the AppImage file again, for the Settings rows that restart and for the WebGPU offer; it quit before and never came back, because the program it named sat in a mount that ends with the process.
 
 ## [0.1.0] - 2026-11-05
