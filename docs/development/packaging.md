@@ -86,11 +86,17 @@ when it does not.
    `store` (section The Microsoft Store package) and `aur` (section The Arch User Repository). Each
    writes a warning and succeeds while the secret it needs is empty, so a release is never red for a
    route that is not set up yet.
-4. A release build first refuses an `.eth` light-client checkpoint
-   (`src/main/verifier/mainnet-checkpoint.json`) over 7 days old (`MAX_CHECKPOINT_AGE_DAYS` in the
-   workflow): the app rejects one over 14, and an install of a release past that has to fetch a
-   fresh one from two beacon servers, which it cannot when they are unreachable or disagree. `refresh-eth-checkpoint.yml` proposes a fresh one twice a week; merge it before
-   tagging ([`release-checklist.md`](release-checklist.md)).
+4. Before any of that, the `preflight` job ([`scripts/release-preflight.mjs`](../../scripts/release-preflight.mjs))
+   refuses, in seconds and naming every reason, a tag that is not `v<semver>` and an `.eth` light-client checkpoint
+   (`src/main/verifier/mainnet-checkpoint.json`) over 7 days old (`MAX_CHECKPOINT_AGE_DAYS` in the workflow): the app
+   rejects one over 14, and an install of a release past that has to fetch a fresh one from two beacon servers, which
+   it cannot when they are unreachable or disagree. `refresh-eth-checkpoint.yml` proposes a fresh one twice a week;
+   merge it before tagging ([`release-checklist.md`](release-checklist.md)). It also warns when `CHANGELOG.md` has no
+   section for the version. `node scripts/release-preflight.mjs --tag v0.1.0` on `main` says the same before
+   publishing. A re-run cannot fix a release it refused, since the tag stays on the same commit: fix `main`, then
+   take the release back to a draft and publish it again on a tag at the new `main`, which starts a new run:
+   `gh release edit <tag> --draft`, then `gh release edit <tag> --tag <new tag> --target main --draft=false`
+   (to keep the same tag name, delete the tag first: `git push origin :refs/tags/<tag>`).
 
 A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs` or the
 workflow runs the same build and launch, and keeps the packages for seven days as workflow
