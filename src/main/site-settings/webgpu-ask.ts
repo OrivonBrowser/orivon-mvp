@@ -4,6 +4,7 @@
 // adapter to give, also offers the graphics mode that makes one. Pure over its dependencies, so every branch is
 // tested without a window. `webgpu-ask-ipc.ts` is where the page's message arrives.
 import { originFromUrl } from '../../broker/policy/origin.js'
+import type { SiteRequest } from './electron-names.js'
 import type { NavigatingTab } from './page-access.js'
 import type { RestartReopens } from './site-prompt-text.js'
 import type { SiteAsksEngine } from './site-asks-engine.js'
@@ -75,12 +76,19 @@ export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuA
     if (origin === null) return true
     if (deps.isApp(origin)) return !deps.blockedByDefault()
     const details = { isMainFrame: true, requestingUrl: origin }
-    if (adapter) return await deps.request({ kinds: ['webgpu'], sysex: false }, contents, details) ?? false
+    const plain: SiteRequest = { kinds: ['webgpu'], sysex: false }
+    if (adapter) return await deps.request(plain, contents, details) ?? false
 
-    // No adapter: nobody is asked unless a restart would give one. A site that has an answer is never asked again, so a
-    // person who turned the mode off in Settings is not sent back to it by the sites they granted.
-    if (!x11QuestionApplies(deps.x11(), deps.isPrivate) || deps.stored(origin) !== undefined) return false
-    const granted = await deps.request({ kinds: ['webgpu'], sysex: false, restart: true }, contents, details)
+    // No adapter, so there is nothing to keep. A site that has an answer is never asked again (a person who turned the mode
+    // off in Settings is not sent back to it by the sites they granted), but the engine still reads that answer: it notes it
+    // for the address bar's chip and the site popup, which list what the page was asked, and asks nobody.
+    if (deps.stored(origin) !== undefined) {
+      await deps.request(plain, contents, details)
+      return false
+    }
+    // Nothing stored: nobody is asked unless a restart would give an adapter.
+    if (!x11QuestionApplies(deps.x11(), deps.isPrivate)) return false
+    const granted = await deps.request({ ...plain, restart: true }, contents, details)
     if (granted !== true || offered.get(contents) === origin) return false
     offered.set(contents, origin)
     if (deps.turnOnX11()) deps.offerRestart(contents, reopensAfterRestart({ restoresSession: deps.restoresSession(), tabHasTunnel: deps.tabHasTunnel(contents) }))

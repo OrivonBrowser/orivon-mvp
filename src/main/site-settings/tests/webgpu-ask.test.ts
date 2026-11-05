@@ -183,12 +183,33 @@ describe('where Chromium gave no adapter', () => {
 
   it('does not ask again a site that has an answer, so a mode turned off in Settings stays off', async () => {
     for (const stored of ['allow', 'block'] as const) {
-      const { ask, tab, request, turnOnX11, offerRestart } = rig({ stored })
+      const { ask, tab, turnOnX11, offerRestart } = rig({ stored })
       expect(await ask(tab, SITE, false)).toBe(false)
-      expect(request).not.toHaveBeenCalled()
       expect(turnOnX11).not.toHaveBeenCalled()
       expect(offerRestart).not.toHaveBeenCalled()
     }
+  })
+
+  it('still lets the engine read the stored answer, which it notes for the address bar\'s chip and the site popup, and asks it with no restart flag', async () => {
+    for (const stored of ['allow', 'block'] as const) {
+      for (const x11 of [WITHOUT_MODE, { ...WITHOUT_MODE, offered: false }, { ...WITHOUT_MODE, onAtStart: true }]) {
+        const { ask, tab, request } = rig({ stored, x11, answer: stored === 'allow' })
+        expect(await ask(tab, SITE, false)).toBe(false)
+        expect(request).toHaveBeenCalledTimes(1)
+        expect(request).toHaveBeenCalledWith(ENGINE_REQUEST, tab, MAIN)
+      }
+    }
+  })
+
+  it('answers no after a stored answer even when the engine does not speak for the contents', async () => {
+    const { ask, tab } = rig({ stored: 'allow', answer: undefined })
+    expect(await ask(tab, SITE, false)).toBe(false)
+  })
+
+  it('asks the engine nothing when nothing is stored and the X11 question does not apply', async () => {
+    const { ask, tab, request } = rig({ x11: { ...WITHOUT_MODE, offered: false } })
+    expect(await ask(tab, SITE, false)).toBe(false)
+    expect(request).not.toHaveBeenCalled()
   })
 
   it('offers one restart when the page asks twice while the question is open', async () => {
