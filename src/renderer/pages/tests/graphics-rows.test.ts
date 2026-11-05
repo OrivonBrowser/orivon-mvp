@@ -27,11 +27,15 @@ const row = (id: string): Row => graphicsRows.find((candidate) => candidate.id =
 describe('the WebGPU-on-X11 rows', () => {
   it('say what the owner approved, word for word', () => {
     expect(row('webgpu-on-x11').label).toBe('Use the graphics card for WebGPU on X11')
-    expect(row('webgpu-on-x11').help).toBe('Turns on WebGPU for games and apps that need it; granting WebGPU to a site turns this on too. It may use more battery, and on some laptops videos can go blank. Read when Orivon starts.')
     const restart = row('webgpu-on-x11-restart')
     expect(restart.label).toBe('Start again to apply')
     expect(restart.help).toBe('The choice above is read when Orivon starts. Your tabs and windows are not restored.')
     expect(restart.control.type === 'action' && restart.control.label).toBe('Restart Orivon')
+  })
+
+  it('say that only Grant WebGPU in a site\'s question turns the setting on, never an Allow set in Settings or from the address bar', () => {
+    const { help } = row('webgpu-on-x11')
+    expect(help).toBe('Turns on WebGPU for games and apps that need it. Choosing Grant WebGPU when a site asks turns this on too; setting a site to Allow in Settings or from the address bar does not. It may use more battery, and on some laptops videos can go blank. Read when Orivon starts.')
   })
 
   it('say what a restart does to the tabs and windows, following the start-up choice', async () => {
