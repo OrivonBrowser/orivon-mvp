@@ -4,7 +4,7 @@
 import type { ElectronApplication } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visitWithoutPage } from '../support/qa-helpers.js'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, seedSiteAnswers, startServer, visitWithoutPage } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 
 let server: FixtureServer
@@ -68,7 +68,8 @@ async function seenIn (app: ElectronApplication, origin: string): Promise<{ page
 const DOUBLED = [2, 4, 6, 8]
 
 it('gives a page the WebGPU this platform is known to give', async () => {
-  const { app, chrome } = await launchShell()
+  // A website is asked before its page keeps an adapter (ADR-0106): the fixture's own origin is allowed, so no question holds the probe.
+  const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedSiteAnswers(dir, { [server.origin]: { webgpu: 'allow' } }) } })
   try {
     await visitWithoutPage(app, chrome, `${server.origin}/`)
     const { page, status } = await seenIn(app, server.origin)

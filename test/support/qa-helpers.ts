@@ -1,6 +1,8 @@
 // Shared plumbing for the e2e-qa-* specs: an ephemeral-port fixture server,
 // a launched shell, and navigation that waits on the state it asserts.
 
+import { mkdir, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { ElectronApplication, Page } from 'playwright'
@@ -33,6 +35,12 @@ export async function launchShell (options: Parameters<typeof launchElectron>[0]
   const app = await launchElectron({ appPath: '.', ...options, args: [HERMETIC_RESOLVER, ...(options.args ?? [])] })
   expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
   return { app, chrome: findChrome(app) }
+}
+
+/** Writes the per-site answers a profile starts with (`site-settings.json`), for a `seedProfile`: `sites` is origin -> kind -> answer. */
+export async function seedSiteAnswers (userDataDir: string, sites: Record<string, Record<string, 'allow' | 'block'>>): Promise<void> {
+  await mkdir(userDataDir, { recursive: true })
+  await writeFile(join(userDataDir, 'site-settings.json'), JSON.stringify({ version: 1, sites }))
 }
 
 /** Types `url` into the address bar and waits until the main process holds a web contents committed at it and done loading.

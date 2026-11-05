@@ -83,7 +83,7 @@ describe('the About domain', () => {
         ok: true,
         state: 'unavailable',
         reason: 'x11',
-        sentence: 'WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. You can turn it on in Settings, under Performance.',
+        sentence: 'WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. A site that needs WebGPU asks you for it. You can also turn it on in Settings, under Performance.',
         tone: 'neutral'
       })
     })
