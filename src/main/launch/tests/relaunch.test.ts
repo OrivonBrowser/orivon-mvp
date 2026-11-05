@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { relaunchArgs, restartOnPage, restartOrivon } from '../relaunch.js'
+import { relaunchArgs, restartOrivon } from '../relaunch.js'
 
 describe('relaunchArgs', () => {
   it('keeps the switches and drops every address and file the process started with', () => {
@@ -12,12 +12,18 @@ describe('relaunchArgs', () => {
   })
 
   it('adds the page to open, last, after the app path of a run from source', () => {
-    expect(relaunchArgs(['orivon', '--orivon-profile=a1b2c3d4e5f6', 'https://old.example/'], true, 'https://game.example/play?level=2')).toEqual(['--orivon-profile=a1b2c3d4e5f6', 'https://game.example/play?level=2'])
+    expect(relaunchArgs(['orivon', '--orivon-profile=a1b2c3d4e5f6', 'https://old.example/'], true, 'https://game.example/play')).toEqual(['--orivon-profile=a1b2c3d4e5f6', 'https://game.example/play'])
     expect(relaunchArgs(['electron', '--no-sandbox', 'out/main/index.js'], false, 'https://game.example/')).toEqual(['--no-sandbox', 'out/main/index.js', 'https://game.example/'])
   })
 
   it.each(['', 'about:blank', 'orivon://settings', 'file:///etc/passwd', 'javascript:alert(1)', '--new-window', '-x', 'not a url'])('adds nothing for %j, which is no web address', (address) => {
     expect(relaunchArgs(['orivon', '--no-sandbox'], true, address)).toEqual(['--no-sandbox'])
+  })
+
+  it('names the page by its origin and path alone, so no query, fragment or sign-in reaches a command line other users can read', () => {
+    expect(relaunchArgs(['orivon'], true, 'https://game.example/play/level?token=abc123&room=7#session=xyz')).toEqual(['https://game.example/play/level'])
+    expect(relaunchArgs(['orivon'], true, 'https://user:secret@game.example:8443/play?x=1')).toEqual(['https://game.example:8443/play'])
+    expect(relaunchArgs(['orivon'], true, 'https://game.example/?#')).toEqual(['https://game.example/'])
   })
 
   it('writes the page as an address the launch reads back, one operand and never a switch', () => {
@@ -38,23 +44,5 @@ describe('restartOrivon', () => {
     const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: true }
     restartOrivon(app, ['orivon', 'https://old.example/'])
     expect(app.relaunch).toHaveBeenCalledWith({ args: [] })
-  })
-})
-
-describe('restartOnPage', () => {
-  const started = ['orivon', '--no-sandbox', 'https://old.example/']
-
-  it('names the page on the command line when the start does not bring the session back', () => {
-    const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: true }
-    restartOnPage(app, started, 'https://game.example/', false)
-    expect(app.relaunch).toHaveBeenCalledWith({ args: ['--no-sandbox', 'https://game.example/'] })
-    expect(app.quit).toHaveBeenCalledTimes(1)
-  })
-
-  it('names no page when the start brings the session back, which holds the page already', () => {
-    const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: true }
-    restartOnPage(app, started, 'https://game.example/', true)
-    expect(app.relaunch).toHaveBeenCalledWith({ args: ['--no-sandbox'] })
-    expect(app.quit).toHaveBeenCalledTimes(1)
   })
 })

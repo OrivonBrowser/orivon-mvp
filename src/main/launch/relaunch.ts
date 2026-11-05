@@ -5,20 +5,25 @@
 import type { App } from 'electron'
 import { urlsFromArgv, withoutAddresses } from './launch-context.js'
 
-/** The command line, after the program, a new process starts with. `address` is opened as a plain tab when it is a web address; anything else is left out. */
+/** The command line, after the program, a new process starts with. `address` is opened as a plain tab when it is a web address, by its origin and path alone; anything else is left out. */
 export function relaunchArgs (argv: readonly string[], packaged: boolean, address?: string): string[] {
   const args = withoutAddresses(argv.slice(1), packaged)
   const [page] = address === undefined ? [] : urlsFromArgv([address], 1)
-  return page === undefined ? args : [...args, page]
+  return page === undefined ? args : [...args, withoutDetails(page)]
+}
+
+/** Every user of the computer can read a process's command line (`/proc/<pid>/cmdline`), and a query, a fragment or a sign-in in an address can hold a token or a name. */
+function withoutDetails (page: string): string {
+  const url = new URL(page)
+  url.username = ''
+  url.password = ''
+  url.search = ''
+  url.hash = ''
+  return url.toString()
 }
 
 /** `argv` is the command line this process started with. Ends this process by `quit`, never `exit`: the stores flush before the browser closes. */
 export function restartOrivon (app: Pick<App, 'relaunch' | 'quit' | 'isPackaged'>, argv: readonly string[], address?: string): void {
   app.relaunch({ args: relaunchArgs(argv, app.isPackaged, address) })
   app.quit()
-}
-
-/** Starts again so that `page` is in front afterwards. A start that brings the saved session back has the page in it already (the quit saves it), and an address on the command line would open it a second time. */
-export function restartOnPage (app: Pick<App, 'relaunch' | 'quit' | 'isPackaged'>, argv: readonly string[], page: string | undefined, restoresSession: boolean): void {
-  restartOrivon(app, argv, restoresSession ? undefined : page)
 }
