@@ -10,6 +10,9 @@ import type { RestartReopens } from './site-prompt-text.js'
 import type { SiteAsksEngine } from './site-asks-engine.js'
 import type { SiteDecision } from './site-settings-store.js'
 
+/** What Chromium reports for the origin of a document it gives none: a `Content-Security-Policy: sandbox` page, a sandboxed `data:` page. It refuses an opaque origin every permission, and so does this: a site cannot leave the question by sandboxing its own document. */
+const OPAQUE_ORIGIN = 'null'
+
 /** What this run knows of the graphics mode that gives an X11 session WebGPU (`../graphics/`). */
 export interface X11State {
   /** Orivon runs on an X11 session, where Settings offers the mode. */
@@ -77,10 +80,10 @@ export type WebGpuAsk<T extends NavigatingTab & object> = (contents: T, frameOri
 export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuAskDeps<T>): WebGpuAsk<T> {
   return async (contents, frameOrigin, adapter) => {
     const origin = originFromUrl(frameOrigin)
-    // The question is for websites. A page with no web origin (a local file, an opaque origin) has no site to remember an
-    // answer against, and keeps what Chromium gave it. A site served over ipfs, ipns, bzz or an `.eth` name is shown under
-    // that scheme but runs at an `https:` origin of its own, so it is asked here as any website is.
-    if (origin === null) return true
+    // The question is for websites. A page with a real origin that is not a web one (a local file, `file://`) has no site to
+    // remember an answer against, and keeps what Chromium gave it. A site served over ipfs, ipns, bzz or an `.eth` name is shown
+    // under that scheme but runs at an `https:` origin of its own, so it is asked here as any website is.
+    if (origin === null) return frameOrigin !== OPAQUE_ORIGIN
     if (deps.isApp(origin)) return !deps.blockedByDefault()
     const details = { isMainFrame: true, requestingUrl: origin }
     const plain: SiteRequest = { kinds: ['webgpu'], sysex: false }

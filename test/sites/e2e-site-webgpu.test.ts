@@ -36,7 +36,11 @@ const origins = { a: '', b: '' }
 
 beforeAll(async () => {
   for (const key of ['a', 'b'] as const) {
-    const server = await startServer((_request, response) => { html(response, PAGE) })
+    const server = await startServer((request, response) => {
+      // A document sandboxed by its own header has an opaque origin, which Chromium refuses every permission.
+      if (request.url === '/sandboxed') response.setHeader('content-security-policy', 'sandbox allow-scripts')
+      html(response, PAGE)
+    })
     servers.push(server)
     origins[key] = server.origin
   }
@@ -312,6 +316,30 @@ it('[app:webgpu-asked-per-site] keeps the restart offer up through a press on th
     expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
     await expectNoPrompt(app)
     expect(await app.evaluate(({ app: electron }) => electron.isReady())).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('[app:webgpu-asked-per-site] refuses a document its own header sandboxes, whose origin is opaque, without a question, so a site cannot leave the question by sandboxing its page', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const dir = await userDataOf(app)
+    const sandboxed = await visit(app, chrome, `${origins.a}/sandboxed`)
+    expect(await sandboxed.evaluate(() => ({ origin: window.origin, api: typeof navigator.gpu })), 'the document really has an opaque origin and the WebGPU interface').toEqual({ origin: 'null', api: 'object' })
+    await sandboxed.click('#gpu')
+    expect(await result(sandboxed)).toBe('null')
+    await expectNoPrompt(app)
+    expect(siteAnswers(dir, origins.a)).toBeUndefined()
+    expect(settingOf(dir)).not.toBe(true)
+
+    // The control: the same site, not sandboxed, is asked.
+    const plain = await visit(app, chrome, `${origins.a}/`)
+    await plain.click('#gpu')
+    const prompt = await waitAsk(app)
+    expect(await textOf(prompt, '.origin')).toEqual([origins.a])
+    await press(prompt, 'Block')
+    expect(await result(plain)).toBe('null')
   } finally {
     await closeElectron(app)
   }

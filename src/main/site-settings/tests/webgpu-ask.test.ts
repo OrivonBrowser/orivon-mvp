@@ -82,8 +82,25 @@ describe('where an adapter exists', () => {
   })
 })
 
-describe('a page with no web origin', () => {
-  it.each(['', 'null', 'orivon://settings', 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', 'file://', 'about:blank'])('keeps the adapter Chromium gave it, unasked, for the origin %j', async (origin) => {
+describe('a page with an opaque origin', () => {
+  it('is refused without a question, with an adapter or without, as Chromium refuses every permission to an opaque origin: a site cannot opt out of the question by sandboxing its own document', async () => {
+    const { ask, tab, request, turnOnX11, offerRestart } = rig({ answer: true })
+    expect(await ask(tab, 'null', true)).toBe(false)
+    expect(await ask(tab, 'null', false)).toBe(false)
+    expect(request).not.toHaveBeenCalled()
+    expect(turnOnX11).not.toHaveBeenCalled()
+    expect(offerRestart).not.toHaveBeenCalled()
+  })
+
+  it('is refused even where the X11 question applies and the site has a stored allow', async () => {
+    const { ask, tab, request } = rig({ answer: true, stored: 'allow' })
+    expect(await ask(tab, 'null', false)).toBe(false)
+    expect(request).not.toHaveBeenCalled()
+  })
+})
+
+describe('a page with a real origin that is not a website', () => {
+  it.each(['', 'orivon://settings', 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', 'file://', 'about:blank'])('keeps the adapter Chromium gave it, unasked, for the origin %j', async (origin) => {
     const { ask, tab, request, turnOnX11, offerRestart } = rig()
     expect(await ask(tab, origin, true)).toBe(true)
     expect(await ask(tab, origin, false)).toBe(true)
