@@ -66,7 +66,7 @@ describe('the WebGPU question', () => {
 
 describe('restartView', () => {
   it('says when WebGPU starts and what the restart does to the page and the other tabs', () => {
-    expect(restartView('abc', 'page', 500)).toEqual({
+    expect(restartView('abc', 'site', 500)).toEqual({
       mode: 'restart', id: 'abc', line: 'WebGPU starts after Orivon restarts.', note: 'Orivon opens this site again. Your other tabs and windows are not restored.', guardMs: 500
     })
   })

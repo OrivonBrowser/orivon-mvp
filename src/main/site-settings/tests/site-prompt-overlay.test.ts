@@ -229,7 +229,7 @@ describe('the site-prompt overlay', () => {
   describe('restart', () => {
     /** Shows the offer, has the page report it drawn and lets the guard pass. */
     function offered (r: Rig, run: () => void = () => {}): Record<string, unknown> {
-      r.offer(r.contents, { reopens: 'page', run })
+      r.offer(r.contents, { reopens: 'site', run })
       const view = r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
       r.handler.request({ type: 'drawn', id: view['id'] })
       r.clock.now += ANSWER_GUARD_MS
@@ -238,7 +238,7 @@ describe('the site-prompt overlay', () => {
 
     it('shows what happens after the restart, built in main, with the guard', () => {
       const r = rig()
-      r.offer(r.contents, { reopens: 'page', run: () => {} })
+      r.offer(r.contents, { reopens: 'site', run: () => {} })
       expect(r.handler.show?.(r.shows[0]?.payload)).toMatchObject({
         mode: 'restart', line: 'WebGPU starts after Orivon restarts.', note: 'Orivon opens this site again. Your other tabs and windows are not restored.', guardMs: ANSWER_GUARD_MS
       })
@@ -268,7 +268,7 @@ describe('the site-prompt overlay', () => {
     it('refuses the command inside the guard, before the page reports the offer drawn, and within the guard of a key', () => {
       const r = rig()
       const run = vi.fn()
-      r.offer(r.contents, { reopens: 'page', run })
+      r.offer(r.contents, { reopens: 'site', run })
       const view = r.handler.show?.(r.shows[0]?.payload) as Record<string, unknown>
       r.clock.now += ANSWER_GUARD_MS * 10
       r.handler.request({ type: 'restart', id: view['id'] })
@@ -326,7 +326,7 @@ describe('the site-prompt overlay', () => {
     it('does not let an offer for another window be shown from this one, nor one it does not hold', () => {
       const r = rig()
       const other = rig()
-      other.offer(other.contents, { reopens: 'page', run: () => {} })
+      other.offer(other.contents, { reopens: 'site', run: () => {} })
       expect(r.handler.show?.(other.shows[0]?.payload)).toBeUndefined()
       expect(r.handler.show?.({ mode: 'restart', id: 'made-up' })).toBeUndefined()
       expect(r.handler.show?.({ mode: 'restart' })).toBeUndefined()

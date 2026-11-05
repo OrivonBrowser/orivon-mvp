@@ -21,7 +21,7 @@ import { siteKindById, type SiteKind } from './kinds.js'
 import { pageAccess } from './page-access.js'
 import { createSiteAsker } from './site-asker.js'
 import { createSiteAsksEngine } from './site-asks-engine.js'
-import { addressAfterRestart, createWebGpuAsk } from './webgpu-ask.js'
+import { createWebGpuAsk } from './webgpu-ask.js'
 import { registerWebGpuAskIpc } from './webgpu-ask-ipc.js'
 
 /** The page a tab shows now, to open again after a restart; none when the tab is gone. */
@@ -75,8 +75,9 @@ export const installSitePermissions: ShellInstaller = {
           const found = services.windows.findTab(tab)
           return found?.window.tabs.record(found.tabId)?.tunnelChoice !== undefined
         },
-        // `reopens` is decided once: the question the person reads and the command line the restart runs both follow it.
-        offerRestart: (tab, reopens) => { offerRestart(tab, { reopens, run: () => { restartOrivon(app, process.argv, addressAfterRestart(reopens, pageOf(tab))) } }) }
+        pageOf,
+        // The note says what the offer was made with; the command line is read when Restart is pressed.
+        offerRestart: (tab, { reopens, address }) => { offerRestart(tab, { reopens, run: () => { restartOrivon(app, process.argv, address()) } }) }
       })
     })
     siteAsks.add(createWakeLockAsker({ isTab: (contents) => services.windows.findTab(contents) !== null }))

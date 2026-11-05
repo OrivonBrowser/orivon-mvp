@@ -27,17 +27,23 @@ export function x11QuestionApplies (state: X11State, isPrivate: boolean): boolea
 
 /**
  * What the start that follows a restart offer brings back. The saved session when the start-up choice restores it: this page is in
- * it, and its tab keeps a tunnel choice of its own. Otherwise this page, opened from the command line, unless the tab has such a
- * choice: a launch address carries none, so the page would be fetched over the default route, and it is not reopened.
+ * it, and its tab keeps a tunnel choice of its own. Otherwise the site of this page, opened from the command line, unless the tab
+ * has such a choice: a launch address carries none, so the site would be fetched over the default route, and it is not reopened.
  */
 export function reopensAfterRestart (state: { readonly restoresSession: boolean, readonly tabHasTunnel: boolean }): RestartReopens {
   if (state.restoresSession) return 'session'
-  return state.tabHasTunnel ? 'none' : 'page'
+  return state.tabHasTunnel ? 'none' : 'site'
 }
 
-/** The page the restart names on the command line: only the one a start that reopens `page` should open. */
+/** The page the restart names on the command line: only the one a start that reopens `site` should open. */
 export function addressAfterRestart (reopens: RestartReopens, page: string | undefined): string | undefined {
-  return reopens === 'page' ? page : undefined
+  return reopens === 'site' ? page : undefined
+}
+
+/** What the person is offered. `reopens` is what the note says, decided when the offer is made; `address` is what the restart opens, read when it is pressed, from what the tab and the settings hold then. */
+export interface RestartOffer {
+  readonly reopens: RestartReopens
+  readonly address: () => string | undefined
 }
 
 export interface WebGpuAskDeps<T extends NavigatingTab & object> {
@@ -57,8 +63,10 @@ export interface WebGpuAskDeps<T extends NavigatingTab & object> {
   restoresSession: () => boolean
   /** `contents`'s tab carries a tunnel choice of its own, which only that tab holds. */
   tabHasTunnel: (contents: T) => boolean
-  /** Offers the person a restart for `contents`'s page, saying what the start that follows brings back. */
-  offerRestart: (contents: T, reopens: RestartReopens) => void
+  /** The address `contents` shows now, which the restart opens again by its origin; undefined when the tab is gone. */
+  pageOf: (contents: T) => string | undefined
+  /** Offers the person a restart for `contents`'s site. */
+  offerRestart: (contents: T, offer: RestartOffer) => void
 }
 
 /** Whether the page gets the adapter it asked for: `frameOrigin` is read by main from the sender frame, `adapter` is whether Chromium gave one. */
@@ -91,7 +99,11 @@ export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuA
     const granted = await deps.request({ ...plain, restart: true }, contents, details)
     if (granted !== true || offered.get(contents) === origin) return false
     offered.set(contents, origin)
-    if (deps.turnOnX11()) deps.offerRestart(contents, reopensAfterRestart({ restoresSession: deps.restoresSession(), tabHasTunnel: deps.tabHasTunnel(contents) }))
+    if (!deps.turnOnX11()) return false
+    // Said once, when the offer is made; what the restart opens is decided again when it is pressed, and by the safe side: the
+    // tab may have been given a tunnel, and the start-up choice changed, since.
+    const state = (): { restoresSession: boolean, tabHasTunnel: boolean } => ({ restoresSession: deps.restoresSession(), tabHasTunnel: deps.tabHasTunnel(contents) })
+    deps.offerRestart(contents, { reopens: reopensAfterRestart(state()), address: () => addressAfterRestart(reopensAfterRestart(state()), deps.pageOf(contents)) })
     return false
   }
 }

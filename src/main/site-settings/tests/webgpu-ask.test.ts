@@ -2,8 +2,7 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import type { SiteRequest } from '../electron-names.js'
 import type { SiteDecision } from '../site-settings-store.js'
-import type { RestartReopens } from '../site-prompt-text.js'
-import { addressAfterRestart, createWebGpuAsk, reopensAfterRestart, x11QuestionApplies, type X11State } from '../webgpu-ask.js'
+import { addressAfterRestart, createWebGpuAsk, reopensAfterRestart, x11QuestionApplies, type RestartOffer, type X11State } from '../webgpu-ask.js'
 
 const SITE = 'https://game.example'
 const ENGINE_REQUEST: SiteRequest = { kinds: ['webgpu'], sysex: false }
@@ -22,14 +21,18 @@ interface Options {
   turnedOn?: boolean
   restoresSession?: boolean
   tabHasTunnel?: boolean
+  /** The address the tab shows when Restart is pressed. */
+  page?: string
 }
 
 function rig (options: Options = {}) {
   const tab = new EventEmitter()
+  /** What the person's settings and the tab hold now: a test changes them between the offer and the press. */
+  const now = { restoresSession: options.restoresSession === true, tabHasTunnel: options.tabHasTunnel === true, page: options.page as string | undefined }
   const request = vi.fn((_request: SiteRequest, _contents: EventEmitter | null, _details: object): Promise<boolean> | undefined =>
     'answer' in options && options.answer === undefined ? undefined : Promise.resolve(options.answer ?? true))
   const turnOnX11 = vi.fn(() => options.turnedOn ?? true)
-  const offerRestart = vi.fn((_contents: EventEmitter, _reopens: RestartReopens) => {})
+  const offerRestart = vi.fn((_contents: EventEmitter, _offer: RestartOffer) => {})
   const ask = createWebGpuAsk<EventEmitter>({
     request,
     isApp: (origin) => options.apps?.includes(origin) === true,
@@ -38,11 +41,14 @@ function rig (options: Options = {}) {
     isPrivate: options.isPrivate === true,
     x11: () => options.x11 ?? WITHOUT_MODE,
     turnOnX11,
-    restoresSession: () => options.restoresSession === true,
-    tabHasTunnel: () => options.tabHasTunnel === true,
+    restoresSession: () => now.restoresSession,
+    tabHasTunnel: () => now.tabHasTunnel,
+    pageOf: () => now.page,
     offerRestart
   })
-  return { ask, tab, request, turnOnX11, offerRestart }
+  /** What the restart opens if it is pressed now, from the offer the page's grant made. */
+  const addressNow = (): string | undefined => offerRestart.mock.calls[0]?.[1].address()
+  return { ask, tab, request, turnOnX11, offerRestart, now, addressNow }
 }
 
 describe('where an adapter exists', () => {
@@ -152,7 +158,7 @@ describe('where Chromium gave no adapter', () => {
     expect(await ask(tab, SITE, false)).toBe(false)
     expect(request).toHaveBeenCalledWith({ ...ENGINE_REQUEST, restart: true }, tab, MAIN)
     expect(order).toEqual(['setting', 'offer'])
-    expect(offerRestart).toHaveBeenCalledWith(tab, 'page')
+    expect(offerRestart).toHaveBeenCalledWith(tab, { reopens: 'site', address: expect.any(Function) as () => string | undefined })
   })
 
   it('turns nothing on and offers nothing after a block, a question closed without an answer or a page that moved on, which the engine all answers no', async () => {
@@ -163,15 +169,15 @@ describe('where Chromium gave no adapter', () => {
   })
 
   it.each([
-    ['reopens this page when nothing is restored', { restoresSession: false, tabHasTunnel: false }, 'page'],
+    ['reopens the site when nothing is restored', { restoresSession: false, tabHasTunnel: false }, 'site'],
     ['brings the session back when the start-up choice restores it', { restoresSession: true, tabHasTunnel: false }, 'session'],
-    ['does not reopen a page whose tab holds a tunnel of its own, which a launch address would lose', { restoresSession: false, tabHasTunnel: true }, 'none'],
+    ['does not reopen a site whose tab holds a tunnel of its own, which a launch address would lose', { restoresSession: false, tabHasTunnel: true }, 'none'],
     ['leaves the tunnel to the restored session when both hold', { restoresSession: true, tabHasTunnel: true }, 'session']
   ] as const)('offers a restart that %s', async (_label, state, expected) => {
     const { ask, tab, offerRestart } = rig({ answer: true, ...state })
     await ask(tab, SITE, false)
     expect(offerRestart).toHaveBeenCalledTimes(1)
-    expect(offerRestart).toHaveBeenCalledWith(tab, expected)
+    expect(offerRestart.mock.calls[0]?.[1].reopens).toBe(expected)
   })
 
   it('offers no restart when the setting could not be turned on', async () => {
@@ -220,6 +226,53 @@ describe('where Chromium gave no adapter', () => {
   })
 })
 
+describe('what the restart reopens, decided when it is pressed', () => {
+  const PAGE = 'https://game.example/play/level-2'
+
+  it('opens the page the tab is on then, not the one that was asked', async () => {
+    const { ask, tab, now, addressNow } = rig({ answer: true, page: 'https://game.example/play' })
+    await ask(tab, SITE, false)
+    expect(addressNow()).toBe('https://game.example/play')
+    now.page = PAGE
+    expect(addressNow()).toBe(PAGE)
+    now.page = undefined
+    expect(addressNow()).toBeUndefined()
+  })
+
+  it('opens nothing when the tab was given a tunnel of its own after the offer was made', async () => {
+    const { ask, tab, now, offerRestart, addressNow } = rig({ answer: true, page: PAGE })
+    await ask(tab, SITE, false)
+    expect(offerRestart.mock.calls[0]?.[1].reopens).toBe('site')
+    expect(addressNow()).toBe(PAGE)
+    now.tabHasTunnel = true
+    expect(addressNow()).toBeUndefined()
+  })
+
+  it('opens nothing when the start-up choice was changed to restore the session after the offer was made, which brings the page back by itself', async () => {
+    const { ask, tab, now, addressNow } = rig({ answer: true, page: PAGE })
+    await ask(tab, SITE, false)
+    now.restoresSession = true
+    expect(addressNow()).toBeUndefined()
+  })
+
+  it('keeps the wording it was shown with, whatever changes', async () => {
+    const { ask, tab, now, offerRestart } = rig({ answer: true, page: PAGE })
+    await ask(tab, SITE, false)
+    now.tabHasTunnel = true
+    now.restoresSession = true
+    expect(offerRestart.mock.calls[0]?.[1].reopens).toBe('site')
+  })
+
+  it('opens the page when neither says not to, even if the offer said nothing of it', async () => {
+    const { ask, tab, now, offerRestart, addressNow } = rig({ answer: true, tabHasTunnel: true, page: PAGE })
+    await ask(tab, SITE, false)
+    expect(offerRestart.mock.calls[0]?.[1].reopens).toBe('none')
+    expect(addressNow()).toBeUndefined()
+    now.tabHasTunnel = false
+    expect(addressNow()).toBe(PAGE)
+  })
+})
+
 describe('x11QuestionApplies', () => {
   it('holds only on an X11 session whose run did not start in the mode, which the guard has not turned off, outside a private session', () => {
     expect(x11QuestionApplies(WITHOUT_MODE, false)).toBe(true)
@@ -236,8 +289,8 @@ describe('reopensAfterRestart', () => {
     expect(reopensAfterRestart({ restoresSession: true, tabHasTunnel: true })).toBe('session')
   })
 
-  it('reopens the page alone when nothing is restored and the tab has no tunnel of its own', () => {
-    expect(reopensAfterRestart({ restoresSession: false, tabHasTunnel: false })).toBe('page')
+  it('reopens the site alone when nothing is restored and the tab has no tunnel of its own', () => {
+    expect(reopensAfterRestart({ restoresSession: false, tabHasTunnel: false })).toBe('site')
   })
 
   it('reopens nothing when the tab has a tunnel of its own, which a launch address does not carry', () => {
@@ -246,10 +299,10 @@ describe('reopensAfterRestart', () => {
 })
 
 describe('addressAfterRestart', () => {
-  it('names the page only for a start that reopens the page alone', () => {
-    expect(addressAfterRestart('page', 'https://game.example/play')).toBe('https://game.example/play')
+  it('names the page only for a start that reopens the site alone', () => {
+    expect(addressAfterRestart('site', 'https://game.example/play')).toBe('https://game.example/play')
     expect(addressAfterRestart('session', 'https://game.example/play')).toBeUndefined()
     expect(addressAfterRestart('none', 'https://game.example/play')).toBeUndefined()
-    expect(addressAfterRestart('page', undefined)).toBeUndefined()
+    expect(addressAfterRestart('site', undefined)).toBeUndefined()
   })
 })

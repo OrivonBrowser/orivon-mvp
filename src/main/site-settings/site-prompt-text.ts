@@ -65,9 +65,9 @@ export const RESTART_RESTORED_NOTE = 'Your tabs and windows open again.'
 export const RESTART_BLANK_NOTE = 'Your tabs and windows are not restored.'
 
 /** What the start that follows a restart offer brings back: the saved tabs and windows, the site of this page alone, or none of them. */
-export type RestartReopens = 'session' | 'page' | 'none'
+export type RestartReopens = 'session' | 'site' | 'none'
 
-const RESTART_NOTES: Readonly<Record<RestartReopens, string>> = { session: RESTART_RESTORED_NOTE, page: RESTART_OFFER_NOTE, none: RESTART_BLANK_NOTE }
+const RESTART_NOTES: Readonly<Record<RestartReopens, string>> = { session: RESTART_RESTORED_NOTE, site: RESTART_OFFER_NOTE, none: RESTART_BLANK_NOTE }
 
 const WANTS: Readonly<Partial<Record<SiteKind, string>>> = {
   camera: 'wants to use your camera',
