@@ -42,8 +42,10 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
   let notice: { readonly profile: SiteTunnelProfile, readonly choice: SiteTunnelKind | null } | null = null
   /** The tunnel a Browser-wide switch was moved to while the question about the tabs that keep their own is open. */
   let asking: SiteTunnelKind | null = null
-  /** The panel shown: decided on the first drawing, and after that only by the person's own click. */
+  /** The panel shown: decided on the first drawing, again when the page the popup is about stops being a page of the shell (or becomes one), and otherwise only by the person's own click. */
   let panel: Panel | null = null
+  /** Whether the last drawing was the popup of a page of the shell. The popup stays open when its tab goes on to a website, and the next answer from main is that website's. */
+  let onShellPage: boolean | null = null
   let failed = false
   let alwaysFailed = false
   let editor: Editor | null = null
@@ -84,7 +86,8 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
   }
 
   function browserShown (): boolean {
-    return panel === 'browser' && deps.getInfo()?.browserTunnel !== undefined
+    const info = deps.getInfo()
+    return info?.browserTunnel !== undefined && (panel === 'browser' || info.browserOnly === true)
   }
 
   /** The proxy of the panel shown: the website's or tab's own, or the whole browser's. They are the same address, and one count of who goes through it. */
@@ -176,9 +179,12 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
 
   return {
     render: (container, info) => {
-      if (panel === null) panel = initialPanel(info)
-      const names = info.browserTunnel === undefined ? null : { first: firstPanelLabel(info), browser: BROWSER_LABEL }
-      const shown: Panel = names === null ? 'first' : panel
+      // A page of the shell has only the browser's panel, so there is nothing to choose between.
+      const browserOnly = info.browserOnly === true && info.browserTunnel !== undefined
+      if (panel === null || onShellPage !== browserOnly) panel = initialPanel(info)
+      onShellPage = browserOnly
+      const names = info.browserTunnel === undefined || browserOnly ? null : { first: firstPanelLabel(info), browser: BROWSER_LABEL }
+      const shown: Panel = browserOnly ? 'browser' : names === null ? 'first' : panel
       const browser = shown === 'browser'
       // What the buttons of this drawing answer: a press that comes after the answer has taken the question away asks the same again.
       const askedWhenDrawn = asking

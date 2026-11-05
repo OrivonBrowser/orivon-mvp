@@ -61,7 +61,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
     // The proxy's address is set from the tunnel menu as Settings sets it: through the same store, so it is checked, saved and followed the same way.
     proxySetup(ctx, services.settings),
     // The tunnel popover opened for a tab reads and sets the tab's own choice: the same call a test seam makes, so nothing else decides it.
-    { choiceOf: (id) => { const record = tabs.record(id); const address = addressOfTab(tabs.getState(), id, openingAddressOf(tabs)); return record === undefined ? undefined : { choice: record.tunnelChoice, ...(address === undefined ? {} : { address }) } }, set: (id, choice) => { tabs.setTunnelChoice(id, choice) } },
+    { choiceOf: (id) => { const record = tabs.record(id); const address = addressOfTab(tabs.getState(), id, openingAddressOf(tabs)); return record === undefined ? undefined : { choice: record.tunnelChoice, ...(address === undefined ? {} : { address }), ...(record.internalPage == null ? {} : { internal: true }) } }, set: (id, choice) => { tabs.setTunnelChoice(id, choice) } },
     // The Browser-wide panel moves the same three settings Settings does, and lists the tabs of every window that keep a choice of their own.
     browserTunnels(services.settings, () => browserTunnelTabs(services.windows)))
 

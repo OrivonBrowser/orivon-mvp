@@ -44,6 +44,11 @@ describe('which panel opens', () => {
     expect(initialPanel(info({ everywhere: true, tunnelHeld: 'nym' }))).toBe('first')
   })
 
+  it('is Browser-wide for the popup of a page of the shell, which has no first panel, whatever the browser is on', () => {
+    expect(initialPanel(noTunnel({ browserOnly: true, origin: '' }))).toBe('browser')
+    expect(initialPanel(noTunnel({ browserOnly: true, everywhere: true, tunnelHeld: 'nym' }))).toBe('browser')
+  })
+
   it('is the first panel when routes are not running, so there is no Browser-wide panel to open', () => {
     const { browserTunnel: _omitted, ...bare } = info({ everywhere: true })
     expect(initialPanel(bare)).toBe('first')

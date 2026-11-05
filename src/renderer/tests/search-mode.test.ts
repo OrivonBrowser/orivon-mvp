@@ -27,6 +27,11 @@ describe('the search mode chip', () => {
     expect(chipShown(false, false, 'https://example.com/')).toBe(false)
   })
 
+  it('shows all the time on a page of the shell, which has no site mark for it to be mistaken for', () => {
+    expect(chipShown(false, false, 'orivon://settings/', true)).toBe(true)
+    expect(chipShown(false, false, 'https://example.com/', false)).toBe(false)
+  })
+
   it('is a module, placed after the address field it belongs to', () => {
     const names = CHROME_MODULES.map((module) => module.name)
     expect(names.indexOf('search-mode')).toBeGreaterThan(names.indexOf('address-suggest'))
@@ -51,7 +56,7 @@ describe('the chip across state pushes', () => {
     const chip = new El()
     const word = new El()
     const input = new El()
-    const page = { focused: true, active: undefined as unknown }
+    const page = { focused: true, active: undefined as unknown, tab: { isInternal: false } as { isInternal: boolean } | undefined }
     const fakeDocument = {
       querySelector: (selector: string) => (selector === '#search-mode' ? chip : selector === '#search-mode-text' ? word : input),
       hasFocus: () => page.focused,
@@ -60,7 +65,7 @@ describe('the chip across state pushes', () => {
     const original = (globalThis as { document?: unknown }).document
     ;(globalThis as { document?: unknown }).document = fakeDocument
     const module = createSearchMode()
-    const ctx = { shell: { runCommand: () => {} } } as never
+    const ctx = { shell: { runCommand: () => {} }, activeTab: () => page.tab } as never
     module.init(ctx)
     const state = { searchMode: 'web3', searchWeb3Name: 'Explore', searchWeb2Name: 'DuckDuckGo' } as never
     return {
@@ -98,6 +103,24 @@ describe('the chip across state pushes', () => {
       m.push('')
       expect(m.word.textContent).toBe('Web3')
       expect(m.chip.textContent).toBe('')
+    } finally {
+      m.restore()
+    }
+  })
+
+  it('stays shown on a page of the shell with the field unfocused and holding its address, and hides again on a website', () => {
+    const m = mount()
+    try {
+      m.page.focused = false
+      m.page.tab = { isInternal: true }
+      m.push('orivon://settings/')
+      expect(m.chip.hidden).toBe(false)
+      m.page.tab = { isInternal: false }
+      m.push('https://example.com/')
+      expect(m.chip.hidden).toBe(true)
+      m.page.tab = undefined
+      m.push('https://example.com/')
+      expect(m.chip.hidden).toBe(true)
     } finally {
       m.restore()
     }
