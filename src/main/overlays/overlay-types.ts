@@ -93,8 +93,8 @@ export interface OverlayHost {
   reanchor: (name: string, anchor: OverlayAnchor) => void
   prewarm: (name: string) => void
   send: (name: string, event: unknown) => void
-  /** Hides and shows each overlay on screen in one turn. The chrome is shown again by it when a full-width overlay put over a resized window left the chrome reading hidden (README.md's Design notes). */
-  reshow: () => void
+  /** Hides and shows each overlay on screen in one turn, covers last, and returns their names in that order. The chrome is shown again by it when a full-width overlay left the chrome reading hidden (README.md's Design notes). */
+  reshow: () => readonly string[]
 }
 
 /**

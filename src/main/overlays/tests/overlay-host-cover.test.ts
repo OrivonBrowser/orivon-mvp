@@ -85,7 +85,20 @@ describe('createOverlayHost: a cover', () => {
     PANE.current = { x: 0, y: 76, width: 1200, height: 724 }
     host.relayout()
     expect(host.isOpen('cover')).toBe(true)
-    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 1200, height: 724 })
+    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 1199, height: 724 })
+  })
+
+  it('leaves the last pixel column of the window uncovered when it is as wide as the window, and nothing of a narrower one', () => {
+    const host = setup()
+    PANE.current = { x: 0, y: 76, width: 1200, height: 724 }
+    host.show('cover')
+    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 1199, height: 724 })
+    PANE.current = { x: 0, y: 76, width: 1199, height: 724 }
+    host.relayout()
+    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 1199, height: 724 })
+    PANE.current = { x: 0, y: 76, width: 600, height: 724 }
+    host.relayout()
+    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 600, height: 724 })
   })
 
   it('lies under a bar shown after it, and under one shown before it once it joins', async () => {
@@ -157,8 +170,18 @@ describe('createOverlayHost: reshow', () => {
     host.reshow()
     expect(reshown).toEqual([])
     await ready()
-    host.reshow()
-    expect(reshown.sort()).toEqual(['bar', 'cover'])
+    expect(host.reshow()).toEqual(['bar', 'cover'])
+    expect(reshown).toEqual(['bar', 'cover'])
+  })
+
+  it('shows a cover last, whatever was shown after it', async () => {
+    const host = setup()
+    host.show('cover')
+    host.show('popup')
+    host.show('bar')
+    await ready()
+    expect(host.reshow()).toEqual(['popup', 'bar', 'cover'])
+    expect(reshown).toEqual(['popup', 'bar', 'cover'])
   })
 
   it('leaves a closed overlay alone', async () => {
@@ -166,7 +189,7 @@ describe('createOverlayHost: reshow', () => {
     host.show('bar')
     await ready()
     host.close('bar')
-    host.reshow()
+    expect(host.reshow()).toEqual([])
     expect(reshown).toEqual([])
   })
 })
