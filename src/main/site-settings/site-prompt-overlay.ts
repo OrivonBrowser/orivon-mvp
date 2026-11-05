@@ -177,9 +177,9 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
       return undefined
     },
 
-    // The site-access chip toggles this overlay to review a page's permissions: a click on it while a question is
-    // up must not end that question as "not now".
-    holdsOnToggle: () => current.mode === 'ask',
+    // The site-access chip toggles this overlay to review a page's permissions: a click on it while a question or a
+    // restart offer is up must not end it, as "not now" or as Later.
+    holdsOnToggle: () => current.mode === 'ask' || current.mode === 'restart',
 
     // A resize moves the question under the person's pointer: the guard starts over.
     moved: () => {
@@ -206,9 +206,9 @@ export const sitePromptOverlay: OverlayDef = {
   // Focus goes to the prompt so a key the person types at the page cannot answer it; the page puts it on the dialog, not a button.
   focus: 'take',
   layer: 'bar',
-  // A click elsewhere leaves a question open and a tab switch hides it. A new document ends a question in ask-site.ts and a
-  // review in the handler; the slot's own navigation close also fires when a page only rewrites its address, which must not
-  // dismiss a question a single-page app is waiting on. The review bubble closes itself on blur.
+  // A click elsewhere leaves a question open and a tab switch hides it. A new document ends a question in ask-site.ts, an offer
+  // to restart there when the tab leaves the site, and a review in the handler; the slot's own navigation close also fires when a
+  // page only rewrites its address, which must not dismiss a question a single-page app is waiting on. The review bubble closes itself on blur.
   closeOn: { blur: false, tabSwitch: true, navigation: false, layout: false },
   keep: 'fresh',
   height: { initial: 170, min: 100, max: 460 },

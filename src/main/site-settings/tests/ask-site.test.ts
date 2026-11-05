@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import type { WebContents } from 'electron'
 import type { ShellWindow } from '../../shell/window-registry.js'
-import { createAskSite, createOfferRestart, pendingAsk, pendingRestart, SITE_PROMPT_OVERLAY, askSite, bindAskSite } from '../ask-site.js'
+import { createAskSite, createOfferRestart, pendingAsk, pendingRestart, restartOfferOpen, SITE_PROMPT_OVERLAY, askSite, bindAskSite } from '../ask-site.js'
 import { slotClosed, tabSlotEvents } from '../../overlays/tab-slots.js'
 import { crossingAnchor, promptAnchor, promptAnchorReport, TOOLBAR_OVERLAP } from '../../shell/actions/prompt-anchor.js'
 
@@ -161,20 +161,93 @@ describe('offering a restart', () => {
     expect(pendingRestart((shows[0]?.payload as { id: string }).id)?.reopens).toBe(reopens)
   })
 
-  it('ends with the page it was made on, and is forgotten when its surface closes', () => {
-    const { offer, tab, shows, contents, window } = offerRig()
+  /** The tab loads a page: the address changes, then the event that says so. */
+  const navigate = (tab: FakeTab, url: string): void => {
+    tab.url = url
+    tab.emit('did-navigate')
+  }
+
+  it('stays up through the pages of its own site, which a game may move to when it finds no WebGPU, and can still restart', () => {
+    const { offer, tab, shows, contents, closes } = offerRig()
+    const run = vi.fn()
+    offer(contents, { reopens: 'site', run })
+    const id = (shows[0]?.payload as { id: string }).id
+    navigate(tab, 'https://meet.example/webgpu-unsupported')
+    navigate(tab, 'https://meet.example/room?again=1#top')
+    expect(pendingRestart(id)).toBeDefined()
+    expect(tab.listenerCount('did-navigate')).toBe(1)
+    expect(closes).toEqual([])
+    pendingRestart(id)?.run()
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['another site', 'https://other.example/'],
+    ['the same host on another port', 'https://meet.example:8443/room'],
+    ['the same host over http', 'http://meet.example/room'],
+    ['a page with no web origin', 'about:blank']
+  ])('ends when the tab goes to %s, and is gone for good', (_label, url) => {
+    const { offer, tab, shows, contents, closes } = offerRig()
     offer(contents, { reopens: 'site', run: () => {} })
     const id = (shows[0]?.payload as { id: string }).id
-    tab.emit('did-navigate')
+    navigate(tab, url)
     expect(pendingRestart(id)).toBeUndefined()
     expect(tab.listenerCount('did-navigate')).toBe(0)
+    expect(closes).toEqual([SITE_PROMPT_OVERLAY])
+    navigate(tab, 'https://meet.example/room')
+    expect(pendingRestart(id)).toBeUndefined()
+  })
+
+  it('is forgotten when its surface closes, and when its tab closes', () => {
+    const first = offerRig()
+    first.offer(first.contents, { reopens: 'site', run: () => {} })
+    const firstId = (first.shows[0]?.payload as { id: string }).id
+    slotClosed(first.window, SITE_PROMPT_OVERLAY, 'escape')
+    expect(pendingRestart(firstId)).toBeUndefined()
+    expect(first.tab.listenerCount('did-navigate')).toBe(0)
     const second = offerRig()
     second.offer(second.contents, { reopens: 'site', run: () => {} })
     const secondId = (second.shows[0]?.payload as { id: string }).id
-    slotClosed(second.window, SITE_PROMPT_OVERLAY, 'escape')
+    tabSlotEvents.tabClosed(second.window, 't1')
     expect(pendingRestart(secondId)).toBeUndefined()
     expect(second.tab.listenerCount('did-navigate')).toBe(0)
-    void window
+  })
+
+  it('holds at most one offer per tab: a second is not made while the first is up, and one can be made after it ended', () => {
+    const { offer, tab, shows, contents, window } = offerRig()
+    expect(restartOfferOpen(contents)).toBe(false)
+    const first = vi.fn()
+    offer(contents, { reopens: 'site', run: first })
+    expect(restartOfferOpen(contents)).toBe(true)
+    const second = vi.fn()
+    offer(contents, { reopens: 'session', run: second })
+    expect(shows).toHaveLength(1)
+    expect(tab.listenerCount('did-navigate')).toBe(1)
+    const id = (shows[0]?.payload as { id: string }).id
+    pendingRestart(id)?.run()
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).not.toHaveBeenCalled()
+    slotClosed(window, SITE_PROMPT_OVERLAY, 'request')
+    expect(restartOfferOpen(contents)).toBe(false)
+    offer(contents, { reopens: 'site', run: second })
+    expect(shows).toHaveLength(2)
+    expect(restartOfferOpen(contents)).toBe(true)
+  })
+
+  it('does not count an offer for another tab, and is open for no contents it never held', () => {
+    const one = offerRig()
+    const other = offerRig()
+    one.offer(one.contents, { reopens: 'site', run: () => {} })
+    expect(restartOfferOpen(other.contents)).toBe(false)
+    expect(restartOfferOpen(new FakeTab() as unknown as WebContents)).toBe(false)
+  })
+
+  it('offers nothing for a tab that shows no web origin', () => {
+    const { offer, tab, shows, contents } = offerRig()
+    tab.url = 'about:blank'
+    offer(contents, { reopens: 'site', run: () => {} })
+    expect(shows).toEqual([])
+    expect(restartOfferOpen(contents)).toBe(false)
   })
 
   it('offers nothing for contents no window owns, and knows no id it never issued', () => {

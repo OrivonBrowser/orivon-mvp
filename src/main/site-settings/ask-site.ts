@@ -124,17 +124,35 @@ export function createAskSite (deps: AskSiteDeps): AskSite {
   }
 }
 
-/** Offers `tab` to start Orivon again with `run`, under the address bar; the offer ends with the page it was made on. */
+/** Offers `tab` to start Orivon again with `run`, under the address bar. It ends when the tab leaves the site or closes, not on the site's own pages. */
 export type OfferRestart = (tab: WebContents, offer: { readonly reopens: RestartReopens, readonly run: () => void }) => void
+
+/** The tabs whose offer is still up, by the offer's id: a tab holds at most one. */
+const offered = new WeakMap<WebContents, string>()
+
+/** Whether `tab`'s restart offer is still up. */
+export function restartOfferOpen (tab: WebContents): boolean {
+  return offered.has(tab)
+}
 
 export function createOfferRestart (deps: AskSiteDeps): OfferRestart {
   return (tab, { reopens, run }) => {
     const found = deps.windows.findTab(tab)
-    if (found === null) return
+    const origin = originFromUrl(tab.getURL())
+    // One offer is the one to answer: a second for the same tab is not made while it is up.
+    if (found === null || origin === null || offered.has(tab)) return
     holdPrompt(tab, found, 'restart', {
-      keep: (id) => { restarts.set(id, { id, window: found.window, reopens, run }) },
-      endsOnNavigate: () => true,
-      release: (id) => { restarts.delete(id) }
+      keep: (id) => {
+        restarts.set(id, { id, window: found.window, reopens, run })
+        offered.set(tab, id)
+      },
+      // The grant is for the site, and the offer outlives the page that was asked: a game may move to its own page for a
+      // computer without WebGPU, and the allow it stored would never offer again. What the restart opens is read when it is pressed.
+      endsOnNavigate: () => originFromUrl(tab.getURL()) !== origin,
+      release: (id) => {
+        restarts.delete(id)
+        offered.delete(tab)
+      }
     })
   }
 }

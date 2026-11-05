@@ -332,9 +332,18 @@ describe('the site-prompt overlay', () => {
       expect(r.handler.show?.({ mode: 'restart' })).toBeUndefined()
     })
 
-    it('does not hold the surface when the chip is pressed: only a question does', () => {
+    it('holds the surface when the chip is pressed, as a question does: a click meant for the chip does not end the offer', () => {
       const r = rig()
       offered(r)
+      expect(r.handler.holdsOnToggle?.()).toBe(true)
+      r.handler.closed?.('request')
+      expect(r.handler.holdsOnToggle?.()).toBe(false)
+    })
+
+    it('does not hold the surface for the review bubble, which a press on the chip closes', () => {
+      const r = rig()
+      r.access.note(r.contents, SITE, 'camera', 'allowed')
+      r.handler.show?.({ mode: 'review' })
       expect(r.handler.holdsOnToggle?.()).toBe(false)
     })
 
