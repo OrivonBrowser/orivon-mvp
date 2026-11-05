@@ -65,7 +65,10 @@ export function shellActions (parts: WindowParts): ShellActions {
     if (contents !== undefined) panels.siteInfo.holdAgainstArrival(contents)
   }
   /** The tab the tunnels popup opens for: the tab's own list, or on a page of the shell the tab whose popup is the browser's alone (the controller tells them apart from the tab's record). */
-  const aboutTab = (): string | undefined => tabForTunnelPopover(tabs.getState(), (id) => tabs.partitionOf(id), isOriginServedFromCacheSync, openingAddress) ?? shellPageTabForTunnelPopover(tabs.getState())
+  const aboutTab = (): string | undefined => {
+    const state = tabs.getState()
+    return tabForTunnelPopover(state, (id) => tabs.partitionOf(id), isOriginServedFromCacheSync, openingAddress) ?? shellPageTabForTunnelPopover(state)
+  }
 
   const showTabMenuFor = (id: string): void => {
     const { tabs: all } = tabs.getState()

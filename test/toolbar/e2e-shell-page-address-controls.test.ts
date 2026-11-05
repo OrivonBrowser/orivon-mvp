@@ -1,7 +1,8 @@
 // The Web3 / Web2 switch and the tunnel button on the shell's own pages (orivon://), driven with the real shell. A shell page has no
-// site mark for the switch to be mistaken for, so the switch shows there all the time; its tunnel button is about the browser-wide
-// setting alone, because such a page never goes through a tunnel, and its popup is the Browser-wide panel with no panel of the tab and
-// no "Always use for this site". Main refuses what a popup of such a page still sends: a tab's tunnel and a website's own entry.
+// site mark for the switch to be mistaken for, so the switch shows there all the time. Its tunnel button speaks as the new tab's does,
+// of the tunnel the sites the tab opens will go through, so a tab set to Nym that shows such a page is lit; its popup is the
+// Browser-wide panel alone, with no panel of the tab and no "Always use for this site". Main refuses what a popup of such a page still
+// sends: a tab's tunnel and a website's own entry.
 // The Nym module is the stand-in `e2e-browser-wide-tunnel` uses.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/toolbar/e2e-shell-page-address-controls.test.ts
@@ -18,11 +19,11 @@ import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, waitFor } from '../support/smoke-helpers.mjs'
 
 type Shell = { orivonShell: { openInternal: (page: string, path?: string) => void } }
-type TabChoiceSeam = { __orivonDevTabTunnel?: { choiceOf: (tabId: string) => string | undefined } }
+type TabChoiceSeam = { __orivonDevTabTunnel?: { choiceOf: (tabId: string) => string | undefined, set: (tabId: string, choice: string | null) => boolean } }
 type PopupBridge = { orivonSiteInfo: { setTunnel: (kind: 'nym' | 'socks5' | null, shown?: string) => Promise<{ ok: boolean } | null>, setSiteAlways: (on: boolean, shown: string) => Promise<{ ok: boolean } | null> } }
 
-const SHELL_PAGE_LABEL = 'Tunnels. Sites go through Nym by default'
-const DIRECT_LABEL = 'Tunnels. Sites go direct by default'
+const SHELL_PAGE_LABEL = 'Tunnels. Sites you open in this tab go through Nym'
+const DIRECT_LABEL = 'Tunnels'
 
 let dir: string
 let moduleDir: string
@@ -58,6 +59,8 @@ async function start (settings: Record<string, unknown> = {}): Promise<{ app: El
 
 const findPopup = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().includes('/site-info/') && !w.isClosed())
 const shown = async (chrome: Page, selector: string): Promise<boolean> => await chrome.locator(selector).isVisible()
+const giveChoice = async (app: ElectronApplication, tabId: string, choice: string | null): Promise<boolean> =>
+  await app.evaluate((_electron, [id, value]) => (globalThis as unknown as TabChoiceSeam).__orivonDevTabTunnel?.set(id as string, value as string | null) ?? false, [tabId, choice])
 const checked = async (popup: Page, id: string): Promise<boolean> => (await popup.locator(`#${id}`).getAttribute('aria-checked')) === 'true'
 
 async function openSettings (app: ElectronApplication, chrome: Page): Promise<void> {
@@ -66,7 +69,7 @@ async function openSettings (app: ElectronApplication, chrome: Page): Promise<vo
   expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://settings')))).toBe(true)
 }
 
-it('shows the Web3 / Web2 switch and the tunnel button on orivon://settings, hides the switch beside a website again, and the button says what the browser-wide tunnel does', async () => {
+it('shows the Web3 / Web2 switch and the tunnel button on orivon://settings, hides the switch beside a website again, and the button says where the tab\'s sites go', async () => {
   const { app, chrome } = await start({ 'network.tunnel.everywhere': true })
   try {
     // A website: the switch gives way to the site's own mark, and the button is about the tab.
@@ -134,6 +137,38 @@ it('opens the Browser-wide panel alone from a shell page, sets the whole browser
 
     await chrome.click('#tunnel-btn')
     expect(await waitFor(() => findPopup(app) === undefined), 'pressing the button again closes the popup').toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+  } finally {
+    await closeElectron(app)
+  }
+}, 4 * QA_TEST_TIMEOUT_MS)
+
+it('speaks of the tab\'s own tunnel on a shell page: lit for a tab set to Nym while the browser is direct, plain again for a direct tab while the browser is on Nym, and the popup is still the browser\'s alone', async () => {
+  const { app, chrome } = await start()
+  try {
+    await openSettings(app, chrome)
+    expect(await waitFor(async () => await shown(chrome, '#tunnel-btn'))).toBe(true)
+    expect(await chrome.getAttribute('#tunnel-btn', 'data-tunnel'), 'the browser is direct and the tab has no choice').toBeNull()
+    expect(await chrome.getAttribute('#tunnel-btn', 'aria-label')).toBe(DIRECT_LABEL)
+
+    const tabId = String((await activeTabInfo(chrome) as { activeId?: string }).activeId)
+    expect(await giveChoice(app, tabId, 'nym'), 'the seam found the tab').toBe(true)
+    expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'a tab set to Nym is not read as the direct browser').toBe(true)
+    expect(await chrome.getAttribute('#tunnel-btn', 'aria-label')).toBe(SHELL_PAGE_LABEL)
+
+    await chrome.click('#tunnel-btn')
+    expect(await waitFor(() => findPopup(app) !== undefined), 'the popup opened').toBe(true)
+    const popup = findPopup(app) as Page
+    await popup.waitForSelector('#tunnel-switch-nym')
+    expect(await popup.locator('[role="tab"]').count(), 'only the browser\'s panel, whatever the tab carries').toBe(0)
+    expect(await popup.locator('#tunnel-switch-always').count()).toBe(0)
+    expect(await checked(popup, 'tunnel-switch-nym'), 'its switch is the browser\'s, which is direct').toBe(false)
+    await chrome.click('#tunnel-btn')
+    expect(await waitFor(() => findPopup(app) === undefined), 'pressing the button again closes the popup').toBe(true)
+
+    expect(await giveChoice(app, tabId, 'direct'), 'the seam found the tab').toBe(true)
+    expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'aria-label') === 'Tunnels. Sites you open in this tab go direct')).toBe(true)
+    expect(await chrome.getAttribute('#tunnel-btn', 'data-tunnel')).toBeNull()
     await delay(ABSENCE_SETTLE_MS)
   } finally {
     await closeElectron(app)

@@ -44,12 +44,15 @@ describe('the tunnel part of the chrome state', () => {
     expect(newTabLookOf).toHaveBeenCalledWith(undefined)
   })
 
-  it('is the browser-wide look for a page of the shell, which never goes through a tunnel, whatever the tab carries, and is not about the tab', () => {
+  it('is the look of a new tab for a page of the shell, the tunnel the tab\'s next site will go through, and is not about the tab', () => {
     const lookOf = vi.fn(() => ({ mark: 'on', via: 'nym' }))
-    const newTabLookOf = vi.fn((_choice: string | undefined) => ({ mark: 'on', via: 'socks5' }))
-    const tabs = { tabs: [{ id: 't1', isNewTab: false, isInternal: true, url: 'orivon://settings/', tunnelChoice: 'nym' }], activeTabId: 't1' } as never
-    expect(tunnelStatePart.read(ctx(lookOf, { url: 'orivon://settings/', partition: 'orivon-internal' }, newTabLookOf), tabs)).toEqual({ tunnel: 'on', tunnelVia: 'socks5', tunnelByTab: false })
-    expect(newTabLookOf, 'what a website with no entry and a tab with no choice gets').toHaveBeenCalledWith(undefined)
+    const newTabLookOf = vi.fn((choice: string | undefined) => choice === 'nym' ? { mark: 'on', via: 'nym' } : { mark: null, via: null })
+    const shellTab = (over: Record<string, unknown> = {}) => ({ tabs: [{ id: 't1', isNewTab: false, isInternal: true, url: 'orivon://history/', ...over }], activeTabId: 't1' } as never)
+    const shell = { url: 'orivon://history/', partition: 'orivon-internal' }
+    expect(tunnelStatePart.read(ctx(lookOf, shell, newTabLookOf), shellTab({ tunnelChoice: 'nym' })), 'a tab set to Nym is not read as the direct browser').toEqual({ tunnel: 'on', tunnelVia: 'nym', tunnelByTab: false })
+    expect(newTabLookOf).toHaveBeenLastCalledWith('nym')
+    expect(tunnelStatePart.read(ctx(lookOf, shell, newTabLookOf), shellTab()), 'a tab with no choice follows the browser').toEqual({ tunnel: null, tunnelVia: null, tunnelByTab: false })
+    expect(newTabLookOf).toHaveBeenLastCalledWith(undefined)
     expect(lookOf).not.toHaveBeenCalled()
   })
 

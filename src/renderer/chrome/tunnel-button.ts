@@ -19,7 +19,7 @@ export function tunnelNote (state: 'on' | 'down', via: 'nym' | 'socks5' | null):
   return (via === null ? TUNNEL_NOTES : TUNNEL_NOTES_VIA[via])[state]
 }
 
-/** What the button says on a new tab, which shows no page: the tunnel the sites opened in the tab will go through. Your own tunnel is not named. */
+/** What the button says on a new tab and on a page of the shell, which show no website: the tunnel the sites opened in the tab will go through. Your own tunnel is not named. */
 export const TAB_TUNNEL_NOTES = {
   on: 'Sites you open in this tab go through your tunnel',
   down: 'Your tunnel is not answering, so this tab\'s traffic is stopped',
@@ -30,23 +30,6 @@ const TAB_NOTES_NYM = { on: 'Sites you open in this tab go through Nym', down: '
 
 export function tabTunnelNote (state: 'on' | 'down', via: 'nym' | 'socks5' | null): string {
   return via === 'nym' ? TAB_NOTES_NYM[state] : TAB_TUNNEL_NOTES[state]
-}
-
-/**
- * What the button says on a page of the shell, which never goes through a tunnel: the browser-wide setting, which is what the button
- * opens there. The tunnel a website with no entry of its own and a tab with no choice goes through. Your own tunnel is not named.
- */
-export const BROWSER_TUNNEL_NOTES = {
-  on: 'Sites go through your tunnel by default',
-  down: 'Your tunnel is not answering, so the browser\'s traffic is stopped',
-  direct: 'Sites go direct by default'
-} as const
-
-const BROWSER_NOTES_NYM = { on: 'Sites go through Nym by default', down: 'Nym is not answering, so the browser\'s traffic is stopped' } as const
-
-export function browserTunnelNote (state: 'on' | 'down' | null, via: 'nym' | 'socks5' | null): string {
-  if (state === null) return BROWSER_TUNNEL_NOTES.direct
-  return via === 'nym' ? BROWSER_NOTES_NYM[state] : BROWSER_TUNNEL_NOTES[state]
 }
 
 /** Said after the page's own words when its tab carries the choice, so the person knows the button sets more than this page. */
@@ -75,16 +58,16 @@ function choiceSuffix (tab: TabState, via: ShellState['tunnelVia'], byTab: boole
 }
 
 /**
- * The button for the tab in front: grey on a direct page, purple on a tunnelled one. On a new tab it is about the tab, whose sites go
- * where the tab's choice (else the browser's) sends them; on a website in a tab with a choice it still colours the page, and speaks of
- * the tab only when the button is about the tab (`byTab`): that a direct choice sends its sites direct, and that the tunnel the page is
- * on is the one the choice named. On a page of the shell it is about the whole browser, whatever the tab carries.
+ * The button for the tab in front: grey on a direct page, purple on a tunnelled one. On a new tab and on a page of the shell it is
+ * about the tab, whose sites go where the tab's choice (else the browser's) sends them: a shell page shows no website of its own,
+ * and the next one opened from it leaves by the tab's tunnel. On a website in a tab with a choice it still colours the page, and speaks
+ * of the tab only when the button is about the tab (`byTab`): that a direct choice sends its sites direct, and that the tunnel the
+ * page is on is the one the choice named.
  */
 export function tunnelButtonLook (active: TabState | undefined, tunnel: ShellState['tunnel'], via: ShellState['tunnelVia'] = null, byTab = false): TunnelButtonLook {
   if (!hasButton(active)) return { hidden: true, state: null, label: TUNNEL_BUTTON_LABEL }
   const state = tunnel ?? null
-  if (active.isInternal) return { hidden: false, state, label: `${TUNNEL_BUTTON_LABEL}. ${browserTunnelNote(state, via)}` }
-  if (active.isNewTab) {
+  if (active.isNewTab || active.isInternal) {
     const note = state === null ? active.tunnelChoice === 'direct' ? TAB_TUNNEL_NOTES.direct : undefined : tabTunnelNote(state, via)
     return { hidden: false, state, label: note === undefined ? TUNNEL_BUTTON_LABEL : `${TUNNEL_BUTTON_LABEL}. ${note}` }
   }
@@ -93,7 +76,7 @@ export function tunnelButtonLook (active: TabState | undefined, tunnel: ShellSta
 }
 
 /** The tunnel button in the address pill: it opens the tunnels page of the site-info popup, anchored to itself. Its colour is the page's
- * tunnel state (a new tab's, the tunnel its first address will leave by; a shell page's, the browser's). On a new tab and on a shell page it
+ * tunnel state (on a new tab and on a shell page, the tunnel the tab's next address will leave by). On a new tab and on a shell page it
  * sends no address: main reads the tab and opens the popup for it, for the browser alone on a shell page; a tab whose first page has not committed sends its empty address, and main reads the one it is opening.
  * Press-then-click is handled as the shield's is (`site-badges.ts`). */
 export function createTunnelButton (): ChromeModule {

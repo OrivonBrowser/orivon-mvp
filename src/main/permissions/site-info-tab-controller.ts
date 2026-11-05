@@ -13,13 +13,10 @@ import { tunnelOfPage } from '../route/tab-tunnel.js'
 import type { SubsystemContext } from '../registry.js'
 import { emptySiteInfo } from './site-info.js'
 import type { SiteInfo, SiteTunnel, SiteTunnelKind } from './site-info.js'
-import { tabSiteTunnel, tabTunnel, tabVia, THIS_TAB } from './site-info-tab.js'
+import { BROWSER_WIDE, tabSiteTunnel, tabTunnel, tabVia, THIS_TAB } from './site-info-tab.js'
 import type { TabTunnels } from './site-info-tab.js'
 
 type Routes = NonNullable<SubsystemContext['routes']>
-
-/** What the popup of a page of the shell is called, where a tab is called "This tab": it is the whole browser's alone. */
-const BROWSER_WIDE = 'Browser-wide'
 
 /** The person switched Nym off in Settings, so nothing can be sent through it until it is switched on again. */
 export function nymSwitchedOff (routes: Routes): boolean {

@@ -46,7 +46,8 @@ export function addressOfFrontTab (state: TabsSnapshot, opening: OpeningAddress)
  * so the popover is what it will be once the page has come. Not an installed app, nor a page in a session an app or a temporary route
  * made for it (a popup an app opened, a website opened through an app's tunnel): those keep the tunnel of that session whatever the
  * tab carries, so the popover is about the page. Not a page that cannot go through a tunnel (this computer, a file), nor a blank page
- * that is no new tab, nor a page of the shell's own, which has no button. A tab with a choice and no address yet is still the tab's.
+ * that is no new tab, nor a page of the shell's own, whose popover is the browser's alone (`shellPageTabForTunnelPopover`). A tab with
+ * a choice and no address yet is still the tab's.
  * Everything is read from the tab's record (`state`, `partitionOf`, `opening`), never from what the chrome says it shows.
  */
 export function tabForTunnelPopover (state: TabsSnapshot, partitionOf: (id: string) => string | undefined, isApp: (origin: string) => boolean, opening: OpeningAddress): string | undefined {

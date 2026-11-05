@@ -264,6 +264,18 @@ describe('the popup of a page of the shell, which has only the Browser-wide pane
     }
   })
 
+  it('picks its panel again when its tab has gone on to a website: the popup stays open, and the next answer from main is the website\'s', async () => {
+    const { flush } = setup(shellPage({ via: 'nym' }, { everywhere: true }))
+    expect(shownView.panel).toBe('browser')
+    // The answer to this switch is about the tab as it is now: a website, with the browser on no tunnel after it.
+    callbacks.onToggle('nym', false)
+    await flush()
+    expect(shownView.panels, 'the website has a panel of its own to choose').not.toBeNull()
+    expect(shownView.panel, 'and the first one is the one a website\'s popup opens on while the browser is on no tunnel').toBe('first')
+    callbacks.onPanel('browser')
+    expect(shownView.panel, 'a click after that holds').toBe('browser')
+  })
+
   it('sets the whole browser from its switches, and never asks main for a tab\'s tunnel or a website\'s', async () => {
     const { bridge, flush } = setup(shellPage())
     callbacks.onToggle('nym', true)

@@ -26,7 +26,8 @@ export function firstPanelLabel (info: SiteInfo): string {
 /**
  * The panel the popup opens on: Browser-wide when the whole browser is on a tunnel and the page has no choice of its own to show
  * instead (it follows the browser), else the first. A window held to a tunnel shows its rows fixed on the first panel. Decided once
- * per open: the person's own click on a panel holds until the popup closes. The popup of a page of the shell has no first panel.
+ * per open: the person's own click on a panel holds until the popup closes. The popup of a page of the shell has no first panel, and is
+ * decided again when its tab goes on to a website (`tunnels-page.ts`).
  */
 export function initialPanel (info: SiteInfo): Panel {
   if (info.browserOnly === true) return 'browser'

@@ -42,8 +42,10 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
   let notice: { readonly profile: SiteTunnelProfile, readonly choice: SiteTunnelKind | null } | null = null
   /** The tunnel a Browser-wide switch was moved to while the question about the tabs that keep their own is open. */
   let asking: SiteTunnelKind | null = null
-  /** The panel shown: decided on the first drawing, and after that only by the person's own click. */
+  /** The panel shown: decided on the first drawing, again when the page the popup is about stops being a page of the shell (or becomes one), and otherwise only by the person's own click. */
   let panel: Panel | null = null
+  /** Whether the last drawing was the popup of a page of the shell. The popup stays open when its tab goes on to a website, and the next answer from main is that website's. */
+  let onShellPage: boolean | null = null
   let failed = false
   let alwaysFailed = false
   let editor: Editor | null = null
@@ -177,9 +179,10 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
 
   return {
     render: (container, info) => {
-      if (panel === null) panel = initialPanel(info)
       // A page of the shell has only the browser's panel, so there is nothing to choose between.
       const browserOnly = info.browserOnly === true && info.browserTunnel !== undefined
+      if (panel === null || onShellPage !== browserOnly) panel = initialPanel(info)
+      onShellPage = browserOnly
       const names = info.browserTunnel === undefined || browserOnly ? null : { first: firstPanelLabel(info), browser: BROWSER_LABEL }
       const shown: Panel = browserOnly ? 'browser' : names === null ? 'first' : panel
       const browser = shown === 'browser'
