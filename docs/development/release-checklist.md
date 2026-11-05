@@ -227,6 +227,8 @@ forgotten.
 ## Before tagging a release
 
 - [ ] Every item above passes.
+- [ ] **`node scripts/release-preflight.mjs --tag v<x.y.z>` on `main` prints no error.** It checks the next two
+      items the way the Release workflow will, which refuses the release otherwise.
 - [ ] **The `.eth` light client's checkpoint is under 7 days old.** The scheduled workflow
       `refresh-eth-checkpoint.yml` opens a pull request with a fresh one every Monday and Thursday;
       merge it, or run `node scripts/refresh-eth-checkpoint.mjs --write` and commit the result. The
