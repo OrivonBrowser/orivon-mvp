@@ -1,6 +1,6 @@
 # ADR-0105: WebGPU on an X11 session is an opt-in setting that composites through Vulkan and turns itself off after a bad run
 
-- **Status:** accepted. Carries out `d-0758`.
+- **Status:** accepted. Carries out `d-0758`. Amended by [`ADR-0106`](ADR-0106-a-website-asks-before-it-gets-webgpu-and-on-x11-granting-it-turns-the-graphics-mode-on.md): granting WebGPU to a site turns the setting on as well.
 - **Date:** 2026-11-04
 - **Type:** product / architecture
 - **Decided by:** owner (an opt-in setting for X11, off by default, and its wording); AI recommendation accepted by default for the guard and the switches, marked *provisional* below where it is not measured
