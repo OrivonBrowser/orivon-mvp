@@ -54,37 +54,71 @@ export interface AskSiteDeps {
   windows: Pick<WindowRegistry, 'findTab'>
 }
 
+/** A prompt shown under the address bar of one tab, held in main under a random id until it ends. */
+interface Hold {
+  readonly id: string
+  /** Ends the prompt: closes its surface when it is up, and runs `release` once. */
+  readonly end: () => void
+}
+
+interface HoldOptions {
+  /** Records the prompt under `id`, before it is shown: the overlay asks for it by that id the moment it appears. */
+  readonly keep: (id: string) => void
+  /** The tab loaded a new page: whether that ends the prompt. */
+  readonly endsOnNavigate: () => boolean
+  /** Forgets the prompt, once, however it ended: an answer, the surface closing, the tab leaving or closing. */
+  readonly release: (id: string) => void
+}
+
+/** The part a question and a restart offer share: the id, the slot under the address bar and the page-change watch. */
+function holdPrompt (tab: WebContents, found: { readonly window: ShellWindow, readonly tabId: string }, mode: 'ask' | 'restart', options: HoldOptions): Hold {
+  const id = randomBytes(12).toString('hex')
+  let ended = false
+  let handle: { cancel: () => void } | undefined
+  function end (): void {
+    if (ended) return
+    ended = true
+    tab.removeListener('did-navigate', onNavigate)
+    options.release(id)
+  }
+  function onNavigate (): void {
+    if (!options.endsOnNavigate()) return
+    handle?.cancel()
+    end()
+  }
+  tab.on('did-navigate', onNavigate)
+  options.keep(id)
+  handle = requestSlot({
+    window: found.window,
+    tabId: found.tabId,
+    slot: 'address',
+    overlay: SITE_PROMPT_OVERLAY,
+    payload: { mode, id },
+    anchor: () => crossingAnchor(found.window),
+    closed: end
+  })
+  return { id, end }
+}
+
 export function createAskSite (deps: AskSiteDeps): AskSite {
   return (kinds, tab, options) => {
     const found = deps.windows.findTab(tab)
     const origin = originFromUrl(tab.getURL())
     if (found === null || origin === null) return Promise.resolve('dismiss')
     return new Promise<SiteAnswer>((resolve) => {
-      const id = randomBytes(12).toString('hex')
-      let settled = false
-      let handle: { cancel: () => void } | undefined
-      function settle (answer: SiteAnswer): void {
-        if (settled) return
-        settled = true
-        pending.delete(id)
-        tab.removeListener('did-navigate', onNavigate)
-        resolve(answer)
-      }
-      // The question is about the page that asked: a new page in the tab ends it, shown or not.
-      function onNavigate (): void {
-        handle?.cancel()
-        settle('dismiss')
-      }
-      tab.once('did-navigate', onNavigate)
-      pending.set(id, { id, window: found.window, origin, kinds, sysex: options?.sysex === true, restart: options?.restart === true, settle })
-      handle = requestSlot({
-        window: found.window,
-        tabId: found.tabId,
-        slot: 'address',
-        overlay: SITE_PROMPT_OVERLAY,
-        payload: { mode: 'ask', id },
-        anchor: () => crossingAnchor(found.window),
-        closed: () => { settle('dismiss') }
+      let answer: SiteAnswer = 'dismiss'
+      const hold = holdPrompt(tab, found, 'ask', {
+        keep: (id) => {
+          // The answer first, then the end: the end alone settles the ask as "not now".
+          const settle = (given: SiteAnswer): void => { answer = given; hold.end() }
+          pending.set(id, { id, window: found.window, origin, kinds, sysex: options?.sysex === true, restart: options?.restart === true, settle })
+        },
+        // The question is about the page that asked: a new page in the tab ends it, shown or not.
+        endsOnNavigate: () => true,
+        release: (id) => {
+          pending.delete(id)
+          resolve(answer)
+        }
       })
     })
   }
@@ -97,26 +131,10 @@ export function createOfferRestart (deps: AskSiteDeps): OfferRestart {
   return (tab, { reopens, run }) => {
     const found = deps.windows.findTab(tab)
     if (found === null) return
-    const id = randomBytes(12).toString('hex')
-    let handle: { cancel: () => void } | undefined
-    function forget (): void {
-      restarts.delete(id)
-      tab.removeListener('did-navigate', onNavigate)
-    }
-    function onNavigate (): void {
-      handle?.cancel()
-      forget()
-    }
-    tab.once('did-navigate', onNavigate)
-    restarts.set(id, { id, window: found.window, reopens, run })
-    handle = requestSlot({
-      window: found.window,
-      tabId: found.tabId,
-      slot: 'address',
-      overlay: SITE_PROMPT_OVERLAY,
-      payload: { mode: 'restart', id },
-      anchor: () => crossingAnchor(found.window),
-      closed: forget
+    holdPrompt(tab, found, 'restart', {
+      keep: (id) => { restarts.set(id, { id, window: found.window, reopens, run }) },
+      endsOnNavigate: () => true,
+      release: (id) => { restarts.delete(id) }
     })
   }
 }
