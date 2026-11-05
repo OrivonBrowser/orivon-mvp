@@ -201,10 +201,12 @@ records the decision.
 - **Where it is asked:** only where the answer changes what the page gets. Orivon makes the page's call first; with an
   adapter the question decides; with none nobody is asked, except on an X11 session whose run did not start in the
   graphics mode of step 3, which the guard has not turned off, outside a private window. There Grant WebGPU keeps the
-  allow, turns `graphics.webgpuOnX11` on and offers **Restart Orivon**, which opens the page that asked again.
+  allow, turns `graphics.webgpuOnX11` on and offers **Restart Orivon**, which opens the page that asked again (origin and
+  path), unless Orivon continues where it left off or the tab has a tunnel of its own.
 - **What enforces it:** a wrapper of `GPU.prototype.requestAdapter` in the main world of a website tab's top frame.
-  Electron 44 tells the browser process nothing of a WebGPU request, so a page's frames and workers are not asked
-  (*provisional*, see the ADR). An origin that holds grants is not asked.
+  Electron 44 tells the browser process nothing of a WebGPU request, so a page's frames and workers, a page that
+  tampers with its own globals, a `<webview>` guest and an extension's page are not asked (*provisional*, see the ADR).
+  An origin that holds grants is not asked; a WebGPU default of Block refuses it.
 - **In CI:** the Linux runners give no adapter, so the end-to-end spec proves the X11 path (question, grant, the
   setting turned on, the restart offer) and the block; the path with an adapter is run on this machine with the mode on.
 
