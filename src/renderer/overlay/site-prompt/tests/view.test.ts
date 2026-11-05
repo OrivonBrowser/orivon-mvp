@@ -22,7 +22,7 @@ describe('isAskView', () => {
   })
 })
 
-const restart = { mode: 'restart', id: 'abc', line: 'WebGPU starts after Orivon restarts.', note: 'Orivon opens this page again.', guardMs: 500 }
+const restart = { mode: 'restart', id: 'abc', line: 'WebGPU starts after Orivon restarts.', note: 'Orivon opens this site again.', guardMs: 500 }
 
 describe('isRestartView', () => {
   it('accepts what main sends', () => {

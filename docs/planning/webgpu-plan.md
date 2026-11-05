@@ -201,8 +201,8 @@ records the decision.
 - **Where it is asked:** only where the answer changes what the page gets. Orivon makes the page's call first; with an
   adapter the question decides; with none nobody is asked, except on an X11 session whose run did not start in the
   graphics mode of step 3, which the guard has not turned off, outside a private window. There Grant WebGPU keeps the
-  allow, turns `graphics.webgpuOnX11` on and offers **Restart Orivon**, which opens the page that asked again (origin and
-  path), unless Orivon continues where it left off or the tab has a tunnel of its own.
+  allow, turns `graphics.webgpuOnX11` on and offers **Restart Orivon**, which opens the site that asked again (its origin
+  alone), unless Orivon continues where it left off or the tab has a tunnel of its own.
 - **What enforces it:** a wrapper of `GPU.prototype.requestAdapter` in the main world of a website tab's top frame.
   Electron 44 tells the browser process nothing of a WebGPU request, so a page's frames and workers, a page that
   tampers with its own globals, a `<webview>` guest and an extension's page are not asked (*provisional*, see the ADR).

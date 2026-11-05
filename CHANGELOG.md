@@ -21,7 +21,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Added
 
-- **A website asks before it gets WebGPU**: "wants to use your graphics card for WebGPU", with Block and Grant WebGPU, kept per site in Settings, Sites. On an X11 session, granting also turns on "Use the graphics card for WebGPU on X11" and offers Restart Orivon, which reopens the page by its origin and path (your tabs and windows too when Orivon continues where it left off, and no page for a tab with a tunnel of its own). The bug report counts the sites allowed and blocked, never which.
+- **A website asks before it gets WebGPU**: "wants to use your graphics card for WebGPU", with Block and Grant WebGPU, kept per site in Settings, Sites. On an X11 session, granting also turns on "Use the graphics card for WebGPU on X11" and offers Restart Orivon, which reopens the site by its origin (your tabs and windows too when Orivon continues where it left off, and no site for a tab with a tunnel of its own). The bug report counts the sites allowed and blocked, never which.
 
 ## [0.1.0] - 2026-11-05
 

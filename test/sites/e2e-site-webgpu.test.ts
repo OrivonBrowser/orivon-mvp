@@ -155,7 +155,7 @@ it('[app:webgpu-asked-per-site] asks a website that wants WebGPU, turns the grap
 
     const offer = await waitRestartOffer(app)
     expect(await textOf(offer, '.sp-restart')).toEqual(['WebGPU starts after Orivon restarts.'])
-    expect(await textOf(offer, '.sp-restart-note')).toEqual(['Orivon opens this page again. Your other tabs and windows are not restored.'])
+    expect(await textOf(offer, '.sp-restart-note')).toEqual(['Orivon opens this site again. Your other tabs and windows are not restored.'])
     expect(await textOf(offer, '.btn-row .btn')).toEqual(['Later', 'Restart Orivon'])
     await shoot(app, chrome, 'restart-offer', offer)
     expect(await result(view)).toBe('null')

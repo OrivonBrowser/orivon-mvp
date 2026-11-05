@@ -60,11 +60,11 @@ export const LOCATION_NOTE = 'Orivon has no location service yet. If you allow t
 export const PRIVATE_NOTE = 'Forgotten when this private window closes.'
 export const RESTART_NOTE = 'Orivon restarts to turn WebGPU on. It may use more battery, and on some laptops videos can go blank.'
 export const RESTART_LINE = 'WebGPU starts after Orivon restarts.'
-export const RESTART_OFFER_NOTE = 'Orivon opens this page again. Your other tabs and windows are not restored.'
+export const RESTART_OFFER_NOTE = 'Orivon opens this site again. Your other tabs and windows are not restored.'
 export const RESTART_RESTORED_NOTE = 'Your tabs and windows open again.'
 export const RESTART_BLANK_NOTE = 'Your tabs and windows are not restored.'
 
-/** What the start that follows a restart offer brings back: the saved tabs and windows, this page alone, or none of them. */
+/** What the start that follows a restart offer brings back: the saved tabs and windows, the site of this page alone, or none of them. */
 export type RestartReopens = 'session' | 'page' | 'none'
 
 const RESTART_NOTES: Readonly<Record<RestartReopens, string>> = { session: RESTART_RESTORED_NOTE, page: RESTART_OFFER_NOTE, none: RESTART_BLANK_NOTE }

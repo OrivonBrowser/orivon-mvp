@@ -11,8 +11,8 @@ describe('relaunchArgs', () => {
     expect(relaunchArgs(['electron', '--no-sandbox', 'out/main/index.js', 'https://x.example/'], false)).toEqual(['--no-sandbox', 'out/main/index.js'])
   })
 
-  it('adds the page to open, last, after the app path of a run from source', () => {
-    expect(relaunchArgs(['orivon', '--orivon-profile=a1b2c3d4e5f6', 'https://old.example/'], true, 'https://game.example/play')).toEqual(['--orivon-profile=a1b2c3d4e5f6', 'https://game.example/play'])
+  it('adds the site to open, last, after the app path of a run from source', () => {
+    expect(relaunchArgs(['orivon', '--orivon-profile=a1b2c3d4e5f6', 'https://old.example/'], true, 'https://game.example/play')).toEqual(['--orivon-profile=a1b2c3d4e5f6', 'https://game.example/'])
     expect(relaunchArgs(['electron', '--no-sandbox', 'out/main/index.js'], false, 'https://game.example/')).toEqual(['--no-sandbox', 'out/main/index.js', 'https://game.example/'])
   })
 
@@ -20,15 +20,16 @@ describe('relaunchArgs', () => {
     expect(relaunchArgs(['orivon', '--no-sandbox'], true, address)).toEqual(['--no-sandbox'])
   })
 
-  it('names the page by its origin and path alone, so no query, fragment or sign-in reaches a command line other users can read', () => {
-    expect(relaunchArgs(['orivon'], true, 'https://game.example/play/level?token=abc123&room=7#session=xyz')).toEqual(['https://game.example/play/level'])
-    expect(relaunchArgs(['orivon'], true, 'https://user:secret@game.example:8443/play?x=1')).toEqual(['https://game.example:8443/play'])
-    expect(relaunchArgs(['orivon'], true, 'https://game.example/?#')).toEqual(['https://game.example/'])
+  it('names the site by its origin alone, so no path, query, fragment or sign-in reaches a command line other users can read', () => {
+    expect(relaunchArgs(['orivon'], true, 'https://game.example/invite/9f8e7d6c5b4a?token=abc123&room=7#session=xyz')).toEqual(['https://game.example/'])
+    expect(relaunchArgs(['orivon'], true, 'https://game.example/magic-link/abc123')).toEqual(['https://game.example/'])
+    expect(relaunchArgs(['orivon'], true, 'https://user:secret@game.example:8443/play?x=1')).toEqual(['https://game.example:8443/'])
+    expect(relaunchArgs(['orivon'], true, 'http://game.example/?#')).toEqual(['http://game.example/'])
   })
 
-  it('writes the page as an address the launch reads back, one operand and never a switch', () => {
-    const [page] = relaunchArgs(['orivon'], true, 'https://game.example/a b')
-    expect(page).toBe('https://game.example/a%20b')
+  it('writes the site as an address the launch reads back, one operand and never a switch', () => {
+    const [page] = relaunchArgs(['orivon'], true, 'https://b\u00fccher.example/a b')
+    expect(page).toBe('https://xn--bcher-kva.example/')
   })
 })
 

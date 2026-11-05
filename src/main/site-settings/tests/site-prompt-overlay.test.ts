@@ -240,7 +240,7 @@ describe('the site-prompt overlay', () => {
       const r = rig()
       r.offer(r.contents, { reopens: 'page', run: () => {} })
       expect(r.handler.show?.(r.shows[0]?.payload)).toMatchObject({
-        mode: 'restart', line: 'WebGPU starts after Orivon restarts.', note: 'Orivon opens this page again. Your other tabs and windows are not restored.', guardMs: ANSWER_GUARD_MS
+        mode: 'restart', line: 'WebGPU starts after Orivon restarts.', note: 'Orivon opens this site again. Your other tabs and windows are not restored.', guardMs: ANSWER_GUARD_MS
       })
     })
 
@@ -250,7 +250,7 @@ describe('the site-prompt overlay', () => {
       expect(r.handler.show?.(r.shows[0]?.payload)).toMatchObject({ mode: 'restart', note: 'Your tabs and windows open again.' })
     })
 
-    it('says nothing of this page opening again when the offer was made for a tab that carries a tunnel of its own', () => {
+    it('says nothing of this site opening again when the offer was made for a tab that carries a tunnel of its own', () => {
       const r = rig()
       r.offer(r.contents, { reopens: 'none', run: () => {} })
       expect(r.handler.show?.(r.shows[0]?.payload)).toMatchObject({ mode: 'restart', note: 'Your tabs and windows are not restored.' })
