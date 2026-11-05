@@ -97,7 +97,7 @@ const clear = async (view: Page): Promise<void> => { await view.evaluate(() => {
 
 const chipHidden = async (chrome: Page): Promise<boolean> => await chrome.evaluate(() => {
   const chip = document.querySelector<HTMLButtonElement>('#site-access-chip')
-  return chip === null || chip.hidden
+  return chip === null || chip.hidden === true
 })
 
 const userDataOf = async (app: App): Promise<string> => await app.evaluate(({ app: electron }) => electron.getPath('userData'))
