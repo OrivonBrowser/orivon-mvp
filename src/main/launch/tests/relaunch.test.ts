@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { relaunchArgs, restartOrivon } from '../relaunch.js'
+import { relaunchArgs, restartOnPage, restartOrivon } from '../relaunch.js'
 
 describe('relaunchArgs', () => {
   it('keeps the switches and drops every address and file the process started with', () => {
@@ -38,5 +38,23 @@ describe('restartOrivon', () => {
     const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: true }
     restartOrivon(app, ['orivon', 'https://old.example/'])
     expect(app.relaunch).toHaveBeenCalledWith({ args: [] })
+  })
+})
+
+describe('restartOnPage', () => {
+  const started = ['orivon', '--no-sandbox', 'https://old.example/']
+
+  it('names the page on the command line when the start does not bring the session back', () => {
+    const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: true }
+    restartOnPage(app, started, 'https://game.example/', false)
+    expect(app.relaunch).toHaveBeenCalledWith({ args: ['--no-sandbox', 'https://game.example/'] })
+    expect(app.quit).toHaveBeenCalledTimes(1)
+  })
+
+  it('names no page when the start brings the session back, which holds the page already', () => {
+    const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: true }
+    restartOnPage(app, started, 'https://game.example/', true)
+    expect(app.relaunch).toHaveBeenCalledWith({ args: ['--no-sandbox'] })
+    expect(app.quit).toHaveBeenCalledTimes(1)
   })
 })

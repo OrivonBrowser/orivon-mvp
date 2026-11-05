@@ -7,13 +7,14 @@
 // comes from the page's own preload.
 import { ipcMain, type WebContents } from 'electron'
 import { X11_SETTING, x11VulkanOffer, x11VulkanReading } from '../graphics/x11-vulkan-runner.js'
-import { restartOrivon } from '../launch/relaunch.js'
+import { restartOnPage } from '../launch/relaunch.js'
 import { configureSiteNotifications, setNotificationsBlockedCheck } from '../sessions/permission-gate.js'
 import { registerPermissionQueryIpc } from '../sessions/permission-query-ipc.js'
 import { siteAsks } from '../sessions/site-asks.js'
 import { createWakeLockAsker } from '../sessions/wake-lock-asker.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { windowShowing } from '../shell/showing-window.js'
+import { startupRestoresSession } from '../startup/startup-plan.js'
 import { isAppOrigin } from './app-origin.js'
 import { bindAskSite, createAskSite, createOfferRestart } from './ask-site.js'
 import { siteKindById, type SiteKind } from './kinds.js'
@@ -68,7 +69,10 @@ export const installSitePermissions: ShellInstaller = {
           return { offered, onAtStart: x11VulkanReading().onAtStart, reverted: revert !== null }
         },
         turnOnX11: () => services.settings.set(X11_SETTING, true).ok,
-        offerRestart: (tab) => { offerRestart(tab, () => { restartOrivon(app, process.argv, pageOf(tab)) }) }
+        offerRestart: (tab) => {
+          const restoresSession = startupRestoresSession(services.settings.get('startup.mode'), services.isPrivate)
+          offerRestart(tab, { restoresSession, run: () => { restartOnPage(app, process.argv, pageOf(tab), restoresSession) } })
+        }
       })
     })
     siteAsks.add(createWakeLockAsker({ isTab: (contents) => services.windows.findTab(contents) !== null }))

@@ -12,7 +12,7 @@ right place and steps aside if that profile is already open; `profile-store.ts` 
 the OS has since reused its pid for;
 `private-picture.ts` gives a new private session the new tab's picture of the profile that opened it, copied asynchronously because it can be 20 MB;
 `public-seed.ts` is the one list of what a new profile or a private session is given from the default profile;
-`peer-spawn.ts` starts another Orivon process; `relaunch.ts` is the one command line a restart starts with (the switches of this start, and the one page a caller wants back); `profiles-service.ts` is what the rest of the shell asks:
+`peer-spawn.ts` starts another Orivon process; `relaunch.ts` is the one command line a restart starts with (the switches of this start, and the one page a caller wants back; `restartOnPage` names it only when the start does not bring the saved session back); `profiles-service.ts` is what the rest of the shell asks:
 this process's own profile, the list, changes to it, and "open"; `profiles-domain.ts` is what the Profiles,
 Private and Settings pages may ask of it.
 

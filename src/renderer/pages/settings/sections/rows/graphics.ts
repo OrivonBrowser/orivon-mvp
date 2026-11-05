@@ -1,5 +1,6 @@
 import type { Row } from '../../model.js'
 import type { GraphicsPart } from '../../graphics-part.js'
+import { RESTART_HELP, restartHelp } from '../../restart-help.js'
 import type { SettingsState } from '../../state.js'
 
 const GROUP = 'Graphics'
@@ -27,7 +28,8 @@ export const graphicsRows: readonly Row[] = [
     id: 'webgpu-on-x11-restart',
     group: GROUP,
     label: 'Start again to apply',
-    help: 'The choice above is read when Orivon starts. Your tabs and windows are not restored.',
+    help: RESTART_HELP,
+    helpFor: restartHelp,
     keywords: ['restart', 'relaunch', 'apply', 'webgpu', 'graphics'],
     control: {
       type: 'action',

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { askLines, askView, LOCATION_NOTE, PRIVATE_NOTE, RESTART_NOTE, restartView, reviewView } from '../site-prompt-text.js'
+import { askLines, askView, LOCATION_NOTE, PRIVATE_NOTE, RESTART_NOTE, RESTART_RESTORED_NOTE, restartView, reviewView } from '../site-prompt-text.js'
 
 describe('askLines', () => {
   it.each([
@@ -66,9 +66,16 @@ describe('the WebGPU question', () => {
 
 describe('restartView', () => {
   it('says when WebGPU starts and what the restart does to the page and the other tabs', () => {
-    expect(restartView('abc', 500)).toEqual({
+    expect(restartView('abc', false, 500)).toEqual({
       mode: 'restart', id: 'abc', line: 'WebGPU starts after Orivon restarts.', note: 'Orivon opens this page again. Your other tabs and windows are not restored.', guardMs: 500
     })
+  })
+
+  it('says the tabs and windows open again when the start-up choice brings them back', () => {
+    expect(restartView('abc', true, 500)).toEqual({
+      mode: 'restart', id: 'abc', line: 'WebGPU starts after Orivon restarts.', note: 'Your tabs and windows open again.', guardMs: 500
+    })
+    expect(restartView('abc', true, 500).note).toBe(RESTART_RESTORED_NOTE)
   })
 })
 

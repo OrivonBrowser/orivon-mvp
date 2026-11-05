@@ -17,3 +17,8 @@ export function restartOrivon (app: Pick<App, 'relaunch' | 'quit' | 'isPackaged'
   app.relaunch({ args: relaunchArgs(argv, app.isPackaged, address) })
   app.quit()
 }
+
+/** Starts again so that `page` is in front afterwards. A start that brings the saved session back has the page in it already (the quit saves it), and an address on the command line would open it a second time. */
+export function restartOnPage (app: Pick<App, 'relaunch' | 'quit' | 'isPackaged'>, argv: readonly string[], page: string | undefined, restoresSession: boolean): void {
+  restartOrivon(app, argv, restoresSession ? undefined : page)
+}

@@ -112,7 +112,7 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
         const offer = pendingRestart(shown.id)
         if (offer === undefined || offer.window !== window) return undefined
         current = { mode: 'restart', id: offer.id }
-        return restartView(offer.id, ANSWER_GUARD_MS)
+        return restartView(offer.id, offer.restoresSession, ANSWER_GUARD_MS)
       }
       if (shown?.mode === 'review') {
         const tabId = window.tabs.getState().activeTabId

@@ -6,6 +6,7 @@
 // private window, which are never asked. Restart Orivon is never pressed. The path with an adapter to give is run by
 // test/page/e2e-webgpu-x11.test.ts on a computer that has a card. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
 import { mkdirSync, readFileSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
@@ -213,6 +214,32 @@ it('[app:webgpu-asked-per-site] asks nothing in a private window, which cannot s
     expect(await result(view)).toBe('null')
     await expectNoPrompt(app)
     expect(settingOf(await userDataOf(app))).not.toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it('[app:webgpu-asked-per-site] says the tabs and windows open again when Orivon continues where it left off, and still never presses Restart Orivon', async () => {
+  const continuing = async (dir: string): Promise<void> => {
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'startup.mode': 'continue' } }))
+  }
+  const { app, chrome } = await launchShell({ seedProfile: continuing })
+  try {
+    const dir = await userDataOf(app)
+    const view = await visit(app, chrome, `${origins.a}/`)
+    await view.click('#gpu')
+    const prompt = await waitAsk(app)
+    await press(prompt, 'Grant WebGPU')
+    const offer = await waitRestartOffer(app)
+    expect(await textOf(offer, '.sp-restart')).toEqual(['WebGPU starts after Orivon restarts.'])
+    expect(await textOf(offer, '.sp-restart-note')).toEqual(['Your tabs and windows open again.'])
+    expect(await textOf(offer, '.btn-row .btn')).toEqual(['Later', 'Restart Orivon'])
+    expect(await waitFor(() => settingOf(dir) === true)).toBe(true)
+    await offer.waitForSelector('.site-prompt:not(.arming)')
+    await offer.click('.btn-row .btn:text-is("Later")')
+    expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
+    expect(await app.evaluate(({ app: electron }) => electron.isReady())).toBe(true)
   } finally {
     await closeElectron(app)
   }

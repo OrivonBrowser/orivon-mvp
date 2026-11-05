@@ -61,6 +61,7 @@ export const PRIVATE_NOTE = 'Forgotten when this private window closes.'
 export const RESTART_NOTE = 'Orivon restarts to turn WebGPU on. It may use more battery, and on some laptops videos can go blank.'
 export const RESTART_LINE = 'WebGPU starts after Orivon restarts.'
 export const RESTART_OFFER_NOTE = 'Orivon opens this page again. Your other tabs and windows are not restored.'
+export const RESTART_RESTORED_NOTE = 'Your tabs and windows open again.'
 
 const WANTS: Readonly<Partial<Record<SiteKind, string>>> = {
   camera: 'wants to use your camera',
@@ -105,8 +106,9 @@ export function askView (id: string, origin: string, kinds: readonly SiteKind[],
   }
 }
 
-export function restartView (id: string, guardMs: number): RestartView {
-  return { mode: 'restart', id, line: RESTART_LINE, note: RESTART_OFFER_NOTE, guardMs }
+/** `restoresSession`: the start-up choice brings the tabs and windows back, so the page needs no opening of its own. */
+export function restartView (id: string, restoresSession: boolean, guardMs: number): RestartView {
+  return { mode: 'restart', id, line: RESTART_LINE, note: restoresSession ? RESTART_RESTORED_NOTE : RESTART_OFFER_NOTE, guardMs }
 }
 
 export function reviewView (origin: string, rows: readonly ReviewRow[], settingsLink: boolean): ReviewView {
