@@ -24,10 +24,10 @@ export interface ThemeColorPair {
 export const APP_DARK_WASH = '#0d0e14'
 
 /** What the new-tab dashboard shows before its page has painted, and what the
- * page itself starts on (newtab/style.css). Dark is the app's dark base, the
- * colour under the picture. Light is the mean of the Orivon picture, so a new
- * tab beside a light window does not open on a near-black frame. */
-export const DASHBOARD_BACKGROUND: ThemeColorPair = { light: '#768a86', dark: APP_DARK_WASH }
+ * page itself starts on (newtab/style.css), under its picture and alone when no
+ * picture is chosen. Dark is the app's dark base. Light is a dark teal grey, so
+ * a new tab beside a light window does not open on a near-black frame. */
+export const DASHBOARD_BACKGROUND: ThemeColorPair = { light: '#394244', dark: APP_DARK_WASH }
 
 /** Electron's own default: what a WebContentsView paints before anything
  * ever calls `setBackgroundColor` on it. Named so putting a view back reads as

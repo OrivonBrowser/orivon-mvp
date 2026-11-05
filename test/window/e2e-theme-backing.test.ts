@@ -11,7 +11,7 @@ import { assertNoElectronSurvivors, closeElectron } from '../support/launch-elec
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
-const DASHBOARD = { light: '#768a86', dark: '#0d0e14' }
+const DASHBOARD = { light: '#394244', dark: '#0d0e14' }
 const WHITE = '#ffffff'
 const INTERNAL = { light: '#f4f4f8', dark: '#17181c' }
 
@@ -168,7 +168,7 @@ for (const mode of ['light', 'dark'] as const) {
           document.head.append(sheet)
           return { colour: style.backgroundColor }
         })
-        expect(root.colour).toBe(mode === 'light' ? 'rgb(118, 138, 134)' : 'rgb(13, 14, 20)')
+        expect(root.colour).toBe(mode === 'light' ? 'rgb(57, 66, 68)' : 'rgb(13, 14, 20)')
         const shot = await page.screenshot({ clip: { x: 4, y: 4, width: 1, height: 1 }, timeout: 4_000 }).catch(() => null)
         if (shot === null) continue
         read++

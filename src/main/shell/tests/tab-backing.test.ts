@@ -38,7 +38,7 @@ describe('a tab view\'s backing while a navigation starts', () => {
     const { wc, colours } = rig({ isDashboardTab: true })
     start(wc, 'https://example.com/')
     start(wc, DASHBOARD)
-    expect(colours).toEqual(['#FFFFFF', '#768a86'])
+    expect(colours).toEqual(['#FFFFFF', '#394244'])
   })
 
   it('takes the dashboard\'s dark colour under the dark theme', () => {
@@ -68,7 +68,7 @@ describe('a tab view\'s backing while a navigation starts', () => {
     dashboard.wc.url = DASHBOARD
     start(dashboard.wc, 'https://example.com/file.zip')
     dashboard.wc.emit('did-stop-loading')
-    expect(dashboard.colours).toEqual(['#FFFFFF', '#768a86'])
+    expect(dashboard.colours).toEqual(['#FFFFFF', '#394244'])
     const site = rig({ isDashboardTab: true })
     site.wc.url = 'https://example.com/'
     site.wc.emit('did-stop-loading')
@@ -81,7 +81,7 @@ describe('restingColor', () => {
     ({ isDashboardTab: false, internalPage: null, host: { dashboardUrl: DASHBOARD }, view: { webContents: { getURL: () => url, isDestroyed: () => false } }, ...extra }) as unknown as TabRecord
 
   it('is the dashboard\'s colour for a tab showing the dashboard, even one that left it and came back, in each theme', () => {
-    expect(restingColor(record(DASHBOARD))).toBe('#768a86')
+    expect(restingColor(record(DASHBOARD))).toBe('#394244')
     theme.shouldUseDarkColors = true
     try {
       expect(restingColor(record(DASHBOARD))).toBe('#0d0e14')
@@ -92,7 +92,7 @@ describe('restingColor', () => {
   })
 
   it('is the dashboard\'s colour for a dashboard tab that has no address yet, because it is shown before its load starts', () => {
-    expect(restingColor(record('', { isDashboardTab: true }))).toBe('#768a86')
+    expect(restingColor(record('', { isDashboardTab: true }))).toBe('#394244')
     expect(restingColor(record(''))).toBe('#FFFFFF')
   })
 
