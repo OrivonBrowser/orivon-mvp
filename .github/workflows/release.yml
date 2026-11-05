@@ -44,11 +44,34 @@ env:
   KOMAC_SHA256: 7d2707fa6210f2789a3702de49fbd150b736dbf426ee0b9bc8e098736f9fd82d
 
 jobs:
+  # A release that could not ship fails here, in seconds and with every reason named, before any runner builds:
+  # a tag that is not v<semver> (npm version and every route take the version from it), or a light-client
+  # checkpoint over MAX_CHECKPOINT_AGE_DAYS. The app refuses a checkpoint over 14 days old, so a fresh install of
+  # a release shipping one verifies no .eth name. Other runs pass through it.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        if: github.event_name == 'release'
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: github.event_name == 'release'
+        with:
+          node-version: '24'
+
+      - name: The tag is a version, and the shipped .eth checkpoint is fresh enough
+        if: github.event_name == 'release'
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: node scripts/release-preflight.mjs --tag "$TAG" --max-age-days "$MAX_CHECKPOINT_AGE_DAYS"
+
   # The real uBlock Origin must load and block on the Electron this release ships: the same spec the pull request
   # gate runs (ci.yml, ublock-gate), here on every release, since it costs one Linux runner for a few minutes and
   # a release is the one place an Electron upgrade that slipped through unnoticed would reach people. The packages
   # are not built until it passes.
   ublock:
+    needs: preflight
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -121,19 +144,6 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-
-      # The app rejects a light-client checkpoint over 14 days old, so a fresh install of a release
-      # shipping one verifies no .eth name. A release refuses one over MAX_CHECKPOINT_AGE_DAYS, so it does
-      # not die within days of shipping. refresh-eth-checkpoint.yml keeps main's checkpoint fresh
-      # (release-checklist.md).
-      - name: The shipped .eth checkpoint is fresh enough
-        if: github.event_name == 'release'
-        run: >-
-          node -e "const c = require('./src/main/verifier/mainnet-checkpoint.json');
-          const max = Number(process.env.MAX_CHECKPOINT_AGE_DAYS);
-          const days = (Date.now() / 1000 - c.timestamp) / 86400;
-          console.log('checkpoint age: ' + days.toFixed(1) + ' days, at most ' + max);
-          if (!(days <= max)) { console.error('refresh it: node scripts/refresh-eth-checkpoint.mjs --write'); process.exit(1) }"
 
       - run: npm ci
 
