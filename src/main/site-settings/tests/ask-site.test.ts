@@ -1,8 +1,8 @@
 import { EventEmitter } from 'node:events'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { WebContents } from 'electron'
 import type { ShellWindow } from '../../shell/window-registry.js'
-import { createAskSite, pendingAsk, SITE_PROMPT_OVERLAY, askSite, bindAskSite } from '../ask-site.js'
+import { createAskSite, createOfferRestart, pendingAsk, pendingRestart, SITE_PROMPT_OVERLAY, askSite, bindAskSite } from '../ask-site.js'
 import { slotClosed, tabSlotEvents } from '../../overlays/tab-slots.js'
 import { crossingAnchor, promptAnchor, promptAnchorReport, TOOLBAR_OVERLAP } from '../../shell/actions/prompt-anchor.js'
 
@@ -43,6 +43,15 @@ describe('askSite', () => {
     held?.settle('allow')
     expect(await answer).toBe('allow')
     expect(pendingAsk(payload.id)).toBeUndefined()
+  })
+
+  it('holds whether granting also turns a setting on, for the question to say so', () => {
+    const { ask, shows, contents } = rig()
+    void ask(['webgpu'], contents, { restart: true })
+    expect(pendingAsk(idOf(shows))).toMatchObject({ kinds: ['webgpu'], sysex: false, restart: true })
+    const plain = rig()
+    void plain.ask(['webgpu'], plain.contents)
+    expect(pendingAsk(idOf(plain.shows))).toMatchObject({ restart: false })
   })
 
   it('opens across the toolbar line, its top edge inside the address pill, not below it', () => {
@@ -118,5 +127,54 @@ describe('askSite', () => {
   it('dismisses until an ask is bound', async () => {
     bindAskSite(undefined)
     expect(await askSite(['camera'], new FakeTab() as unknown as WebContents)).toBe('dismiss')
+  })
+})
+
+describe('offering a restart', () => {
+  function offerRig (active = 't1') {
+    const base = rig(active)
+    const offer = createOfferRestart({ windows: { findTab: (contents) => contents === (base.tab as unknown) ? { window: base.window, tabId: 't1' } : null } })
+    return { ...base, offer }
+  }
+
+  it('shows the offer under the address bar, holding the way to restart by a random id', () => {
+    const { offer, shows, contents, window } = offerRig()
+    const run = vi.fn()
+    offer(contents, run)
+    expect(shows).toHaveLength(1)
+    expect(shows[0]?.overlay).toBe(SITE_PROMPT_OVERLAY)
+    const payload = shows[0]?.payload as { mode: string, id: string }
+    expect(payload.mode).toBe('restart')
+    expect(payload.id).toMatch(/^[0-9a-f]{24}$/)
+    const held = pendingRestart(payload.id)
+    expect(held?.window).toBe(window)
+    held?.run()
+    expect(run).toHaveBeenCalledTimes(1)
+    // It is not a question: nothing is held under that id as one.
+    expect(pendingAsk(payload.id)).toBeUndefined()
+  })
+
+  it('ends with the page it was made on, and is forgotten when its surface closes', () => {
+    const { offer, tab, shows, contents, window } = offerRig()
+    offer(contents, () => {})
+    const id = (shows[0]?.payload as { id: string }).id
+    tab.emit('did-navigate')
+    expect(pendingRestart(id)).toBeUndefined()
+    expect(tab.listenerCount('did-navigate')).toBe(0)
+    const second = offerRig()
+    second.offer(second.contents, () => {})
+    const secondId = (second.shows[0]?.payload as { id: string }).id
+    slotClosed(second.window, SITE_PROMPT_OVERLAY, 'escape')
+    expect(pendingRestart(secondId)).toBeUndefined()
+    expect(second.tab.listenerCount('did-navigate')).toBe(0)
+    void window
+  })
+
+  it('offers nothing for contents no window owns, and knows no id it never issued', () => {
+    const { offer, shows } = offerRig()
+    offer(new FakeTab() as unknown as WebContents, () => {})
+    expect(shows).toEqual([])
+    expect(pendingRestart('nope')).toBeUndefined()
+    expect(pendingRestart(7)).toBeUndefined()
   })
 })

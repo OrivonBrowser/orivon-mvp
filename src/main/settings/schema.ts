@@ -94,6 +94,7 @@ const SPECS = {
   'sites.idle': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.windowManagement': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.notifications': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
+  'sites.webgpu': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.devices': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.screenShare': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.autoDownloads': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },

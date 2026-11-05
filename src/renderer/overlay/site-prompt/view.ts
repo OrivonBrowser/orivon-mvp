@@ -1,7 +1,7 @@
 // What the prompt page accepts from main, checked once at the edge so the
 // drawing code below it can rely on the shape. Anything else closes the
 // overlay rather than drawing a half-formed question.
-import type { AskView, ReviewView } from '../../../main/site-settings/site-prompt-text.js'
+import type { AskView, RestartView, ReviewView } from '../../../main/site-settings/site-prompt-text.js'
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every((item) => typeof item === 'string')
@@ -10,7 +10,12 @@ export function isAskView (value: unknown): value is AskView {
   if (!isRecord(value) || value['mode'] !== 'ask' || typeof value['id'] !== 'string' || typeof value['origin'] !== 'string') return false
   const { lines } = value
   return Array.isArray(lines) && lines.length > 0 && lines.every((line) => isRecord(line) && isStringArray(line['kinds']) && typeof line['text'] === 'string') &&
-    (value['locationNote'] === null || typeof value['locationNote'] === 'string') && (value['privateNote'] === null || typeof value['privateNote'] === 'string') && typeof value['guardMs'] === 'number'
+    (value['locationNote'] === null || typeof value['locationNote'] === 'string') && (value['privateNote'] === null || typeof value['privateNote'] === 'string') &&
+    typeof value['allowLabel'] === 'string' && value['allowLabel'] !== '' && (value['restartNote'] === null || typeof value['restartNote'] === 'string') && typeof value['guardMs'] === 'number'
+}
+
+export function isRestartView (value: unknown): value is RestartView {
+  return isRecord(value) && value['mode'] === 'restart' && typeof value['id'] === 'string' && typeof value['line'] === 'string' && typeof value['note'] === 'string' && typeof value['guardMs'] === 'number'
 }
 
 export function isReviewView (value: unknown): value is ReviewView {

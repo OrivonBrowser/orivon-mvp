@@ -9,6 +9,8 @@ export interface SiteRequest {
   readonly kinds: readonly SiteKind[]
   /** The request is for MIDI with system-exclusive messages, which can reprogram a device. */
   readonly sysex: boolean
+  /** An allow also turns on a setting Orivon reads at start, and the question says so. Never set by an Electron permission: only the WebGPU question (`webgpu-ask.ts`) makes such a request. */
+  readonly restart?: boolean
 }
 
 /** A Map, not an object: a page-chosen name such as `toString` must not find anything on a prototype. */

@@ -1,28 +1,30 @@
-// The one overlay behind both surfaces a site's permissions have: the
-// question under the address bar ("ask"), and the bubble under the chip that
-// lists what this page was asked and lets the person change it ("review").
-// The page sends a few fixed words; the site, the kinds and the tab are
-// always read here, in main, never taken from the page.
+// The one overlay behind the three surfaces a site's permissions have: the
+// question under the address bar ("ask"), the offer to start Orivon again that
+// follows a grant which turned the graphics mode on ("restart"), and the bubble
+// under the chip that lists what this page was asked and lets the person change
+// it ("review"). The page sends a few fixed words; the site, the kinds and the
+// tab are always read here, in main, never taken from the page.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { createKeyQuiet } from '../overlays/key-quiet.js'
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { slotClosed } from '../overlays/tab-slots.js'
 import { commandById } from '../shortcuts/commands.js'
-import { pendingAsk, SITE_PROMPT_OVERLAY } from './ask-site.js'
+import { pendingAsk, pendingRestart, SITE_PROMPT_OVERLAY } from './ask-site.js'
 import { kindRemembers, siteKindById, type SiteKind, type SiteValue } from './kinds.js'
 import { pageAccess, type PageAccess } from './page-access.js'
-import { askView, reviewView, type AskView, type ReviewRow, type ReviewView } from './site-prompt-text.js'
+import { askView, restartView, reviewView, type AskView, type RestartView, type ReviewRow, type ReviewView } from './site-prompt-text.js'
 
 const PROMPT_WIDTH = 360
 
 /** An answer is ignored this long after the question appears, so a click or key meant for the page cannot land on it. Enforced here: the page only draws the buttons as not ready. */
 export const ANSWER_GUARD_MS = 500
 
-type Current = { mode: 'none' } | { mode: 'ask', id: string } | { mode: 'review', tabId: string }
+type Current = { mode: 'none' } | { mode: 'ask', id: string } | { mode: 'restart', id: string } | { mode: 'review', tabId: string }
 
 type Command =
   | { type: 'answer', id: string, answer: 'allow' | 'block' }
   | { type: 'drawn', id: string }
+  | { type: 'restart', id: string }
   | { type: 'set', kind: SiteKind, value: SiteValue }
   | { type: 'reload' }
   | { type: 'settings' }
@@ -35,7 +37,7 @@ function asCommand (command: unknown): Command | undefined {
   const { type, ...rest } = command
   const keys = Object.keys(rest).sort().join(',')
   if ((type === 'reload' || type === 'settings') && keys === '') return { type }
-  if (type === 'drawn' && keys === 'id') return typeof rest['id'] === 'string' ? { type, id: rest['id'] } : undefined
+  if ((type === 'drawn' || type === 'restart') && keys === 'id') return typeof rest['id'] === 'string' ? { type, id: rest['id'] } : undefined
   if (type === 'answer' && keys === 'answer,id') {
     const { id, answer } = rest
     return typeof id === 'string' && (answer === 'allow' || answer === 'block') ? { type, id, answer } : undefined
@@ -48,11 +50,12 @@ function asCommand (command: unknown): Command | undefined {
   return undefined
 }
 
-/** The payload of a show: an ask the asker is holding, or the review of the tab in front. */
-function asShown (payload: unknown): { mode: 'ask', id: string } | { mode: 'review' } | undefined {
+/** The payload of a show: an ask the asker is holding, the offer to start again that follows one, or the review of the tab in front. */
+function asShown (payload: unknown): { mode: 'ask' | 'restart', id: string } | { mode: 'review' } | undefined {
   if (!isRecord(payload)) return undefined
   if (payload['mode'] === 'review' && Object.keys(payload).length === 1) return { mode: 'review' }
-  return payload['mode'] === 'ask' && typeof payload['id'] === 'string' ? { mode: 'ask', id: payload['id'] } : undefined
+  const { mode, id } = payload
+  return (mode === 'ask' || mode === 'restart') && typeof id === 'string' ? { mode, id } : undefined
 }
 
 export function createSitePrompt ({ window, services, close, send }: OverlayWindow, access: PageAccess<Electron.WebContents> = pageAccess, now: () => number = Date.now): OverlayHandler {
@@ -92,7 +95,7 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
 
   return {
     key: keys.onKey,
-    show: (payload): AskView | ReviewView | undefined => {
+    show: (payload): AskView | RestartView | ReviewView | undefined => {
       current = { mode: 'none' }
       stopWatching?.()
       stopWatching = undefined
@@ -103,7 +106,13 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
         const ask = pendingAsk(shown.id)
         if (ask === undefined || ask.window !== window) return undefined
         current = { mode: 'ask', id: ask.id }
-        return askView(ask.id, ask.origin, ask.kinds, ask.sysex, services.isPrivate, ANSWER_GUARD_MS)
+        return askView(ask.id, ask.origin, ask.kinds, ask.sysex, ask.restart, services.isPrivate, ANSWER_GUARD_MS)
+      }
+      if (shown?.mode === 'restart') {
+        const offer = pendingRestart(shown.id)
+        if (offer === undefined || offer.window !== window) return undefined
+        current = { mode: 'restart', id: offer.id }
+        return restartView(offer.id, ANSWER_GUARD_MS)
       }
       if (shown?.mode === 'review') {
         const tabId = window.tabs.getState().activeTabId
@@ -122,8 +131,17 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
       const asked = asCommand(command)
       if (asked === undefined) return undefined
       if (asked.type === 'drawn') {
-        if (current.mode === 'ask' && current.id === asked.id && shownAt === null) shownAt = now()
+        if ((current.mode === 'ask' || current.mode === 'restart') && current.id === asked.id && shownAt === null) shownAt = now()
         return true
+      }
+      if (asked.type === 'restart') {
+        if (current.mode !== 'restart' || current.id !== asked.id) return undefined
+        const offer = pendingRestart(asked.id)
+        if (offer === undefined || shownAt === null || now() - shownAt < ANSWER_GUARD_MS || keys.quietFor() < ANSWER_GUARD_MS) return undefined
+        // Closed first, so the offer is gone by the time the browser starts to end.
+        close()
+        offer.run()
+        return undefined
       }
       if (asked.type === 'answer') {
         if (current.mode !== 'ask' || current.id !== asked.id) return undefined
@@ -165,7 +183,7 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
 
     // A resize moves the question under the person's pointer: the guard starts over.
     moved: () => {
-      if (current.mode !== 'ask' || shownAt === null) return
+      if ((current.mode !== 'ask' && current.mode !== 'restart') || shownAt === null) return
       shownAt = now()
       send({ type: 'arm' })
     },
@@ -176,7 +194,7 @@ export function createSitePrompt ({ window, services, close, send }: OverlayWind
       stopWatching?.()
       stopWatching = undefined
       // The slot decides what the close means: a tab switch only hides the question, anything else ends it as "not now".
-      if (was.mode === 'ask') slotClosed(window, SITE_PROMPT_OVERLAY, reason)
+      if (was.mode === 'ask' || was.mode === 'restart') slotClosed(window, SITE_PROMPT_OVERLAY, reason)
     }
   }
 }

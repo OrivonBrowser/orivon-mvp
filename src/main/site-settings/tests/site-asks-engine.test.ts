@@ -22,7 +22,7 @@ interface Options { answer?: SiteAnswer, defaults?: Partial<Record<SiteKind, 'as
 function rig (options: Options = {}) {
   const store = new SiteSettingsStore(null)
   const access = new PageAccess<FakeTab>()
-  const ask = vi.fn(async (_kinds: readonly SiteKind[], _tab: FakeTab, _request: { sysex: boolean }): Promise<SiteAnswer> => options.answer ?? 'allow')
+  const ask = vi.fn(async (_kinds: readonly SiteKind[], _tab: FakeTab, _request: { sysex: boolean, restart: boolean }): Promise<SiteAnswer> => options.answer ?? 'allow')
   const engine = createSiteAsksEngine<FakeTab>({
     store,
     defaultFor: (kind) => options.defaults?.[kind] ?? 'ask',
@@ -40,7 +40,7 @@ describe('request', () => {
   it('asks the person, stores an allow, and tells the page yes', async () => {
     const { engine, store, access, ask, tab } = rig({ answer: 'allow' })
     expect(await engine.request(CAMERA, tab, MAIN)).toBe(true)
-    expect(ask).toHaveBeenCalledWith(['camera'], tab, { sysex: false })
+    expect(ask).toHaveBeenCalledWith(['camera'], tab, { sysex: false, restart: false })
     expect(store.get(SITE, 'camera')).toBe('allow')
     expect(access.entries(tab)).toEqual([{ kind: 'camera', state: 'allowed' }])
   })
@@ -76,7 +76,7 @@ describe('request', () => {
     const { engine, store, ask, tab } = rig({ answer: 'allow' })
     expect(await engine.request(BOTH, tab, { ...MAIN, securityOrigin: SITE })).toBe(true)
     expect(ask).toHaveBeenCalledTimes(1)
-    expect(ask).toHaveBeenCalledWith(['camera', 'microphone'], tab, { sysex: false })
+    expect(ask).toHaveBeenCalledWith(['camera', 'microphone'], tab, { sysex: false, restart: false })
     expect(store.get(SITE, 'camera')).toBe('allow')
     expect(store.get(SITE, 'microphone')).toBe('allow')
   })
@@ -85,7 +85,7 @@ describe('request', () => {
     const { engine, store, ask, tab } = rig({ answer: 'allow' })
     store.set(SITE, 'camera', 'allow')
     expect(await engine.request(BOTH, tab, MAIN)).toBe(true)
-    expect(ask).toHaveBeenCalledWith(['microphone'], tab, { sysex: false })
+    expect(ask).toHaveBeenCalledWith(['microphone'], tab, { sysex: false, restart: false })
   })
 
   it('refuses without asking when one half is already blocked', async () => {
@@ -228,10 +228,38 @@ describe('request', () => {
     expect(ask).toHaveBeenCalledTimes(1)
   })
 
+  it('asks about WebGPU as a kind of its own, and carries the restart flag to the prompt only when the request has it', async () => {
+    const { engine, store, ask, tab } = rig({ answer: 'allow' })
+    expect(await engine.request({ kinds: ['webgpu'], sysex: false, restart: true }, tab, MAIN)).toBe(true)
+    expect(ask).toHaveBeenCalledWith(['webgpu'], tab, { sysex: false, restart: true })
+    expect(store.get(SITE, 'webgpu')).toBe('allow')
+    const other = rig({ answer: 'block' })
+    expect(await other.engine.request({ kinds: ['webgpu'], sysex: false }, other.tab, MAIN)).toBe(false)
+    expect(other.ask).toHaveBeenCalledWith(['webgpu'], other.tab, { sysex: false, restart: false })
+    expect(other.store.get(SITE, 'webgpu')).toBe('block')
+  })
+
+  it('never asks a site about WebGPU again once it has an answer, and refuses a default of block without asking', async () => {
+    const stored = rig()
+    stored.store.set(SITE, 'webgpu', 'allow')
+    expect(await stored.engine.request({ kinds: ['webgpu'], sysex: false, restart: true }, stored.tab, MAIN)).toBe(true)
+    expect(stored.ask).not.toHaveBeenCalled()
+    const blocked = rig({ defaults: { webgpu: 'block' } })
+    expect(await blocked.engine.request({ kinds: ['webgpu'], sysex: false }, blocked.tab, MAIN)).toBe(false)
+    expect(blocked.ask).not.toHaveBeenCalled()
+  })
+
+  it('shares one question between a page that asks for an adapter twice and one that asks with the restart flag', async () => {
+    const { engine, ask, tab } = rig({ answer: 'allow' })
+    const calls = [engine.request({ kinds: ['webgpu'], sysex: false, restart: true }, tab, MAIN), engine.request({ kinds: ['webgpu'], sysex: false, restart: true }, tab, MAIN)]
+    expect(await Promise.all(calls)).toEqual([true, true])
+    expect(ask).toHaveBeenCalledTimes(1)
+  })
+
   it('carries the MIDI wording through to the prompt', async () => {
     const { engine, ask, tab } = rig()
     await engine.request({ kinds: ['midi'], sysex: true }, tab, MAIN)
-    expect(ask).toHaveBeenCalledWith(['midi'], tab, { sysex: true })
+    expect(ask).toHaveBeenCalledWith(['midi'], tab, { sysex: true, restart: false })
   })
 })
 

@@ -6,7 +6,7 @@ describe('SITE_KINDS', () => {
   it('lists each kind once', () => {
     const ids = SITE_KINDS.map((kind) => kind.id)
     expect(new Set(ids).size).toBe(ids.length)
-    expect(ids).toHaveLength(15)
+    expect(ids).toHaveLength(16)
   })
 
   it.each(SITE_KINDS.map((kind) => [kind.id, kind] as const))('%s is backed by a setting with the same choices and default', (_id, kind) => {
@@ -24,7 +24,12 @@ describe('SITE_KINDS', () => {
   })
 
   it('marks a kind available only once its feature enforces it', () => {
-    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'popups', 'javascript', 'images', 'sound', 'autoDownloads', 'devices', 'screenShare'])
+    expect(SITE_KINDS.filter((kind) => kind.available).map((kind) => kind.id)).toEqual(['camera', 'microphone', 'location', 'clipboardRead', 'midi', 'idle', 'windowManagement', 'notifications', 'webgpu', 'popups', 'javascript', 'images', 'sound', 'autoDownloads', 'devices', 'screenShare'])
+  })
+
+  it('asks about WebGPU as a permission, with Ask for a start and a block as the only other default', () => {
+    expect(siteKindById('webgpu')).toMatchObject({ label: 'WebGPU', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.webgpu', available: true })
+    expect(siteKindById('webgpu')?.remembers).toBeUndefined()
   })
 
   it('finds a kind by id and answers undefined for anything else', () => {

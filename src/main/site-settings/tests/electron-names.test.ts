@@ -35,6 +35,13 @@ describe('requestOf', () => {
     expect(requestOf('geolocation', {})?.sysex).toBe(false)
   })
 
+  it('never carries the restart flag, and owns no name for WebGPU, which Electron does not report', () => {
+    for (const [permission, details] of [['media', { mediaTypes: ['audio', 'video'] }], ['geolocation', {}], ['midiSysex', {}], ['clipboard-read', {}]] as const) {
+      expect(requestOf(permission, details)).not.toHaveProperty('restart')
+    }
+    for (const name of ['webgpu', 'gpu', 'WebGPU']) expect(requestOf(name, {})).toBeUndefined()
+  })
+
   it('does not own any other name', () => {
     for (const name of ['notifications', 'fullscreen', 'openExternal', 'clipboard-sanitized-write', 'fileSystem', 'persistent-storage', 'unknown', '__proto__', 'toString']) {
       expect(requestOf(name, {})).toBeUndefined()

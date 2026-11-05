@@ -1,13 +1,13 @@
 // The permission prompt and the bubble under its chip. Main sends everything
 // that is drawn (the site, what it wants, the current answers) and decides
 // what each button does; the page only names a button.
-import type { AskView, ReviewRow, ReviewView } from '../../../main/site-settings/site-prompt-text.js'
+import type { AskView, RestartView, ReviewRow, ReviewView } from '../../../main/site-settings/site-prompt-text.js'
 import { h, replaceChildren } from '../../pages/shared/dom.js'
 import { closeIcon } from '../../pages/shared/icons.js'
 import { SITE_KIND_ICONS } from '../../pages/shared/site-kind-icons.js'
 import type { SiteKind } from '../../../main/site-settings/kinds.js'
 import type { Overlay, OverlayPage } from '../kit.js'
-import { isAskView, isReviewView, segmentAfterKey } from './view.js'
+import { isAskView, isRestartView, isReviewView, segmentAfterKey } from './view.js'
 import './site-prompt.css'
 
 type Choice = 'ask' | 'allow' | 'block'
@@ -54,7 +54,7 @@ export const sitePromptPage: OverlayPage = {
         void overlay.request({ type: 'answer', id: view.id, answer: value })
       }
       const block = h('button', { type: 'button', className: 'btn', onclick: () => { answer('block') } }, 'Block')
-      const allow = h('button', { type: 'button', className: 'btn primary', onclick: () => { answer('allow') } }, 'Allow')
+      const allow = h('button', { type: 'button', className: 'btn primary', onclick: () => { answer('allow') } }, view.allowLabel)
       const close = h('button', { type: 'button', className: 'btn icon sp-close', onclick: () => { overlay.close() } }, closeIcon())
       close.setAttribute('aria-label', 'Not now')
       close.title = 'Not now'
@@ -69,8 +69,27 @@ export const sitePromptPage: OverlayPage = {
         h('div', { className: 'sp-asks', id: 'sp-asks' }, ...lines),
         view.locationNote !== null && h('div', { className: 'banner info', role: 'note' }, view.locationNote),
         view.privateNote !== null && h('p', { className: 'sp-note' }, view.privateNote),
+        view.restartNote !== null && h('p', { className: 'sp-note' }, view.restartNote),
         h('div', { className: 'btn-row' }, block, allow),
         close
+      )
+      guardMs = view.guardMs
+      reportDrawn(view.id)
+    }
+
+    function drawRestart (view: RestartView): void {
+      const later = h('button', { type: 'button', className: 'btn', onclick: () => { overlay.close() } }, 'Later')
+      const restart = h('button', { type: 'button', className: 'btn primary', onclick: () => {
+        if (root.classList.contains('arming')) return
+        void overlay.request({ type: 'restart', id: view.id })
+      } }, 'Restart Orivon')
+      root.classList.remove('review')
+      root.setAttribute('aria-labelledby', 'sp-restart')
+      root.setAttribute('aria-describedby', 'sp-restart-note')
+      replaceChildren(root,
+        h('p', { className: 'sp-restart', id: 'sp-restart' }, view.line),
+        h('p', { className: 'sp-note sp-restart-note', id: 'sp-restart-note' }, view.note),
+        h('div', { className: 'btn-row' }, later, restart)
       )
       guardMs = view.guardMs
       reportDrawn(view.id)
@@ -142,6 +161,9 @@ export const sitePromptPage: OverlayPage = {
         if (isAskView(payload)) {
           reviewing = false
           drawAsk(payload)
+        } else if (isRestartView(payload)) {
+          reviewing = false
+          drawRestart(payload)
         } else if (isReviewView(payload)) {
           reviewing = true
           drawReview(payload, false)

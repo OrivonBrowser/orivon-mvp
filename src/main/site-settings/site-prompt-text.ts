@@ -18,7 +18,22 @@ export interface AskView {
   readonly locationNote: string | null
   /** The answer is forgotten when this window closes. */
   readonly privateNote: string | null
+  /** The button that grants: "Grant WebGPU" when WebGPU is all that is asked, "Allow" otherwise. */
+  readonly allowLabel: string
+  /** Set when granting also turns the graphics mode on and Orivon must start again for it: what that costs. */
+  readonly restartNote: string | null
   /** How long the buttons are drawn as not ready: main refuses an answer that soon after the show. */
+  readonly guardMs: number
+}
+
+/** The offer that follows a grant that turned the graphics mode on: what happens after Orivon starts again, and the way to start it. */
+export interface RestartView {
+  readonly mode: 'restart'
+  /** Which offer this is: the restart command names it, and main accepts it only for the one on screen. */
+  readonly id: string
+  readonly line: string
+  readonly note: string
+  /** As for the question: main refuses a restart that soon after the show. */
   readonly guardMs: number
 }
 
@@ -43,6 +58,9 @@ export interface ReviewView {
 
 export const LOCATION_NOTE = 'Orivon has no location service yet. If you allow this, your choice is kept, but the site is still told it cannot have your position.'
 export const PRIVATE_NOTE = 'Forgotten when this private window closes.'
+export const RESTART_NOTE = 'Orivon restarts to turn WebGPU on. It may use more battery, and on some laptops videos can go blank.'
+export const RESTART_LINE = 'WebGPU starts after Orivon restarts.'
+export const RESTART_OFFER_NOTE = 'Orivon opens this page again. Your other tabs and windows are not restored.'
 
 const WANTS: Readonly<Partial<Record<SiteKind, string>>> = {
   camera: 'wants to use your camera',
@@ -53,6 +71,7 @@ const WANTS: Readonly<Partial<Record<SiteKind, string>>> = {
   idle: 'wants to know when you are away from this computer',
   windowManagement: 'wants to place windows across your screens',
   notifications: 'wants to show notifications',
+  webgpu: 'wants to use your graphics card for WebGPU',
   autoDownloads: 'wants to download several files'
 }
 
@@ -71,7 +90,8 @@ export function askLines (kinds: readonly SiteKind[], sysex: boolean): AskLine[]
   return lines
 }
 
-export function askView (id: string, origin: string, kinds: readonly SiteKind[], sysex: boolean, isPrivate: boolean, guardMs: number): AskView {
+export function askView (id: string, origin: string, kinds: readonly SiteKind[], sysex: boolean, restart: boolean, isPrivate: boolean, guardMs: number): AskView {
+  const onlyWebGpu = kinds.length === 1 && kinds[0] === 'webgpu'
   return {
     mode: 'ask',
     id,
@@ -79,8 +99,14 @@ export function askView (id: string, origin: string, kinds: readonly SiteKind[],
     lines: askLines(kinds, sysex),
     locationNote: kinds.includes('location') ? LOCATION_NOTE : null,
     privateNote: isPrivate ? PRIVATE_NOTE : null,
+    allowLabel: onlyWebGpu ? 'Grant WebGPU' : 'Allow',
+    restartNote: restart && onlyWebGpu ? RESTART_NOTE : null,
     guardMs
   }
+}
+
+export function restartView (id: string, guardMs: number): RestartView {
+  return { mode: 'restart', id, line: RESTART_LINE, note: RESTART_OFFER_NOTE, guardMs }
 }
 
 export function reviewView (origin: string, rows: readonly ReviewRow[], settingsLink: boolean): ReviewView {
