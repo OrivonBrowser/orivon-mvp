@@ -1,41 +1,42 @@
 import { describe, expect, it } from 'vitest'
-import { GAP, MARGIN, MAX_RATIO, MIN_PANE_PX, MIN_RATIO, SplitGroups, clampRatio, isFirstPane, orientationOf, paneRects, ratioAt, zoneAt, zoneHalf } from '../split-model.js'
+import { GAP, MAX_RATIO, MIN_PANE_PX, MIN_RATIO, SplitGroups, clampRatio, isFirstPane, orientationOf, paneRects, ratioAt, splitRects, zoneAt } from '../split-model.js'
 
 const AREA = { x: 0, y: 100, width: 1000, height: 600 }
 
 describe('paneRects', () => {
-  it('shares a row between two panes with a gap between them and a margin round them', () => {
+  it('shares a row between two panes with a gap between them and none round them', () => {
     const rects = paneRects(AREA, 'row', 0.5)
     expect(rects).not.toBeNull()
     if (rects === null) return
-    const room = 1000 - 2 * MARGIN - GAP
-    expect(rects.a).toEqual({ x: MARGIN, y: 100 + MARGIN, width: room / 2, height: 600 - 2 * MARGIN })
-    expect(rects.b.x).toBe(MARGIN + room / 2 + GAP)
-    expect(rects.b.width).toBe(room / 2)
-    expect(rects.divider).toEqual({ x: MARGIN + room / 2, y: 100 + MARGIN, width: GAP, height: 600 - 2 * MARGIN })
-    expect(rects.a.width + GAP + rects.b.width + 2 * MARGIN).toBe(1000)
+    const room = 1000 - GAP
+    expect(rects.a).toEqual({ x: 0, y: 100, width: room / 2, height: 600 })
+    expect(rects.b).toEqual({ x: room / 2 + GAP, y: 100, width: room / 2, height: 600 })
+    expect(rects.divider).toEqual({ x: room / 2, y: 100, width: GAP, height: 600 })
+    expect(rects.a.width + GAP + rects.b.width).toBe(1000)
   })
 
   it('stacks a column the same way', () => {
     const rects = paneRects(AREA, 'column', 0.25)
     expect(rects).not.toBeNull()
     if (rects === null) return
-    expect(rects.a.height + GAP + rects.b.height + 2 * MARGIN).toBe(600)
+    expect(rects.a.y).toBe(100)
+    expect(rects.a.height + GAP + rects.b.height).toBe(600)
+    expect(rects.b.y + rects.b.height).toBe(100 + 600)
     expect(rects.a.height).toBeLessThan(rects.b.height)
     expect(rects.divider.y).toBe(rects.a.y + rects.a.height)
-    expect(rects.a.width).toBe(1000 - 2 * MARGIN)
+    expect(rects.a.width).toBe(1000)
   })
 
   it('never lets a pane be smaller than the clamp allows', () => {
     const small = paneRects(AREA, 'row', 0.01)
     const large = paneRects(AREA, 'row', 0.99)
-    expect(small?.a.width).toBe(Math.round((1000 - 2 * MARGIN - GAP) * MIN_RATIO))
-    expect(large?.b.width).toBe(1000 - 2 * MARGIN - GAP - Math.round((1000 - 2 * MARGIN - GAP) * MAX_RATIO))
+    expect(small?.a.width).toBe(Math.round((1000 - GAP) * MIN_RATIO))
+    expect(large?.b.width).toBe(1000 - GAP - Math.round((1000 - GAP) * MAX_RATIO))
   })
 
   it('has no split for an area too small to give each pane its minimum', () => {
-    expect(paneRects({ x: 0, y: 0, width: 2 * MIN_PANE_PX + 2 * MARGIN + GAP - 1, height: 600 }, 'row', 0.5)).toBeNull()
-    expect(paneRects({ x: 0, y: 0, width: 2 * MIN_PANE_PX + 2 * MARGIN + GAP, height: 600 }, 'row', 0.5)).not.toBeNull()
+    expect(paneRects({ x: 0, y: 0, width: 2 * MIN_PANE_PX + GAP - 1, height: 600 }, 'row', 0.5)).toBeNull()
+    expect(paneRects({ x: 0, y: 0, width: 2 * MIN_PANE_PX + GAP, height: 600 }, 'row', 0.5)).not.toBeNull()
     expect(paneRects({ x: 0, y: 0, width: 1000, height: 300 }, 'column', 0.5)).toBeNull()
   })
 
@@ -45,6 +46,19 @@ describe('paneRects', () => {
       if (rects === null) throw new Error('expected room')
       expect(rects.a.x + rects.a.width + GAP).toBe(rects.b.x)
     }
+  })
+})
+
+describe('splitRects', () => {
+  it('shares an area flush from edge to edge, however small it is', () => {
+    const small = { x: 0, y: 100, width: 300, height: 200 }
+    const row = splitRects(small, 'row', 0.5)
+    expect(row.a).toEqual({ x: 0, y: 100, width: (300 - GAP) / 2, height: 200 })
+    expect(row.b.x + row.b.width).toBe(300)
+    const column = splitRects(small, 'column', 0.5)
+    expect(column.a.y).toBe(100)
+    expect(column.b.y + column.b.height).toBe(300)
+    expect(paneRects(small, 'row', 0.5)).toBeNull()
   })
 })
 
@@ -93,13 +107,6 @@ describe('zoneAt', () => {
 })
 
 describe('zones', () => {
-  it('halves the area on the side named', () => {
-    expect(zoneHalf(AREA, 'left')).toEqual({ x: 0, y: 100, width: 500, height: 600 })
-    expect(zoneHalf(AREA, 'right')).toEqual({ x: 500, y: 100, width: 500, height: 600 })
-    expect(zoneHalf(AREA, 'top')).toEqual({ x: 0, y: 100, width: 1000, height: 300 })
-    expect(zoneHalf(AREA, 'bottom')).toEqual({ x: 0, y: 400, width: 1000, height: 300 })
-  })
-
   it('says which way the panes run and which one a dropped tab is', () => {
     expect(orientationOf('left')).toBe('row')
     expect(orientationOf('right')).toBe('row')

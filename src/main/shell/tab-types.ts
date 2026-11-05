@@ -215,7 +215,7 @@ export interface TabShell {
   localFilesRefused?: () => void
 }
 
-/** The view behind two panes: the divider, and an outline round the pane the person is in. */
+/** The view behind two panes: the divider, and the place a dragged tab would go. */
 export interface SplitBackdrop {
   /** Made when first asked for. */
   readonly view: View

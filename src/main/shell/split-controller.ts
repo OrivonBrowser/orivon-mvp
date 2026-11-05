@@ -2,7 +2,7 @@
 // shows, and where each view goes. It holds the groups (./split-model.ts) and
 // works the tab strip through the small interface the collection gives it; it
 // knows nothing of views.
-import { MARGIN, SplitGroups, isFirstPane, orientationOf, paneRects, ratioAt, zoneHalf } from './split-model.js'
+import { SplitGroups, isFirstPane, orientationOf, paneRects, ratioAt, splitRects } from './split-model.js'
 import type { Orientation, PaneRects, Zone } from './split-model.js'
 import { clampToRun, pinnedCount } from './tab-order.js'
 import type { Bounds } from './tab-types.js'
@@ -13,11 +13,13 @@ export interface FrameState {
   readonly orientation: Orientation
   /** Where the divider is, for the pointer to grab. Absent while a tab is being dragged over the page. */
   readonly divider: Bounds | null
-  readonly panes: { readonly a: Bounds, readonly b: Bounds } | null
-  /** Which pane the person is in. */
-  readonly active: 'a' | 'b' | null
   /** Where a tab dropped now would go. */
   readonly placeholder: Bounds | null
+}
+
+/** What the backdrop's page is sent: what to draw, and whether its window is a private one, whose chrome is tinted. */
+export interface FrameMessage extends FrameState {
+  readonly private: boolean
 }
 
 export interface Plan {
@@ -42,8 +44,6 @@ export interface SplitHost {
   isPinned?: (id: string) => boolean
 }
 
-const inset = (bounds: Bounds): Bounds => ({ x: bounds.x + MARGIN, y: bounds.y + MARGIN, width: bounds.width - 2 * MARGIN, height: bounds.height - 2 * MARGIN })
-
 export class SplitController {
   readonly groups = new SplitGroups()
   private preview: { zone: Zone } | null = null
@@ -60,21 +60,21 @@ export class SplitController {
     if (group === undefined || rects === null) return { panes: [{ id: activeId, bounds: area }], frame: null }
     return {
       panes: [{ id: group.a, bounds: rects.a }, { id: group.b, bounds: rects.b }],
-      frame: { area, orientation: group.orientation, divider: rects.divider, panes: { a: rects.a, b: rects.b }, active: group.a === activeId ? 'a' : 'b', placeholder: null }
+      frame: { area, orientation: group.orientation, divider: rects.divider, placeholder: null }
     }
   }
 
-  /** While a tab is dragged over an edge: the current page shrinks to the other half, and the drop half is marked. */
+  /** While a tab is dragged over an edge: the current page shrinks to the pane it would keep, and the pane the dropped tab would take is marked. */
   private previewPlan (activeId: string, area: Bounds, zone: Zone): Plan {
-    const drop = zoneHalf(area, zone)
-    const keep = zoneHalf(area, ({ left: 'right', right: 'left', top: 'bottom', bottom: 'top' } as const)[zone])
+    const { a, b } = splitRects(area, orientationOf(zone), 0.5)
+    const [drop, keep] = isFirstPane(zone) ? [a, b] : [b, a]
     return {
-      panes: [{ id: activeId, bounds: inset(keep) }],
-      frame: { area, orientation: orientationOf(zone), divider: null, panes: null, active: null, placeholder: inset(drop) }
+      panes: [{ id: activeId, bounds: keep }],
+      frame: { area, orientation: orientationOf(zone), divider: null, placeholder: drop }
     }
   }
 
-  /** Shows the drop half for `zone`, or nothing for null. */
+  /** Shows the pane a drop at `zone` would take, or nothing for null. */
   setPreview (zone: Zone | null): void {
     if ((this.preview?.zone ?? null) === zone) return
     this.preview = zone === null ? null : { zone }

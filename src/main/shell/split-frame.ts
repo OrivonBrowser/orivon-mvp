@@ -1,8 +1,8 @@
 // The view behind the two panes of a split. It fills the area the panes share
-// and the panes sit on it, inset, so what shows between and round them is this
-// page: the divider, an outline on the pane the person is in, and the place a
-// dragged tab would go. The gap between the panes is its only exposed part, so
-// it is also what the pointer grabs to resize -- no overlay over a page needed.
+// and the panes sit on it, so what shows between them is this page: the divider,
+// and, while a tab is dragged over the page, the place it would go. The gap
+// between the panes is its only exposed part, so it is also what the pointer
+// grabs to resize -- no overlay over a page needed.
 //
 // A window that never splits never makes it: the view is built when first asked for.
 import { app, WebContentsView } from 'electron'
@@ -26,7 +26,7 @@ export class SplitFrame implements SplitBackdrop {
   private loaded = false
   private latest: FrameState | null = null
 
-  constructor (private readonly actions: SplitFrameActions, private readonly dirname: string) {}
+  constructor (private readonly actions: SplitFrameActions, private readonly dirname: string, private readonly isPrivate = false) {}
 
   get view (): WebContentsView {
     this.made ??= this.build()
@@ -47,7 +47,7 @@ export class SplitFrame implements SplitBackdrop {
   private send (): void {
     const contents = this.made?.webContents
     if (contents === undefined || contents.isDestroyed() || !this.loaded || this.latest === null) return
-    contents.send(SPLIT_STATE_CHANNEL, this.latest)
+    contents.send(SPLIT_STATE_CHANNEL, { ...this.latest, private: this.isPrivate })
   }
 
   private build (): WebContentsView {

@@ -510,7 +510,7 @@ describe('TabManager -- did-navigate repartitions a tab for a redirect, link, fo
     expect(createdViews).toHaveLength(1)
   })
 
-  it('resets the SAME view\'s background once it stops being the dashboard, so a site with no CSS background of its own does not render on the dashboard\'s dark wash', () => {
+  it('resets the SAME view\'s background once it stops being the dashboard, so a site with no CSS background of its own does not render on the dashboard\'s backing colour', () => {
     const manager = newManager()
     manager.createTab() // dashboard -- makeTabView sets its own pre-paint background
     const view = createdViews[0] as RecordedView
@@ -518,7 +518,7 @@ describe('TabManager -- did-navigate repartitions a tab for a redirect, link, fo
 
     view.webContents.emit('did-navigate', {}, 'https://app.example/')
 
-    // No repartition (asserted above): the dashboard's own dark-washed view
+    // No repartition (asserted above): the dashboard's own view
     // is the one still showing this site, so its colour must have been put
     // back to Electron's own default, not left however makeTabView set it.
     expect(createdViews).toHaveLength(1)

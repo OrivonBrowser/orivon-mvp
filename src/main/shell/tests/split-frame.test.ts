@@ -35,12 +35,12 @@ const { SplitFrame } = await import('../split-frame.js')
 
 beforeEach(() => { made.length = 0; handlers.clear() })
 
-const STATE = { area: { x: 0, y: 76, width: 1000, height: 600 }, orientation: 'row', divider: null, panes: null, active: null, placeholder: null } as never
+const STATE = { area: { x: 0, y: 76, width: 1000, height: 600 }, orientation: 'row', divider: null, placeholder: null } as never
 
-function frame (): { frame: InstanceType<typeof SplitFrame>, dragTo: ReturnType<typeof vi.fn>, reset: ReturnType<typeof vi.fn> } {
+function frame (isPrivate = false): { frame: InstanceType<typeof SplitFrame>, dragTo: ReturnType<typeof vi.fn>, reset: ReturnType<typeof vi.fn> } {
   const dragTo = vi.fn()
   const reset = vi.fn()
-  return { frame: new SplitFrame({ dragTo, reset }, '/out/main'), dragTo, reset }
+  return { frame: new SplitFrame({ dragTo, reset }, '/out/main', isPrivate), dragTo, reset }
 }
 
 describe('SplitFrame', () => {
@@ -75,10 +75,18 @@ describe('SplitFrame', () => {
     expect(contents.send).not.toHaveBeenCalled()
 
     contents.emit('did-finish-load')
-    expect(contents.send).toHaveBeenCalledExactlyOnceWith(SPLIT_STATE_CHANNEL, STATE)
+    expect(contents.send).toHaveBeenCalledExactlyOnceWith(SPLIT_STATE_CHANNEL, { ...(STATE as object), private: false })
 
     f.update({ ...(STATE as object), orientation: 'column' } as never)
     expect(contents.send).toHaveBeenCalledTimes(2)
+  })
+
+  it('says whether its window is a private one, whose chrome is tinted, so the gap can match it', () => {
+    const { frame: f } = frame(true)
+    const contents = f.view.webContents as unknown as Fake
+    contents.emit('did-finish-load')
+    f.update(STATE)
+    expect(contents.send).toHaveBeenCalledExactlyOnceWith(SPLIT_STATE_CHANNEL, { ...(STATE as object), private: true })
   })
 
   it('hears a drag to a place and a reset, from its own page only, and only a number as a place', () => {

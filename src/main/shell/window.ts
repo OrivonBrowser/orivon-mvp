@@ -174,7 +174,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   const splitFrame = new SplitFrame({
     dragTo: (at) => { const id = tabs.getState().activeTabId; if (id !== null) tabs.splits.dragTo(id, at) },
     reset: () => { const id = tabs.getState().activeTabId; if (id !== null) tabs.splits.resetRatio(id) }
-  }, import.meta.dirname)
+  }, import.meta.dirname, services.profiles.isPrivate)
 
   const tabs = new TabManager(win.contentView, tabBounds, lastTabClosed, dashboardUrl, ctx, {
     window: win,

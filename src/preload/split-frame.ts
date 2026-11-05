@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { SPLIT_FRAME_CHANNEL, SPLIT_STATE_CHANNEL } from '../main/channels.js'
-import type { FrameState } from '../main/shell/split-controller.js'
+import type { FrameMessage } from '../main/shell/split-controller.js'
 
 // Loaded ONLY by the split backdrop's own view (src/main/shell/split-frame.ts).
 // Same defence as the popovers' preloads: nothing is exposed unless the document
@@ -13,8 +13,8 @@ const expectedUrl = process.argv.find((arg) => arg.startsWith(URL_PREFIX))?.slic
 if (expectedUrl !== undefined && location.href === expectedUrl) {
   contextBridge.exposeInMainWorld('orivonSplit', {
     /** Returns the unsubscribe. */
-    onState: (listener: (state: FrameState) => void): (() => void) => {
-      const handler = (_event: Electron.IpcRendererEvent, state: FrameState): void => { listener(state) }
+    onState: (listener: (state: FrameMessage) => void): (() => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, state: FrameMessage): void => { listener(state) }
       ipcRenderer.on(SPLIT_STATE_CHANNEL, handler)
       return () => { ipcRenderer.removeListener(SPLIT_STATE_CHANNEL, handler) }
     },

@@ -11,7 +11,7 @@ import { assertNoElectronSurvivors, closeElectron } from '../support/launch-elec
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
-const DASHBOARD = { light: '#394244', dark: '#0d0e14' }
+const DASHBOARD = { light: '#768a86', dark: '#0d0e14' }
 const WHITE = '#ffffff'
 const INTERNAL = { light: '#f4f4f8', dark: '#17181c' }
 

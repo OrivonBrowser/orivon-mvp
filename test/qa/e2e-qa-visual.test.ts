@@ -447,6 +447,31 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
+  it(`a split shows two pages edge to edge with only the gap between them (${scheme})`, async () => {
+    const { app, chrome } = await launchShell({ scheme })
+    try {
+      await runPhase('visual state of a split', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await prepareWindow(app)
+        await visit(app, chrome, `${server.origin}/`)
+        // With no tab beside it, the split opens a new one: the dashboard is the right pane, and the person is in it.
+        await runCommand(chrome, 'split.toggle')
+        expect(await waitFor(async () => (await chrome.locator('.tab.joined').count()) === 2)).toBe(true)
+        const frame = (): Page | undefined => app.windows().find((w) => w.url().includes('/split-frame/'))
+        expect(await waitFor(() => frame() !== undefined)).toBe(true)
+        await (frame() as Page).waitForSelector('#divider:not([hidden])')
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        await (dashboardOf(app) as Page).waitForSelector('html[data-settled="1"]')
+        await state(check, app, `split-view-${scheme}`, {
+          expected: 'Two pages side by side under the toolbar, each running to the window edge on its outer side and down to the window bottom: on the left the plain "Fixture page" page, on the right the new-tab dashboard with its picture in full colour and its text readable on it. Between them a gap of one flat colour, the toolbar\'s own, with a short vertical grey bar in the middle of it. No coloured line, ring or border round either page, and no strip of window background between a page and the toolbar or the window edge. In the tab strip the two tabs form one joined pill, the right one (the new tab) lit.',
+          action: 'Opened the fixture page, then ran Split view with no other tab, which opens a new tab as the right pane.'
+        })
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
   it(`the question panel shows a consent question and a page's confirm() (${scheme})`, async () => {
     // The consent fixture advertises a manifest, so visiting it asks for its grants; the dialog fixture asks nothing until clicked.
     const consent = await startServer((req, res) => {
