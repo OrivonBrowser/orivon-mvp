@@ -1,0 +1,64 @@
+// Whether a website's page may have the WebGPU adapter it asked for, decided in main from the frame it was heard
+// from. The page's wrapper (`../../preload/webgpu-ask.ts`) makes the call first and reports only whether Chromium gave
+// an adapter; this module asks the person through the engine, as the camera is asked, and on an X11 session that has no
+// adapter to give, also offers the graphics mode that makes one. Pure over its dependencies, so every branch is
+// tested without a window. `webgpu-ask-ipc.ts` is where the page's message arrives.
+import { originFromUrl } from '../../broker/policy/origin.js'
+import type { NavigatingTab } from './page-access.js'
+import type { SiteAsksEngine } from './site-asks-engine.js'
+import type { SiteDecision } from './site-settings-store.js'
+
+/** What this run knows of the graphics mode that gives an X11 session WebGPU (`../graphics/`). */
+export interface X11State {
+  /** Orivon runs on an X11 session, where Settings offers the mode. */
+  readonly offered: boolean
+  /** This run started in the mode, so Chromium has already given an adapter wherever a card allows. */
+  readonly onAtStart: boolean
+  /** The guard turned the mode off after a bad run and it has not been turned on again. */
+  readonly reverted: boolean
+}
+
+/** Whether a site that gets no adapter is still asked, because granting it turns the mode on: only where a restart gives one. */
+export function x11QuestionApplies (state: X11State, isPrivate: boolean): boolean {
+  return state.offered && !state.onAtStart && !state.reverted && !isPrivate
+}
+
+export interface WebGpuAskDeps<T extends NavigatingTab & object> {
+  /** The engine's `request`: undefined when `contents` is not an ordinary tab. */
+  request: SiteAsksEngine<T>['request']
+  /** The origin holds grants, so its permissions are its manifest's and no question asks for more. */
+  isApp: (origin: string) => boolean
+  /** What the person already told the site: a site with an answer is not asked again. */
+  stored: (origin: string) => SiteDecision | undefined
+  isPrivate: boolean
+  x11: () => X11State
+  /** Turns the mode on; false when the setting could not be changed. */
+  turnOnX11: () => boolean
+  /** Offers the person a restart for `contents`'s page. */
+  offerRestart: (contents: T) => void
+}
+
+/** Whether the page gets the adapter it asked for: `frameOrigin` is read by main from the sender frame, `adapter` is whether Chromium gave one. */
+export type WebGpuAsk<T extends NavigatingTab & object> = (contents: T, frameOrigin: string, adapter: boolean) => Promise<boolean>
+
+export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuAskDeps<T>): WebGpuAsk<T> {
+  /** The site each tab was last offered a restart for: a page that asks twice while the question is open shares one offer. */
+  const offered = new WeakMap<T, string>()
+
+  return async (contents, frameOrigin, adapter) => {
+    const origin = originFromUrl(frameOrigin)
+    if (origin === null) return false
+    if (deps.isApp(origin)) return true
+    const details = { isMainFrame: true, requestingUrl: origin }
+    if (adapter) return await deps.request({ kinds: ['webgpu'], sysex: false }, contents, details) ?? false
+
+    // No adapter: nobody is asked unless a restart would give one. A site that has an answer is never asked again, so a
+    // person who turned the mode off in Settings is not sent back to it by the sites they granted.
+    if (!x11QuestionApplies(deps.x11(), deps.isPrivate) || deps.stored(origin) !== undefined) return false
+    const granted = await deps.request({ kinds: ['webgpu'], sysex: false, restart: true }, contents, details)
+    if (granted !== true || offered.get(contents) === origin) return false
+    offered.set(contents, origin)
+    if (deps.turnOnX11()) deps.offerRestart(contents)
+    return false
+  }
+}
