@@ -12,10 +12,13 @@ import type { SiteTunnel, SiteTunnelKind } from './site-info.js'
 /** What the popover calls the subject of a tab's tunnel, where it names a site's origin for a website. */
 export const THIS_TAB = 'This tab'
 
+/** What the popover calls itself on a page of the shell, where a tab is called "This tab": it is the whole browser's alone. */
+export const BROWSER_WIDE = 'Browser-wide'
+
 /** What the tunnel popover asks of the tabs, injected so the controller never imports them. */
 export interface TabTunnels {
-  /** The tab `id`'s choice (absent when it has none) and the address of the page it shows, or the one it is opening when it has no page yet; undefined when no such tab is open. */
-  readonly choiceOf: (id: string) => { readonly choice: TabTunnelChoice | undefined, readonly address?: string } | undefined
+  /** The tab `id`'s choice (absent when it has none), the address of the page it shows, or the one it is opening when it has no page yet, and whether that page is one of the shell's own (`internal`, from the tab's record); undefined when no such tab is open. */
+  readonly choiceOf: (id: string) => { readonly choice: TabTunnelChoice | undefined, readonly address?: string, readonly internal?: boolean } | undefined
   /** Gives the tab the choice (null takes it away); the tab may keep what it had when the move cannot be made, so the choice is read back. */
   readonly set: (id: string, choice: TabTunnelChoice | null) => void
 }

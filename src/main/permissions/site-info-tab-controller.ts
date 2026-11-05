@@ -13,7 +13,7 @@ import { tunnelOfPage } from '../route/tab-tunnel.js'
 import type { SubsystemContext } from '../registry.js'
 import { emptySiteInfo } from './site-info.js'
 import type { SiteInfo, SiteTunnel, SiteTunnelKind } from './site-info.js'
-import { tabSiteTunnel, tabTunnel, tabVia, THIS_TAB } from './site-info-tab.js'
+import { BROWSER_WIDE, tabSiteTunnel, tabTunnel, tabVia, THIS_TAB } from './site-info-tab.js'
 import type { TabTunnels } from './site-info-tab.js'
 
 type Routes = NonNullable<SubsystemContext['routes']>
@@ -56,10 +56,26 @@ export function createTabTunnelController (parts: TabControllerParts): TabTunnel
     return origin !== null && canTunnel(origin) && !parts.isApp(origin) ? origin : undefined
   }
 
+  /**
+   * What the popup of a tab showing a page of the shell says: the browser alone. Such a page never goes through a tunnel, so the tab's
+   * choice and a website's entry are not offered here, and `setTabTunnel` and `setSiteAlways` refuse them.
+   */
+  function shellPageInfo (routes: Routes): SiteInfo {
+    return {
+      ...emptySiteInfo(''),
+      displayOrigin: BROWSER_WIDE,
+      browserOnly: true,
+      tunnelKind: routes.defaultKind(),
+      everywhere: routes.hub.isEverywhere(),
+      ...(ctx.privateTunnel === 'nym' ? { tunnelHeld: 'nym' as const } : {})
+    }
+  }
+
   async function tabInfoFor (tabId: string): Promise<SiteInfo | undefined> {
     const routes = ctx.routes
     const tab = tabTunnels.choiceOf(tabId)
     if (routes === undefined || tab === undefined) return undefined
+    if (tab.internal === true) return shellPageInfo(routes)
     const everywhere = routes.hub.isEverywhere()
     const defaultKind = routes.defaultKind()
     // While the settings cannot be read every website is in one tunnel's profile, whatever the tab was told but a tunnel of its own.
@@ -91,7 +107,8 @@ export function createTabTunnelController (parts: TabControllerParts): TabTunnel
   }
 
   function tabShownOrigin (tabId: string): string {
-    return websiteOf(tabTunnels.choiceOf(tabId)?.address) ?? ''
+    const tab = tabTunnels.choiceOf(tabId)
+    return tab?.internal === true ? '' : websiteOf(tab?.address) ?? ''
   }
 
   /**
@@ -135,10 +152,10 @@ export function createTabTunnelController (parts: TabControllerParts): TabTunnel
     return kind === null || (routes.targetOf(kind) !== undefined && !(kind === 'nym' && nymSwitchedOff(routes)))
   }
 
-  /** What the command acts on, read from the tab now: its choice and the website it shows with that website's entry. */
+  /** What the command acts on, read from the tab now: its choice and the website it shows with that website's entry. Nothing for a tab that shows a page of the shell, which has no tunnel to choose and no website to give an entry. */
   function actingOn (routes: Routes, tabId: string): { readonly origin: string | undefined, readonly facts: AlwaysFacts } | undefined {
     const tab = tabTunnels.choiceOf(tabId)
-    if (tab === undefined) return undefined
+    if (tab === undefined || tab.internal === true) return undefined
     const origin = websiteOf(tab.address)
     const entry = origin === undefined ? undefined : routes.store.stateOf(origin)
     return { origin, facts: { choice: tab.choice, entry, everywhere: routes.hub.isEverywhere() } }

@@ -18,8 +18,8 @@ const SITE = 'https://news.example'
 const OTHER = 'https://other.example'
 const APP = 'https://app.example'
 
-const trust = (): SiteTrustSources => ({
-  isOriginServedFromCacheSync: (origin) => origin === APP,
+const trust = (served: (origin: string) => boolean = (origin) => origin === APP): SiteTrustSources => ({
+  isOriginServedFromCacheSync: served,
   pinCoverageFor: () => undefined,
   nameEvidenceFor: async () => undefined,
   levelOverrideFor: () => undefined,
@@ -35,6 +35,10 @@ interface Options {
   noProxy?: boolean
   /** The tab's address: the page it shows. */
   address?: string | undefined
+  /** The tab shows a page of the shell (`orivon://`), as its record says. */
+  internal?: boolean
+  /** The loader says every origin is an installed app. */
+  allApps?: boolean
   choice?: TabTunnelChoice
   entries?: Record<string, TunnelEntry>
   /** `routeSwitch.choose` / `forget` throw: the entry cannot be saved. */
@@ -94,8 +98,8 @@ function world (options: Options = {}) {
     calls.push(`tab:${String(next)}`)
     if (options.tabStuck !== true) tab.choice = next ?? undefined
   })
-  const tabTunnels = { choiceOf: (id: string) => id === 't1' ? { choice: tab.choice, ...(tab.address === undefined ? {} : { address: tab.address }) } : undefined, set }
-  const controller = createSiteInfoController({ broker: createBroker(baseDeps()), routes, privateTunnel: options.privateTunnel ?? null, extensions: { list: () => [] } } as unknown as SubsystemContext, trust(), undefined, undefined, undefined, tabTunnels)
+  const tabTunnels = { choiceOf: (id: string) => id === 't1' ? { choice: tab.choice, ...(tab.address === undefined ? {} : { address: tab.address }), ...(options.internal === true ? { internal: true } : {}) } : undefined, set }
+  const controller = createSiteInfoController({ broker: createBroker(baseDeps()), routes, privateTunnel: options.privateTunnel ?? null, extensions: { list: () => [] } } as unknown as SubsystemContext, trust(options.allApps === true ? () => true : undefined), undefined, undefined, undefined, tabTunnels)
   const info = async () => await controller.tabInfoFor('t1')
   return { controller, calls, entries, tab, info, routes, forget }
 }
@@ -362,5 +366,60 @@ describe('Always use for this site', () => {
       expect(w.entries.size).toBe(0)
       expect(w.tab.choice).toBe('socks5')
     })
+  })
+})
+
+describe('a tab showing a page of the shell, which never goes through a tunnel', () => {
+  const SHELL = { address: 'orivon://settings/', internal: true }
+
+  it('is about the browser alone: no panel of the tab, no website, and what the tab carries is not offered', async () => {
+    for (const choice of [undefined, 'nym', 'direct'] as const) {
+      const info = await world({ ...SHELL, ...(choice === undefined ? {} : { choice }), everywhere: true }).info()
+      expect(info, String(choice)).toMatchObject({ origin: '', browserOnly: true, everywhere: true })
+      expect(info?.tunnel, String(choice)).toBeUndefined()
+    }
+  })
+
+  it('names no website, whatever address the record holds', async () => {
+    const w = world({ ...SHELL })
+    expect(w.controller.tabShownOrigin('t1')).toBe('')
+    expect(world({ address: SITE, internal: true }).controller.tabShownOrigin('t1'), 'a record that says it is the shell\'s page is believed over its address').toBe('')
+  })
+
+  it('refuses a tab choice, for any tunnel and for none, and leaves the tab and every entry as they were', async () => {
+    const w = world({ ...SHELL, choice: 'socks5' })
+    for (const kind of ['nym', 'socks5', null] as const) {
+      expect(await w.controller.setTabTunnel('t1', kind), String(kind)).toBe(false)
+      expect(await w.controller.setTabTunnel('t1', kind, SITE), `${String(kind)} naming a website`).toBe(false)
+    }
+    expect(w.calls).toEqual([])
+    expect(w.tab.choice).toBe('socks5')
+    expect(w.entries.size).toBe(0)
+  })
+
+  it('refuses "Always use for this site", on or off, even with an entry in the store for the website it names', async () => {
+    const w = world({ ...SHELL, choice: 'nym', entries: { [SITE]: 'nym' } })
+    expect(await w.controller.setSiteAlways('t1', true, SITE)).toBe(false)
+    expect(await w.controller.setSiteAlways('t1', false, SITE)).toBe(false)
+    expect(await w.controller.setSiteAlways('t1', true, 'orivon://settings')).toBe(false)
+    expect(w.calls).toEqual([])
+    expect([...w.entries]).toEqual([[SITE, 'nym']])
+  })
+
+  it('refuses a tab choice for a tab that has moved from a website to a page of the shell since its popup was drawn', async () => {
+    const w = world({ choice: 'nym', entries: { [SITE]: 'nym' } })
+    expect(await w.controller.setTabTunnel('t1', 'socks5', SITE), 'the same move on the website is made').toBe(true)
+    const moved = world({ ...SHELL, choice: 'nym', entries: { [SITE]: 'nym' } })
+    expect(await moved.controller.setTabTunnel('t1', 'socks5', SITE)).toBe(false)
+    expect(moved.calls).toEqual([])
+  })
+
+  it('writes no entry for an orivon origin through the door of an origin\'s own popup either, even if the loader called it an installed app', async () => {
+    const w = world({ ...SHELL, allApps: true })
+    for (const origin of ['orivon://settings', 'orivon://settings/', 'orivon://history/tunnels']) {
+      for (const kind of ['nym', 'socks5', null] as const) expect(await w.controller.setTunnel(origin, kind), `${origin} ${String(kind)}`).toBe(false)
+    }
+    expect(w.calls, 'no entry was chosen or forgotten').toEqual([])
+    expect(w.entries.size).toBe(0)
   })
 })
