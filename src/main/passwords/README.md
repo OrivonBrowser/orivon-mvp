@@ -75,7 +75,35 @@ without submitting is never reported.
 keys, Enter (only with a row chosen) and Escape from the tab's input before the page does
 (`before-input-event`) and tells the chooser which row is chosen. A press on a row is a choice, never a reason to close
 or open the chooser: the press gives the chooser's view the keyboard for an instant (the overlay host hands it straight
-back), so the page reports its box blurred and then focused again. Main hears the view's own focus first
-(`chooserPressed`) and lets that one blur pass, and a focus reported for the box the chooser is already open under
-opens nothing, so the generated password, the rows and the early-click guard stay as the person saw them. A blur
-with no press before it, or one that comes long after, still closes it.
+back), so the page reports its box blurred and then focused again. Main hears the view's own focus (`chooserPressed`) and
+lets the blur that follows pass. A blur no press has explained closes the chooser only after `BLUR_GRACE_MS`, so a press
+that reaches main just after the blur it caused still cancels the close: nothing here depends on which of the two main
+hears first. The focus the page reports next is the keyboard coming back only when it names the same box (the page
+numbers its sign-in boxes, `box` on `focus`), and then the chooser stays where it is even when the box has grown or
+moved since (many sign-up pages animate a box as it takes the focus), so the generated password, the rows and the
+early-click guard stay as the person saw them. A focus for another box is a box of its own, and a blur with no press
+before it, or one that comes long after, closes the chooser.
+
+**A password and its confirmation are one group, form or no form.** The watcher groups password boxes by the `<form>`
+that holds them. Boxes with no form are grouped by the nearest ancestor (six levels at most) that holds any other
+sign-in box, a text box or another password, and groups whose scopes hold one another are one group, so two boxes that
+a page wraps in layers of their own, or lays at different depths, or leaves with no account box between them, still meet.
+A scope that holds another is not joined to it when each has a text box the other lacks: that is two separate forms, a
+login in the header and a sign-up, and a sign-up whose boxes sit in separate steps joins only while no other text box
+sits outside the step that has the account box. The group decides whether a form is a sign-up and which submitting
+gesture belongs to which sign-in. The account box of a password is found apart, in the nearest ancestor that holds a
+text box, so a wider group never makes a search box a username.
+
+**A strong password goes into the new password and its confirmation, two boxes at most.** The new password is the first
+box the page calls new, else the middle one of three (current, new, repeat), else the first; its confirmation is the next
+box, or the one before it when it is the last. A box the page calls current never gets it. The box the person is in
+decides only when it is outside that pair, and then it and its own neighbour get it, so a PIN after the confirmation, or
+a login that shares the group, is left as it was, and the password button with nothing focused picks the pair by the
+same rule.
+
+**A fill that did nothing leaves a line for the bug report.** `[passwords]` lines say that a press on the list was
+not taken for a choice because it came too soon, that a choice filled nothing and why (the tab, the store or the page
+moved), how many boxes a fill reached, and that it found none. A press that took the keyboard, the keyboard coming
+back, and a list that closed because its box lost the keyboard leave a line each. The page reports the count on
+`filled` (a number and a flag, never a value), so a fill that reached a page with nothing to fill shows up where a
+report can read it. No line carries a password, a username or the site.

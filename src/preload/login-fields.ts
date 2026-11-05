@@ -89,3 +89,55 @@ export function fillScope (signUps: readonly boolean[], both: boolean): number {
   const wanted = signUps.indexOf(both)
   return wanted === -1 ? 0 : wanted
 }
+
+/** How many ancestors above a box that has no form are searched for the one that scopes it. */
+export const SCOPE_LEVELS = 6
+
+/** Password boxes that belong together, and the scope that holds them all. */
+export interface ScopeGroup<T> { readonly scope: T, readonly members: readonly number[] }
+
+/**
+ * Groups boxes by the scope each was given: two share a group when their scopes are one element or one holds the other,
+ * as a page that wraps each box in its own layers puts a box and its confirmation at different depths. A group's scope is
+ * the one that holds the rest. Groups come in the order of their first box.
+ */
+export function groupByScope<T> (scopes: readonly T[], holds: (outer: T, inner: T) => boolean): Array<ScopeGroup<T>> {
+  const root = scopes.map((_, index) => index)
+  const find = (index: number): number => {
+    let at = index
+    while (root[at] !== at) at = root[at] as number
+    return at
+  }
+  scopes.forEach((outer, i) => {
+    scopes.forEach((inner, j) => {
+      if (i < j && (outer === inner || holds(outer, inner) || holds(inner, outer))) root[find(j)] = find(i)
+    })
+  })
+  const groups = new Map<number, number[]>()
+  scopes.forEach((_, index) => { groups.set(find(index), [...groups.get(find(index)) ?? [], index]) })
+  return [...groups.values()].map((members) => {
+    const scope = members.map((at) => scopes[at] as T).find((candidate) => members.every((at) => scopes[at] === candidate || holds(candidate, scopes[at] as T)))
+    return { scope: scope ?? scopes[members[0] as number] as T, members }
+  })
+}
+
+/**
+ * Which of a group's password boxes get a strong password: the new password and its confirmation, two boxes at most, and
+ * never a box the page calls current. The new password is the first box the page calls new, else the middle one of three
+ * (current, new, repeat), else the first; its confirmation is the next box, or the one before it when it is the last. The
+ * box the person is in decides only when it is outside that pair: it and its own neighbour then.
+ */
+export function newPasswordBoxes (passwords: readonly FieldInfo[], touched: number): number[] {
+  const says = (index: number, token: string): boolean => autocompleteTokens(passwords[index]?.autocomplete ?? '').includes(token)
+  const open = passwords.map((_, index) => index).filter((index) => !says(index, 'current-password'))
+  const leader = open.find((index) => says(index, 'new-password')) ?? (passwords.length === 3 && open.includes(1) ? 1 : open[0])
+  if (leader === undefined) return []
+  const pairOf = (at: number): number[] => {
+    const next = open.find((index) => index > at)
+    if (next !== undefined) return [at, next]
+    const before = open.filter((index) => index < at).at(-1)
+    return before === undefined ? [at] : [before, at]
+  }
+  const usual = pairOf(leader)
+  return open.includes(touched) && !usual.includes(touched) ? pairOf(touched) : usual
+}

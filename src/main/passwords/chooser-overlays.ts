@@ -33,27 +33,31 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
   let shownAt = 0
   const activeTab = (): string | null => window.tabs.getState().activeTabId
 
-  /** The one place a choice becomes a fill; false when the page, the tab or the store no longer allows it. */
-  async function choose (choice: Choice): Promise<boolean> {
-    if (tabId === null || activeTab() !== tabId) return false
+  /** The one place a choice becomes a fill: null when it was sent, else why the page, the tab or the store no longer allows it. */
+  async function choose (choice: Choice): Promise<string | null> {
+    if (tabId === null || activeTab() !== tabId) return 'the tab is no longer in front'
     // A store that cannot keep logins, or a private window, gives nothing to a page.
-    if (services.isPrivate || services.passwords.state() !== 'ready') return false
+    if (services.isPrivate || services.passwords.state() !== 'ready') return 'the store cannot keep logins'
     const contents = window.tabs.liveWebContents(tabId)
-    if (contents === undefined) return false
-    if (choice.kind === 'login') return await fillLogin(contents, services.passwords, choice.id)
+    if (contents === undefined) return 'the tab is gone'
+    if (choice.kind === 'login') return await fillLogin(contents, services.passwords, choice.id) ? null : 'the page is not at the login\'s site any more, or the login has no password'
+    if (generated === null) return 'the list holds no strong password'
     const origin = originFromUrl(contents.mainFrame.url)
-    return generated !== null && origin !== null && fillGenerated(contents, origin, generated)
+    if (origin === null) return 'the page is not at a web address'
+    return fillGenerated(contents, origin, generated) ? null : 'the page moved before the strong password was sent'
   }
 
   async function pick (choice: Choice): Promise<boolean> {
     const tab = tabId
-    const ok = await choose(choice)
-    if (ok) {
-      // The person has answered: the boxes they tab to next on this page are theirs to fill.
-      if (tab !== null) forms.dismissChooser(tab)
-      close()
+    const refused = await choose(choice)
+    if (refused !== null) {
+      console.warn(`[passwords] a choice in the sign-in list filled nothing: ${refused}`)
+      return false
     }
-    return ok
+    // The person has answered: the boxes they tab to next on this page are theirs to fill.
+    if (tab !== null) forms.dismissChooser(tab)
+    close()
+    return true
   }
 
   const keys = (key: string): boolean => {
@@ -92,14 +96,17 @@ function chooserHandler (win: OverlayWindow, mode: ChooserView['mode']): Overlay
     },
     request: async (command) => {
       if (!isRecord(command) || tabId === null) return undefined
-      if (mode === 'field' && Date.now() - shownAt < EARLY_CLICK_MS && (command['type'] === 'fill' || command['type'] === 'generate')) return { ok: false }
+      if (mode === 'field' && Date.now() - shownAt < EARLY_CLICK_MS && (command['type'] === 'fill' || command['type'] === 'generate')) {
+        console.warn(`[passwords] a press on the sign-in list came ${String(Date.now() - shownAt)} ms after it appeared and was not taken for a choice`)
+        return { ok: false }
+      }
       switch (command['type']) {
         case 'fill': {
           const id = command['id']
           return typeof id === 'string' ? { ok: await pick({ kind: 'login', id }) } : undefined
         }
         case 'generate':
-          return generated === null ? undefined : { ok: await pick({ kind: 'generate' }) }
+          return { ok: await pick({ kind: 'generate' }) }
         case 'manage':
           close()
           services.commands.run('passwords.open', window)

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { WebContents } from 'electron'
 import type { FormCommand } from '../form-message.js'
-import { fillGenerated, fillLogin } from '../fill-login.js'
+import { fillGenerated, fillLogin, fillTrace } from '../fill-login.js'
 import { memoryVault } from '../vault.js'
 
 const ORIGIN = 'https://site.example'
@@ -74,5 +74,16 @@ describe('fillGenerated', () => {
     const send = vi.fn(() => true)
     expect(fillGenerated(page().wc, ORIGIN, 'Generated-Pw', send)).toBe(true)
     expect(send).toHaveBeenCalledWith(expect.anything(), ORIGIN, { type: 'fill', username: null, password: 'Generated-Pw', both: true })
+  })
+})
+
+describe('fillTrace', () => {
+  it('says how many password boxes a fill reached, and whether an account box too', () => {
+    expect(fillTrace({ boxes: 2, username: false })).toEqual({ level: 'info', text: '[passwords] a fill reached the page: 2 password boxes' })
+    expect(fillTrace({ boxes: 1, username: true })).toEqual({ level: 'info', text: '[passwords] a fill reached the page: 1 password box and its account box' })
+  })
+
+  it('warns when a fill found no password box, which is a fill that did nothing', () => {
+    expect(fillTrace({ boxes: 0, username: false })).toEqual({ level: 'warn', text: '[passwords] a fill reached a page that had no password box to put it in' })
   })
 })

@@ -28,3 +28,10 @@ export async function fillLogin (contents: WebContents, vault: Pick<PasswordVaul
 export function fillGenerated (contents: WebContents, origin: string, password: string, send: Send = fillFrame): boolean {
   return send(contents, origin, { type: 'fill', username: null, password, both: true })
 }
+
+/** The line a bug report shows of what a fill did to the page: how many boxes, never a value and never the site. */
+export function fillTrace (outcome: { boxes: number, username: boolean }): { level: 'info' | 'warn', text: string } {
+  if (outcome.boxes === 0) return { level: 'warn', text: '[passwords] a fill reached a page that had no password box to put it in' }
+  const boxes = `${String(outcome.boxes)} password box${outcome.boxes === 1 ? '' : 'es'}`
+  return { level: 'info', text: `[passwords] a fill reached the page: ${boxes}${outcome.username ? ' and its account box' : ''}` }
+}

@@ -7,7 +7,7 @@ import type { FormSender } from '../form-watch-ipc.js'
 import { KEEP_MS, QUIET_MS, SUCCESS_WINDOW_MS } from '../save-offer.js'
 import { memoryVault } from '../vault.js'
 import type { PasswordVault, VaultState } from '../vault.js'
-import { createWindowForms, NO_LOGINS, PRESS_BLUR_MS, SAVE_OVERLAY } from '../window-forms.js'
+import { BLUR_GRACE_MS, createWindowForms, NO_LOGINS, PRESS_BLUR_MS, SAVE_OVERLAY } from '../window-forms.js'
 import type { WindowForms } from '../window-forms.js'
 
 const ORIGIN = 'https://site.example'
@@ -452,7 +452,7 @@ describe('the password button and the chooser', () => {
   it('remembers the focused field and tells the chrome', () => {
     const r = rig()
     const before = r.pushes()
-    r.forms.focus(r.sender(), { type: 'focus', rect: { x: 1, y: 2, width: 3, height: 4 }, viewWidth: 1000, signUp: false })
+    r.forms.focus(r.sender(), { type: 'focus', rect: { x: 1, y: 2, width: 3, height: 4 }, viewWidth: 1000, signUp: false, box: 0 })
     expect(r.pushes()).toBeGreaterThan(before)
   })
 
@@ -473,7 +473,7 @@ describe('the password button and the chooser', () => {
 })
 
 describe('the chooser under a focused box', () => {
-  const box = { type: 'focus', rect: { x: 1, y: 2, width: 3, height: 4 }, viewWidth: 1000, signUp: false } as const
+  const box = { type: 'focus', rect: { x: 1, y: 2, width: 3, height: 4 }, viewWidth: 1000, signUp: false, box: 0 } as const
 
   it('opens when a box of a site with saved logins is focused, handing it the box', async () => {
     const r = rig()
@@ -519,14 +519,33 @@ describe('the chooser under a focused box', () => {
     expect(r.suggests).toEqual(['t1'])
   })
 
-  it('closes when the box loses focus', () => {
+  it('closes a moment after the box loses focus', () => {
     const r = rig()
     r.forms.blur(r.sender())
+    expect(r.suggestCloses.count).toBe(0)
+    r.advance(BLUR_GRACE_MS)
     expect(r.suggestCloses.count).toBe(1)
   })
 
+  it('says in the log that it closed because the box lost the keyboard, only when it was open', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      const r = rig()
+      r.forms.blur(r.sender())
+      r.advance(BLUR_GRACE_MS)
+      expect(info).not.toHaveBeenCalled()
+      await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
+      r.forms.focus(r.sender(), box)
+      r.forms.blur(r.sender())
+      r.advance(BLUR_GRACE_MS)
+      expect(info.mock.calls.map((call) => String(call[0]))).toEqual(['[passwords] the sign-in list closed because its box lost the keyboard'])
+    } finally {
+      info.mockRestore()
+    }
+  })
+
   describe('a press on the chooser', () => {
-    const elsewhere = { ...box, rect: { x: 50, y: 60, width: 3, height: 4 } }
+    const elsewhere = { ...box, rect: { x: 50, y: 60, width: 3, height: 4 }, box: 1 }
     const openUnder = async (): Promise<Rig> => {
       const r = rig()
       await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
@@ -544,11 +563,60 @@ describe('the chooser under a focused box', () => {
       expect(r.suggestUp.open).toBe(true)
     })
 
+    it('keeps the chooser where it is when the box has grown or moved by the time the keyboard comes back', async () => {
+      const r = await openUnder()
+      const grown = { ...box, rect: { x: 1, y: 2, width: 40, height: 44 } }
+      r.forms.chooserPressed()
+      r.forms.blur(r.sender())
+      r.forms.focus(r.sender(), grown)
+      expect(r.suggestCloses.count).toBe(0)
+      expect(r.suggests).toEqual(['t1'])
+      // The box it now hangs from is the grown one: its next report is nothing new.
+      r.forms.focus(r.sender(), grown)
+      expect(r.suggests).toEqual(['t1'])
+    })
+
+    it('opens the chooser under a box the page reports without the press\'s blur before it', async () => {
+      const r = await openUnder()
+      r.forms.chooserPressed()
+      r.forms.focus(r.sender(), elsewhere)
+      expect(r.suggests).toEqual(['t1', 't1'])
+    })
+
+    it('takes the focus of another box after the press for a box of its own, not the keyboard coming back', async () => {
+      const r = await openUnder()
+      r.forms.chooserPressed()
+      r.forms.blur(r.sender())
+      r.forms.focus(r.sender(), elsewhere)
+      expect(r.suggests).toEqual(['t1', 't1'])
+    })
+
+    it('keeps the chooser when the press reaches main just after the blur it caused', async () => {
+      const r = await openUnder()
+      r.forms.blur(r.sender())
+      r.advance(BLUR_GRACE_MS - 1)
+      r.forms.chooserPressed()
+      r.advance(BLUR_GRACE_MS)
+      expect(r.suggestCloses.count).toBe(0)
+      r.forms.focus(r.sender(), { ...box, rect: { x: 1, y: 2, width: 40, height: 44 } })
+      expect(r.suggests).toEqual(['t1'])
+      expect(r.suggestUp.open).toBe(true)
+    })
+
+    it('is too late once the chooser has closed for the blur', async () => {
+      const r = await openUnder()
+      r.forms.blur(r.sender())
+      r.advance(BLUR_GRACE_MS)
+      r.forms.chooserPressed()
+      expect(r.suggestCloses.count).toBe(1)
+    })
+
     it('answers one blur: the box losing focus afterwards closes the chooser', async () => {
       const r = await openUnder()
       r.forms.chooserPressed()
       r.forms.blur(r.sender())
       r.forms.blur(r.sender())
+      r.advance(BLUR_GRACE_MS)
       expect(r.suggestCloses.count).toBe(1)
     })
 
@@ -557,6 +625,7 @@ describe('the chooser under a focused box', () => {
       r.forms.chooserPressed()
       r.advance(PRESS_BLUR_MS + 1)
       r.forms.blur(r.sender())
+      r.advance(BLUR_GRACE_MS)
       expect(r.suggestCloses.count).toBe(1)
     })
 
@@ -565,18 +634,41 @@ describe('the chooser under a focused box', () => {
       r.forms.chooserPressed()
       r.forms.focus(r.sender(), elsewhere)
       r.forms.blur(r.sender())
+      r.advance(BLUR_GRACE_MS)
       expect(r.suggestCloses.count).toBe(1)
     })
+  })
+
+  it('closes at once when the focus after a blur is for a box that gets no chooser', async () => {
+    const r = rig()
+    await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
+    r.forms.focus(r.sender(), box)
+    r.forms.blur(r.sender())
+    r.forms.dismissChooser('t1')
+    r.forms.focus(r.sender(), { ...box, rect: { x: 50, y: 60, width: 3, height: 4 }, box: 1 })
+    expect(r.suggestCloses.count).toBe(1)
+    expect(r.suggests).toEqual(['t1'])
+  })
+
+  it('keeps the chooser when the same box is reported again before the grace is over', async () => {
+    const r = rig()
+    await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
+    r.forms.focus(r.sender(), box)
+    r.forms.blur(r.sender())
+    r.forms.focus(r.sender(), box)
+    r.advance(BLUR_GRACE_MS)
+    expect(r.suggestCloses.count).toBe(0)
+    expect(r.suggests).toEqual(['t1'])
   })
 
   it('moves the chooser to a box focused after it, and opens it again once it has closed', async () => {
     const r = rig()
     await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
     r.forms.focus(r.sender(), box)
-    r.forms.focus(r.sender(), { ...box, rect: { x: 50, y: 60, width: 3, height: 4 } })
+    r.forms.focus(r.sender(), { ...box, rect: { x: 50, y: 60, width: 3, height: 4 }, box: 1 })
     expect(r.suggests).toEqual(['t1', 't1'])
     r.suggestUp.open = false
-    r.forms.focus(r.sender(), { ...box, rect: { x: 50, y: 60, width: 3, height: 4 } })
+    r.forms.focus(r.sender(), { ...box, rect: { x: 50, y: 60, width: 3, height: 4 }, box: 1 })
     expect(r.suggests).toEqual(['t1', 't1', 't1'])
   })
 

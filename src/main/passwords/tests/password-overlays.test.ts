@@ -7,7 +7,7 @@ import { FORM_FILL_CHANNEL } from '../../channels.js'
 import { formsFor } from '../forms-registry.js'
 import { passwordFillOverlay, passwordSuggestOverlay } from '../chooser-overlays.js'
 import { passwordSaveOverlay, PROMPT_IDLE_MS } from '../password-overlays.js'
-import { FILL_OVERLAY, SUGGEST_OVERLAY } from '../window-forms.js'
+import { BLUR_GRACE_MS, FILL_OVERLAY, SUGGEST_OVERLAY } from '../window-forms.js'
 import { memoryVault } from '../vault.js'
 import type { PasswordVault } from '../vault.js'
 
@@ -314,6 +314,29 @@ describe('the chooser', () => {
     expect(r.sends).toEqual([])
   })
 
+  it('leaves a line in the log for a choice that filled nothing, naming the reason and never a password or the site', async () => {
+    const r = rig()
+    const { handler } = attach(passwordFillOverlay, r)
+    await onLoginPage(r)
+    const view = handler.show?.(undefined) as { logins: Array<{ id: string }> }
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      r.active.id = 't2'
+      await handler.request({ type: 'fill', id: view.logins[0]?.id })
+      r.active.id = 't1'
+      r.frame.url = 'https://evil.example/'
+      await handler.request({ type: 'fill', id: view.logins[0]?.id })
+      const lines = warn.mock.calls.map((call) => String(call[0]))
+      expect(lines).toEqual([
+        '[passwords] a choice in the sign-in list filled nothing: the tab is no longer in front',
+        '[passwords] a choice in the sign-in list filled nothing: the page is not at the login\'s site any more, or the login has no password'
+      ])
+      expect(lines.join('\n')).not.toMatch(/pw-ada|evil\.example|site\.example/)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
   it('does not fill once the vault cannot keep logins', async () => {
     const r = rig()
     const { handler } = attach(passwordFillOverlay, r)
@@ -340,7 +363,35 @@ describe('the chooser', () => {
     const { handler } = attach(passwordFillOverlay, r)
     await onLoginPage(r, false)
     handler.show?.(undefined)
-    expect(await handler.request({ type: 'generate' })).toBeUndefined()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(await handler.request({ type: 'generate' })).toEqual({ ok: false })
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual(['[passwords] a choice in the sign-in list filled nothing: the list holds no strong password'])
+    } finally {
+      warn.mockRestore()
+    }
+    expect(r.sends).toEqual([])
+  })
+
+  it('names why a strong password was not sent: the page is not at a web address, or moved before it was sent', async () => {
+    const r = rig()
+    const { handler } = attach(passwordFillOverlay, r)
+    await onLoginPage(r, true)
+    handler.show?.(undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      r.frame.url = 'about:blank'
+      expect(await handler.request({ type: 'generate' })).toEqual({ ok: false })
+      let reads = 0
+      Object.defineProperty(r.frame, 'url', { get: () => (reads += 1) <= 1 ? `${ORIGIN}/signup` : 'https://evil.example/' })
+      expect(await handler.request({ type: 'generate' })).toEqual({ ok: false })
+      expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+        '[passwords] a choice in the sign-in list filled nothing: the page is not at a web address',
+        '[passwords] a choice in the sign-in list filled nothing: the page moved before the strong password was sent'
+      ])
+    } finally {
+      warn.mockRestore()
+    }
     expect(r.sends).toEqual([])
   })
 
@@ -493,9 +544,26 @@ describe('the chooser under a focused box', () => {
     const forms = formsFor(r.window, r.services)
     handler.focused?.()
     forms.blur(sender(r))
+    await vi.advanceTimersByTimeAsync(BLUR_GRACE_MS)
     expect(r.closes).toEqual([])
     forms.blur(sender(r))
+    await vi.advanceTimersByTimeAsync(BLUR_GRACE_MS)
     expect(r.closes).toEqual([SUGGEST_OVERLAY])
+  })
+
+  it('leaves a line in the log for a press that came too soon to be a choice', async () => {
+    const r = rig()
+    const { handler } = attach(passwordSuggestOverlay, r)
+    await ready(r)
+    handler.show?.(undefined)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(await handler.request({ type: 'generate' })).toEqual({ ok: false })
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(String(warn.mock.calls[0]?.[0])).toMatch(/^\[passwords\] a press on the sign-in list came \d+ ms after it appeared and was not taken for a choice$/)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('the button\'s chooser does not treat a focus as a press: it has the keyboard from the start', async () => {
@@ -505,6 +573,7 @@ describe('the chooser under a focused box', () => {
     handler.show?.(undefined)
     handler.focused?.()
     formsFor(r.window, r.services).blur(sender(r))
+    await vi.advanceTimersByTimeAsync(BLUR_GRACE_MS)
     expect(r.closes).toEqual([SUGGEST_OVERLAY])
   })
 

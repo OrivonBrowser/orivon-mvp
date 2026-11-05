@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createRateLimiter, MAX_PASSWORD_LENGTH, MAX_USERNAME_LENGTH, parseFormMessage } from '../form-message.js'
+import { createRateLimiter, MAX_BOX_KEY, MAX_PASSWORD_LENGTH, MAX_USERNAME_LENGTH, parseFormMessage } from '../form-message.js'
 
 const rect = { x: 10, y: 20, width: 200, height: 30 }
 
@@ -8,8 +8,9 @@ describe('parseFormMessage', () => {
     expect(parseFormMessage({ type: 'hello' })).toEqual({ type: 'hello' })
     expect(parseFormMessage({ type: 'blur' })).toEqual({ type: 'blur' })
     expect(parseFormMessage({ type: 'fields', hasPassword: true, signUp: false })).toEqual({ type: 'fields', hasPassword: true, signUp: false })
-    expect(parseFormMessage({ type: 'focus', rect, viewWidth: 1200, signUp: true })).toEqual({ type: 'focus', rect, viewWidth: 1200, signUp: true })
+    expect(parseFormMessage({ type: 'focus', rect, viewWidth: 1200, signUp: true, box: 3 })).toEqual({ type: 'focus', rect, viewWidth: 1200, signUp: true, box: 3 })
     expect(parseFormMessage({ type: 'submit', username: 'ada', password: 'pw' })).toEqual({ type: 'submit', username: 'ada', password: 'pw' })
+    expect(parseFormMessage({ type: 'filled', boxes: 2, username: true })).toEqual({ type: 'filled', boxes: 2, username: true })
   })
 
   it('keeps only the fields it knows', () => {
@@ -36,13 +37,35 @@ describe('parseFormMessage', () => {
   })
 
   it('refuses a rectangle that is not finite numbers, or is far past any screen, and a width that is not a width', () => {
-    expect(parseFormMessage({ type: 'focus', rect: { ...rect, x: Number.NaN }, viewWidth: 1, signUp: false })).toBeNull()
-    expect(parseFormMessage({ type: 'focus', rect: { ...rect, y: Infinity }, viewWidth: 1, signUp: false })).toBeNull()
-    expect(parseFormMessage({ type: 'focus', rect: { ...rect, width: 1e9 }, viewWidth: 1, signUp: false })).toBeNull()
-    expect(parseFormMessage({ type: 'focus', rect: { x: 1, y: 1, width: '2', height: 3 }, viewWidth: 1, signUp: false })).toBeNull()
-    expect(parseFormMessage({ type: 'focus', rect, viewWidth: 0, signUp: false })).toBeNull()
-    expect(parseFormMessage({ type: 'focus', rect, viewWidth: -5, signUp: false })).toBeNull()
-    expect(parseFormMessage({ type: 'focus', rect, viewWidth: 1200, signUp: 'no' })).toBeNull()
+    expect(parseFormMessage({ type: 'focus', rect: { ...rect, x: Number.NaN }, viewWidth: 1, signUp: false, box: 0 })).toBeNull()
+    expect(parseFormMessage({ type: 'focus', rect: { ...rect, y: Infinity }, viewWidth: 1, signUp: false, box: 0 })).toBeNull()
+    expect(parseFormMessage({ type: 'focus', rect: { ...rect, width: 1e9 }, viewWidth: 1, signUp: false, box: 0 })).toBeNull()
+    expect(parseFormMessage({ type: 'focus', rect: { x: 1, y: 1, width: '2', height: 3 }, viewWidth: 1, signUp: false, box: 0 })).toBeNull()
+    expect(parseFormMessage({ type: 'focus', rect, viewWidth: 0, signUp: false, box: 0 })).toBeNull()
+    expect(parseFormMessage({ type: 'focus', rect, viewWidth: -5, signUp: false, box: 0 })).toBeNull()
+    expect(parseFormMessage({ type: 'focus', rect, viewWidth: 1200, signUp: 'no', box: 0 })).toBeNull()
+  })
+})
+
+describe('parseFormMessage of the box a focus names', () => {
+  const focus = { type: 'focus', rect, viewWidth: 1200, signUp: true }
+
+  it('wants a whole number from zero up to the most boxes a page may number', () => {
+    expect(parseFormMessage({ ...focus, box: 0 })).toMatchObject({ box: 0 })
+    expect(parseFormMessage({ ...focus, box: MAX_BOX_KEY })).toMatchObject({ box: MAX_BOX_KEY })
+    for (const box of [undefined, -1, 1.5, MAX_BOX_KEY + 1, '2', Number.NaN, null]) expect(parseFormMessage({ ...focus, box })).toBeNull()
+  })
+})
+
+describe('parseFormMessage of what a fill did', () => {
+  it('keeps the counts and nothing a page could add to them', () => {
+    expect(parseFormMessage({ type: 'filled', boxes: 0, username: false, password: 'pw' })).toEqual({ type: 'filled', boxes: 0, username: false })
+  })
+
+  it('refuses a count that is not a small whole number, and an account flag that is not a flag', () => {
+    for (const boxes of [-1, 1.5, 65, Number.NaN, Infinity, '2', null]) expect(parseFormMessage({ type: 'filled', boxes, username: false })).toBeNull()
+    expect(parseFormMessage({ type: 'filled', boxes: 1, username: 'yes' })).toBeNull()
+    expect(parseFormMessage({ type: 'filled', boxes: 1 })).toBeNull()
   })
 })
 

@@ -7,6 +7,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { formWatch, installFormWatchIpc } from './form-watch-ipc.js'
+import { fillTrace } from './fill-login.js'
 import { formsFor } from './forms-registry.js'
 import { oncePerTurn } from './once-per-turn.js'
 import { SUGGEST_KEYS } from './suggest-keys.js'
@@ -17,6 +18,10 @@ function wireMessages (services: ShellServices): void {
   formWatch.on('focus', (message, sender) => { formsFor(sender.window, services).focus(sender, message) })
   formWatch.on('blur', (_message, sender) => { formsFor(sender.window, services).blur(sender) })
   formWatch.on('submit', (message, sender) => { formsFor(sender.window, services).submit(sender, message) })
+  formWatch.on('filled', (message) => {
+    const line = fillTrace(message)
+    console[line.level](line.text)
+  })
 }
 
 function wireNavigations (services: ShellServices): void {

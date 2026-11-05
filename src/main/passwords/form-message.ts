@@ -4,15 +4,20 @@
 
 export const MAX_USERNAME_LENGTH = 256
 export const MAX_PASSWORD_LENGTH = 1024
+/** The most sign-in boxes a page's focus report may number. */
+export const MAX_BOX_KEY = 100_000
 
 export interface FieldRect { x: number, y: number, width: number, height: number }
 
 export type FormMessage =
   | { type: 'hello' }
   | { type: 'fields', hasPassword: boolean, signUp: boolean }
-  | { type: 'focus', rect: FieldRect, viewWidth: number, signUp: boolean }
+  /** `box` is the focused box's place among the page's sign-in boxes: the same number twice means the same box. */
+  | { type: 'focus', rect: FieldRect, viewWidth: number, signUp: boolean, box: number }
   | { type: 'blur' }
   | { type: 'submit', username: string, password: string }
+  /** What a fill did to the page, counted: how many password boxes it wrote into and whether an account box too. Never a value. */
+  | { type: 'filled', boxes: number, username: boolean }
 
 export type FormMessageType = FormMessage['type']
 
@@ -27,6 +32,8 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 
 /** Window-content sizes and offsets far past any screen are not a place. */
 const EXTENT = 100_000
+/** More password boxes than a page could mean to fill with one choice. */
+const MAX_FILLED_BOXES = 64
 
 function isRect (value: unknown): value is FieldRect {
   if (!isRecord(value)) return false
@@ -47,13 +54,19 @@ export function parseFormMessage (payload: unknown): FormMessage | null {
         ? { type: 'fields', hasPassword: payload['hasPassword'], signUp: payload['signUp'] }
         : null
     case 'focus': {
-      const { rect, viewWidth, signUp } = payload
+      const { rect, viewWidth, signUp, box } = payload
       if (!isRect(rect) || typeof signUp !== 'boolean') return null
+      if (typeof box !== 'number' || !Number.isInteger(box) || box < 0 || box > MAX_BOX_KEY) return null
       if (typeof viewWidth !== 'number' || !Number.isFinite(viewWidth) || viewWidth <= 0 || viewWidth > EXTENT) return null
-      return { type: 'focus', rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, viewWidth, signUp }
+      return { type: 'focus', rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height }, viewWidth, signUp, box }
     }
     case 'blur':
       return { type: 'blur' }
+    case 'filled': {
+      const { boxes, username } = payload
+      if (typeof boxes !== 'number' || !Number.isInteger(boxes) || boxes < 0 || boxes > MAX_FILLED_BOXES || typeof username !== 'boolean') return null
+      return { type: 'filled', boxes, username }
+    }
     case 'submit': {
       const { username, password } = payload
       if (typeof username !== 'string' || typeof password !== 'string') return null

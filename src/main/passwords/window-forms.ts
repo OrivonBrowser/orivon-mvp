@@ -20,6 +20,8 @@ export const SUGGEST_OVERLAY = 'password-suggest'
 const MAX_NAVIGATIONS = 8
 /** A press on the chooser under a box takes the keyboard from the page, which reports the box blurred within this long. */
 export const PRESS_BLUR_MS = 1000
+/** A blur no press has explained closes the chooser after this long, so a press that reaches main just after the blur it caused still keeps it. */
+export const BLUR_GRACE_MS = 50
 
 export interface FormsDeps {
   readonly vault: PasswordVault
@@ -119,10 +121,19 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
   const notify = (): void => { for (const listener of [...listeners]) listener() }
   let keys: KeyHandler | null = null
   let pressedAt: number | null = null
+  /** The page's blur for that press has been heard: the focus it reports next is the keyboard coming back from the press. */
+  let pressHeard = false
   /** The box the chooser under a box was last opened for. */
-  let suggestedFor: { tabId: string, rect: FieldRect } | null = null
+  let suggestedFor: { tabId: string, rect: FieldRect, box: number } | null = null
+  /** The close a blur has put off for `BLUR_GRACE_MS`. */
+  let closeLater: (() => void) | null = null
+  const cancelClose = (): void => {
+    closeLater?.()
+    closeLater = null
+  }
 
   const ready = (): boolean => !deps.isPrivate && deps.vault.state() === 'ready'
+  const pressing = (): boolean => pressedAt !== null && deps.now() - pressedAt <= PRESS_BLUR_MS
 
   function tabOf (tabId: string, origin: string | null = null): TabForms {
     let tab = tabs.get(tabId)
@@ -258,25 +269,52 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
       tab.focused = { rect: message.rect, viewWidth: message.viewWidth, signUp: message.signUp }
       tab.signUp = message.signUp
       tab.hasPassword = true
-      // A press on the chooser hands the keyboard to it and back: the page reports the box focused again, and the chooser already under that box stays as it is.
-      pressedAt = null
+      const closing = closeLater !== null
+      cancelClose()
+      // A press on the chooser hands the keyboard to it and back: the page reports the same box focused again, and the
+      // chooser already under that box stays as it is, even when the box has grown or moved since the chooser was placed.
       const rect = message.rect
-      const open = suggestedFor !== null && suggestedFor.tabId === sender.tabId && sameRect(suggestedFor.rect, rect) && deps.isSuggestOpen()
+      const shownFor = suggestedFor !== null && suggestedFor.tabId === sender.tabId && suggestedFor.box === message.box && deps.isSuggestOpen() ? suggestedFor : null
+      const keyboardBack = pressHeard && pressing()
+      pressedAt = null
+      pressHeard = false
+      const open = shownFor !== null && (keyboardBack || sameRect(shownFor.rect, rect))
+      if (open && keyboardBack) {
+        suggestedFor = { tabId: sender.tabId, rect, box: message.box }
+        console.info('[passwords] the keyboard came back to the box after a press on the sign-in list, which stays open')
+      }
+      // A blur's close that this focus does not undo is no longer put off.
+      if (!open && closing) deps.closeSuggest()
       if (!open && wantsSuggest(sender.tabId, tab)) {
-        suggestedFor = { tabId: sender.tabId, rect }
+        suggestedFor = { tabId: sender.tabId, rect, box: message.box }
         deps.openSuggest(sender.tabId, tab.focused)
       }
       notify()
     },
 
     blur () {
-      const pressed = pressedAt !== null && deps.now() - pressedAt <= PRESS_BLUR_MS
+      // The first blur after a press is the press itself: the person has not left the box.
+      if (pressing() && !pressHeard) {
+        pressHeard = true
+        return
+      }
       pressedAt = null
-      if (!pressed) deps.closeSuggest()
+      pressHeard = false
+      // The press may reach main just after the blur it caused: the close waits for it.
+      cancelClose()
+      closeLater = deps.schedule(() => {
+        closeLater = null
+        if (deps.isSuggestOpen()) console.info('[passwords] the sign-in list closed because its box lost the keyboard')
+        deps.closeSuggest()
+      }, BLUR_GRACE_MS)
     },
 
     chooserPressed () {
+      console.info('[passwords] a press on the sign-in list took the keyboard from its box')
       pressedAt = deps.now()
+      // A blur that came first is this press's: the close it put off is off.
+      pressHeard = closeLater !== null
+      cancelClose()
     },
 
     setKeys: (handler) => { keys = handler },
