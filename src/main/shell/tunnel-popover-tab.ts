@@ -60,3 +60,12 @@ export function tabForTunnelPopover (state: TabsSnapshot, partitionOf: (id: stri
   const partition = partitionOf(active.id)
   return partition === undefined || isProfilePartition(partition) ? active.id : undefined
 }
+
+/**
+ * The id of the tab in front when it shows a page of the shell, whose tunnel button opens the popup for the browser alone: such a page
+ * never goes through a tunnel, so there is no tab list and no website to be about. Read from the tab's record, like `tabForTunnelPopover`.
+ */
+export function shellPageTabForTunnelPopover (state: TabsSnapshot): string | undefined {
+  const active = state.tabs.find((tab) => tab.id === state.activeTabId)
+  return active?.isInternal === true && active.blankPage !== true ? active.id : undefined
+}

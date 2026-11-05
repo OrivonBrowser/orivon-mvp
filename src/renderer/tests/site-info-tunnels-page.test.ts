@@ -246,6 +246,34 @@ describe('the first panel is unchanged by the second', () => {
   })
 })
 
+describe('the popup of a page of the shell, which has only the Browser-wide panel', () => {
+  /** What main answers for a tab showing an `orivon://` page: the browser's facts, no first panel. */
+  const shellPage = (patch: Partial<BrowserTunnel> = {}, rest: Partial<SiteInfo> = {}): SiteInfo => {
+    const { tunnel: _omitted, ...bare } = browserInfo(patch, { browserOnly: true, origin: '', displayOrigin: 'Browser-wide', ...rest })
+    return bare
+  }
+
+  it('draws Browser-wide alone: no choice between panels, no rows of the tab, no "Always" switch, even while the browser is on no tunnel', () => {
+    for (const via of [null, 'nym'] as const) {
+      setup(shellPage({ via }))
+      expect(shownView.panel, String(via)).toBe('browser')
+      expect(shownView.panels, String(via)).toBeNull()
+      expect(shown.always, String(via)).toBeNull()
+      expect(shown.nodes, String(via)).not.toBeNull()
+      expect(shown.empty, String(via)).toBeNull()
+    }
+  })
+
+  it('sets the whole browser from its switches, and never asks main for a tab\'s tunnel or a website\'s', async () => {
+    const { bridge, flush } = setup(shellPage())
+    callbacks.onToggle('nym', true)
+    await flush()
+    expect(bridge.setBrowserTunnel).toHaveBeenCalledWith('nym')
+    expect(bridge.setTunnel).not.toHaveBeenCalled()
+    expect(bridge.setSiteAlways).not.toHaveBeenCalled()
+  })
+})
+
 describe('the switches of Browser-wide', () => {
   it('set the tunnel browser-wide when no tab keeps a choice of its own, and turn it off when the lit one is turned off, asking nothing', async () => {
     const { bridge, flush } = setup(browserInfo({ via: null }))

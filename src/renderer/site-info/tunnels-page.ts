@@ -84,7 +84,8 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
   }
 
   function browserShown (): boolean {
-    return panel === 'browser' && deps.getInfo()?.browserTunnel !== undefined
+    const info = deps.getInfo()
+    return info?.browserTunnel !== undefined && (panel === 'browser' || info.browserOnly === true)
   }
 
   /** The proxy of the panel shown: the website's or tab's own, or the whole browser's. They are the same address, and one count of who goes through it. */
@@ -177,8 +178,10 @@ export function createTunnelsPage (deps: TunnelsPageDeps): TunnelsPage {
   return {
     render: (container, info) => {
       if (panel === null) panel = initialPanel(info)
-      const names = info.browserTunnel === undefined ? null : { first: firstPanelLabel(info), browser: BROWSER_LABEL }
-      const shown: Panel = names === null ? 'first' : panel
+      // A page of the shell has only the browser's panel, so there is nothing to choose between.
+      const browserOnly = info.browserOnly === true && info.browserTunnel !== undefined
+      const names = info.browserTunnel === undefined || browserOnly ? null : { first: firstPanelLabel(info), browser: BROWSER_LABEL }
+      const shown: Panel = browserOnly ? 'browser' : names === null ? 'first' : panel
       const browser = shown === 'browser'
       // What the buttons of this drawing answer: a press that comes after the answer has taken the question away asks the same again.
       const askedWhenDrawn = asking

@@ -4,6 +4,7 @@ import { openingAddressOf, tabForTunnelPopover } from '../tunnel-popover-tab.js'
 /**
  * Whether the page in front goes through a tunnel, and which, for the colour of the address bar's tunnel button and the name it
  * carries. A new tab shows no page: its look is the tunnel its first address will leave by, from the tab's choice or the browser's.
+ * A page of the shell never goes through a tunnel, so its button is about the browser-wide setting: the look a website with no entry of its own gets in a tab with no choice, which is the new tab's with none.
  * A blank page in a tab that is not the dashboard's (a popup a page opened with no address) is no new tab: it has no look, as no page has one.
  * `tunnelByTab` says the button is about the tab, by the test that picks the list it opens, so the words it draws never promise a tab's setting the click does not open.
  */
@@ -13,6 +14,10 @@ export const tunnelStatePart: ShellStatePart = {
     const tunnelByTab = tabForTunnelPopover(tabs, (id) => window.tabs.partitionOf(id), services.tunnel.isApp, openingAddressOf(window.tabs)) !== undefined
     if (tabs.activeTabId === null) return { tunnel: null, tunnelVia: null, tunnelByTab }
     const active = tabs.tabs.find((tab) => tab.id === tabs.activeTabId)
+    if (active?.isInternal === true) {
+      const look = services.tunnel.newTabLookOf(undefined)
+      return { tunnel: look.mark, tunnelVia: look.via, tunnelByTab }
+    }
     if (active?.isNewTab === true && active.blankPage !== true) {
       const look = services.tunnel.newTabLookOf(active.tunnelChoice)
       return { tunnel: look.mark, tunnelVia: look.via, tunnelByTab }

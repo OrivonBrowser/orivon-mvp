@@ -44,6 +44,15 @@ describe('the tunnel part of the chrome state', () => {
     expect(newTabLookOf).toHaveBeenCalledWith(undefined)
   })
 
+  it('is the browser-wide look for a page of the shell, which never goes through a tunnel, whatever the tab carries, and is not about the tab', () => {
+    const lookOf = vi.fn(() => ({ mark: 'on', via: 'nym' }))
+    const newTabLookOf = vi.fn((_choice: string | undefined) => ({ mark: 'on', via: 'socks5' }))
+    const tabs = { tabs: [{ id: 't1', isNewTab: false, isInternal: true, url: 'orivon://settings/', tunnelChoice: 'nym' }], activeTabId: 't1' } as never
+    expect(tunnelStatePart.read(ctx(lookOf, { url: 'orivon://settings/', partition: 'orivon-internal' }, newTabLookOf), tabs)).toEqual({ tunnel: 'on', tunnelVia: 'socks5', tunnelByTab: false })
+    expect(newTabLookOf, 'what a website with no entry and a tab with no choice gets').toHaveBeenCalledWith(undefined)
+    expect(lookOf).not.toHaveBeenCalled()
+  })
+
   it('has no look of a new tab for a blank page that is no dashboard, which no new tab is: it is asked about as a page, which has none', () => {
     const lookOf = vi.fn(() => ({ mark: null, via: null }))
     const newTabLookOf = vi.fn((_choice: string | undefined) => ({ mark: 'on', via: 'nym' }))

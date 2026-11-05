@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { TabState } from '../../main/shell/tabs.js'
 import type { ChromeContext } from '../chrome/context.js'
 import { CHROME_MODULES } from '../chrome/modules.js'
-import { TAB_CHOICE_NOTE, TAB_TUNNEL_NOTES, TUNNEL_BUTTON_LABEL, TUNNEL_NOTES, createTunnelButton, tunnelButtonLook } from '../chrome/tunnel-button.js'
+import { BROWSER_TUNNEL_NOTES, TAB_CHOICE_NOTE, TAB_TUNNEL_NOTES, TUNNEL_BUTTON_LABEL, TUNNEL_NOTES, createTunnelButton, tunnelButtonLook } from '../chrome/tunnel-button.js'
 
 afterEach(() => { vi.unstubAllGlobals() })
 
@@ -11,9 +11,9 @@ const newTab = { url: '', isNewTab: true, isInternal: false } as TabState
 const internal = { url: 'orivon://settings/', isNewTab: false, isInternal: true } as TabState
 
 describe('the tunnel button look', () => {
-  it('is absent on a shell page and with no tab, and there on the new tab', () => {
-    for (const tab of [internal, undefined]) expect(tunnelButtonLook(tab, 'on').hidden).toBe(true)
-    expect(tunnelButtonLook(newTab, null).hidden).toBe(false)
+  it('is absent with no tab, and there on a shell page and on the new tab', () => {
+    expect(tunnelButtonLook(undefined, 'on').hidden).toBe(true)
+    for (const tab of [internal, newTab]) expect(tunnelButtonLook(tab, null).hidden).toBe(false)
   })
 
   it('is the plain colour on a direct page and says only its name', () => {
@@ -145,6 +145,30 @@ describe('the tunnel button look when the button is not about the tab', () => {
   })
 })
 
+describe('the tunnel button look on a shell page, which never goes through a tunnel, so the button is about the browser-wide setting', () => {
+  it('is the plain colour while the browser is not on a tunnel, and says the sites go direct', () => {
+    expect(tunnelButtonLook(internal, null)).toEqual({ hidden: false, state: null, label: `Tunnels. ${BROWSER_TUNNEL_NOTES.direct}` })
+  })
+
+  it('is on while the browser goes through a tunnel, naming Nym but not the person\'s own tunnel', () => {
+    expect(tunnelButtonLook(internal, 'on', 'nym')).toEqual({ hidden: false, state: 'on', label: 'Tunnels. Sites go through Nym by default' })
+    expect(tunnelButtonLook(internal, 'on', 'socks5')).toEqual({ hidden: false, state: 'on', label: 'Tunnels. Sites go through your tunnel by default' })
+    expect(tunnelButtonLook(internal, 'on').label).toBe(`Tunnels. ${BROWSER_TUNNEL_NOTES.on}`)
+  })
+
+  it('is down when the browser\'s tunnel does not answer, and says the browser\'s traffic is stopped', () => {
+    expect(tunnelButtonLook(internal, 'down', 'nym')).toEqual({ hidden: false, state: 'down', label: 'Tunnels. Nym is not answering, so the browser\'s traffic is stopped' })
+    expect(tunnelButtonLook(internal, 'down', 'socks5').label).toBe('Tunnels. Your tunnel is not answering, so the browser\'s traffic is stopped')
+  })
+
+  it('leaves out the tab\'s words whatever the tab carries and whatever the button is said to be about', () => {
+    for (const byTab of [false, true]) {
+      expect(tunnelButtonLook({ ...internal, tunnelChoice: 'direct' }, null, null, byTab).label, 'a direct choice of the tab').toBe(`Tunnels. ${BROWSER_TUNNEL_NOTES.direct}`)
+      expect(tunnelButtonLook({ ...internal, tunnelChoice: 'nym' }, 'on', 'nym', byTab).label, 'a tunnel the tab chose').toBe('Tunnels. Sites go through Nym by default')
+    }
+  })
+})
+
 describe('the tunnel button on a blank page that is no new tab', () => {
   const popup = { url: 'about:blank', isNewTab: true, isInternal: false, blankPage: true } as TabState
 
@@ -204,11 +228,25 @@ describe('the tunnel button module', () => {
     expect(attrs.get('aria-label')).toBe('Tunnels. Sites you open in this tab go through Nym')
   })
 
-  it('opens nothing on a shell page, and ignores a right press', () => {
+  it('opens the tunnels page for a shell page with no address, which main reads as the browser-wide list', () => {
     const { shell, listeners } = mount(internal)
+    listeners.get('pointerdown')?.({ button: 0 })
+    expect(shell.press).toHaveBeenCalledWith('tunnels')
     listeners.get('click')?.({ button: 0 })
+    expect(shell.openSiteInfo).toHaveBeenCalledExactlyOnceWith({ x: 1, y: 2, width: 3, height: 4 }, 'tunnels')
+  })
+
+  it('draws a shell page\'s state in the words of the browser-wide setting', () => {
+    const { button, attrs, render } = mount(internal)
+    render('on', 'nym')
+    expect(button.hidden).toBe(false)
+    expect(attrs.get('data-tunnel')).toBe('on')
+    expect(attrs.get('aria-label')).toBe('Tunnels. Sites go through Nym by default')
+  })
+
+  it('ignores a right press', () => {
+    const { shell, listeners } = mount(site)
     listeners.get('pointerdown')?.({ button: 2 })
-    expect(shell.openSiteInfo).not.toHaveBeenCalled()
     expect(shell.press).not.toHaveBeenCalled()
   })
 })

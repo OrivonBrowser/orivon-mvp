@@ -1,5 +1,6 @@
 // The Web3 / Web2 switch in the address bar: which list a search typed here goes to (`search.mode`). It shows while the
-// field is being used, so it never sits beside the site's own Web2 / Web2.5 / Web3 mark and reads as that site's level.
+// field is being used, so it never sits beside the site's own Web2 / Web2.5 / Web3 mark and reads as that site's level, and
+// all the time on a page of the shell, which has no such mark.
 // The switch itself is the `search.toggleMode` command; main answers with the new mode in the pushed state.
 import type { ShellState } from '../../main/shell/tabs.js'
 import type { ChromeModule } from './context.js'
@@ -34,9 +35,9 @@ export function hasKeyboard (doc: { hasFocus: () => boolean, activeElement: unkn
   return doc.hasFocus() && doc.activeElement === el
 }
 
-/** Whether the chip is shown: while the field has the keyboard (or the chip itself has, reached by Tab), or holds nothing, as on a new tab. */
-export function chipShown (fieldFocused: boolean, chipFocused: boolean, fieldValue: string): boolean {
-  return fieldFocused || chipFocused || fieldValue === ''
+/** Whether the chip is shown: while the field has the keyboard (or the chip itself has, reached by Tab), or holds nothing, as on a new tab, or the page is one of the shell's own. */
+export function chipShown (fieldFocused: boolean, chipFocused: boolean, fieldValue: string, shellPage = false): boolean {
+  return shellPage || fieldFocused || chipFocused || fieldValue === ''
 }
 
 export function createSearchMode (): ChromeModule {
@@ -57,7 +58,7 @@ export function createSearchMode (): ChromeModule {
       input = field
       let fieldFocused = false
       let chipFocused = false
-      const refreshVisibility = (): void => { button.hidden = !chipShown(fieldFocused, chipFocused, field.value) }
+      const refreshVisibility = (): void => { button.hidden = !chipShown(fieldFocused, chipFocused, field.value, ctx.activeTab()?.isInternal === true) }
 
       field.addEventListener('focus', () => { fieldFocused = true; refreshVisibility() })
       field.addEventListener('blur', (event) => { fieldFocused = false; chipFocused = event.relatedTarget === button; refreshVisibility() })
@@ -69,7 +70,7 @@ export function createSearchMode (): ChromeModule {
       button.addEventListener('click', () => { ctx.shell.runCommand('search.toggleMode') })
       button.hidden = true
     },
-    render: (state) => {
+    render: (state, ctx) => {
       if (chip === undefined || word === undefined || input === undefined) return
       const view = chipView(state)
       word.textContent = view.text
@@ -77,7 +78,7 @@ export function createSearchMode (): ChromeModule {
       chip.title = view.label
       chip.setAttribute('aria-label', view.label)
       chip.setAttribute('aria-pressed', String(view.pressed))
-      chip.hidden = !chipShown(hasKeyboard(document, input), hasKeyboard(document, chip), input.value)
+      chip.hidden = !chipShown(hasKeyboard(document, input), hasKeyboard(document, chip), input.value, ctx.activeTab()?.isInternal === true)
       // A dropdown that is open names the engine in its first row: ask again so it names the new one.
       const now = view.label
       if (drawn !== undefined && drawn !== now) input.dispatchEvent(new CustomEvent('address-refresh'))

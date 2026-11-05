@@ -710,9 +710,9 @@ window.share = (options) => navigator.mediaDevices.getDisplayMedia(options).then
         const toggle = web3.locator('#row-web3-light-client input[type=checkbox]')
         const stateLine = (await web3.locator('#row-web3-state .value').textContent()) ?? ''
         check('Settings > Web3: the light-client switch is off and disabled while this run forces it off, and its state line is a sentence', await toggle.isDisabled() && !(await toggle.isChecked()) && /^[A-Z]/.test(stateLine) && !/^[a-z]+: /.test(stateLine), stateLine)
-        check('the key, the tunnel button and the Web2 pill stay away from a Settings page', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#tunnel-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()))
+        check('the key and the site\'s Web2 pill stay away from a Settings page, which shows the Web3 / Web2 switch and the browser-wide tunnel button instead', !(await chrome.locator('#site-permissions-btn').isVisible()) && !(await chrome.locator('#web3-mark').isVisible()) && await chrome.locator('#search-mode').isVisible() && await chrome.locator('#tunnel-btn').isVisible())
         await state(check, app, `settings-web3-${scheme}`, {
-          expected: 'orivon://settings/web3 is open with Web3 selected in the navigation. A light-client row shows its switch OFF and greyed out, labelled "Off for this run" because this run forces it off; the state row below it is a full sentence beginning with a capital letter, not a "code: value" pair. No key button sits in the address field.',
+          expected: 'orivon://settings/web3 is open with Web3 selected in the navigation. A light-client row shows its switch OFF and greyed out, labelled "Off for this run" because this run forces it off; the state row below it is a full sentence beginning with a capital letter, not a "code: value" pair. No key button sits in the address field; the Web3 / Web2 switch and the tunnel button are at its right end.',
           action: 'Opened orivon://settings/web3 in a run that forces the light client off.',
           ignore: [CHECKPOINT_AGE]
         })

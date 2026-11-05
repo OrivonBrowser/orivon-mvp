@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addressOfFrontTab, openingAddressOf, tabForTunnelPopover } from '../tunnel-popover-tab.js'
+import { addressOfFrontTab, openingAddressOf, shellPageTabForTunnelPopover, tabForTunnelPopover } from '../tunnel-popover-tab.js'
 import type { OpeningAddress } from '../tunnel-popover-tab.js'
 import type { TabsSnapshot, TabState } from '../tab-types.js'
 
@@ -66,6 +66,24 @@ describe('which tab the tunnel button\'s popover is about', () => {
   it('is no tab for a page of the shell, which has no tunnel button, nor with no tab in front', () => {
     expect(forTab(snapshot(tab({ isInternal: true, tunnelChoice: 'nym' })), shared, notApp)).toBeUndefined()
     expect(forTab({ tabs: [], activeTabId: null }, shared, notApp)).toBeUndefined()
+  })
+})
+
+describe('the tab of a tunnels popup that is about the browser alone', () => {
+  it('is the tab in front when it shows a page of the shell, whatever tunnel the tab carries', () => {
+    expect(shellPageTabForTunnelPopover(snapshot(tab({ id: 't9', url: 'orivon://settings/', isInternal: true })))).toBe('t9')
+    expect(shellPageTabForTunnelPopover(snapshot(tab({ id: 't9', url: 'orivon://settings/', isInternal: true, tunnelChoice: 'nym' })))).toBe('t9')
+  })
+
+  it('is no tab for a website, an app, a new tab, a blank page or with no tab in front, which the tab\'s own popup serves or none does', () => {
+    expect(shellPageTabForTunnelPopover(snapshot(tab()))).toBeUndefined()
+    expect(shellPageTabForTunnelPopover(snapshot(tab({ isNewTab: true, url: '' })))).toBeUndefined()
+    expect(shellPageTabForTunnelPopover(snapshot(tab({ isNewTab: true, url: 'about:blank', blankPage: true })))).toBeUndefined()
+    expect(shellPageTabForTunnelPopover({ tabs: [], activeTabId: null })).toBeUndefined()
+  })
+
+  it('is the tab in front only: a page of the shell in a background tab does not make the front tab\'s popup about the browser', () => {
+    expect(shellPageTabForTunnelPopover({ tabs: [tab({ id: 'front' }), tab({ id: 'back', url: 'orivon://settings/', isInternal: true })], activeTabId: 'front' })).toBeUndefined()
   })
 })
 

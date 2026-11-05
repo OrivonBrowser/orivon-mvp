@@ -1,6 +1,6 @@
 # ADR-0104: The tunnel button sets the tab or the browser, and a website's own tunnel is made by one explicit switch
 
-- **Status:** accepted. Extends [`ADR-0101`](ADR-0101-a-tab-can-carry-a-tunnel-choice-that-holds-for-every-website-it-opens.md) (a tab carries a choice) to every website in a tab, and changes [`ADR-0089`](ADR-0089-each-website-and-app-picks-its-own-tunnel-and-an-installed-apps-tunnel-is-set-as-a-websites-is.md) in one respect: a website's entry is no longer made by the tunnel button's rows.
+- **Status:** accepted. Extends [`ADR-0101`](ADR-0101-a-tab-can-carry-a-tunnel-choice-that-holds-for-every-website-it-opens.md) (a tab carries a choice) to every website in a tab, and changes [`ADR-0089`](ADR-0089-each-website-and-app-picks-its-own-tunnel-and-an-installed-apps-tunnel-is-set-as-a-websites-is.md) in one respect: a website's entry is no longer made by the tunnel button's rows. Amended by `d-0765`: on a page of the shell the button is drawn and opens the Browser-wide panel alone.
 - **Date:** 2026-10-30
 - **Type:** product / architecture
 - **Decided by:** owner (the button sets the tab, or the browser, and a website's own entry is made only by an explicit "Always use for this site" switch); AI recommendation accepted by default for the rest, marked *provisional* below

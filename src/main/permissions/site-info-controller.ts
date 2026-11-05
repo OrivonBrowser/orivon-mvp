@@ -304,7 +304,8 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
 
   async function setTunnel (origin: string, kind: SiteTunnelKind | null): Promise<boolean> {
     const routes = ctx.routes
-    if (routes === undefined || (!trustSources.isOriginServedFromCacheSync(origin) && !canTunnel(origin))) return false
+    // Only a web origin has an entry: nothing of the shell's own (`orivon://`) ever gets one, whatever the loader says it is.
+    if (routes === undefined || originFromUrl(origin) !== origin || (!trustSources.isOriginServedFromCacheSync(origin) && !canTunnel(origin))) return false
     // A window held to Nym keeps every switch where it is (the store refuses it too).
     if (ctx.privateTunnel === 'nym' && kind !== 'nym') return false
     if (kind !== null && (routes.routeSwitch.blockedFor(origin, kind) !== undefined || (kind === 'nym' && nymSwitchedOff(routes)))) return false

@@ -150,6 +150,8 @@ export interface SiteInfo {
   readonly tunnel?: SiteTunnel
   /** The tunnel of the whole browser, for the Browser-wide panel. Absent while routes are not running. */
   readonly browserTunnel?: BrowserTunnel
+  /** The popup is for a page of the shell, which never goes through a tunnel: the Browser-wide panel is all it has, with no panel of the tab and no website. */
+  readonly browserOnly?: true
   /** True when the site has asked for at least one Orivon capability or
    * picked a file/folder -- what the toolbar key's visibility switches on. */
   readonly asked: boolean
