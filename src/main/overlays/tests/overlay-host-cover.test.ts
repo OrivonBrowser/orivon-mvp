@@ -157,8 +157,18 @@ describe('createOverlayHost: reshow', () => {
     host.reshow()
     expect(reshown).toEqual([])
     await ready()
-    host.reshow()
-    expect(reshown.sort()).toEqual(['bar', 'cover'])
+    expect(host.reshow()).toEqual(['bar', 'cover'])
+    expect(reshown).toEqual(['bar', 'cover'])
+  })
+
+  it('shows a cover last, whatever was shown after it', async () => {
+    const host = setup()
+    host.show('cover')
+    host.show('popup')
+    host.show('bar')
+    await ready()
+    expect(host.reshow()).toEqual(['popup', 'bar', 'cover'])
+    expect(reshown).toEqual(['popup', 'bar', 'cover'])
   })
 
   it('leaves a closed overlay alone', async () => {
@@ -166,7 +176,7 @@ describe('createOverlayHost: reshow', () => {
     host.show('bar')
     await ready()
     host.close('bar')
-    host.reshow()
+    expect(host.reshow()).toEqual([])
     expect(reshown).toEqual([])
   })
 })

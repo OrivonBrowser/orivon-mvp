@@ -30,6 +30,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **The top of the window no longer goes blank when Explore asks for Web3 Score data on a first search.** The question comes up while the page still loads, and Chromium then counted the tab strip and toolbar as covered by the question and the loading screen, so they stopped drawing until the window moved or the tab changed. Orivon now brings them back, and the bug report says each time it did.
 - **Restart Orivon from an AppImage** starts the AppImage file again, for the Settings rows that restart and for the WebGPU offer; it quit before and never came back, because the program it named sat in a mount that ends with the process.
 
 ## [0.1.0] - 2026-11-05

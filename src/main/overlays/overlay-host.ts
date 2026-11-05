@@ -419,7 +419,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     },
     restack,
     reshow () {
-      for (const slot of openSlots()) if (!slot.attachWhenReady) slot.view?.reshow()
+      // A cover goes last, whatever was shown after it: see README.md's Design notes for why.
+      const shown = openSlots().filter((slot) => !slot.attachWhenReady && slot.view !== null)
+      const ordered = [...shown.filter((slot) => slot.def.layer !== 'cover'), ...shown.filter((slot) => slot.def.layer === 'cover')]
+      for (const slot of ordered) slot.view?.reshow()
+      return ordered.map((slot) => slot.def.name)
     },
     dispose () {
       if (disposed) return

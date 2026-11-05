@@ -96,18 +96,21 @@ debugger attached, which is every page under Playwright, reports itself visible 
 only a launch with no debugger shows the defect; `test/window/e2e-menu-warm.test.ts` pins the cause (the closed menu is
 still a child, hidden) instead, and the recipe for a real-pointer probe is in `docs/development/testing.md`. Every view put into a window goes through `../shell/attach-view.ts`, which shows a view that was removed and added back; a warm view is kept in place all the same, because a hidden child shows with no tree change at all.
 
-**An overlay as wide as the window can leave the chrome hidden, and `reshow()` brings it back.** In a window that has been
-resized (a maximize, a fullscreen, a `setBounds`; never one left at its first size), attaching an opaque view exactly as wide
-as the window and above the chrome in the stack makes Chromium count the chrome view as covered: its page reads
-`visibilityState: hidden`, `requestAnimationFrame` never fires, and every animation in it stops, the tab strip's loading
-spinner included. A transparent view, a view one pixel narrower, a view below the chrome in the stack, and a small view do
-not do it; the loading-screen cover and a sheet's backdrop are the overlays that match. The first computation after the
-attach is the wrong one: hiding and showing the new view in one turn makes Chromium compute again, and the second answer is
-right and stays right. Hiding and showing the chrome view itself, or nudging the window's size, does not. The chrome page
-reports `hidden` (`../../renderer/chrome/chrome-shown.ts`), and `../shell/actions/chrome-hidden.ts` answers by calling
-`OverlayHost.reshow()` when the window is on screen and the chrome is meant to be shown, at most three times in two seconds.
-Playwright keeps every page visible, so a spec cannot see this; `test/window/e2e-chrome-shown.test.ts` launches the shell
-with no driver on the pages.
+**An overlay as wide as the window can leave the chrome hidden, and `reshow()` brings it back, covers last.** In a window that has been
+resized (a maximize, a fullscreen, a `setBounds`), attaching an opaque view exactly as wide as the window and above the chrome in the
+stack makes Chromium count the chrome view as covered: its page reads `visibilityState: hidden`, `requestAnimationFrame` never fires,
+and every animation in it stops, the tab strip's loading spinner included, and a window never resized shows the same when a panel is
+shown over a cover (a question about an app, asked while its page still loads). A transparent view, a view one pixel narrower, a view
+below the chrome in the stack, and a small view alone do not do it; the loading-screen cover and a sheet's backdrop are the overlays
+that match. The first computation after the attach is the wrong one: hiding and showing the new view in one turn makes Chromium compute
+again, and the second answer is right and stays right. Hiding and showing the chrome view itself, or nudging the window's size, does not.
+The chrome page reports `hidden` (`../../renderer/chrome/chrome-shown.ts`), and `../shell/actions/chrome-hidden.ts` answers by calling
+`OverlayHost.reshow()` when the window is on screen and the chrome is meant to be shown, at most three times in two seconds, and writes
+each repair, and a window it leaves alone, to the log, which a bug report carries. With a cover and a panel over it, the view shown
+again last decides: hiding and showing the panel after the cover leaves the chrome hidden however often it is done, for as long as
+the cover is up, and hiding and showing the cover after the panel leaves it shown, so `reshow()` goes through the overlays in the
+order they were shown but covers last. Playwright keeps every page visible, so a spec cannot see this;
+`test/window/e2e-chrome-shown.test.ts` launches the shell with no driver on the pages, for a cover alone and for a question over one.
 
 **A page's stylesheet is imported by its page.** `import './<name>.css'` in the page module is
 bundled into the overlay entry's one stylesheet, and every rule sits under
