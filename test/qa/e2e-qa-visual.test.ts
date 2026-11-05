@@ -463,7 +463,7 @@ for (const scheme of SCHEMES) {
         expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
         await (dashboardOf(app) as Page).waitForSelector('html[data-settled="1"]')
         await state(check, app, `split-view-${scheme}`, {
-          expected: 'Two pages side by side under the toolbar, each running to the window edge on its outer side and down to the window bottom: on the left the plain "Fixture page" page, on the right the new-tab dashboard with its picture in full colour and its text readable on it. Between them a gap of one flat colour, the toolbar\'s own, with a short vertical grey bar in the middle of it. No coloured line, ring or border round either page, and no strip of window background between a page and the toolbar or the window edge. In the tab strip the two tabs form one joined pill, the right one (the new tab) lit.',
+          expected: 'Two pages side by side under the toolbar, each running to the window edge on its outer side and down to the window bottom: on the left the plain "Fixture page" page, on the right the new-tab dashboard with its picture in full colour and its text readable on it. Between them a gap of one flat colour, the toolbar\'s own, with a short vertical bar in the middle of it, grey or, while the pointer rests on it, in the accent colour. No coloured line, ring or border round either page, and no strip of window background between a page and the toolbar or the window edge. In the tab strip the two tabs form one joined pill, the right one (the new tab) lit.',
           action: 'Opened the fixture page, then ran Split view with no other tab, which opens a new tab as the right pane.'
         })
       })

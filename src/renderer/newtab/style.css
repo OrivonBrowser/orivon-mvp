@@ -52,7 +52,7 @@ body {
    picture. */
 html {
   background: #0d0e14;
-  --text-on-picture-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 0 14px rgba(0, 0, 0, 0.4);
+  --text-on-picture-shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 0 8px rgba(0, 0, 0, 0.6), 0 0 22px rgba(0, 0, 0, 0.5);
 }
 html[data-background="orivon"] {
   background: url('../assets/intro-background.webp') center / cover no-repeat fixed #0d0e14;
@@ -151,7 +151,7 @@ input:focus-visible {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(226, 232, 240, 0.9);
+  color: rgba(226, 232, 240, 0.95);
   text-shadow: var(--text-on-picture-shadow);
 }
 .tile-grid {
