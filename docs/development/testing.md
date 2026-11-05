@@ -410,7 +410,7 @@ own D-Bus session, with `--ozone-platform=wayland`), driving the button with rea
 window's pixels from the compositor; the main process can log `visibilityState` and a `requestAnimationFrame`
 that never fires. A spec pins the cause it can see (the structure of the window's children) instead, or launches the
 shell with nothing driving the pages and reads them through the main process's own inspector, as
-`test/window/e2e-chrome-shown.test.ts` does for the chrome left hidden by a full-width overlay over a resized window, or by a question over a loading screen in a window never resized.
+`test/window/e2e-chrome-shown.test.ts` does for the chrome left hidden by a full-width overlay over a resized window, or by a question, a bar or a popup over a loading screen, in a window resized or not.
 
 `scripts/probe-view-visibility.mjs` is that recipe for every view put into a window, with no Playwright: it launches
 the built shell (build it first) on a throwaway profile with `--inspect` on the main process alone, which does

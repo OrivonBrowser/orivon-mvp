@@ -46,7 +46,8 @@ it('covers the tab with the IPFS loading screen while the page loads, and takes 
       check(`the screen says what is happening (${JSON.stringify({ title, address, detail })})`, title === 'Loading from IPFS' && address === `ipfs://${site}/` && (detail ?? '').includes('content address'))
       const size = await screen.evaluate(() => ({ width: innerWidth, height: innerHeight }))
       const window = await running.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows()[0]?.getContentBounds())
-      check(`it fills the page area (${JSON.stringify({ size, window })})`, window !== undefined && size.width === window.width && size.height > 300)
+      // The last pixel column of the window stays uncovered (src/main/overlays/README.md section An overlay exactly as wide as the window).
+      check(`it fills the page area but for the window's last pixel column (${JSON.stringify({ size, window })})`, window !== undefined && size.width === window.width - 1 && size.height > 300)
       expect(await screen.locator('.loading-screen').getAttribute('aria-busy')).toBe('true')
 
       const evidence = join(QA_ROOT, 'latest')

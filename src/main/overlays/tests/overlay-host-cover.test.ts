@@ -85,7 +85,20 @@ describe('createOverlayHost: a cover', () => {
     PANE.current = { x: 0, y: 76, width: 1200, height: 724 }
     host.relayout()
     expect(host.isOpen('cover')).toBe(true)
-    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 1200, height: 724 })
+    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 1199, height: 724 })
+  })
+
+  it('leaves the last pixel column of the window uncovered when it is as wide as the window, and nothing of a narrower one', () => {
+    const host = setup()
+    PANE.current = { x: 0, y: 76, width: 1200, height: 724 }
+    host.show('cover')
+    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 1199, height: 724 })
+    PANE.current = { x: 0, y: 76, width: 1199, height: 724 }
+    host.relayout()
+    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 1199, height: 724 })
+    PANE.current = { x: 0, y: 76, width: 600, height: 724 }
+    host.relayout()
+    expect(viewOf('cover')?.bounds).toEqual({ x: 0, y: 76, width: 600, height: 724 })
   })
 
   it('lies under a bar shown after it, and under one shown before it once it joins', async () => {
