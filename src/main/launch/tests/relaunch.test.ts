@@ -45,4 +45,23 @@ describe('restartOrivon', () => {
     restartOrivon(app, ['orivon', 'https://old.example/'])
     expect(app.relaunch).toHaveBeenCalledWith({ args: [] })
   })
+
+  it('runs the AppImage itself, not the program inside the mount that goes away when this process ends', () => {
+    const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: true }
+    restartOrivon(app, ['/tmp/.mount_Orivon1a2b3c/orivon', '--no-sandbox'], undefined, { APPIMAGE: '/home/person/Orivon.AppImage' })
+    expect(app.relaunch).toHaveBeenCalledWith({ args: ['--no-sandbox'], execPath: '/home/person/Orivon.AppImage' })
+  })
+
+  it('names no program outside an AppImage, so the process starts the one it is', () => {
+    const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: true }
+    restartOrivon(app, ['/opt/Orivon/orivon'], undefined, { APPIMAGE: '' })
+    restartOrivon(app, ['/opt/Orivon/orivon'], undefined, {})
+    expect(app.relaunch.mock.calls).toEqual([[{ args: [] }], [{ args: [] }]])
+  })
+
+  it('names no program for a run from source, whatever the environment holds', () => {
+    const app = { relaunch: vi.fn(), quit: vi.fn(), isPackaged: false }
+    restartOrivon(app, ['electron', 'out/main/index.js'], undefined, { APPIMAGE: '/ignored.AppImage' })
+    expect(app.relaunch).toHaveBeenCalledWith({ args: ['out/main/index.js'] })
+  })
 })

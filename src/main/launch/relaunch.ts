@@ -22,8 +22,14 @@ function withoutDetails (page: string): string {
   return url.toString()
 }
 
-/** `argv` is the command line this process started with. Ends this process by `quit`, never `exit`: the stores flush before the browser closes. */
-export function restartOrivon (app: Pick<App, 'relaunch' | 'quit' | 'isPackaged'>, argv: readonly string[], address?: string): void {
-  app.relaunch({ args: relaunchArgs(argv, app.isPackaged, address) })
+/**
+ * `argv` is the command line this process started with. Ends this process by `quit`, never `exit`: the stores flush before the
+ * browser closes. Inside an AppImage the program to start is the AppImage file (`peer-spawn.ts` learns it the same way): this
+ * process's own executable sits in a mount that goes away with it, and a start from there would never happen.
+ */
+export function restartOrivon (app: Pick<App, 'relaunch' | 'quit' | 'isPackaged'>, argv: readonly string[], address?: string, env: NodeJS.ProcessEnv = process.env): void {
+  const appImage = env['APPIMAGE']
+  const args = relaunchArgs(argv, app.isPackaged, address)
+  app.relaunch(app.isPackaged && appImage !== undefined && appImage !== '' ? { args, execPath: appImage } : { args })
   app.quit()
 }
