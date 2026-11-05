@@ -525,6 +525,21 @@ describe('the chooser under a focused box', () => {
     expect(r.suggestCloses.count).toBe(1)
   })
 
+  it('says in the log that it closed because the box lost the keyboard, only when it was open', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    try {
+      const r = rig()
+      r.forms.blur(r.sender())
+      expect(info).not.toHaveBeenCalled()
+      await r.vault.save({ origin: ORIGIN, username: 'ada', password: 'x' })
+      r.forms.focus(r.sender(), box)
+      r.forms.blur(r.sender())
+      expect(info.mock.calls.map((call) => String(call[0]))).toEqual(['[passwords] the sign-in list closed because its box lost the keyboard'])
+    } finally {
+      info.mockRestore()
+    }
+  })
+
   describe('a press on the chooser', () => {
     const elsewhere = { ...box, rect: { x: 50, y: 60, width: 3, height: 4 } }
     const openUnder = async (): Promise<Rig> => {
@@ -542,6 +557,26 @@ describe('the chooser under a focused box', () => {
       expect(r.suggestCloses.count).toBe(0)
       expect(r.suggests).toEqual(['t1'])
       expect(r.suggestUp.open).toBe(true)
+    })
+
+    it('keeps the chooser where it is when the box has grown or moved by the time the keyboard comes back', async () => {
+      const r = await openUnder()
+      const grown = { ...box, rect: { x: 1, y: 2, width: 40, height: 44 } }
+      r.forms.chooserPressed()
+      r.forms.blur(r.sender())
+      r.forms.focus(r.sender(), grown)
+      expect(r.suggestCloses.count).toBe(0)
+      expect(r.suggests).toEqual(['t1'])
+      // The box it now hangs from is the grown one: its next report is nothing new.
+      r.forms.focus(r.sender(), grown)
+      expect(r.suggests).toEqual(['t1'])
+    })
+
+    it('opens the chooser under a box the page reports without the press\'s blur before it', async () => {
+      const r = await openUnder()
+      r.forms.chooserPressed()
+      r.forms.focus(r.sender(), elsewhere)
+      expect(r.suggests).toEqual(['t1', 't1'])
     })
 
     it('answers one blur: the box losing focus afterwards closes the chooser', async () => {

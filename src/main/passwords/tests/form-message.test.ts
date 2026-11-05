@@ -10,6 +10,7 @@ describe('parseFormMessage', () => {
     expect(parseFormMessage({ type: 'fields', hasPassword: true, signUp: false })).toEqual({ type: 'fields', hasPassword: true, signUp: false })
     expect(parseFormMessage({ type: 'focus', rect, viewWidth: 1200, signUp: true })).toEqual({ type: 'focus', rect, viewWidth: 1200, signUp: true })
     expect(parseFormMessage({ type: 'submit', username: 'ada', password: 'pw' })).toEqual({ type: 'submit', username: 'ada', password: 'pw' })
+    expect(parseFormMessage({ type: 'filled', boxes: 2, username: true })).toEqual({ type: 'filled', boxes: 2, username: true })
   })
 
   it('keeps only the fields it knows', () => {
@@ -43,6 +44,18 @@ describe('parseFormMessage', () => {
     expect(parseFormMessage({ type: 'focus', rect, viewWidth: 0, signUp: false })).toBeNull()
     expect(parseFormMessage({ type: 'focus', rect, viewWidth: -5, signUp: false })).toBeNull()
     expect(parseFormMessage({ type: 'focus', rect, viewWidth: 1200, signUp: 'no' })).toBeNull()
+  })
+})
+
+describe('parseFormMessage of what a fill did', () => {
+  it('keeps the counts and nothing a page could add to them', () => {
+    expect(parseFormMessage({ type: 'filled', boxes: 0, username: false, password: 'pw' })).toEqual({ type: 'filled', boxes: 0, username: false })
+  })
+
+  it('refuses a count that is not a small whole number, and an account flag that is not a flag', () => {
+    for (const boxes of [-1, 1.5, 65, Number.NaN, Infinity, '2', null]) expect(parseFormMessage({ type: 'filled', boxes, username: false })).toBeNull()
+    expect(parseFormMessage({ type: 'filled', boxes: 1, username: 'yes' })).toBeNull()
+    expect(parseFormMessage({ type: 'filled', boxes: 1 })).toBeNull()
   })
 })
 

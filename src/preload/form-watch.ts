@@ -5,7 +5,7 @@
 // ask it for a value nor trigger a fill: the only way in is main's message on FORM_FILL_CHANNEL.
 import { ipcRenderer } from 'electron'
 import { FORM_FILL_CHANNEL, FORM_WATCH_CHANNEL } from '../main/channels.js'
-import { choosePassword, chooseUsername, fillScope, isRevealControl, isSignUp, isVisibleBox, pageIsSignUp } from './login-fields.js'
+import { choosePassword, chooseUsername, fillScope, groupByScope, isRevealControl, isSignUp, isVisibleBox, newPasswordBoxes, pageIsSignUp, SCOPE_LEVELS, scopeLevel } from './login-fields.js'
 import type { FieldInfo } from './login-fields.js'
 
 interface Config { enabled: boolean, save: boolean, autofill: boolean }
@@ -39,16 +39,33 @@ const usable = (input: HTMLInputElement): boolean => {
 const passwordInputs = (): HTMLInputElement[] =>
   [...document.querySelectorAll<HTMLInputElement>('input[type="password"]')].filter(usable)
 
-/** The form a password field belongs to, or, without one, the nearest ancestor that also holds another text box. */
+/** An input a person types into or ticks: what makes a box part of a sign-in rather than a button or a hidden field. */
+const SIGN_IN_BOX = 'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"])'
+const TEXT_BOX = `${SIGN_IN_BOX}:not([type="password"])`
+
+const formOf = (password: HTMLInputElement): HTMLFormElement | null => password.form ?? password.closest('form')
+
+/** The ancestors of a box, nearest first, as far up as a scope is looked for. */
+function ancestorsOf (box: Element): Element[] {
+  const found: Element[] = []
+  for (let node = box.parentElement; node !== null && found.length < SCOPE_LEVELS; node = node.parentElement) found.push(node)
+  return found
+}
+
+/** The form a password field belongs to, or, without one, the nearest ancestor that also holds another text box: where its account box is looked for. */
 function scopeOf (password: HTMLInputElement): Element {
-  const form = password.form ?? password.closest('form')
+  const form = formOf(password)
   if (form !== null) return form
-  let node: Element = password
-  for (let depth = 0; depth < 6 && node.parentElement !== null; depth++) {
-    node = node.parentElement
-    if (node.querySelector('input:not([type="password"]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"])') !== null) return node
-  }
-  return password.parentElement ?? password
+  const ancestors = ancestorsOf(password)
+  return ancestors[scopeLevel(ancestors.map((node) => node.querySelector(TEXT_BOX) !== null))] ?? password
+}
+
+/** Where a password box with no form is grouped with the others: the nearest ancestor that holds any other box, another password included, so a box and its confirmation meet even with no account box between them. */
+function looseScopeOf (password: HTMLInputElement): Element {
+  const ancestors = ancestorsOf(password)
+  const holds = ancestors.map((node) => node.querySelector(TEXT_BOX) !== null ||
+    [...node.querySelectorAll<HTMLInputElement>('input[type="password"]')].some((other) => other !== password && usable(other)))
+  return ancestors[scopeLevel(holds)] ?? password
 }
 
 function usernameOf (password: HTMLInputElement): HTMLInputElement | null {
@@ -91,14 +108,27 @@ export function installFormWatch (): void {
 
   const send = (message: Record<string, unknown>): void => { ipcRenderer.send(FORM_WATCH_CHANNEL, message) }
 
-  /** The password boxes grouped by the form that holds them, in document order, and whether each form is a sign-up. */
-  function formsOfPasswords (): Array<{ fields: HTMLInputElement[], signUp: boolean }> {
-    const groups = new Map<Element, HTMLInputElement[]>()
-    for (const field of passwordInputs()) {
-      const scope = scopeOf(field)
-      groups.set(scope, [...groups.get(scope) ?? [], field])
-    }
-    return [...groups.values()].map((fields) => ({ fields, signUp: isSignUp(fields.map(infoOf)) }))
+  /** The password boxes that belong together, in document order: those of one form, and the boxes with no form that sit in one place (`looseScopeOf`). */
+  function groupsOfPasswords (): Array<{ scope: Element, fields: HTMLInputElement[] }> {
+    const fields = passwordInputs()
+    const formed = new Map<Element, number[]>()
+    const loose: number[] = []
+    fields.forEach((field, index) => {
+      const form = formOf(field)
+      if (form === null) loose.push(index)
+      else formed.set(form, [...formed.get(form) ?? [], index])
+    })
+    const groups = [...formed].map(([scope, members]) => ({ scope, members }))
+    const nested = groupByScope(loose.map((index) => looseScopeOf(fields[index] as HTMLInputElement)), (outer, inner) => outer !== inner && outer.contains(inner))
+    for (const group of nested) groups.push({ scope: group.scope, members: group.members.map((at) => loose[at] as number) })
+    return groups
+      .sort((a, b) => (a.members[0] ?? 0) - (b.members[0] ?? 0))
+      .map(({ scope, members }) => ({ scope, fields: members.map((index) => fields[index] as HTMLInputElement) }))
+  }
+
+  /** Each group of password boxes and whether it is a sign-up. */
+  function formsOfPasswords (): Array<{ scope: Element, fields: HTMLInputElement[], signUp: boolean }> {
+    return groupsOfPasswords().map((group) => ({ ...group, signUp: isSignUp(group.fields.map(infoOf)) }))
   }
 
   /** Whether the chooser leads with a strong password: judged by the form the person is in, never the whole page. */
@@ -156,9 +186,11 @@ export function installFormWatch (): void {
     send({ type: 'submit', ...credential })
   }
 
-  /** The password fields a gesture on `target` submits: those whose form holds it. */
-  const submittedBy = (target: Element): HTMLInputElement[] =>
-    passwordInputs().filter((password) => password.value !== '' && scopeOf(password).contains(target))
+  /** The password fields a gesture on `target` submits: those whose group of boxes it is in. */
+  const submittedBy = (target: Element): HTMLInputElement[] => {
+    const groups = groupsOfPasswords().filter((group) => group.scope.contains(target))
+    return passwordInputs().filter((password) => password.value !== '' && groups.some((group) => group.fields.includes(password)))
+  }
 
   document.addEventListener('focusin', (event) => {
     if (!config.enabled || !(event.target instanceof HTMLInputElement)) return
@@ -209,13 +241,22 @@ export function installFormWatch (): void {
     const forms = formsOfPasswords()
     const touched = lastPassword !== null && lastPassword.isConnected && usable(lastPassword) ? lastPassword : undefined
     const target = touched ?? forms[fillScope(forms.map((form) => form.signUp), command.both)]?.fields[0]
-    if (target === undefined) return
+    if (target === undefined) {
+      send({ type: 'filled', boxes: 0, username: false })
+      return
+    }
+    let named = false
     if (command.username !== null) {
       const username = usernameOf(target)
-      if (username !== null) setValue(username, command.username)
+      if (username !== null) {
+        setValue(username, command.username)
+        named = true
+      }
     }
-    const fields = command.both ? passwordsOf(scopeOf(target)) : [target]
-    for (const field of fields) setValue(field, command.password)
+    const group = forms.find((form) => form.fields.includes(target))?.fields ?? [target]
+    const boxes = command.both ? newPasswordBoxes(group.map(infoOf), group.indexOf(target)).map((index) => group[index] as HTMLInputElement) : [target]
+    for (const box of boxes) setValue(box, command.password)
+    send({ type: 'filled', boxes: boxes.length, username: named })
   }
 
   ipcRenderer.on(FORM_FILL_CHANNEL, (_event, message: unknown) => {

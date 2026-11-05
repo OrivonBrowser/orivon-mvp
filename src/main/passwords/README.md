@@ -76,6 +76,24 @@ keys, Enter (only with a row chosen) and Escape from the tab's input before the 
 (`before-input-event`) and tells the chooser which row is chosen. A press on a row is a choice, never a reason to close
 or open the chooser: the press gives the chooser's view the keyboard for an instant (the overlay host hands it straight
 back), so the page reports its box blurred and then focused again. Main hears the view's own focus first
-(`chooserPressed`) and lets that one blur pass, and a focus reported for the box the chooser is already open under
-opens nothing, so the generated password, the rows and the early-click guard stay as the person saw them. A blur
-with no press before it, or one that comes long after, still closes it.
+(`chooserPressed`) and lets that one blur pass, and the focus the page reports next is the keyboard coming back: the
+chooser stays where it is even when the box has grown or moved since (many sign-up pages animate a box as it takes the
+focus), so the generated password, the rows and the early-click guard stay as the person saw them. A focus for the
+box the chooser is already open under opens nothing either. A blur with no press before it, or one that comes long
+after, still closes it, and a focus with no press and blur before it is a box of its own.
+
+**A password and its confirmation are one group, form or no form.** The watcher groups password boxes by the `<form>`
+that holds them. Boxes with no form are grouped by the nearest ancestor (six levels at most) that holds any other
+sign-in box, a text box or another password, and groups whose scopes hold one another are one group, so two boxes that
+a page wraps in layers of their own, or lays at different depths, or leaves with no account box between them, still meet.
+The group decides whether a form is a sign-up, which boxes a strong password goes into (every box but one the page calls
+current, and in a form of three the first unless the page calls it new; always the box the person is in), and which
+submitting gesture belongs to which sign-in. The account box of a password is found apart, in the nearest ancestor
+that holds a text box, so a wider group never makes a search box a username.
+
+**A fill that did nothing leaves a line for the bug report.** `[passwords]` lines say that a press on the list was
+not taken for a choice because it came too soon, that a choice filled nothing and why (the tab, the store or the page
+moved), how many boxes a fill reached, and that it found none. A press that took the keyboard, the keyboard coming
+back, and a list that closed because its box lost the keyboard leave a line each. The page reports the count on
+`filled` (a number and a flag, never a value), so a fill that reached a page with nothing to fill shows up where a
+report can read it. No line carries a password, a username or the site.

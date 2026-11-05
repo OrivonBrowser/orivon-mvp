@@ -119,10 +119,13 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
   const notify = (): void => { for (const listener of [...listeners]) listener() }
   let keys: KeyHandler | null = null
   let pressedAt: number | null = null
+  /** The page's blur for that press has been heard: the focus it reports next is the keyboard coming back from the press. */
+  let pressHeard = false
   /** The box the chooser under a box was last opened for. */
   let suggestedFor: { tabId: string, rect: FieldRect } | null = null
 
   const ready = (): boolean => !deps.isPrivate && deps.vault.state() === 'ready'
+  const pressing = (): boolean => pressedAt !== null && deps.now() - pressedAt <= PRESS_BLUR_MS
 
   function tabOf (tabId: string, origin: string | null = null): TabForms {
     let tab = tabs.get(tabId)
@@ -258,10 +261,18 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
       tab.focused = { rect: message.rect, viewWidth: message.viewWidth, signUp: message.signUp }
       tab.signUp = message.signUp
       tab.hasPassword = true
-      // A press on the chooser hands the keyboard to it and back: the page reports the box focused again, and the chooser already under that box stays as it is.
+      // A press on the chooser hands the keyboard to it and back: the page reports the box focused again, and the chooser
+      // already under that box stays as it is, even when the box has grown or moved since the chooser was placed.
+      const keyboardBack = pressHeard && pressing()
       pressedAt = null
+      pressHeard = false
       const rect = message.rect
-      const open = suggestedFor !== null && suggestedFor.tabId === sender.tabId && sameRect(suggestedFor.rect, rect) && deps.isSuggestOpen()
+      const shownFor = suggestedFor !== null && suggestedFor.tabId === sender.tabId && deps.isSuggestOpen() ? suggestedFor : null
+      const open = shownFor !== null && (keyboardBack || sameRect(shownFor.rect, rect))
+      if (open && keyboardBack) {
+        suggestedFor = { tabId: sender.tabId, rect }
+        console.info('[passwords] the keyboard came back to the box after a press on the sign-in list, which stays open')
+      }
       if (!open && wantsSuggest(sender.tabId, tab)) {
         suggestedFor = { tabId: sender.tabId, rect }
         deps.openSuggest(sender.tabId, tab.focused)
@@ -270,13 +281,21 @@ export function createWindowForms (window: ShellWindow, deps: FormsDeps): Window
     },
 
     blur () {
-      const pressed = pressedAt !== null && deps.now() - pressedAt <= PRESS_BLUR_MS
+      // The first blur after a press is the press itself: the person has not left the box.
+      if (pressing() && !pressHeard) {
+        pressHeard = true
+        return
+      }
       pressedAt = null
-      if (!pressed) deps.closeSuggest()
+      pressHeard = false
+      if (deps.isSuggestOpen()) console.info('[passwords] the sign-in list closed because its box lost the keyboard')
+      deps.closeSuggest()
     },
 
     chooserPressed () {
       pressedAt = deps.now()
+      pressHeard = false
+      console.info('[passwords] a press on the sign-in list took the keyboard from its box')
     },
 
     setKeys: (handler) => { keys = handler },

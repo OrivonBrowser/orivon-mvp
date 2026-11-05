@@ -1,14 +1,16 @@
 // A person's press on the sign-in chooser: the popup under a focused box and the one under the password button
 // each fill the page when a row is pressed, a saved login or the strong password of a sign-up form. A press in a
-// real window moves the keyboard to the view under the pointer; Playwright's click does not, so the spec gives the
-// chooser that move before every click (`pressOn`), and gives the page the real focus a person's window has
-// (`useRealFocus`). The fixture server listens on port 0.
+// real window moves the keyboard to the view under the pointer; Playwright's click does not, so most cases give the
+// chooser that move before the click (`pressOn`), and give the page the real focus a person's window has
+// (`useRealFocus`). One case presses with the window system's own pointer (`pointerPressOn`), so the page's blur and the
+// chooser's focus arrive in whatever order the browser delivers them. The fixture server listens on port 0.
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { pressOn, underVirtualDisplay, useRealFocus, webContentsFocused } from '../support/focus-helpers.js'
 import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
+import { pointerPressOn } from '../support/native-pointer.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
@@ -32,6 +34,25 @@ const SIGN_UP_BARE = `<!doctype html><title>Create account</title><body style="f
 <input id="new1" type="password" autocomplete="new-password" ${FIELD}><p id="seen"></p></div>
 <script>document.getElementById('new1').addEventListener('input', (e) => { document.getElementById('seen').textContent = e.target.value })</script></body>`
 
+/** No <form> and no account box: each password box is wrapped in layers of its own, as a framework's field components leave it. */
+const wrapped = (hint: string): string => `<!doctype html><title>Create account</title><body style="font:16px sans-serif"><div>
+<div><label>Password<div><div><input id="new1" type="password" ${hint} ${FIELD}></div></div></label></div>
+<div><label>Confirm password<div><div><input id="new2" type="password" ${hint} ${FIELD}></div></div></label></div></div></body>`
+/** The account box and the first password share a step; the confirmation is in a step of its own, one layer further out. */
+const SIGN_UP_STEPS = `<!doctype html><title>Create account</title><body style="font:16px sans-serif"><div>
+<div><input id="user" type="text" autocomplete="username" ${FIELD}><div><input id="new1" type="password" autocomplete="new-password" ${FIELD}></div></div>
+<div><div><input id="new2" type="password" ${FIELD}></div></div></div></body>`
+/** The current password, then the new one twice: the generated password belongs in the last two. */
+const CHANGE = `<!doctype html><title>Change password</title><body style="font:16px sans-serif"><form method="post" action="/welcome">
+<input id="old" type="password" autocomplete="current-password" ${FIELD}>
+<input id="new1" type="password" autocomplete="new-password" ${FIELD}>
+<input id="new2" type="password" autocomplete="new-password" ${FIELD}></form></body>`
+
+/** The boxes grow over a quarter of a second as they take the focus, as the fields of many sign-up pages do: a box is not where it was first reported by the time the keyboard comes back from a press. */
+const GROWING = `<!doctype html><title>Create account</title><style>input{display:block;box-sizing:border-box;margin:12px;width:260px;height:30px;transition:width .25s,height .25s}input:focus{width:320px;height:46px}</style>
+<body style="font:16px sans-serif"><form method="post" action="/welcome"><input id="user" type="text" autocomplete="username">
+<input id="new1" type="password" autocomplete="new-password"><input id="new2" type="password" autocomplete="new-password"></form></body>`
+
 function handler (request: IncomingMessage, response: ServerResponse): void {
   const path = (request.url ?? '/').split('?')[0]
   if (request.method === 'POST') {
@@ -42,6 +63,11 @@ function handler (request: IncomingMessage, response: ServerResponse): void {
   if (path === '/login') html(response, LOGIN)
   else if (path === '/signup') html(response, SIGN_UP)
   else if (path === '/signup-bare') html(response, SIGN_UP_BARE)
+  else if (path === '/wrapped-hinted') html(response, wrapped('autocomplete="new-password"'))
+  else if (path === '/wrapped-bare') html(response, wrapped(''))
+  else if (path === '/signup-steps') html(response, SIGN_UP_STEPS)
+  else if (path === '/change') html(response, CHANGE)
+  else if (path === '/growing') html(response, GROWING)
   else html(response, '<!doctype html><title>Other</title><p>Other</p>')
 }
 
@@ -108,17 +134,29 @@ async function expectAnswered (app: App, view: Page, name: string): Promise<void
   expect(await webContentsFocused(app, view.url()), 'the page has the keyboard').toBe(true)
 }
 
+/** Who presses: Playwright's click after giving the chooser the keyboard first, or the window system's pointer, which moves the keyboard as a person's press does. */
+type Pointer = 'playwright' | 'real'
+
+const clickBox = async (app: App, view: Page, selector: string, pointer: Pointer): Promise<void> => {
+  if (pointer === 'real') await pointerPressOn(app, view, selector)
+  else await view.click(selector)
+}
+
+const pressRow = async (app: App, overlay: Page, selector: string, pointer: Pointer): Promise<void> => {
+  await closing(pointer === 'real' ? pointerPressOn(app, overlay, selector) : pressOn(app, overlay, selector))
+}
+
 /** Opens the strong-password row of `path` under the focused box and presses it. */
-async function pressStrongUnderBox (app: App, chrome: Page, origin: string, path: string, boxes: string[]): Promise<Page> {
+async function pressStrongUnderBox (app: App, chrome: Page, origin: string, path: string, boxes: string[], pointer: Pointer = 'playwright'): Promise<Page> {
   const view = await visitFocused(app, chrome, `${origin}${path}`)
-  await view.click('#new1')
+  await clickBox(app, view, '#new1', pointer)
   const suggest = await waitShown(app, 'password-suggest')
   const rows = await titles(suggest)
   expect(rows[0]).toBe('Use a strong password')
   const generated = (await suggest.locator('.listbox-item .pf-code').first().textContent()) ?? ''
   expect(generated).toHaveLength(20)
   await delay(PAST_EARLY_CLICK_MS)
-  await closing(pressOn(app, suggest, '.listbox-item:first-child'))
+  await pressRow(app, suggest, '.listbox-item:first-child', pointer)
   for (const box of boxes) expect(await waitFor(async () => (await view.inputValue(box)) === generated), `${box} holds the generated password`).toBe(true)
   await expectAnswered(app, view, 'password-suggest')
   return view
@@ -170,6 +208,76 @@ it.skipIf(!underVirtualDisplay())('fills the page when a row of the popup under 
     expect(await signUp.inputValue('#user')).toBe('ada')
     await expectAnswered(app, signUp, 'password-suggest')
 
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it.skipIf(!underVirtualDisplay())('fills the page when the popup under a box is pressed with the window system\'s pointer', async () => {
+  const { app, chrome } = await launchShell({ env: SEAM })
+  try {
+    await pressStrongUnderBox(app, chrome, bare.origin, '/signup', ['#new1', '#new2'], 'real')
+    await pressStrongUnderBox(app, chrome, bare.origin, '/signup-bare', ['#new1'], 'real')
+
+    await saveLogin(app, chrome, site.origin, 'ada', 'pw-one')
+    const login = await visitFocused(app, chrome, `${site.origin}/login`)
+    await clickBox(app, login, '#user', 'real')
+    const suggest = await waitShown(app, 'password-suggest')
+    expect(await titles(suggest)).toEqual(['ada'])
+    await delay(PAST_EARLY_CLICK_MS)
+    await pressRow(app, suggest, '.listbox-item', 'real')
+    expect(await waitFor(async () => (await login.inputValue('#pass')) === 'pw-one')).toBe(true)
+    expect(await login.inputValue('#user')).toBe('ada')
+    await expectAnswered(app, login, 'password-suggest')
+
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it.skipIf(!underVirtualDisplay())('fills the page when the box has grown by the time the keyboard comes back from the press', async () => {
+  const { app, chrome } = await launchShell({ env: SEAM })
+  try {
+    await pressStrongUnderBox(app, chrome, bare.origin, '/growing', ['#new1', '#new2'], 'real')
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+/** Layouts of a sign-up that has no <form> or puts its boxes at different depths: the strong password goes into the password and its confirmation. */
+const LAYOUTS: Array<[string, string]> = [
+  ['no form, no account box and nothing the page calls new', '/wrapped-bare'],
+  ['no form, both boxes called new', '/wrapped-hinted'],
+  ['the account box and the first password in one step, the confirmation in the next', '/signup-steps']
+]
+
+for (const [layout, path] of LAYOUTS) {
+  it.skipIf(!underVirtualDisplay())(`fills the password and its confirmation: ${layout}`, async () => {
+    const { app, chrome } = await launchShell({ env: SEAM })
+    try {
+      await pressStrongUnderBox(app, chrome, bare.origin, path, ['#new1', '#new2'])
+      expect(mainOutput(app)).not.toContain('uncaught exception')
+    } finally {
+      await closeElectron(app)
+    }
+  }, TEST_TIMEOUT_MS)
+}
+
+it.skipIf(!underVirtualDisplay())('fills the new password and its repeat of a change-password form, and leaves the current one', async () => {
+  const { app, chrome } = await launchShell({ env: SEAM })
+  try {
+    const change = await visitFocused(app, chrome, `${bare.origin}/change`)
+    await change.fill('#old', 'old-secret')
+    await change.click('#new1')
+    const suggest = await waitShown(app, 'password-suggest')
+    const generated = (await suggest.locator('.listbox-item .pf-code').first().textContent()) ?? ''
+    await delay(PAST_EARLY_CLICK_MS)
+    await closing(pressOn(app, suggest, '.listbox-item:first-child'))
+    for (const box of ['#new1', '#new2']) expect(await waitFor(async () => (await change.inputValue(box)) === generated), `${box} holds the generated password`).toBe(true)
+    expect(await change.inputValue('#old')).toBe('old-secret')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)

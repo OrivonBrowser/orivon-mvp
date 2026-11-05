@@ -89,3 +89,53 @@ export function fillScope (signUps: readonly boolean[], both: boolean): number {
   const wanted = signUps.indexOf(both)
   return wanted === -1 ? 0 : wanted
 }
+
+/** How many ancestors above a box that has no form are searched for the one that scopes it. */
+export const SCOPE_LEVELS = 6
+
+/**
+ * Which ancestor scopes a box that has no form, given for each ancestor, nearest first, whether it holds another box of
+ * the sign-in kind: the nearest that does within `SCOPE_LEVELS`, else the parent (0).
+ */
+export function scopeLevel (holdsOther: readonly boolean[]): number {
+  const at = holdsOther.slice(0, SCOPE_LEVELS).indexOf(true)
+  return at === -1 ? 0 : at
+}
+
+/** Password boxes that belong together, and the scope that holds them all. */
+export interface ScopeGroup<T> { readonly scope: T, readonly members: readonly number[] }
+
+/**
+ * Groups boxes by the scope each was given: two share a group when their scopes are one element or one holds the other,
+ * as a page that wraps each box in its own layers puts a box and its confirmation at different depths. A group's scope is
+ * the one that holds the rest. Groups come in the order of their first box.
+ */
+export function groupByScope<T> (scopes: readonly T[], holds: (outer: T, inner: T) => boolean): Array<ScopeGroup<T>> {
+  const root = scopes.map((_, index) => index)
+  const find = (index: number): number => {
+    let at = index
+    while (root[at] !== at) at = root[at] as number
+    return at
+  }
+  scopes.forEach((outer, i) => {
+    scopes.forEach((inner, j) => {
+      if (i < j && (outer === inner || holds(outer, inner) || holds(inner, outer))) root[find(j)] = find(i)
+    })
+  })
+  const groups = new Map<number, number[]>()
+  scopes.forEach((_, index) => { groups.set(find(index), [...groups.get(find(index)) ?? [], index]) })
+  return [...groups.values()].map((members) => {
+    const scope = members.map((at) => scopes[at] as T).find((candidate) => members.every((at) => scopes[at] === candidate || holds(candidate, scopes[at] as T)))
+    return { scope: scope ?? scopes[members[0] as number] as T, members }
+  })
+}
+
+/**
+ * Which of a sign-up form's password boxes get a strong password: all but a box the page says is the current one and, in
+ * a form of three (current, new, repeat), the first unless the page calls it new. The box the person is in always does.
+ */
+export function newPasswordBoxes (passwords: readonly FieldInfo[], touched: number): number[] {
+  const says = (index: number, token: string): boolean => autocompleteTokens(passwords[index]?.autocomplete ?? '').includes(token)
+  const kept = (index: number): boolean => !says(index, 'current-password') && !(passwords.length === 3 && index === 0 && !says(0, 'new-password'))
+  return passwords.map((_, index) => index).filter((index) => index === touched || kept(index))
+}
