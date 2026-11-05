@@ -45,7 +45,8 @@ at a width its content measures, such as the link bubble ([`../link-status/`](..
 view that is attached and shows nothing, and the view may reach past the window's edge, where it is clipped.
 
 **A pane is the page area, and a cover lies under everything else.** `{ kind: 'pane' }` takes the pane of the tab in
-front (`paneArea()`, else the whole tab area) exactly: the host ignores the page's height reports and repositions it
+front (`paneArea()`, else the whole tab area) exactly, but for the pixel column a cover as wide as the window leaves uncovered
+(see Design notes): the host ignores the page's height reports and repositions it
 on every layout, and its corners are square, like a dock. `layer: 'cover'` puts a view under every bar, adopted panel
 and popup: `restack()` attaches covers first, and a `never` overlay that joins the window when its page is ready does
 so through `restack()` too, so a cover never lands over a sheet that was already up. A cover is not a popup: showing it
@@ -96,18 +97,31 @@ debugger attached, which is every page under Playwright, reports itself visible 
 only a launch with no debugger shows the defect; `test/window/e2e-menu-warm.test.ts` pins the cause (the closed menu is
 still a child, hidden) instead, and the recipe for a real-pointer probe is in `docs/development/testing.md`. Every view put into a window goes through `../shell/attach-view.ts`, which shows a view that was removed and added back; a warm view is kept in place all the same, because a hidden child shows with no tree change at all.
 
-**An overlay as wide as the window can leave the chrome hidden, and `reshow()` brings it back.** In a window that has been
-resized (a maximize, a fullscreen, a `setBounds`; never one left at its first size), attaching an opaque view exactly as wide
-as the window and above the chrome in the stack makes Chromium count the chrome view as covered: its page reads
-`visibilityState: hidden`, `requestAnimationFrame` never fires, and every animation in it stops, the tab strip's loading
-spinner included. A transparent view, a view one pixel narrower, a view below the chrome in the stack, and a small view do
-not do it; the loading-screen cover and a sheet's backdrop are the overlays that match. The first computation after the
-attach is the wrong one: hiding and showing the new view in one turn makes Chromium compute again, and the second answer is
-right and stays right. Hiding and showing the chrome view itself, or nudging the window's size, does not. The chrome page
-reports `hidden` (`../../renderer/chrome/chrome-shown.ts`), and `../shell/actions/chrome-hidden.ts` answers by calling
-`OverlayHost.reshow()` when the window is on screen and the chrome is meant to be shown, at most three times in two seconds.
-Playwright keeps every page visible, so a spec cannot see this; `test/window/e2e-chrome-shown.test.ts` launches the shell
-with no driver on the pages.
+**An overlay exactly as wide as the window can leave the chrome hidden, so a cover stops a pixel short.** Attaching an opaque view
+exactly as wide as the window and above the chrome in the stack makes Chromium count the chrome view as covered: its page reads
+`visibilityState: hidden`, `requestAnimationFrame` never fires, and every animation in it stops, the tab strip's loading spinner
+included. The loading-screen cover is the one overlay that is that wide. It did it in a window that had been resized (a maximize, a
+fullscreen, a `setBounds`), and in a window never resized when a question was shown over it (the first visit to an app asks while its
+page still loads); a find bar or a popup shown over the cover turned the chrome hidden again, three or four times in a second, and in
+some runs it stayed hidden for over a second. A transparent view, a view one pixel narrower, a view below the chrome in the stack and
+a small view alone do not do it, and a view one pixel wider than the window, clipped at its edge, does. A sheet over the page, then
+a find bar and a popup, in a resized window, left the chrome shown with no turn to hidden. So `boundsFor` leaves a cover as wide as
+the window one pixel column short of its right edge (`COVER_GAP`), where the tab's own colour shows: with that gap a cover alone, a
+question over it, and a bar and a popup over both, in a window resized or not, never turned the chrome hidden.
+
+The first computation after an attach is the wrong one, and hiding and showing the view in one turn makes Chromium compute again;
+hiding and showing the chrome view itself, or nudging the window's size, does not. The chrome page reports `hidden`
+(`../../renderer/chrome/chrome-shown.ts`), and `../shell/actions/chrome-hidden.ts` answers, when the window is on screen and the
+chrome is meant to be shown, by calling `OverlayHost.reshow()`, at most three times in two seconds. When the three were not enough it
+sets one more for the end of that span, which runs only if the chrome page still reads hidden then. Each repair, the setting of
+that last one and a chrome it still left hidden are lines of the log, which a bug report carries. With a cover and a panel over it,
+the view shown again last decides: hiding and showing the panel after the cover leaves the chrome hidden however often it is done,
+for as long as the cover is up, and hiding and showing the cover after the panel leaves it shown, so `reshow()` goes through the
+overlays in the order they were shown but covers last. Showing the covers again at the end of `restack()` instead made it worse: the
+chrome turned hidden more often, not less, so a bar or a popup shown over a cover is left to the gap and to the repair.
+Playwright keeps every page visible, so a spec cannot see any of this; `test/window/e2e-chrome-shown.test.ts` launches the shell with
+no driver on the pages, for a cover alone, a question over one and a bar and a popup over both, and fails when the chrome page turns
+hidden at all.
 
 **A page's stylesheet is imported by its page.** `import './<name>.css'` in the page module is
 bundled into the overlay entry's one stylesheet, and every rule sits under

@@ -58,6 +58,8 @@ export async function startFixtureGateway (sites, options = {}) {
   const failures = new Map()
   /** @type {Map<string, { ms: number, times: number }>} block -> the next answers it holds back, and for how long */
   const delays = new Map()
+  /** @type {Map<string, Promise<void>>} block -> what every answer of it waits for */
+  const holds = new Map()
   const { linkBytesPerSecond } = options
   /** When the shared link, if there is one, is next free. */
   let linkFreeAt = 0
@@ -94,8 +96,11 @@ export async function startFixtureGateway (sites, options = {}) {
             linkFreeAt = start + (body.length / linkBytesPerSecond) * 1000
             setTimeout(send, linkFreeAt - Date.now())
           }
+      const gate = holds.get(key)
       const held = delays.get(key)
-      if (held !== undefined && held.times > 0) {
+      if (gate !== undefined) {
+        void gate.then(answer)
+      } else if (held !== undefined && held.times > 0) {
         held.times -= 1
         setTimeout(answer, held.ms)
       } else if (options.blockDelayMs === undefined) answer()
@@ -149,6 +154,15 @@ export async function startFixtureGateway (sites, options = {}) {
       const cid = files.get(`${site}/${path}`)
       if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
       delays.set(cid, { ms, times })
+    },
+    /** Answer no request for this site's file until the function this returns is called, then answer them all: a file still on its way for as long as a test needs the page waiting on it. */
+    hold: (site, path) => {
+      const cid = files.get(`${site}/${path}`)
+      if (cid === undefined) throw new Error(`no file ${path} in ${site}`)
+      /** @type {() => void} */
+      let release = () => {}
+      holds.set(cid, new Promise((resolve) => { release = () => { resolve(undefined) } }))
+      return () => { holds.delete(cid); release() }
     },
     /** Answer this site's root block with `status` for its next `times` requests (0 stops): the site cannot be mounted while it is unwell. */
     failRoot: (site, status, times = 1) => {

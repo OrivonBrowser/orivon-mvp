@@ -21,6 +21,8 @@ const IDLE_DESTROY_MS = 60_000
 
 /** Events sent before the page has said `ready` are held, up to this many, and delivered once it has. */
 const QUEUE_LIMIT = 32
+/** How many pixel columns a cover as wide as the window leaves uncovered at its right edge. */
+const COVER_GAP = 1
 
 export interface OverlayHostDeps {
   win: BaseWindow
@@ -107,7 +109,9 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     const limits = { min: slot.def.height?.min ?? DEFAULT_HEIGHT.min, max: slot.def.height?.max ?? DEFAULT_HEIGHT.max }
     const { kind } = slot.def.placement
     const area = kind === 'area' || kind === 'pane' ? deps.paneArea?.() ?? deps.area() : deps.area()
-    return overlayBounds(slot.def.placement, slot.anchor, { width, height, area }, slot.height, limits)
+    const rect = overlayBounds(slot.def.placement, slot.anchor, { width, height, area }, slot.height, limits)
+    // A cover as wide as the window leaves its last pixel column uncovered: see README.md's Design notes for why.
+    return slot.def.layer === 'cover' && rect.width >= width ? { ...rect, width: rect.width - COVER_GAP } : rect
   }
 
   function handlerFor (slot: Slot): OverlayHandler {
@@ -419,7 +423,11 @@ export function createOverlayHost (deps: OverlayHostDeps): OverlayHostHandle {
     },
     restack,
     reshow () {
-      for (const slot of openSlots()) if (!slot.attachWhenReady) slot.view?.reshow()
+      // A cover goes last, whatever was shown after it: see README.md's Design notes for why.
+      const shown = openSlots().filter((slot) => !slot.attachWhenReady && slot.view !== null)
+      const ordered = [...shown.filter((slot) => slot.def.layer !== 'cover'), ...shown.filter((slot) => slot.def.layer === 'cover')]
+      for (const slot of ordered) slot.view?.reshow()
+      return ordered.map((slot) => slot.def.name)
     },
     dispose () {
       if (disposed) return
