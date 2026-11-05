@@ -24,6 +24,9 @@ export const SITE_KIND_ICONS: Readonly<Record<SiteKind, () => SVGSVGElement>> = 
   idle: () => icon((el) => { el.append(path('M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z', '2')) }),
   windowManagement: () => icon((el) => { el.append(rect(3, 4, 12, 10, 2), path('M9 14v2a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2h-4', '2')) }),
   notifications: () => icon((el) => { el.append(path('M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9', '2'), path('M10.3 21a1.9 1.9 0 0 0 3.4 0', '2')) }),
+  webgpu: () => icon((el) => {
+    el.append(rect(6, 6, 12, 12, 2), rect(10, 10, 4, 4, 1), line(9, 2, 9, 6), line(15, 2, 15, 6), line(9, 18, 9, 22), line(15, 18, 15, 22), line(2, 9, 6, 9), line(2, 15, 6, 15), line(18, 9, 22, 9), line(18, 15, 22, 15))
+  }),
   popups: () => externalLinkIcon(),
   javascript: () => icon((el) => { el.append(path('M8 7l-5 5 5 5', '2'), path('M16 7l5 5-5 5', '2'), line(14, 5, 10, 19)) }),
   images: () => icon((el) => { el.append(rect(3, 4, 18, 16, 2), circle(9, 10, 1.5), path('M21 16l-5-5-9 9', '2')) }),

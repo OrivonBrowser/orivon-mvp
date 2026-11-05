@@ -34,12 +34,14 @@ const REVERTED = 'Orivon turned this off because graphics stopped working while 
 
 interface Seeded {
   readonly setting?: boolean
+  readonly startup?: string
   readonly revert?: { readonly at: string, readonly why: string }
 }
 
-const seed = ({ setting, revert }: Seeded) => async (dir: string): Promise<void> => {
+const seed = ({ setting, startup, revert }: Seeded) => async (dir: string): Promise<void> => {
   await mkdir(dir, { recursive: true })
-  if (setting !== undefined) await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { [KEY]: setting } }))
+  const values = { ...(setting === undefined ? {} : { [KEY]: setting }), ...(startup === undefined ? {} : { 'startup.mode': startup }) }
+  if (Object.keys(values).length > 0) await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values }))
   if (revert !== undefined) await writeFile(join(dir, 'x11-vulkan.json'), JSON.stringify({ pendingWindow: false, revert }))
 }
 
@@ -99,6 +101,17 @@ it.skipIf(!LINUX)('turns on, saves the choice, and asks to start again; turning 
     expect(await waitFor(async () => await settingIn(dir) === true)).toBe(true)
     await page.locator('#row-webgpu-on-x11 .switch').click()
     expect(await waitFor(async () => (await page.locator('#row-webgpu-on-x11-restart').count()) === 0)).toBe(true)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it.skipIf(!LINUX)('says the tabs and windows open again when Orivon continues where it left off', async () => {
+  const { app, page } = await performancePage({ startup: 'continue' })
+  try {
+    await page.locator('#row-webgpu-on-x11 .switch').click()
+    expect(await waitFor(async () => await page.locator('#row-webgpu-on-x11 input').isChecked())).toBe(true)
+    expect(await page.locator('#row-webgpu-on-x11-restart .row-help').textContent()).toBe('The choice above is read when Orivon starts. Your tabs and windows open again.')
   } finally {
     await closeElectron(app)
   }

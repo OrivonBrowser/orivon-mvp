@@ -2,7 +2,7 @@
 
 **What lives here.** The opt-in setting `graphics.webgpuOnX11` and what it does to this process: whether it
 applies, the switches it sets before Chromium reads them, the guard that turns it off after a bad run, and what Settings
-may ask about it.
+may ask about it. A website's question for WebGPU (`../site-settings/webgpu-ask.ts`) reads what this run did, through `x11VulkanOffer` and `x11VulkanReading`, and sets the setting from the answer.
 
 **What it depends on.** `electron` (`x11-vulkan-runner.ts` only); [`../settings/`](../settings/) (`readSettingBeforeReady`, `forceSettingsFile`, the store's `set` and `onChange`); [`../privacy/gpc-switch.ts`](../privacy/gpc-switch.ts) (the merge of one feature into `--enable-features`); [`../diagnostics/shell-console.ts`](../diagnostics/shell-console.ts) (`isOrdinaryEnd`, so the guard and the crash records agree on what a bad end is); [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the shape of a domain); [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (the guard's record lands whole or not at all).
 
@@ -26,5 +26,7 @@ may ask about it.
 - a run that set the switches never painted its first window: the start marker is written before Chromium reads the switches and removed when the window's `ready-to-show` comes, never by the timer that shows the window a second after its creation whether or not anything was drawn, so the next start finds it and reverts before applying anything. Orivon's own ends of a start (the failed-to-start dialog, an uncaught error) clear the marker, because they are not the switches' doing; a start killed from outside leaves it. A run from the development server may never get `ready-to-show` (`../shell/window-frame.ts`), so its marker stays and the next start with the setting on turns it off.
 
 A setting that reads on beside a revert in the record at start is a turn-off the settings store had not saved yet (it saves after a delay): the switches stay off, the setting is turned off again and the record stays. Turning the setting on from Settings forgets the record at once. In a private window the switch is locked, so no sentence sends the person to it. A private session follows the copy of the settings it started from and keeps its own record, which goes with it.
+
+**Granting a site turns the setting on, and the Settings switch is still the only way off.** On an X11 session whose run did not start in this mode, a website's page that gets no adapter is asked for WebGPU anyway, because granting turns the setting on and offers a restart (`../site-settings/webgpu-ask.ts`; ADR-0106). The question is not asked in a run the guard has reverted, which names the revert in Settings and `orivon://gpu` instead, nor in a private window, whose switch is locked. A site that already has an answer is never asked again, so a person who turned the mode off keeps it off whatever the sites they granted ask; the setting is changed only by the grant of a site that had no answer.
 
 **Not measured.** A real Xorg session, which is the case upstream's block was written for (video composited blank on an NVIDIA hybrid laptop). Until a computer like that has run this, whether the video decoder picks the integrated GPU there is *provisional*; a report from `orivon://report` on such a computer would settle it.

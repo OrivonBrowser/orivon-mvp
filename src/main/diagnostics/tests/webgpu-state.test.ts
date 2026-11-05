@@ -36,7 +36,7 @@ describe('webGpuState', () => {
     it('blames an X11 session on Linux for a page that got no adapter, though the bridge reads enabled', () => {
       const state = webGpuState(inputs({ session: 'x11', ozone: 'x11', devices: [NVIDIA], adapter: { kind: 'none' } }))
       expect(state).toMatchObject({ state: 'unavailable', reason: 'x11' })
-      expect(state.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. You can turn it on in Settings, under Performance.')
+      expect(state.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. A site that needs WebGPU asks you for it. You can also turn it on in Settings, under Performance.')
     })
 
     it('says Orivon runs through XWayland when the session is Wayland and the browser is on X11', () => {
@@ -54,7 +54,7 @@ describe('webGpuState', () => {
       for (const session of ['', 'tty']) {
         const state = webGpuState(inputs({ session, ozone: 'x11' }))
         expect(state).toMatchObject({ state: 'unavailable', reason: 'x11' })
-        expect(state.sentence).toBe('WebGPU is off because Orivon is running on X11. Chromium turns it off there for every graphics card. You can turn it on in Settings, under Performance.')
+        expect(state.sentence).toBe('WebGPU is off because Orivon is running on X11. Chromium turns it off there for every graphics card. A site that needs WebGPU asks you for it. You can also turn it on in Settings, under Performance.')
       }
     })
 
@@ -332,13 +332,29 @@ describe('the X11 setting for WebGPU', () => {
     expect(webGpuState(x11({ x11Vulkan: REVERTED })).sentence).toBe('Orivon turned off "Use the graphics card for WebGPU on X11" because graphics stopped working while it was on. You can turn it on again in Settings, under Performance.')
   })
 
+  it('says no site is asked, instead of saying one is, while the WebGPU default is Block', () => {
+    const blocked = webGpuState(x11({ webgpuDefaultBlocks: true, adapter: { kind: 'none' } }))
+    expect(blocked.reason).toBe('x11')
+    expect(blocked.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card. No site is asked for WebGPU while its default in Settings, Sites is Block. You can turn it on in Settings, under Performance.')
+    const asking = webGpuState(x11({ webgpuDefaultBlocks: false, adapter: { kind: 'none' } }))
+    expect(asking.sentence).toContain('A site that needs WebGPU asks you for it.')
+    expect(asking.sentence).not.toContain('No site is asked')
+    expect(webGpuState(x11({ adapter: { kind: 'none' } })).sentence).toBe(asking.sentence)
+  })
+
+  it('does not point a private window at the switch or the default, whichever the default is', () => {
+    for (const webgpuDefaultBlocks of [true, false]) {
+      expect(webGpuState(x11({ isPrivate: true, webgpuDefaultBlocks, adapter: { kind: 'none' } })).sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.')
+    }
+  })
+
   it('leaves the way to turn it on out of the sentences of a private window, whose switch is locked', () => {
     const x11Off = webGpuState(x11({ isPrivate: true, adapter: { kind: 'none' } }))
     expect(x11Off.reason).toBe('x11')
     expect(x11Off.sentence).toBe('WebGPU is off because this computer runs an X11 session. Chromium turns it off there for every graphics card.')
     const reverted = webGpuState(x11({ isPrivate: true, x11Vulkan: REVERTED, adapter: { kind: 'none' } }))
     expect(reverted.sentence).toBe('Orivon turned off "Use the graphics card for WebGPU on X11" because graphics stopped working while it was on.')
-    expect(webGpuState(x11({ isPrivate: false, adapter: { kind: 'none' } })).sentence).toContain('You can turn it on in Settings, under Performance.')
+    expect(webGpuState(x11({ isPrivate: false, adapter: { kind: 'none' } })).sentence).toContain('You can also turn it on in Settings, under Performance.')
   })
 
   it('leaves the way back out of the sentence where Settings does not offer the choice (XWayland)', () => {

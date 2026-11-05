@@ -10,6 +10,7 @@ vi.mock('../expose-shim-globals.js', () => ({ exposeShimGlobals: () => { order.p
 vi.mock('../embed-event-relay.js', () => ({ installEmbedEventRelay: () => { order.push('embed-event-relay') } }))
 vi.mock('../display-capture.js', () => ({ installDisplayCapture: () => { order.push('display-capture') } }))
 vi.mock('../permission-query.js', () => ({ installPermissionQuery: () => { order.push('permission-query') } }))
+vi.mock('../webgpu-ask.js', () => ({ installWebGpuAsk: () => { order.push('webgpu-ask') } }))
 vi.mock('../hid-announce.js', () => ({ installHidAnnounce: () => { order.push('hid-announce') } }))
 vi.mock('../page-visibility.js', () => ({ installPageVisibility: () => { order.push('page-visibility') } }))
 vi.mock('../no-drag-regions.js', () => ({ installNoDragRegions: () => { order.push('no-drag-regions') } }))
@@ -40,6 +41,10 @@ it('listens for a device the person allowed in every ordinary tab', async () => 
 
 it('wraps the page\'s permission query for every ordinary tab', async () => {
   expect(order).toContain('permission-query')
+})
+
+it('asks the person before a page keeps a WebGPU adapter, in every ordinary tab', async () => {
+  expect(order).toContain('webgpu-ask')
 })
 
 it('keeps a page from declaring window drag regions in every ordinary tab', async () => {

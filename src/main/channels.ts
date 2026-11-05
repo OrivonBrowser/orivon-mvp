@@ -195,6 +195,9 @@ export const PAGE_DIALOG_CHANNEL = 'orivon-page-dialog'
 /** A top frame's preload -> main, `ipcRenderer.invoke`: `{ name }`, the name a page gave `navigator.permissions.query` when the engine read it as denied. Main answers `granted`, `denied`, `prompt` or null from the sender's own frame (src/main/sessions/permission-query-ipc.ts). */
 export const PERMISSION_QUERY_CHANNEL = 'orivon-permission-query'
 
+/** A top frame's preload -> main, `ipcRenderer.invoke`: `{ adapter }`, whether Chromium gave the page's `requestAdapter()` an adapter. Main answers `true` only when the page may have it, from the sender's own frame (src/main/site-settings/webgpu-ask-ipc.ts). */
+export const WEBGPU_ASK_CHANNEL = 'orivon-webgpu-ask'
+
 /** Main -> a tab's top frame: `hidden`, a boolean, whether the tab is out of the person's sight (behind another tab, or its window minimized or hidden). The ordinary-tab preload turns it into the page's `document.visibilityState` and a `visibilitychange` event (src/preload/page-visibility.ts). */
 export const TAB_VISIBILITY_CHANNEL = 'orivon-tab:visibility'
 

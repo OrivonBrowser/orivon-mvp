@@ -9,6 +9,7 @@ import { installFormWatch } from './form-watch.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
 import { installNoDragRegions } from './no-drag-regions.js'
 import { installPermissionQuery } from './permission-query.js'
+import { installWebGpuAsk } from './webgpu-ask.js'
 import { installPageKeys } from './page-keys.js'
 import { installPageVisibility } from './page-visibility.js'
 import { hideUserAgentDataOnSignInHosts } from './sign-in-identity.js'
@@ -40,6 +41,8 @@ export function exposeOrdinaryTabSurface (): void {
   // A page that checks `navigator.permissions.query` before it asks reads `prompt` for what it would be asked about,
   // not the engine's `denied` -- ./permission-query.ts.
   installPermissionQuery()
+  // ADR-0106: a website's page asks for its WebGPU adapter through the person's answer for the site -- ./webgpu-ask.ts.
+  installWebGpuAsk()
   // ADR-0068: tells the page's navigator.hid a device the person just allowed has connected. Idle until main sends.
   installHidAnnounce()
   // ADR-0046: lets a real app tab's page reach its app's child host, gated

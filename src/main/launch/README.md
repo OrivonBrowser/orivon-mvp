@@ -12,7 +12,7 @@ right place and steps aside if that profile is already open; `profile-store.ts` 
 the OS has since reused its pid for;
 `private-picture.ts` gives a new private session the new tab's picture of the profile that opened it, copied asynchronously because it can be 20 MB;
 `public-seed.ts` is the one list of what a new profile or a private session is given from the default profile;
-`peer-spawn.ts` starts another Orivon process; `profiles-service.ts` is what the rest of the shell asks:
+`peer-spawn.ts` starts another Orivon process; `relaunch.ts` is the one command line a restart starts with (the switches of this start, and the one site a caller wants back, by its origin alone, since a command line is readable by every user of the computer and a path can hold a token) and the program it starts, which inside an AppImage is the AppImage file, as for a peer, never the executable in the mount that ends with this process; `profiles-service.ts` is what the rest of the shell asks:
 this process's own profile, the list, changes to it, and "open"; `profiles-domain.ts` is what the Profiles,
 Private and Settings pages may ask of it.
 

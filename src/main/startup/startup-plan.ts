@@ -49,14 +49,18 @@ export function usableWindows (previous: SavedSession | null): SavedWindow[] {
   return previous === null ? [] : previous.windows.filter((window) => window.tabs.length > 0)
 }
 
+/** Whether a start with this choice brings the saved session back: a private session is a browser of its own, so it neither restores the last session nor is restored. */
+export function startupRestoresSession (mode: StartupMode, isPrivate: boolean): boolean {
+  return !isPrivate && mode === 'continue'
+}
+
 export function planStartup (input: StartupInput): StartupPlan {
   const urls = input.argvUrls
-  // A private session is a browser of its own: it neither restores the last session nor is restored.
   const mode = input.isPrivate ? 'newTab' : input.mode
   if (mode === 'pages') {
     return { first: { tabs: parsePages(input.pages).map((url) => ({ url, title: '', pinned: false })), urls }, more: [] }
   }
-  const [saved, ...more] = mode === 'continue' ? usableWindows(input.previous) : []
+  const [saved, ...more] = startupRestoresSession(input.mode, input.isPrivate) ? usableWindows(input.previous) : []
   if (saved === undefined) return { first: { tabs: [], urls }, more: [] }
   return { first: { tabs: saved.tabs, urls, saved }, more }
 }

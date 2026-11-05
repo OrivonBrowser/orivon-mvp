@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SavedSession, SavedWindow } from '../../session-restore/session-types.js'
-import { parsePages, planOpensLocalFile, planStartup, shouldOfferRestore, usableWindows } from '../startup-plan.js'
+import { parsePages, planOpensLocalFile, planStartup, shouldOfferRestore, startupRestoresSession, usableWindows } from '../startup-plan.js'
 import type { StartupInput } from '../startup-plan.js'
 
 const window = (urls: string[], pinned = false): SavedWindow => ({
@@ -88,6 +88,15 @@ describe('usableWindows', () => {
   it('drops the windows with no tab and copes with no session', () => {
     expect(usableWindows(null)).toEqual([])
     expect(usableWindows(session([window([]), window(['https://a.example/'])]))).toHaveLength(1)
+  })
+})
+
+describe('startupRestoresSession', () => {
+  it('is true only for the continue choice, and never for a private session', () => {
+    expect(startupRestoresSession('continue', false)).toBe(true)
+    expect(startupRestoresSession('newTab', false)).toBe(false)
+    expect(startupRestoresSession('pages', false)).toBe(false)
+    expect(startupRestoresSession('continue', true)).toBe(false)
   })
 })
 

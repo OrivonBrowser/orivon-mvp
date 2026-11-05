@@ -1,11 +1,12 @@
 import type { Row } from '../../model.js'
 import type { GraphicsPart } from '../../graphics-part.js'
+import { RESTART_HELP, restartHelp } from '../../restart-help.js'
 import type { SettingsState } from '../../state.js'
 
 const GROUP = 'Graphics'
 const KEY = 'graphics.webgpuOnX11'
 
-const HELP = 'Turns on WebGPU for games and apps that need it. It may use more battery, and on some laptops videos can go blank. Read when Orivon starts.'
+const HELP = 'Turns on WebGPU for games and apps that need it. Choosing Grant WebGPU when a site asks turns this on too; setting a site to Allow in Settings or from the address bar does not. It may use more battery, and on some laptops videos can go blank. Read when Orivon starts.'
 const REVERTED = 'Orivon turned this off because graphics stopped working while it was on.'
 
 const graphics = (state: SettingsState): GraphicsPart => state.part<GraphicsPart>('graphics')
@@ -27,7 +28,8 @@ export const graphicsRows: readonly Row[] = [
     id: 'webgpu-on-x11-restart',
     group: GROUP,
     label: 'Start again to apply',
-    help: 'The choice above is read when Orivon starts. Your tabs and windows are not restored.',
+    help: RESTART_HELP,
+    helpFor: restartHelp,
     keywords: ['restart', 'relaunch', 'apply', 'webgpu', 'graphics'],
     control: {
       type: 'action',

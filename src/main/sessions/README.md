@@ -153,7 +153,8 @@ can only report true or false there, so an undecided name would read `denied` wh
 `granted`, `denied` or `prompt` from the decision a request from the same page takes, and
 [`permission-query-ipc.ts`](permission-query-ipc.ts) hands it to the top frame's preload, which asks only when the engine's
 own answer is `denied` and so can only turn it into `prompt` (the `site-settings/` README has the rules). The origin is the
-sender frame's own and a message holds one name; a frame other than the top one, an unknown name or an error is answered
+sender frame's own, read by [`top-frame-origin.ts`](top-frame-origin.ts) (the one place a page's message is taken to speak for its top
+frame, which the WebGPU question in [`../site-settings/`](../site-settings/) uses too), and a message holds one name; a frame other than the top one, an unknown name or an error is answered
 with nothing, and the engine's answer stands.
 
 Which handler Electron routes each name to was measured, and each ADR records it. Two traps

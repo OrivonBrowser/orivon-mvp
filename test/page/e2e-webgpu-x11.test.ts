@@ -1,16 +1,18 @@
 // The WebGPU-on-X11 setting in a running shell: what a profile with it on gets (the switches, and an adapter where a
 // graphics card is behind the display), what a profile with it off gets, and the guard that turns it off after a bad
 // run. The setting is the profile's own `settings.json`, because Playwright's launcher replaces a feature list given
-// on the command line, so a spec cannot hand Orivon the switches. Docs: docs/planning/webgpu-plan.md, step 3.
+// on the command line, so a spec cannot hand Orivon the switches. A website is asked before its page keeps an adapter
+// (ADR-0106), so a profile here allows the fixture's origin before launch, so that no question holds a probe; the last
+// block of the file is the question itself, with an adapter to give. Docs: docs/planning/webgpu-plan.md, steps 3 and 3b.
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visitWithoutPage } from '../support/qa-helpers.js'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, seedSiteAnswers, startServer, visitWithoutPage } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
-import { waitFor } from '../support/smoke-helpers.mjs'
+import { delay, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 const KEY = 'graphics.webgpuOnX11'
 const GUARD_FILE = 'x11-vulkan.json'
@@ -21,13 +23,16 @@ const DOUBLED = [2, 4, 6, 8]
 const HAS_RENDER_NODE = LINUX && existsSync('/dev/dri') && readdirSync('/dev/dri').some((name) => name.startsWith('renderD'))
 
 let server: FixtureServer
+let other: FixtureServer
 
 beforeAll(async () => {
   server = await startServer((_request, response) => { html(response, '<!doctype html><title>gpu</title><p>gpu</p>') })
+  other = await startServer((_request, response) => { html(response, '<!doctype html><title>gpu other</title><p>gpu</p>') })
 })
 
 afterAll(async () => {
   await server.close()
+  await other.close()
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
@@ -67,10 +72,13 @@ interface Profile {
   readonly guard?: { readonly pendingWindow: boolean, readonly revert: { readonly at: string, readonly why: string } | null }
   /** Environment variables for the run. */
   readonly env?: Record<string, string>
+  /** The origins that are allowed WebGPU before launch; the fixture's own unless a spec says none. */
+  readonly allowed?: readonly string[]
 }
 
 const seed = (profile: Profile) => async (dir: string): Promise<void> => {
   await mkdir(dir, { recursive: true })
+  await seedSiteAnswers(dir, Object.fromEntries((profile.allowed ?? [server.origin]).map((origin) => [origin, { webgpu: 'allow' as const }])))
   if (profile.setting !== undefined) await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { [KEY]: profile.setting } }))
   if (profile.guard !== undefined) await writeFile(join(dir, GUARD_FILE), JSON.stringify(profile.guard))
 }
@@ -238,6 +246,94 @@ describe.skipIf(!LINUX)('the guard', () => {
       expect(features).not.toContain('VulkanFromANGLE')
       expect(await waitFor(() => settingOf(dir) !== true)).toBe(true)
       expect(guardOf(dir)).toEqual({ pendingWindow: false, revert })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+})
+
+/** The overlay pages that ask or offer, newest last. */
+const promptPages = (app: ElectronApplication): Page[] => app.windows().filter((w) => w.url().includes('overlay=site-prompt') && !w.isClosed())
+
+async function waitQuestion (app: ElectronApplication): Promise<Page> {
+  let found: Page | undefined
+  expect(await waitFor(async () => {
+    if (!(await popoverShown(app, 'overlay=site-prompt'))) return false
+    for (const candidate of promptPages(app).reverse()) {
+      try {
+        await candidate.waitForSelector('.site-prompt .btn-row', { timeout: 2_000 })
+        found = candidate
+        return true
+      } catch {
+        // Closed under the wait.
+      }
+    }
+    return false
+  }, 15_000)).toBe(true)
+  return found as Page
+}
+
+/** Presses a button once the half second that ignores presses has passed. */
+async function pressButton (prompt: Page, label: string): Promise<void> {
+  await prompt.waitForSelector('.site-prompt:not(.arming)')
+  try { await prompt.click(`.btn-row .btn:text-is("${label}")`) } catch (error) { if (!/closed|destroyed/.test(String(error))) throw error }
+}
+
+/** Has the tab at `origin` ask for an adapter without waiting for the answer: the question is open while it waits. */
+async function startAsk (app: ElectronApplication, origin: string): Promise<void> {
+  await app.evaluate(async ({ webContents }, target) => {
+    const contents = webContents.getAllWebContents().find((candidate) => candidate.getURL().startsWith(target))
+    if (contents === undefined) throw new Error('no tab on the fixture page')
+    await contents.executeJavaScript(`(() => {
+      window.__gpu = undefined
+      navigator.gpu.requestAdapter().then(
+        (adapter) => { window.__gpu = adapter === null ? 'null' : 'adapter:' + String(adapter.info.isFallbackAdapter === true) },
+        (error) => { window.__gpu = 'ERR:' + error.name })
+      return 'asked'
+    })()`)
+  }, origin)
+}
+
+/** What the tab's page has heard so far: undefined while its call is still waiting. */
+const readResult = async (app: ElectronApplication, origin: string): Promise<unknown> => await app.evaluate(async ({ webContents }, target) => {
+  const contents = webContents.getAllWebContents().find((candidate) => candidate.getURL().startsWith(target))
+  return await contents?.executeJavaScript('window.__gpu') as unknown
+}, origin)
+
+async function askResult (app: ElectronApplication, origin: string): Promise<unknown> {
+  let last: unknown
+  await waitFor(async () => { last = await readResult(app, origin); return last !== undefined }, 15_000)
+  return last
+}
+
+describe.skipIf(!HAS_RENDER_NODE)('a website asks for WebGPU while an adapter can be given', () => {
+  it('is asked, gets the adapter once it is granted and none once it is blocked, and is offered no restart', async () => {
+    const { app, chrome } = await launchShell({ seedProfile: seed({ setting: true, allowed: [] }) })
+    try {
+      const dir = await app.evaluate(({ app: electron }) => electron.getPath('userData'))
+      await visitWithoutPage(app, chrome, `${server.origin}/`)
+      expect(await waitFor(() => guardOf(dir)?.pendingWindow === false)).toBe(true)
+
+      // The question names the button that grants and holds the page's call; the mode is already on, so no restart is in it.
+      await startAsk(app, server.origin)
+      let prompt = await waitQuestion(app)
+      expect(await prompt.locator('.sp-text').allTextContents()).toEqual(['wants to use your graphics card for WebGPU'])
+      expect(await prompt.locator('.btn-row .btn').allTextContents()).toEqual(['Block', 'Grant WebGPU'])
+      expect(await prompt.locator('.sp-note').count()).toBe(0)
+      expect(await readResult(app, server.origin)).toBeUndefined()
+      await pressButton(prompt, 'Grant WebGPU')
+      expect(await askResult(app, server.origin)).toBe('adapter:false')
+      expect(await waitFor(async () => !(await popoverShown(app, 'overlay=site-prompt')))).toBe(true)
+      await delay(800)
+      expect(await popoverShown(app, 'overlay=site-prompt')).toBe(false)
+
+      // Another site that is blocked is told it has none.
+      await visitWithoutPage(app, chrome, `${other.origin}/`)
+      await startAsk(app, other.origin)
+      prompt = await waitQuestion(app)
+      expect(await prompt.locator('.origin').allTextContents()).toEqual([other.origin])
+      await pressButton(prompt, 'Block')
+      expect(await askResult(app, other.origin)).toBe('null')
     } finally {
       await closeElectron(app)
     }

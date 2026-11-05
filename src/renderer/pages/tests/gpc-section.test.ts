@@ -7,9 +7,9 @@ import type { Row } from '../settings/model.js'
 
 const KEY = 'privacy.globalPrivacyControl'
 
-async function loaded (value: boolean, atStart: boolean, isPrivate = false): Promise<{ state: SettingsState, request: ReturnType<typeof vi.fn> }> {
+async function loaded (value: boolean, atStart: boolean, isPrivate = false, startup?: string): Promise<{ state: SettingsState, request: ReturnType<typeof vi.fn> }> {
   const request = vi.fn(async (domain: string) => {
-    if (domain === 'settings') return await Promise.resolve({ descriptions: [], values: { [KEY]: value }, atStart: { [KEY]: atStart } })
+    if (domain === 'settings') return await Promise.resolve({ descriptions: [], values: { [KEY]: value, ...(startup === undefined ? {} : { 'startup.mode': startup }) }, atStart: { [KEY]: atStart } })
     if (domain === 'profiles') return await Promise.resolve({ profiles: [], isPrivate })
     return await Promise.resolve({})
   })
@@ -27,6 +27,15 @@ describe('the Global Privacy Control rows', () => {
     expect(help).toContain('California')
     expect(help).toContain('Sec-GPC: 1')
     expect(help).toContain('navigator.globalPrivacyControl')
+  })
+
+  it('say what a restart does to the tabs and windows, following the start-up choice', async () => {
+    const restart = row('global-privacy-control-restart')
+    expect(restart.help).toBe('The choice above is read when Orivon starts. Your tabs and windows are not restored.')
+    for (const mode of [undefined, 'newTab', 'pages']) {
+      expect(restart.helpFor?.((await loaded(false, true, false, mode)).state), String(mode)).toBe('The choice above is read when Orivon starts. Your tabs and windows are not restored.')
+    }
+    expect(restart.helpFor?.((await loaded(false, true, false, 'continue')).state)).toBe('The choice above is read when Orivon starts. Your tabs and windows open again.')
   })
 
   it('offer a restart only once the choice differs from the one this process started with', async () => {

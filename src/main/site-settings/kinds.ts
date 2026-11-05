@@ -6,7 +6,7 @@
 import type { SettingKey } from '../settings/schema.js'
 
 export type SiteKind =
-  | 'camera' | 'microphone' | 'location' | 'clipboardRead' | 'midi' | 'idle' | 'windowManagement' | 'notifications'
+  | 'camera' | 'microphone' | 'location' | 'clipboardRead' | 'midi' | 'idle' | 'windowManagement' | 'notifications' | 'webgpu'
   | 'popups' | 'javascript' | 'images' | 'sound' | 'autoDownloads'
   | 'devices' | 'screenShare'
 
@@ -42,6 +42,7 @@ export const SITE_KINDS: readonly SiteKindDef[] = [
   { id: 'idle', label: 'Idle detection', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.idle', available: true },
   { id: 'windowManagement', label: 'Window management', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.windowManagement', available: true },
   { id: 'notifications', label: 'Notifications', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.notifications', available: true },
+  { id: 'webgpu', label: 'WebGPU', group: 'permission', values: ['ask', 'block'], settingKey: 'sites.webgpu', available: true },
   { id: 'popups', label: 'Pop-ups and redirects', group: 'content', values: ['block', 'allow'], settingKey: 'sites.popups', available: true },
   { id: 'javascript', label: 'JavaScript', group: 'content', values: ['allow', 'block'], settingKey: 'sites.javascript', available: true },
   { id: 'images', label: 'Images', group: 'content', values: ['allow', 'block'], settingKey: 'sites.images', available: true },

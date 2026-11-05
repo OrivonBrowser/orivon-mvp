@@ -40,7 +40,7 @@ export interface SiteAsksDeps<T extends NavigatingTab & object> {
   isApp: (origin: string) => boolean
   /** The tab is on screen in a window; a background tab's question would land over another page. */
   showing: (tab: T) => boolean
-  ask: (kinds: readonly SiteKind[], tab: T, request: { sysex: boolean }) => Promise<SiteAnswer>
+  ask: (kinds: readonly SiteKind[], tab: T, request: { sysex: boolean, restart: boolean }) => Promise<SiteAnswer>
   access: PageAccess<T>
 }
 
@@ -70,13 +70,13 @@ export function createSiteAsksEngine<T extends NavigatingTab & object> (deps: Si
   /** One question per tab and set of kinds at a time: a page that asks twice while the first is open shares its answer. */
   const pending = new WeakMap<T, Map<string, Promise<SiteAnswer>>>()
 
-  function askOnce (tab: T, origin: string, kinds: readonly SiteKind[], sysex: boolean): Promise<SiteAnswer> {
-    const key = `${origin} ${[...kinds].sort().join(',')}`
+  function askOnce (tab: T, origin: string, kinds: readonly SiteKind[], sysex: boolean, restart: boolean): Promise<SiteAnswer> {
+    const key = `${origin} ${[...kinds].sort().join(',')} ${restart ? 'restart' : ''}`
     let open = pending.get(tab)
     if (open === undefined) pending.set(tab, open = new Map())
     const existing = open.get(key)
     if (existing !== undefined) return existing
-    const answer = deps.ask(kinds, tab, { sysex }).catch((): SiteAnswer => 'dismiss').finally(() => { open.delete(key) })
+    const answer = deps.ask(kinds, tab, { sysex, restart }).catch((): SiteAnswer => 'dismiss').finally(() => { open.delete(key) })
     open.set(key, answer)
     return answer
   }
@@ -112,7 +112,7 @@ export function createSiteAsksEngine<T extends NavigatingTab & object> (deps: Si
     if (!deps.showing(tab)) return false
 
     const loads = deps.access.loads(tab, origin)
-    const answer = await askOnce(tab, origin, undecided, request.sysex)
+    const answer = await askOnce(tab, origin, undecided, request.sysex, request.restart === true)
     // The page moved on while the question was open (another site, or the same one loaded again): the answer was
     // about a page that is no longer here, and decides nothing about this one.
     if (tabOrigin(tab) !== origin || deps.access.loads(tab, origin) !== loads) return false

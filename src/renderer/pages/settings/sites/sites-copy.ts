@@ -11,6 +11,7 @@ const COPY: Readonly<Record<string, { readonly help: string, readonly keywords: 
   idle: { help: 'Sites can ask to know when you are away from the computer.', keywords: ['idle', 'away', 'device use', 'idle detection', 'permission'] },
   windowManagement: { help: 'Sites can ask to place windows across your screens.', keywords: ['multi-screen', 'monitors', 'displays', 'permission'] },
   notifications: { help: 'Sites can ask to show notifications.', keywords: ['alerts', 'push', 'permission'] },
+  webgpu: { help: 'Sites can ask to use your graphics card for WebGPU, which games and some apps need.', keywords: ['gpu', 'graphics', 'games', '3d', 'webgl', 'permission'] },
   popups: { help: 'Whether sites can open pop-ups and send you to another page on their own.', keywords: ['popup', 'redirect', 'windows', 'blocker'] },
   javascript: { help: 'Whether sites can run scripts.', keywords: ['script', 'js'] },
   images: { help: 'Whether sites can show pictures.', keywords: ['pictures', 'photos'] },

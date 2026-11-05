@@ -17,6 +17,16 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+- **`webgpu-asked-per-site`**: new row. A website whose page calls `navigator.gpu.requestAdapter()` is now asked under the address bar, and a Block or a closed question gives it `null`, as on a computer without WebGPU. A page whose own fallback runs on `null` needs no change; an installed app that holds grants is not asked, and a private window is asked when there is an adapter to give. Recheck: any port that uses WebGPU.
+
+### Added
+
+- **A website asks before it gets WebGPU**: "wants to use your graphics card for WebGPU", with Block and Grant WebGPU, kept per site in Settings, Sites. On an X11 session, granting also turns on "Use the graphics card for WebGPU on X11" and offers Restart Orivon, which reopens the site by its origin (your tabs and windows too when Orivon continues where it left off, and no site for a tab with a tunnel of its own). The bug report counts the sites allowed and blocked, never which.
+
+### Fixed
+
+- **Restart Orivon from an AppImage** starts the AppImage file again, for the Settings rows that restart and for the WebGPU offer; it quit before and never came back, because the program it named sat in a mount that ends with the process.
+
 ## [0.1.0] - 2026-11-05
 
 Release, published 2026-11-05. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.1.0).

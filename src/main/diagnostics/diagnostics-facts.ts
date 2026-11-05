@@ -10,6 +10,25 @@ import { gpuDevicesOf, gpuFeaturesOf } from './gpu-reading.js'
 import { webGpuState, x11VulkanReadingOf } from './webgpu-state.js'
 import type { AdapterReading, WebGpuReason, WebGpuStateName } from './webgpu-state.js'
 
+/** What the person told sites about WebGPU (`sites.webgpu`, the per-site kind `webgpu`): the default, and how many sites are allowed and blocked. Counts only, never which sites. */
+export interface WebGpuSitesReading {
+  readonly default: string
+  readonly allowed: number
+  readonly blocked: number
+}
+
+/** How many sites hold an `allow` and how many a `block` for `kind`, from the per-site answers. */
+export function siteAnswerCounts (entries: ReadonlyArray<{ readonly kind: string, readonly value: string }>, kind: string): { readonly allowed: number, readonly blocked: number } {
+  let allowed = 0
+  let blocked = 0
+  for (const entry of entries) {
+    if (entry.kind !== kind) continue
+    if (entry.value === 'allow') allowed++
+    else if (entry.value === 'block') blocked++
+  }
+  return { allowed, blocked }
+}
+
 export type Channel = 'development' | 'source' | 'appimage' | 'linux-package' | 'windows' | 'macos'
 
 export interface ChannelInputs {
@@ -91,6 +110,8 @@ export interface DiagnosticsFacts {
   readonly gpuStatus: unknown
   /** What the setting that gives an X11 session WebGPU did in this run. */
   readonly x11Vulkan: X11Reading
+  /** The WebGPU question: the default and the number of sites allowed and blocked. */
+  readonly webgpuSites: WebGpuSitesReading
   /** `app.getGPUInfo('basic')`, or undefined when it rejected. */
   readonly gpuInfo: unknown
   readonly displays: readonly DisplayReading[]
@@ -118,6 +139,8 @@ export interface Diagnostics {
     readonly webgpu: { readonly state: WebGpuStateName, readonly reason: WebGpuReason }
     /** The X11 setting for WebGPU: whether this run drew through Vulkan because it was on at the start, and the last time Orivon turned it off by itself (a fixed word for why). */
     readonly x11Vulkan: X11Reading
+    /** The question a website is asked before it gets WebGPU: what it defaults to, and how many sites are allowed and blocked (numbers, never which). */
+    readonly webgpuSites: WebGpuSitesReading
   }
   readonly displays: ReadonlyArray<{ readonly width: number, readonly height: number, readonly scale: number }>
   readonly processes: ReadonlyArray<{ readonly type: string, readonly count: number, readonly memoryMb: number }>
@@ -159,7 +182,7 @@ export function buildDiagnostics (facts: DiagnosticsFacts, adapter?: AdapterRead
   const devices = gpuDevicesOf(facts.gpuInfo)
   const { platform, session, ozone } = facts.system
   const { x11Vulkan } = facts
-  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter, x11Vulkan: x11VulkanReadingOf(x11Vulkan) })
+  const webgpu = webGpuState({ platform, session, ozone, features, devices, adapter, x11Vulkan: x11VulkanReadingOf(x11Vulkan), webgpuDefaultBlocks: facts.webgpuSites.default === 'block' })
   return {
     app: { commit: facts.commit, channel: facts.channel, ...facts.versions, packaged: facts.packaged, uptimeSec: Math.round(facts.uptimeSec) },
     system: facts.system,
@@ -167,7 +190,8 @@ export function buildDiagnostics (facts: DiagnosticsFacts, adapter?: AdapterRead
       features,
       devices: (devices ?? []).map(({ vendorId, deviceId, driverVersion, active }) => ({ vendorId: vendorId ?? 0, deviceId: deviceId ?? 0, driverVersion, active })),
       webgpu: { state: webgpu.state, reason: webgpu.reason },
-      x11Vulkan
+      x11Vulkan,
+      webgpuSites: facts.webgpuSites
     },
     displays: facts.displays.map((display) => ({ width: display.width, height: display.height, scale: display.scaleFactor })),
     processes: groupProcesses(facts.processes),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appSocketReadings, buildDiagnostics, channelOf, REPORTED_APPS, REPORTED_SETTINGS, reportedSettings } from '../diagnostics-facts.js'
+import { appSocketReadings, buildDiagnostics, channelOf, REPORTED_APPS, REPORTED_SETTINGS, reportedSettings, siteAnswerCounts } from '../diagnostics-facts.js'
 import type { DiagnosticsFacts } from '../diagnostics-facts.js'
 import type { CrashRecord } from '../crash-records.js'
 import { CRASH, FACTS } from './report-fixtures.js'
@@ -30,7 +30,32 @@ describe('buildDiagnostics', () => {
   })
 
   it('has no devices when the graphics report is unavailable', () => {
-    expect(buildDiagnostics({ ...FACTS, gpuInfo: undefined, gpuStatus: undefined }).gpu).toEqual({ features: {}, devices: [], webgpu: { state: 'unknown', reason: 'unknown' }, x11Vulkan: { onAtStart: false, revert: null } })
+    expect(buildDiagnostics({ ...FACTS, gpuInfo: undefined, gpuStatus: undefined }).gpu).toEqual({ features: {}, devices: [], webgpu: { state: 'unknown', reason: 'unknown' }, x11Vulkan: { onAtStart: false, revert: null }, webgpuSites: { default: 'ask', allowed: 2, blocked: 1 } })
+  })
+
+  describe('the WebGPU question', () => {
+    it('states the default and how many sites are allowed and blocked, as numbers and a word, never which sites', () => {
+      expect(diagnostics.gpu.webgpuSites).toEqual({ default: 'ask', allowed: 2, blocked: 1 })
+      expect(Object.keys(diagnostics.gpu.webgpuSites)).toEqual(['default', 'allowed', 'blocked'])
+      expect(buildDiagnostics({ ...FACTS, webgpuSites: { default: 'block', allowed: 0, blocked: 0 } }).gpu.webgpuSites).toEqual({ default: 'block', allowed: 0, blocked: 0 })
+    })
+
+    it('counts the answers of one kind and no other', () => {
+      const entries = [
+        { origin: 'https://a.example', kind: 'webgpu', value: 'allow' }, { origin: 'https://b.example', kind: 'webgpu', value: 'allow' },
+        { origin: 'https://c.example', kind: 'webgpu', value: 'block' }, { origin: 'https://a.example', kind: 'camera', value: 'allow' },
+        { origin: 'https://d.example', kind: 'camera', value: 'block' }
+      ]
+      expect(siteAnswerCounts(entries, 'webgpu')).toEqual({ allowed: 2, blocked: 1 })
+      expect(siteAnswerCounts(entries, 'camera')).toEqual({ allowed: 1, blocked: 1 })
+      expect(siteAnswerCounts(entries, 'midi')).toEqual({ allowed: 0, blocked: 0 })
+      expect(siteAnswerCounts([], 'webgpu')).toEqual({ allowed: 0, blocked: 0 })
+    })
+
+    it('puts no origin in the report', () => {
+      const text = JSON.stringify(buildDiagnostics(FACTS).gpu)
+      expect(text).not.toMatch(/https?:/)
+    })
   })
 
   describe('the X11 setting for WebGPU', () => {
@@ -47,6 +72,14 @@ describe('buildDiagnostics', () => {
       expect(x11({ onAtStart: true, revert: null }).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11-vulkan-no-adapter' })
       expect(x11({ onAtStart: false, revert: REVERT }).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11-vulkan-reverted' })
       expect(x11({ onAtStart: false, revert: null }).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11' })
+    })
+
+    it('gives the same state and reason whatever the WebGPU default is: only the sentence on orivon://gpu depends on it, and a report carries no sentence', () => {
+      const reading = (webgpuSites: DiagnosticsFacts['webgpuSites']): ReturnType<typeof buildDiagnostics> =>
+        buildDiagnostics({ ...FACTS, system: { ...FACTS.system, session: 'x11', ozone: 'x11' }, gpuStatus: { webgpu: 'enabled', gpu_compositing: 'enabled' }, webgpuSites }, { kind: 'none' })
+      for (const sites of [{ default: 'ask', allowed: 0, blocked: 0 }, { default: 'block', allowed: 0, blocked: 0 }]) {
+        expect(reading(sites).gpu.webgpu).toEqual({ state: 'unavailable', reason: 'x11' })
+      }
     })
 
     it('reports the setting among the settings it states', () => {

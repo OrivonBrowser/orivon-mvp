@@ -190,6 +190,26 @@ records the decision.
   the two videos was not told apart from software decoding, and screen capture was not run.
 - **The setting is retired** once Chromium turns the bridge back on under X11. Each Electron update checks for it.
 
+## Step 3b: a site asks first (`d-0761`, `d-0762`)
+
+[`ADR-0106`](../decisions/ADR-0106-a-website-asks-before-it-gets-webgpu-and-on-x11-granting-it-turns-the-graphics-mode-on.md)
+records the decision.
+
+- **The question:** a website's page that calls `navigator.gpu.requestAdapter()` waits while Orivon asks under the
+  address bar, "wants to use your graphics card for WebGPU", with Block and **Grant WebGPU**. The answer is kept per
+  site as the `webgpu` kind (default Ask, `sites.webgpu`); a block or a closed question gives the page `null`.
+- **Where it is asked:** only where the answer changes what the page gets. Orivon makes the page's call first; with an
+  adapter the question decides; with none nobody is asked, except on an X11 session whose run did not start in the
+  graphics mode of step 3, which the guard has not turned off, outside a private window. There Grant WebGPU keeps the
+  allow, turns `graphics.webgpuOnX11` on and offers **Restart Orivon**, which opens the site that asked again (its origin
+  alone), unless Orivon continues where it left off or the tab has a tunnel of its own.
+- **What enforces it:** a wrapper of `GPU.prototype.requestAdapter` in the main world of a website tab's top frame.
+  Electron 44 tells the browser process nothing of a WebGPU request, so a page's frames and workers, a page that
+  tampers with its own globals, a `<webview>` guest and an extension's page are not asked (*provisional*, see the ADR).
+  An origin that holds grants is not asked; a WebGPU default of Block refuses it.
+- **In CI:** the Linux runners give no adapter, so the end-to-end spec proves the X11 path (question, grant, the
+  setting turned on, the restart offer) and the block; the path with an adapter is run on this machine with the mode on.
+
 ## Step 4: Wayland, one GPU maker at a time (`d-0757`)
 
 - **Mechanism:** `--ignore-gpu-blocklist=186`, which ignores that entry and nothing else, set only when the GPU
@@ -237,7 +257,8 @@ records the decision.
 ## Privacy
 
 - **What a page reads:** every computer that gains WebGPU also tells pages its GPU maker and family through
-  `adapter.info`, as Chrome does on that computer.
+  `adapter.info`, as Chrome does on that computer, once the person grants the site WebGPU (step 3b); a page's frames and
+  workers read it unasked.
 - **Orivon adds nothing to it:** it does not pass `--enable-webgpu-developer-features`, so pages get no device,
   description or driver strings.
 - **No fingerprinting protection** exists in this build (compatibility matrix, Fingerprinting protection row).

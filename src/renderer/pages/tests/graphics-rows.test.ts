@@ -9,10 +9,10 @@ import type { OrivonInternal } from '../shared/bridge.js'
 const KEY = 'graphics.webgpuOnX11'
 const REVERT = { at: '2026-11-04T10:00:00.000Z', why: 'gpu-crash' }
 
-async function loaded (options: { value: boolean, atStart: boolean, offered?: boolean, revert?: unknown, isPrivate?: boolean }): Promise<{ state: SettingsState, request: ReturnType<typeof vi.fn> }> {
-  const { value, atStart, offered = true, revert = null, isPrivate = false } = options
+async function loaded (options: { value: boolean, atStart: boolean, offered?: boolean, revert?: unknown, isPrivate?: boolean, startup?: string | undefined }): Promise<{ state: SettingsState, request: ReturnType<typeof vi.fn> }> {
+  const { value, atStart, offered = true, revert = null, isPrivate = false, startup } = options
   const request = vi.fn(async (domain: string) => {
-    if (domain === 'settings') return await Promise.resolve({ descriptions: [], values: { [KEY]: value }, atStart: { [KEY]: atStart } })
+    if (domain === 'settings') return await Promise.resolve({ descriptions: [], values: { [KEY]: value, ...(startup === undefined ? {} : { 'startup.mode': startup }) }, atStart: { [KEY]: atStart } })
     if (domain === 'profiles') return await Promise.resolve({ profiles: [], isPrivate })
     if (domain === 'graphics') return await Promise.resolve({ offered, revert })
     return await Promise.resolve({})
@@ -27,11 +27,23 @@ const row = (id: string): Row => graphicsRows.find((candidate) => candidate.id =
 describe('the WebGPU-on-X11 rows', () => {
   it('say what the owner approved, word for word', () => {
     expect(row('webgpu-on-x11').label).toBe('Use the graphics card for WebGPU on X11')
-    expect(row('webgpu-on-x11').help).toBe('Turns on WebGPU for games and apps that need it. It may use more battery, and on some laptops videos can go blank. Read when Orivon starts.')
     const restart = row('webgpu-on-x11-restart')
     expect(restart.label).toBe('Start again to apply')
     expect(restart.help).toBe('The choice above is read when Orivon starts. Your tabs and windows are not restored.')
     expect(restart.control.type === 'action' && restart.control.label).toBe('Restart Orivon')
+  })
+
+  it('say that only Grant WebGPU in a site\'s question turns the setting on, never an Allow set in Settings or from the address bar', () => {
+    const { help } = row('webgpu-on-x11')
+    expect(help).toBe('Turns on WebGPU for games and apps that need it. Choosing Grant WebGPU when a site asks turns this on too; setting a site to Allow in Settings or from the address bar does not. It may use more battery, and on some laptops videos can go blank. Read when Orivon starts.')
+  })
+
+  it('say what a restart does to the tabs and windows, following the start-up choice', async () => {
+    const restart = row('webgpu-on-x11-restart')
+    for (const startup of [undefined, 'newTab', 'pages']) {
+      expect(restart.helpFor?.((await loaded({ value: true, atStart: false, startup })).state), String(startup)).toBe('The choice above is read when Orivon starts. Your tabs and windows are not restored.')
+    }
+    expect(restart.helpFor?.((await loaded({ value: true, atStart: false, startup: 'continue' })).state)).toBe('The choice above is read when Orivon starts. Your tabs and windows open again.')
   })
 
   it('belong to the Graphics group and to a setting that exists', () => {
