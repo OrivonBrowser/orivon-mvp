@@ -69,7 +69,10 @@ export function createWebGpuAsk<T extends NavigatingTab & object> (deps: WebGpuA
 
   return async (contents, frameOrigin, adapter) => {
     const origin = originFromUrl(frameOrigin)
-    if (origin === null) return false
+    // The question is for websites. A page with no web origin (a local file, an opaque origin) has no site to remember an
+    // answer against, and keeps what Chromium gave it. A site served over ipfs, ipns, bzz or an `.eth` name is shown under
+    // that scheme but runs at an `https:` origin of its own, so it is asked here as any website is.
+    if (origin === null) return true
     if (deps.isApp(origin)) return !deps.blockedByDefault()
     const details = { isMainFrame: true, requestingUrl: origin }
     if (adapter) return await deps.request({ kinds: ['webgpu'], sysex: false }, contents, details) ?? false

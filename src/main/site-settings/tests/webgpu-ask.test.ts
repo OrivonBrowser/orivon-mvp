@@ -73,15 +73,32 @@ describe('where an adapter exists', () => {
   })
 })
 
-describe('an origin that is not a website, or that holds grants', () => {
-  it.each(['', 'null', 'orivon://settings', 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', 'file://', 'about:blank'])('is refused %j without asking', async (origin) => {
-    const { ask, tab, request, offerRestart } = rig()
-    expect(await ask(tab, origin, true)).toBe(false)
-    expect(await ask(tab, origin, false)).toBe(false)
+describe('a page with no web origin', () => {
+  it.each(['', 'null', 'orivon://settings', 'chrome-extension://abcdefghijklmnopabcdefghijklmnop', 'file://', 'about:blank'])('keeps the adapter Chromium gave it, unasked, for the origin %j', async (origin) => {
+    const { ask, tab, request, turnOnX11, offerRestart } = rig()
+    expect(await ask(tab, origin, true)).toBe(true)
+    expect(await ask(tab, origin, false)).toBe(true)
     expect(request).not.toHaveBeenCalled()
+    expect(turnOnX11).not.toHaveBeenCalled()
     expect(offerRestart).not.toHaveBeenCalled()
   })
+})
 
+describe('a decentralised site', () => {
+  it.each([
+    'https://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi.ipfs.orivon',
+    'https://k51qzi5uqu5dlvj2baxnqndepeb86cbk3ng7n3i46uzyxzyqj2xjonzllnv0v8.ipns.orivon',
+    'https://ca1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b.bzz.orivon',
+    'https://vitalik.eth',
+    'https://app.vitalik.eth:8443'
+  ])('is asked as a website is, because it is served over https at an origin of its own: %s', async (origin) => {
+    const { ask, tab, request } = rig({ answer: true })
+    expect(await ask(tab, origin, true)).toBe(true)
+    expect(request).toHaveBeenCalledWith(ENGINE_REQUEST, tab, { isMainFrame: true, requestingUrl: expect.stringMatching(/^https:\/\/[^/]+$/) as string })
+  })
+})
+
+describe('an origin that holds grants', () => {
   it('is told yes without a question, with an adapter or without', async () => {
     const { ask, tab, request, turnOnX11 } = rig({ apps: [SITE] })
     expect(await ask(tab, SITE, true)).toBe(true)
