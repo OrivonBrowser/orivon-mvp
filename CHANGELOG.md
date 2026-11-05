@@ -3,9 +3,9 @@
 All notable changes to this project are recorded here, at most three lines each; the full
 account of a change is in its pull request.
 
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Orivon is published as
-pre-releases numbered `0.0.x` on [GitHub Releases](https://github.com/OrivonBrowser/orivon-mvp/releases);
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html) applies from the first version that is not a pre-release.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Orivon is published on
+[GitHub Releases](https://github.com/OrivonBrowser/orivon-mvp/releases): the `0.0.x` versions were pre-releases, and
+[Semantic Versioning](https://semver.org/spec/v2.0.0.html) applies from `0.1.0`, the first release.
 Each section below lists what that release carried; `[Unreleased]` is what has landed on `main` since the last one.
 
 ## [Unreleased]
@@ -16,6 +16,12 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 [`test/app-behaviours/catalogue.md`](test/app-behaviours/catalogue.md), what changed, what apps must
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
+
+## [0.1.0] - 2026-11-05
+
+Release, published 2026-11-05. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.1.0).
+
+### Changed for apps
 
 - **`tunnelled-website-gets-its-own-storage`**: the tunnel button's list on a website now sets the tab, and the website's own tunnel is made by "Always use for this site". Apps need no change; a port that opens a website through a tunnel on purpose turns Always on for it. Recheck: nothing.
 - **`tunnel-on-a-failed-page`**: the row that loads a failed page through a tunnel now sets the tab's tunnel, not the website's. Apps need no change. Recheck: ports that open onion addresses.
@@ -32,8 +38,8 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **A website's tunnel is kept with one switch**: the rows of the tunnel button's list now set the tab, and "Always use for this site" under them saves what they show as the website's own choice, for every tab and after the tab closes. Turning it off keeps the page where it is and leaves the tab with that tunnel.
 - **The tunnels popup has a Browser-wide part**: a control under its heading chooses between the page's own tunnel ("This tab" or "This app") and the whole browser's, with a switch to send the IPFS and Swarm nodes through it too. Setting a tunnel browser-wide while tabs keep their own asks first, and lists those tabs.
 - **A copied Web3 address pastes as a link**: copying a `.eth`, `ipfs://` or `ipns://` address in Orivon (the address bar, Copy link, a link's or image's address, a bookmark, a history row, the QR sheet) also puts a link on the clipboard, so a document or chat that pastes formatted text shows the same text linked to its `eth.limo` or `dweb.link` address. Plain-text fields get the address as before.
-- **The tunnels popup has a Browser-wide part**: a control under its heading chooses between the page's own tunnel ("This tab", "This site" or "This app") and the whole browser's, with a switch to send the IPFS and Swarm nodes through it too. Setting a tunnel browser-wide while tabs keep their own asks first, and lists those tabs.
 - **A tunnel for one tab, chosen before the first address**: the tunnel button is now on the new tab. Turn on Nym or your proxy there and the address you type, and every site that tab opens until it closes, goes through it from its first request; on a website that goes through the tab's tunnel the button says "Set for this tab". The new-tab page is not kept in the saved session until it navigates. In a window 640 pixels wide or less the toolbar's navigation buttons and the address bar's padding are 2 to 4 pixels tighter, so the address field keeps its room beside the new button.
+
 ### Changed
 
 - **The first page of an app no longer waits behind the app's download**: when a published app is opened for the first time, Orivon now holds the background download back until the page has finished loading (at most 10 seconds, and not at all once you press Allow), so the page's own files are no longer queued behind the app's.
@@ -51,7 +57,6 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **An app whose page starts its main program only after Allow no longer takes so long on the reload**: Orivon downloaded an app's files in the order its manifest lists them, so a large main file that the first page leaves for after Allow came near the last. The download now reads the files the first page leads to first, and the reload finds the main file already read.
 - **An app of several large files no longer stalls and loses a file when allowed during its first load**: files the page asked for together could each hold part of the room Orivon keeps for checking them and wait on each other for ten seconds, until one was refused and its script never ran. A site's reads now take turns, so the oldest finishes and frees its room for the next, within the limit every site shares.
 - **Bug reports now include what Orivon's background processes log**: the lines the `.eth`, IPFS and Swarm host (page and file timings, name and gateway failures), the IPFS and Swarm node hosts and the Nym tunnel write, and what one prints as it crashes, went to the app's own stderr and past the log a report carries, and a packaged Windows app has no stderr at all. Main now writes each line to its own log, so the report's "Recent log" shows them: at most 60 a minute from each process, a line printed again and again once with a count, the last few of any overflow with the count, and from the Nym tunnel only its own lines, never the library's.
-
 - **An app on an ordinary web host no longer stalls and loses a file when several large files load together**: they could each hold part of the room kept for checking them and wait on each other until one was refused. A file refused part way, or found too large, also gave none of that room back, so later files were refused sooner. The files of an app now take turns, and every file gives its room back.
 
 ## [0.0.12] - 2026-10-28
