@@ -440,6 +440,21 @@ describe('a tab dragged over the page', () => {
     expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
   })
 
+  it('shows no preview where the drop would not split, so the page stays whole in an area too small for two panes', () => {
+    const { manager, backdrop, area, children } = rig()
+    const a = manager.createTab('https://a.example/')
+    manager.createTab('https://b.example/')
+    manager.activateTab(a)
+    area.current = { x: 0, y: 100, width: 400, height: 600 }
+    backdrop.update.mockClear()
+
+    manager.splits.setPreview('left')
+
+    expect(boundsOf(createdViews[0] as RecordedView)).toEqual(area.current)
+    expect(names(children)).toEqual([(createdViews[0] as RecordedView).name])
+    expect(backdrop.update).not.toHaveBeenCalled()
+  })
+
   it('splits when it is dropped, the dropped tab on the side it was dropped', () => {
     const { manager } = rig()
     const a = manager.createTab('https://a.example/')

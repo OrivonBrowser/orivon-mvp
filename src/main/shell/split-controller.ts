@@ -2,7 +2,7 @@
 // shows, and where each view goes. It holds the groups (./split-model.ts) and
 // works the tab strip through the small interface the collection gives it; it
 // knows nothing of views.
-import { SplitGroups, isFirstPane, orientationOf, paneRects, ratioAt, splitRects } from './split-model.js'
+import { SplitGroups, isFirstPane, orientationOf, paneRects, ratioAt } from './split-model.js'
 import type { Orientation, PaneRects, Zone } from './split-model.js'
 import { clampToRun, pinnedCount } from './tab-order.js'
 import type { Bounds } from './tab-types.js'
@@ -15,11 +15,6 @@ export interface FrameState {
   readonly divider: Bounds | null
   /** Where a tab dropped now would go. */
   readonly placeholder: Bounds | null
-}
-
-/** What the backdrop's page is sent: what to draw, and whether its window is a private one, whose chrome is tinted. */
-export interface FrameMessage extends FrameState {
-  readonly private: boolean
 }
 
 export interface Plan {
@@ -64,10 +59,11 @@ export class SplitController {
     }
   }
 
-  /** While a tab is dragged over an edge: the current page shrinks to the pane it would keep, and the pane the dropped tab would take is marked. */
+  /** While a tab is dragged over an edge: the current page shrinks to the pane it would keep, and the pane the dropped tab would take is marked. An area too small to split shows none, as the drop would not split it. */
   private previewPlan (activeId: string, area: Bounds, zone: Zone): Plan {
-    const { a, b } = splitRects(area, orientationOf(zone), 0.5)
-    const [drop, keep] = isFirstPane(zone) ? [a, b] : [b, a]
+    const rects = paneRects(area, orientationOf(zone), 0.5)
+    if (rects === null) return { panes: [{ id: activeId, bounds: area }], frame: null }
+    const [drop, keep] = isFirstPane(zone) ? [rects.a, rects.b] : [rects.b, rects.a]
     return {
       panes: [{ id: activeId, bounds: keep }],
       frame: { area, orientation: orientationOf(zone), divider: null, placeholder: drop }

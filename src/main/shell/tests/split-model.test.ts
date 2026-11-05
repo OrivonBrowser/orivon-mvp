@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { GAP, MAX_RATIO, MIN_PANE_PX, MIN_RATIO, SplitGroups, clampRatio, isFirstPane, orientationOf, paneRects, ratioAt, splitRects, zoneAt } from '../split-model.js'
+import { GAP, MAX_RATIO, MIN_PANE_PX, MIN_RATIO, SplitGroups, clampRatio, isFirstPane, orientationOf, paneRects, ratioAt, zoneAt } from '../split-model.js'
 
 const AREA = { x: 0, y: 100, width: 1000, height: 600 }
 
@@ -46,19 +46,6 @@ describe('paneRects', () => {
       if (rects === null) throw new Error('expected room')
       expect(rects.a.x + rects.a.width + GAP).toBe(rects.b.x)
     }
-  })
-})
-
-describe('splitRects', () => {
-  it('shares an area flush from edge to edge, however small it is', () => {
-    const small = { x: 0, y: 100, width: 300, height: 200 }
-    const row = splitRects(small, 'row', 0.5)
-    expect(row.a).toEqual({ x: 0, y: 100, width: (300 - GAP) / 2, height: 200 })
-    expect(row.b.x + row.b.width).toBe(300)
-    const column = splitRects(small, 'column', 0.5)
-    expect(column.a.y).toBe(100)
-    expect(column.b.y + column.b.height).toBe(300)
-    expect(paneRects(small, 'row', 0.5)).toBeNull()
   })
 })
 

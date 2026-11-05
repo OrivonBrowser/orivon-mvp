@@ -1,10 +1,12 @@
 // The backdrop of a split: draws what main says (the divider, the place a dragged
 // tab would go) and turns dragging the divider into a place along the window.
 // Which ratio that is, and whether it is allowed, is main's to say.
-import type { FrameMessage } from '../../main/shell/split-controller.js'
+import type { FrameState } from '../../main/shell/split-controller.js'
 
 interface OrivonSplit {
-  onState: (listener: (state: FrameMessage) => void) => () => void
+  /** Whether the window is a private one, whose chrome is tinted. */
+  isPrivate: boolean
+  onState: (listener: (state: FrameState) => void) => () => void
   drag: (at: number) => void
   reset: () => void
 }
@@ -23,10 +25,11 @@ function element (id: string): HTMLElement {
 
 const split = window.orivonSplit
 if (split === undefined) throw new Error('orivonSplit not exposed -- preload did not run')
+document.documentElement.dataset['private'] = String(split.isPrivate)
 const placeholder = element('placeholder')
 const divider = element('divider')
 
-let current: FrameMessage | null = null
+let current: FrameState | null = null
 
 /** Puts `element` where `rect` (in window coordinates) is, in the coordinates of this view, which starts at `origin`. */
 function place (element: HTMLElement, rect: { x: number, y: number, width: number, height: number }, origin: { x: number, y: number }): void {
@@ -36,9 +39,8 @@ function place (element: HTMLElement, rect: { x: number, y: number, width: numbe
   element.style.height = `${String(rect.height)}px`
 }
 
-function draw (state: FrameMessage): void {
+function draw (state: FrameState): void {
   current = state
-  document.documentElement.dataset['private'] = String(state.private)
   const origin = state.area
   placeholder.hidden = state.placeholder === null
   if (state.placeholder !== null) place(placeholder, state.placeholder, origin)

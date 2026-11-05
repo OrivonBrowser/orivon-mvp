@@ -47,7 +47,7 @@ export class SplitFrame implements SplitBackdrop {
   private send (): void {
     const contents = this.made?.webContents
     if (contents === undefined || contents.isDestroyed() || !this.loaded || this.latest === null) return
-    contents.send(SPLIT_STATE_CHANNEL, { ...this.latest, private: this.isPrivate })
+    contents.send(SPLIT_STATE_CHANNEL, this.latest)
   }
 
   private build (): WebContentsView {
@@ -56,7 +56,7 @@ export class SplitFrame implements SplitBackdrop {
       webPreferences: {
         preload: join(this.dirname, '../preload/split-frame.js'),
         partition: SHELL_PARTITION,
-        additionalArguments: [`--orivon-split-frame-url=${url}`],
+        additionalArguments: [`--orivon-split-frame-url=${url}`, ...(this.isPrivate ? ['--orivon-split-frame-private'] : [])],
         contextIsolation: true,
         sandbox: true,
         nodeIntegration: false,

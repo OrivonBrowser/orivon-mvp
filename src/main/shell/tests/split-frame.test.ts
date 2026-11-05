@@ -75,18 +75,25 @@ describe('SplitFrame', () => {
     expect(contents.send).not.toHaveBeenCalled()
 
     contents.emit('did-finish-load')
-    expect(contents.send).toHaveBeenCalledExactlyOnceWith(SPLIT_STATE_CHANNEL, { ...(STATE as object), private: false })
+    expect(contents.send).toHaveBeenCalledExactlyOnceWith(SPLIT_STATE_CHANNEL, STATE)
 
     f.update({ ...(STATE as object), orientation: 'column' } as never)
     expect(contents.send).toHaveBeenCalledTimes(2)
   })
 
-  it('says whether its window is a private one, whose chrome is tinted, so the gap can match it', () => {
+  it('tells its page at creation that its window is a private one, whose chrome is tinted, so the gap matches from its first paint', () => {
+    const argumentsOf = (isPrivate: boolean): string[] => {
+      const { frame: f } = frame(isPrivate)
+      expect(f.view).toBeDefined()
+      return (made.at(-1)?.options.webPreferences as { additionalArguments: string[] }).additionalArguments
+    }
+    expect(argumentsOf(true)).toContain('--orivon-split-frame-private')
+    expect(argumentsOf(false)).not.toContain('--orivon-split-frame-private')
     const { frame: f } = frame(true)
     const contents = f.view.webContents as unknown as Fake
     contents.emit('did-finish-load')
     f.update(STATE)
-    expect(contents.send).toHaveBeenCalledExactlyOnceWith(SPLIT_STATE_CHANNEL, { ...(STATE as object), private: true })
+    expect(contents.send).toHaveBeenCalledExactlyOnceWith(SPLIT_STATE_CHANNEL, STATE)
   })
 
   it('hears a drag to a place and a reset, from its own page only, and only a number as a place', () => {

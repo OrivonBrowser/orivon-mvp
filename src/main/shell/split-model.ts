@@ -32,9 +32,10 @@ export function clampRatio (ratio: number): number {
   return Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio))
 }
 
-/** Where two panes and the divider between them go in `area`, whatever its size. */
-export function splitRects (area: Bounds, orientation: Orientation, ratio: number): PaneRects {
+/** Where the two panes and the divider go in `area`, or null when the area is too small for two panes. */
+export function paneRects (area: Bounds, orientation: Orientation, ratio: number): PaneRects | null {
   const room = (orientation === 'row' ? area.width : area.height) - GAP
+  if (room < 2 * MIN_PANE_PX) return null
   const first = Math.round(room * clampRatio(ratio))
   const second = room - first
   if (orientation === 'row') {
@@ -49,13 +50,6 @@ export function splitRects (area: Bounds, orientation: Orientation, ratio: numbe
     b: { x: area.x, y: area.y + first + GAP, width: area.width, height: second },
     divider: { x: area.x, y: area.y + first, width: area.width, height: GAP }
   }
-}
-
-/** Where the two panes and the divider go in `area`, or null when the area is too small for two panes. */
-export function paneRects (area: Bounds, orientation: Orientation, ratio: number): PaneRects | null {
-  const along = orientation === 'row' ? area.width : area.height
-  if (along - GAP < 2 * MIN_PANE_PX) return null
-  return splitRects(area, orientation, ratio)
 }
 
 /** The ratio a divider dragged to `pointer` (along the window's row or column) gives. */

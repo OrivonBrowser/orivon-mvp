@@ -12,6 +12,7 @@ import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
 import type { Manifest } from '../../src/contracts/index.js'
+import { GAP } from '../../src/main/shell/split-model.js'
 
 const { PNG } = pngjs
 
@@ -139,7 +140,7 @@ it('shows two tabs side by side, each in its pane, with the divider between them
     expect(left.y).toBe(backdrop.y)
     expect(left.height).toBe(backdrop.height)
     expect(right.x + right.width).toBe(backdrop.x + backdrop.width)
-    expect(right.x - (left.x + left.width)).toBe(8)
+    expect(right.x - (left.x + left.width)).toBe(GAP)
     // The backdrop is under the panes: it came first among the window's views.
     expect(views.findIndex((view) => view.url.includes('/split-frame/'))).toBeLessThan(views.findIndex((view) => view.url.includes(`${origin}/a`)))
     // The pane that joined sits above the one that was already there, in the order they read.
