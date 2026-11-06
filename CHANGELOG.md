@@ -28,6 +28,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **Split view has no ring**: the purple line round the pane in use is gone and the panes meet the edges of their area; the lit tab in the strip shows which one you are in, and the gap between the panes is the toolbar's colour.
 - **New-tab pictures keep their own colours**: nothing dark lies over the Orivon picture or your own any more; the text on it has a soft shadow instead.
+- **The Orivon picture on the new tab is in evening light**: the same scene, darker and still in full colour, so the default background is no longer glaring.
 
 ### Fixed
 

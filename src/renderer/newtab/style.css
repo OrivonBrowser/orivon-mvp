@@ -43,7 +43,8 @@ body {
   min-height: 100%;
 }
 
-/* Behind the page: the welcome screen's picture, the person's own, or the plain base colour, chosen by the
+/* Behind the page: the Orivon picture (the welcome screen's scene in evening light, its own file because the welcome
+   screen dims its copy with a scrim and this page lays nothing over it), the person's own, or the plain base colour, chosen by the
    data-background attribute that main.ts sets from the Settings choice. Until it is set the page shows the base
    colour the shell backs the view with (main's theme-colors.ts, DASHBOARD_BACKGROUND). A picture is drawn as it is,
    in its own colours, with nothing laid over it: only the search box and tiles follow the OS scheme, so whatever sits
@@ -55,7 +56,7 @@ html {
   --text-on-picture-shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 0 8px rgba(0, 0, 0, 0.6), 0 0 22px rgba(0, 0, 0, 0.5);
 }
 html[data-background="orivon"] {
-  background: url('../assets/intro-background.webp') center / cover no-repeat fixed #0d0e14;
+  background: url('../assets/new-tab-background.webp') center / cover no-repeat fixed #0d0e14;
 }
 html[data-background="custom"] {
   background: var(--new-tab-picture) center / cover no-repeat fixed #0d0e14;
@@ -68,7 +69,7 @@ html[data-background="custom"] {
     background: #394244;
   }
   html[data-background="orivon"] {
-    background: url('../assets/intro-background.webp') center / cover no-repeat fixed #394244;
+    background: url('../assets/new-tab-background.webp') center / cover no-repeat fixed #394244;
   }
   html[data-background="custom"] {
     background: var(--new-tab-picture) center / cover no-repeat fixed #394244;
