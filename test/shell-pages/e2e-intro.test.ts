@@ -94,7 +94,7 @@ it('once, on a fresh profile: shows over the whole window, stays on top of a new
     if (dashboard === undefined) throw new Error('the dashboard tab is gone')
     // The background picture is a real, decodable file at the built path.
     const decoded = await dashboard.evaluate(async () => {
-      const url = /url\("?([^")]+)"?\)/.exec(getComputedStyle(document.documentElement).backgroundImage)?.[1]
+      const url = /url\("?([^")]+)"?\)/.exec(getComputedStyle(document.documentElement, '::before').backgroundImage)?.[1]
       if (url === undefined) return 'no background-image url'
       const image = new Image()
       image.src = url

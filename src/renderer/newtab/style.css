@@ -49,17 +49,29 @@ body {
    colour the shell backs the view with (main's theme-colors.ts, DASHBOARD_BACKGROUND). A picture is drawn as it is,
    in its own colours, with nothing laid over it: only the search box and tiles follow the OS scheme, so whatever sits
    on the picture itself (.wordmark, .tile-section-title, .link-button) has fixed light colours and a soft shadow below,
-   which keeps it readable on a bright picture too. `fixed` keeps a tall bookmark grid from scrolling or tiling the
-   picture. */
+   which keeps it readable on a bright picture too. The picture is a layer of its own, fixed to the window so a tall
+   bookmark grid neither scrolls nor tiles it, over the root's base colour and under everything else: the Settings
+   brightness (--new-tab-brightness, set by main.ts) filters that layer alone, and never the base colour, the text, the tiles
+   or the search box. */
 html {
   background: #0d0e14;
   --text-on-picture-shadow: 0 1px 2px rgba(0, 0, 0, 0.75), 0 0 8px rgba(0, 0, 0, 0.6), 0 0 22px rgba(0, 0, 0, 0.5);
 }
-html[data-background="orivon"] {
-  background: url('../assets/new-tab-background.webp') center / cover no-repeat fixed #0d0e14;
+html[data-background="orivon"]::before,
+html[data-background="custom"]::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: center / cover no-repeat;
+  filter: brightness(var(--new-tab-brightness, 1));
 }
-html[data-background="custom"] {
-  background: var(--new-tab-picture) center / cover no-repeat fixed #0d0e14;
+html[data-background="orivon"]::before {
+  background-image: url('../assets/new-tab-background.webp');
+}
+html[data-background="custom"]::before {
+  background-image: var(--new-tab-picture);
 }
 
 /* Beside a light window a near-black first frame reads as a flash, so under a light scheme the base colour is the
@@ -67,12 +79,6 @@ html[data-background="custom"] {
 @media (prefers-color-scheme: light) {
   html {
     background: #394244;
-  }
-  html[data-background="orivon"] {
-    background: url('../assets/new-tab-background.webp') center / cover no-repeat fixed #394244;
-  }
-  html[data-background="custom"] {
-    background: var(--new-tab-picture) center / cover no-repeat fixed #394244;
   }
 }
 

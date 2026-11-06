@@ -1,5 +1,5 @@
 // The new-tab dashboard's IPC surface: read-only access to the bookmarks that are web addresses, what the page
-// draws (its Featured choices, its picture, the update button), navigating the CALLING tab, and the update
+// draws (its Featured choices, its picture and how bright it is, the update button), navigating the CALLING tab, and the update
 // button's press -- nothing else. The dashboard replaces about:blank for a fresh tab.
 //
 // A separate channel and a separate sender check from ipc.ts's
@@ -16,7 +16,7 @@
 // layer trusts the other.
 import { ipcMain, type IpcMainInvokeEvent, type WebContents } from 'electron'
 import type { Bookmark, BookmarkStore } from '../browsing/bookmarks.js'
-import { NEWTAB_BACKGROUND_CHANGED_CHANNEL, NEWTAB_COMMAND_CHANNEL, NEWTAB_UPDATE_CHANGED_CHANNEL } from '../channels.js'
+import { NEWTAB_BACKGROUND_CHANGED_CHANNEL, NEWTAB_BRIGHTNESS_CHANGED_CHANNEL, NEWTAB_COMMAND_CHANNEL, NEWTAB_UPDATE_CHANGED_CHANNEL } from '../channels.js'
 import type { BackgroundStore, PageBackground } from '../newtab/background-store.js'
 import type { FeaturedState } from '../newtab/featured-state.js'
 import type { FeaturedStore } from '../newtab/featured-store.js'
@@ -33,6 +33,7 @@ export type NewTabCommand =
   | { type: 'getBookmarks' }
   | { type: 'getFeatured' }
   | { type: 'getBackground' }
+  | { type: 'getBrightness' }
   | { type: 'getUpdate' }
   | { type: 'askUpdate' }
   | { type: 'hideFeatured'; id: string }
@@ -53,7 +54,7 @@ function isFromDashboard (event: IpcMainInvokeEvent, dashboardUrl: string): bool
 
 /** Once per process: `ipcMain.handle` refuses a second registration of a channel. */
 export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry, bookmarks: BookmarkStore, featured: FeaturedStore, background: BackgroundStore, update: NewTabUpdate): void {
-  // The dashboards that asked for the picture or the update button, to be told when either changes (a page asks for both).
+  // The dashboards that asked for the picture, its brightness or the update button, to be told when any changes (a page asks for all three).
   // A page that has left the dashboard is dropped.
   const following = new Set<WebContents>()
   const watched = new WeakSet<WebContents>()
@@ -75,10 +76,11 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
     }
   }
   background.onChange(() => { tellFollowers(NEWTAB_BACKGROUND_CHANGED_CHANNEL) })
+  background.onBrightnessChange(() => { tellFollowers(NEWTAB_BRIGHTNESS_CHANGED_CHANNEL) })
   update.onChange(() => { tellFollowers(NEWTAB_UPDATE_CHANGED_CHANNEL) })
   ipcMain.handle(
     NEWTAB_COMMAND_CHANNEL,
-    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | PageBackground | UpdatePill | null | undefined> => {
+    async (event: IpcMainInvokeEvent, command: NewTabCommand): Promise<Bookmark[] | FeaturedPrefs | PageBackground | number | UpdatePill | null | undefined> => {
       if (!isFromDashboard(event, dashboardUrl)) {
         // Not the dashboard's own frame -- refuse silently, same
         // non-committal response ipc.ts's isFromChrome() gives, rather
@@ -95,6 +97,9 @@ export function registerNewTabIpc (dashboardUrl: string, windows: WindowRegistry
         case 'getBackground':
           follow(event.sender)
           return await background.current()
+        case 'getBrightness':
+          follow(event.sender)
+          return background.brightness()
         case 'getUpdate':
           follow(event.sender)
           return update.shown()

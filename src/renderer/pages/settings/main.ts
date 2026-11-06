@@ -95,9 +95,11 @@ function renderNav (): void {
 
 function render (): void {
   const query = search.value.trim()
-  // A choice or a switch that was just used keeps the keyboard, so the row is found again in the new page.
+  // A choice, a switch or a slider that was just used keeps the keyboard, so the row is found again in the new page.
   const active = document.activeElement
-  const focusedControl = active instanceof HTMLSelectElement ? 'select' : active instanceof HTMLInputElement && active.type === 'checkbox' ? 'input[type=checkbox]' : undefined
+  const focusedControl = active instanceof HTMLSelectElement
+    ? 'select'
+    : active instanceof HTMLInputElement && (active.type === 'checkbox' || active.type === 'range') ? `input[type=${active.type}]` : undefined
   const focusedChoice = focusedControl === undefined ? undefined : active?.closest('.row')?.id
   const wasSettled = active instanceof HTMLElement && active.dataset['settled'] === 'true'
   // A control that carries a key (the switches of the apps list, all in one row) is found again by it.

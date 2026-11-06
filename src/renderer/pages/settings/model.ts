@@ -15,6 +15,8 @@ export type Control =
   /** `disabled` greys the switch out and shows it off when the setting cannot take effect, and the row's help says why.
    *  `locked` greys it out but keeps showing the saved value, for a setting in effect that cannot be changed here. */
   | { readonly type: 'toggle', readonly key: SettingKey, readonly disabled?: (state: SettingsState) => boolean, readonly locked?: (state: SettingsState) => boolean }
+  /** A slider over the whole-number range of an `int` setting (its bounds come from the schema), in steps of `step`, with the value and its `unit` beside it. It saves on release or a key press, not while it is dragged. */
+  | { readonly type: 'range', readonly key: SettingKey, readonly step: number, readonly unit: string }
   /** A list of web addresses kept as the newline-separated text of a setting, with a way to add, remove and take the open pages. */
   | { readonly type: 'pageList', readonly key: SettingKey }
   /** The search engines with their keywords, and the form that adds, edits and removes the person's own. */

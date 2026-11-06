@@ -1,5 +1,6 @@
 // The new tab's background, chosen in Settings > Appearance: the person's own picture (copied into the profile, drawn
-// by every open new-tab page at once), no picture, and the Orivon one again; and a file that is not a picture.
+// by every open new-tab page at once), no picture, and the Orivon one again; a file that is not a picture; and how bright
+// the picture is drawn, which a page that is already open follows.
 import { existsSync, readFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,7 +30,9 @@ const TEST_TIMEOUT_MS = 90_000
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64')
 
 const dashboards = (app: ElectronApplication): Page[] => app.windows().filter((w) => w.url().includes('/newtab/'))
-const pictureOf = async (page: Page): Promise<string> => await page.evaluate(() => getComputedStyle(document.documentElement).backgroundImage)
+/** The picture is a layer of its own, `html::before`, so that the brightness filters it and nothing else. */
+const pictureOf = async (page: Page): Promise<string> => await page.evaluate(() => getComputedStyle(document.documentElement, '::before').backgroundImage)
+const filterOf = async (page: Page): Promise<string> => await page.evaluate(() => getComputedStyle(document.documentElement, '::before').filter)
 const kindOf = async (page: Page): Promise<string | undefined> => await page.evaluate(() => document.documentElement.dataset['background'])
 
 /** What the file picker answers next: a path, or null for a cancel. */
@@ -95,7 +98,7 @@ it('draws the person\'s own picture on every new tab, then no picture, then the 
 
     await choice.selectOption('none')
     expect(await waitFor(async () => await kindOf(open) === 'none' && await kindOf(fresh) === 'none')).toBe(true)
-    expect(await pictureOf(open)).toBe('none')
+    expect(await pictureOf(open)).not.toContain('url(')
     expect(await waitFor(() => !existsSync(copy))).toBe(true)
 
     await choice.selectOption('orivon')
@@ -142,6 +145,70 @@ it('keeps what was chosen when the picker is cancelled or the file is not a pict
     await choice.selectOption('custom')
     expect(await waitFor(async () => await kindOf(open) === 'custom')).toBe(true)
     expect(await settings.locator('#row-new-tab-background .problem').count()).toBe(0)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectronApp(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+it('dims and lifts the picture of a new tab that is already open, with no reload, and has no slider when there is no picture', async () => {
+  const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
+  try {
+    expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
+    const chrome = findChrome(app)
+    expect(await waitFor(() => dashboards(app).length === 1)).toBe(true)
+    const open = dashboards(app)[0] as Page
+    expect(await waitFor(async () => await kindOf(open) === 'orivon')).toBe(true)
+    // Only the page that is open now carries this: a reload would lose it.
+    await open.evaluate(() => { (window as unknown as { __kept?: boolean }).__kept = true })
+    expect(await filterOf(open)).toBe('brightness(1)')
+
+    const settings = await openSettings(app, chrome)
+    const slider = settings.locator('#row-new-tab-brightness input[type=range]')
+    const readout = settings.locator('#row-new-tab-brightness .range-value')
+    expect(await settings.locator('#row-new-tab-brightness .row-label').textContent()).toContain('Background brightness')
+    expect(await slider.evaluate((input) => { const range = input as HTMLInputElement; return [range.min, range.max, range.step, range.value] })).toEqual(['20', '180', '5', '100'])
+    expect(await readout.textContent()).toBe('100%')
+    // The row's label names the slider.
+    expect(await slider.evaluate((input) => (input as HTMLInputElement).labels?.[0]?.textContent)).toContain('Background brightness')
+
+    await slider.fill('60')
+    expect(await waitFor(async () => await filterOf(open) === 'brightness(0.6)')).toBe(true)
+    expect(await open.evaluate(() => (window as unknown as { __kept?: boolean }).__kept)).toBe(true)
+    expect(await kindOf(open)).toBe('orivon')
+    expect(await waitFor(async () => (await settings.locator('#row-new-tab-brightness .changed').count()) === 1)).toBe(true)
+    expect(await readout.textContent()).toBe('60%')
+
+    // The slider keeps the keyboard after it saves, so the next arrow key moves it a step further.
+    await slider.focus()
+    await settings.keyboard.press('ArrowRight')
+    expect(await waitFor(async () => await filterOf(open) === 'brightness(0.65)')).toBe(true)
+    expect(await slider.inputValue()).toBe('65')
+
+    // A tab opened later starts at the same brightness, and the person's own picture is dimmed too.
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { newTab: () => void } }).orivonShell.newTab() })
+    expect(await waitFor(() => dashboards(app).length === 2)).toBe(true)
+    const fresh = dashboards(app).find((page) => page !== open) as Page
+    expect(await waitFor(async () => await kindOf(fresh) === 'orivon' && await filterOf(fresh) === 'brightness(0.65)')).toBe(true)
+
+    await slider.fill('150')
+    expect(await waitFor(async () => await filterOf(open) === 'brightness(1.5)' && await filterOf(fresh) === 'brightness(1.5)')).toBe(true)
+
+    // With no picture there is nothing to dim: the row goes, and the saved brightness waits for the picture's return.
+    const choice = settings.locator('#row-new-tab-background select')
+    await choice.selectOption('none')
+    expect(await waitFor(async () => await kindOf(open) === 'none')).toBe(true)
+    expect(await waitFor(async () => (await settings.locator('#row-new-tab-brightness').count()) === 0)).toBe(true)
+    await choice.selectOption('orivon')
+    expect(await waitFor(async () => (await settings.locator('#row-new-tab-brightness').count()) === 1)).toBe(true)
+    expect(await waitFor(async () => await kindOf(open) === 'orivon')).toBe(true)
+    expect(await filterOf(open)).toBe('brightness(1.5)')
+    expect(await settings.locator('#row-new-tab-brightness input[type=range]').inputValue()).toBe('150')
+
+    // Reset puts the picture back as it is, in the page that is open. Settings is behind the second new tab, which draws no frames for a click's stability wait.
+    await settings.locator('#row-new-tab-brightness').getByRole('button', { name: 'Reset' }).evaluate((button) => { (button as HTMLButtonElement).click() })
+    expect(await waitFor(async () => await filterOf(open) === 'brightness(1)')).toBe(true)
+    expect(await settings.locator('#row-new-tab-brightness input[type=range]').inputValue()).toBe('100')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectronApp(app)

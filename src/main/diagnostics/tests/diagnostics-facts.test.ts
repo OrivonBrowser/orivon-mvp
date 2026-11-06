@@ -167,6 +167,13 @@ describe('reportedSettings', () => {
     for (const key of ['web3.scoreProvider', 'web3.ethRpcs', 'web3.ethBeacon', 'home.url', 'startup.pages', 'downloads.folder', 'performance.keepAwake']) expect(REPORTED_SETTINGS).not.toContain(key)
   })
 
+  it('states how the new tab picture is chosen and how bright it is drawn, a number only for a setting that is one', () => {
+    const values = reportedSettings((key) => key === 'appearance.newTabBrightness' ? 60 : key === 'appearance.newTabBackground' ? 'custom' : 'x')
+    expect(values['appearance.newTabBrightness']).toBe(60)
+    expect(values['appearance.newTabBackground']).toBe('custom')
+    expect(reportedSettings(() => 60)).not.toHaveProperty('appearance.theme')
+  })
+
   it('reads values only, and skips anything that is not a string or a flag', () => {
     const values = reportedSettings((key) => key === 'privacy.secureDns' ? 'quad9' : key === 'appearance.theme' ? 3 : true)
     expect(values['privacy.secureDns']).toBe('quad9')

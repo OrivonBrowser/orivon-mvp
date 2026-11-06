@@ -22,6 +22,16 @@ export function readBackground (answer: unknown): PageBackground {
   return ORIVON
 }
 
+/** The bounds of `appearance.newTabBrightness` (src/main/settings/schema.ts), which this page may not import. */
+const BRIGHTNESS_MIN = 20
+const BRIGHTNESS_MAX = 180
+const BRIGHTNESS_DEFAULT = 100
+
+/** How bright to draw the picture, in percent: a whole number within the setting's bounds, else the picture as it is. */
+export function readBrightness (answer: unknown): number {
+  return typeof answer === 'number' && Number.isInteger(answer) && answer >= BRIGHTNESS_MIN && answer <= BRIGHTNESS_MAX ? answer : BRIGHTNESS_DEFAULT
+}
+
 /** The address inside the first `url(...)` of a computed `background-image`, or null when it names no picture. */
 export function pictureUrlOf (backgroundImage: string): string | null {
   return /url\(\s*["']?([^"')]+)["']?\s*\)/.exec(backgroundImage)?.[1] ?? null

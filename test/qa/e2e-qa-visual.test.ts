@@ -197,7 +197,7 @@ for (const scheme of SCHEMES) {
         await settingsPage.waitForSelector('#row-new-tab-background select')
         await settingsPage.locator('#row-new-tab-background').scrollIntoViewIfNeeded()
         await state(check, app, `settings-appearance-${scheme}`, {
-          expected: 'The Appearance section of orivon://settings, the first one, scrolled to show, under a "New tab" heading, a row "New tab background" with a drop-down that reads "The Orivon picture", and no "Your picture" row, since no picture of the person\'s own is in use. Nothing is cut or overlapping.',
+          expected: 'The Appearance section of orivon://settings, the first one, scrolled to show, under a "New tab" heading, a row "New tab background" with a drop-down that reads "The Orivon picture", no "Your picture" row, since no picture of the person\'s own is in use, and below them a row "Background brightness" with the line "Make the picture behind a new tab darker or brighter.", a slider whose round thumb sits in the middle of its track, filled with the accent colour up to it and plain beyond, and "100%" beside it. The slider reads clearly against the card in this colour scheme. Nothing is cut or overlapping.',
           action: 'Scrolled the Appearance section to the New tab background row.'
         })
         await openInternal(app, chrome, 'history')

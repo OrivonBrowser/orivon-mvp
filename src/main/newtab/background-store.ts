@@ -1,5 +1,6 @@
 // The new tab's picture for one profile: the copy of the file the person chose, in `<userData>/new-tab-background`,
-// and what the page is to show given the `appearance.newTabBackground` setting. The path the person picked is never kept.
+// what the page is to show given the `appearance.newTabBackground` setting, and how bright it is drawn
+// (`appearance.newTabBrightness`). The path the person picked is never kept.
 // Every read and write of a picture (up to 20 MB) is asynchronous, one at a time.
 import { constants } from 'node:fs'
 import { open, rm, stat } from 'node:fs/promises'
@@ -20,6 +21,7 @@ export type InstallResult = { readonly ok: true } | { readonly ok: false, readon
 type Picture = { readonly ok: true, readonly mime: string, readonly bytes: Uint8Array } | { readonly ok: false, readonly reason: string }
 
 const KEY = 'appearance.newTabBackground'
+const BRIGHTNESS_KEY = 'appearance.newTabBrightness'
 const UNREADABLE = 'That file could not be read.'
 /** Not defined on Windows, where opening a file never waits for a writer. */
 const NON_BLOCKING = (constants as { O_NONBLOCK?: number }).O_NONBLOCK ?? 0
@@ -58,6 +60,8 @@ async function readPicture (path: string): Promise<Picture> {
 
 export class BackgroundStore {
   private readonly listeners = new Set<() => void>()
+  /** Told apart from the picture's, so a change of brightness never makes an open page fetch a picture of up to 20 MB again. */
+  private readonly brightnessListeners = new Set<() => void>()
   /** The checked copy as the page is answered with it: every open new tab asks again after a change, and a picture can be 20 MB. */
   private copy: Promise<PageBackground> | undefined
   /** Installs and removals run one after another, so a removal never takes a picture that was installed after it was asked for. */
@@ -66,12 +70,16 @@ export class BackgroundStore {
   constructor (private readonly filePath: string, private readonly settings: BackgroundSettings) {
     // The copy exists only while the setting asks for it, however the setting came to change (a choice, Reset, Reset all).
     settings.onChange(({ key, value }) => {
+      if (key === BRIGHTNESS_KEY) {
+        this.announce(this.brightnessListeners)
+        return
+      }
       if (key !== KEY) return
       if (value !== 'custom') {
         this.copy = undefined
         this.enqueue(async () => { await this.removeCopy() }).catch(() => undefined)
       }
-      this.announce()
+      this.announce(this.listeners)
     })
   }
 
@@ -79,6 +87,17 @@ export class BackgroundStore {
   onChange (listener: () => void): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
+  }
+
+  /** How bright the page draws its picture, in percent: 100 is the picture as it is. */
+  brightness (): number {
+    return this.settings.get(BRIGHTNESS_KEY)
+  }
+
+  /** Tells `listener` after every change to `brightness()`, and to nothing else. */
+  onBrightnessChange (listener: () => void): () => void {
+    this.brightnessListeners.add(listener)
+    return () => { this.brightnessListeners.delete(listener) }
   }
 
   /**
@@ -102,7 +121,7 @@ export class BackgroundStore {
       }
       this.copy = Promise.resolve({ kind: 'custom', mime: picture.mime, bytes: picture.bytes })
       if (this.settings.get(KEY) === 'custom') {
-        this.announce()
+        this.announce(this.listeners)
       } else if (!this.settings.set(KEY, 'custom').ok) {
         this.copy = undefined
         await this.removeCopy()
@@ -149,8 +168,8 @@ export class BackgroundStore {
     }
   }
 
-  private announce (): void {
-    for (const listener of this.listeners) {
+  private announce (listeners: ReadonlySet<() => void>): void {
+    for (const listener of listeners) {
       try {
         listener()
       } catch (error) {

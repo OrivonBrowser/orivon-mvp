@@ -26,9 +26,13 @@ const featured = new FeaturedStore(null)
 
 let shown: PageBackground = { kind: 'orivon' }
 const changeListeners = new Set<() => void>()
+let brightness = 100
+const brightnessListeners = new Set<() => void>()
 const background = {
   current: () => shown,
-  onChange: (listener: () => void) => { changeListeners.add(listener); return () => { changeListeners.delete(listener) } }
+  onChange: (listener: () => void) => { changeListeners.add(listener); return () => { changeListeners.delete(listener) } },
+  brightness: () => brightness,
+  onBrightnessChange: (listener: () => void) => { brightnessListeners.add(listener); return () => { brightnessListeners.delete(listener) } }
 } as unknown as BackgroundStore
 
 let offered: UpdatePill | null = null
@@ -125,6 +129,40 @@ describe('registerNewTabIpc -- the picture behind the page', () => {
     expect(send).toHaveBeenCalledWith('orivon-newtab:background-changed')
     expect(left.send).not.toHaveBeenCalled()
     expect(gone.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerNewTabIpc -- how bright the picture is drawn', () => {
+  const ask = { type: 'getBrightness' }
+
+  it('answers what the background store says, to the dashboard alone', async () => {
+    brightness = 60
+    expect(await dispatch(DASHBOARD_URL, true, ask)).toBe(60)
+    expect(await dispatch('https://elsewhere.example/', true, ask)).toBeUndefined()
+    expect(await dispatch(DASHBOARD_URL, false, ask)).toBeUndefined()
+    brightness = 100
+  })
+
+  it('tells a dashboard that asked, and has not left, when it changes, on a channel of its own', async () => {
+    const send = vi.fn()
+    const stays = { send, isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
+    const left = { send: vi.fn(), isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
+    await dispatch(DASHBOARD_URL, true, ask, stays as unknown as Partial<WebContents>)
+    await dispatch(DASHBOARD_URL, true, ask, left as unknown as Partial<WebContents>)
+    left.mainFrame.url = 'https://elsewhere.example/'
+    for (const listener of brightnessListeners) listener()
+    expect(send).toHaveBeenCalledWith('orivon-newtab:brightness-changed')
+    expect(send).not.toHaveBeenCalledWith('orivon-newtab:background-changed')
+    expect(left.send).not.toHaveBeenCalled()
+  })
+
+  it('does not tell a dashboard to fetch its brightness when the picture changes', async () => {
+    const send = vi.fn()
+    const stays = { send, isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
+    await dispatch(DASHBOARD_URL, true, ask, stays as unknown as Partial<WebContents>)
+    for (const listener of changeListeners) listener()
+    expect(send).toHaveBeenCalledWith('orivon-newtab:background-changed')
+    expect(send).not.toHaveBeenCalledWith('orivon-newtab:brightness-changed')
   })
 })
 

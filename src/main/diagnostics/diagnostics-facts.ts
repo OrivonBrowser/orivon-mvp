@@ -124,7 +124,7 @@ export interface DiagnosticsFacts {
     readonly tunnels: { readonly tabs: { readonly nym: number, readonly socks5: number, readonly direct: number } }
     readonly extensions: readonly ExtensionReading[]
     readonly appSockets: readonly AppSocketReading[]
-    readonly settings: Readonly<Record<string, string | boolean>>
+    readonly settings: Readonly<Record<string, string | boolean | number>>
   }
   readonly crashes: readonly CrashRecord[]
 }
@@ -151,19 +151,19 @@ export interface Diagnostics {
 /** How many local crash records a report lists. */
 export const RECENT_CRASHES = 10
 
-/** The settings a report states, as values only: a switch or one of a fixed list of choices, never an address, a path or text a person typed. `web3.*` joins whichever of its settings is a switch or a choice. */
+/** The settings a report states, as values only: a switch, one of a fixed list of choices or a number within fixed bounds, never an address, a path or text a person typed. `web3.*` joins whichever of its settings is a switch or a choice. */
 export const REPORTED_SETTINGS: readonly SettingKey[] = [
-  'appearance.theme', 'privacy.cookies', 'privacy.globalPrivacyControl', 'privacy.doNotTrack', 'privacy.httpsOnly', 'privacy.secureDns',
+  'appearance.theme', 'appearance.newTabBackground', 'appearance.newTabBrightness', 'privacy.cookies', 'privacy.globalPrivacyControl', 'privacy.doNotTrack', 'privacy.httpsOnly', 'privacy.secureDns',
   'performance.memorySaver', 'performance.energySaver', 'graphics.webgpuOnX11', 'startup.mode', 'spellcheck.enabled', 'developer.tools', 'extensions.developerMode', 'updates.check',
   'network.route.kind', 'network.nym.enabled', 'network.tunnel.everywhere',
   ...(Object.keys(SETTINGS) as SettingKey[]).filter((key) => key.startsWith('web3.') && (SETTINGS[key].kind === 'bool' || SETTINGS[key].kind === 'enum'))
 ]
 
-export function reportedSettings (get: (key: SettingKey) => unknown): Record<string, string | boolean> {
-  const values: Record<string, string | boolean> = {}
+export function reportedSettings (get: (key: SettingKey) => unknown): Record<string, string | boolean | number> {
+  const values: Record<string, string | boolean | number> = {}
   for (const key of REPORTED_SETTINGS) {
     const value = get(key)
-    if (typeof value === 'string' || typeof value === 'boolean') values[key] = value
+    if (typeof value === 'string' || typeof value === 'boolean' || (typeof value === 'number' && SETTINGS[key].kind === 'int')) values[key] = value
   }
   return values
 }

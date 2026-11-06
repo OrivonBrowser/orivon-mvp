@@ -33,5 +33,15 @@ export const newTabRows: readonly Row[] = [
     group: 'New tab',
     visible: (state) => state.value('appearance.newTabBackground') === 'custom',
     control: { type: 'action', label: 'Choose picture…', run: async (state) => { await part(state).choose() } }
+  },
+  {
+    id: 'new-tab-brightness',
+    label: 'Background brightness',
+    help: 'Make the picture behind a new tab darker or brighter.',
+    keywords: ['brightness', 'darker', 'lighter', 'dim', 'dark', 'bright', 'wallpaper', 'background', 'picture', 'new tab'],
+    group: 'New tab',
+    // With no picture there is nothing to dim: the page is its plain colour.
+    visible: (state) => state.value('appearance.newTabBackground') !== 'none',
+    control: { type: 'range', key: 'appearance.newTabBrightness', step: 5, unit: '%' }
   }
 ]
