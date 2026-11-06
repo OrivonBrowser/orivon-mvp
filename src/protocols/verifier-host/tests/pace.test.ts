@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DIRECT_ROUTE, RouteMeter, TUNNEL_PROFILE } from '../../route-pace.js'
-import { mountCeilingMs, paceOn, routeFor } from '../pace.js'
+import { lightClientPace, mountCeilingMs, paceOn, routeFor } from '../pace.js'
 
 describe('the pace of the verifier host', () => {
   it('is the direct one with no tunnel, and a slower one through a tunnel', () => {
@@ -18,8 +18,27 @@ describe('the pace of the verifier host', () => {
     }
   })
 
-  it('keeps the direct pace at a sync wait of 8 s, a proof of 45 s and a light client that starts at once', () => {
-    expect(paceOn(DIRECT_ROUTE)).toEqual({ syncWaitMs: 8_000, mountTimeoutMs: 45_000, lightClientStartAfterMs: 0 })
+  it('keeps the direct pace at a sync wait of 8 s, a proof of 45 s, a light client that starts at once, and execution servers hedged after 1 s and given up on after 10 s', () => {
+    expect(paceOn(DIRECT_ROUTE)).toEqual({ syncWaitMs: 8_000, mountTimeoutMs: 45_000, lightClientStartAfterMs: 0, rpcHedgeMs: 1_000, rpcAttemptTimeoutMs: 10_000 })
+  })
+
+  it('stretches the waits on the execution servers for a tunnel, and keeps a request that hangs inside the proof that waits on it', () => {
+    const direct = paceOn(DIRECT_ROUTE)
+    const meter = new RouteMeter(TUNNEL_PROFILE)
+    const tunnel = paceOn(meter)
+    // Sent once the client has synced over the tunnel: stretched, with no allowance for the tunnel coming up.
+    expect([tunnel.rpcHedgeMs, tunnel.rpcAttemptTimeoutMs]).toEqual([meter.wait(1_000), meter.wait(10_000)])
+    expect(tunnel.rpcHedgeMs).toBeGreaterThan(direct.rpcHedgeMs)
+    expect(tunnel.rpcAttemptTimeoutMs).toBeGreaterThan(direct.rpcAttemptTimeoutMs)
+    for (const pace of [direct, tunnel]) {
+      expect(pace.rpcHedgeMs).toBeLessThan(pace.rpcAttemptTimeoutMs)
+      expect(pace.rpcAttemptTimeoutMs).toBeLessThan(pace.mountTimeoutMs)
+    }
+  })
+
+  it('hands the light client its sync wait, its start delay and the two waits on the execution servers', () => {
+    const pace = paceOn(new RouteMeter(TUNNEL_PROFILE))
+    expect(lightClientPace(pace)).toEqual({ syncWaitMs: pace.syncWaitMs, startAfterMs: pace.lightClientStartAfterMs, rpcHedgeMs: pace.rpcHedgeMs, rpcAttemptTimeoutMs: pace.rpcAttemptTimeoutMs })
   })
 
   it('holds the light client back on a slow route, which would otherwise share it with a person\'s page', () => {

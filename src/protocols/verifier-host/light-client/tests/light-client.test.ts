@@ -161,7 +161,7 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
     let finish: () => void = () => {}
     helios.waitSynced = async () => await new Promise<void>((resolve) => { finish = resolve })
     vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
-    const client = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 40_000, startAfterMs: 0 })
+    const client = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 40_000, startAfterMs: 0, rpcHedgeMs: 1_000, rpcAttemptTimeoutMs: 10_000 })
     await vi.advanceTimersByTimeAsync(10)
     let answer: string | undefined
     void client.provider.request({ method: 'eth_chainId' }).then(() => { answer = 'answered' }, (error: unknown) => { answer = `failed: ${(error as Error).message}` })
@@ -175,7 +175,7 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
   it('with a start delay, waits to sync until a request needs it or the delay is over, whichever comes first', async () => {
     const helios = fakeHelios()
     vi.mocked(createHeliosProvider).mockResolvedValue(helios as never)
-    const later = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 60_000 })
+    const later = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 60_000, rpcHedgeMs: 1_000, rpcAttemptTimeoutMs: 10_000 })
     await vi.advanceTimersByTimeAsync(59_000)
     expect(createHeliosProvider).not.toHaveBeenCalled()
     expect(later.status().state).toBe('starting')
@@ -184,7 +184,7 @@ describe('startHeliosLightClient -- one bad refresh does not fail every mount', 
     await synced(later)
 
     vi.mocked(createHeliosProvider).mockClear()
-    const asked = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 60_000 })
+    const asked = startHeliosLightClient(CONFIG, (async () => new Response('{}')) as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 60_000, rpcHedgeMs: 1_000, rpcAttemptTimeoutMs: 10_000 })
     await vi.advanceTimersByTimeAsync(1_000)
     expect(createHeliosProvider).not.toHaveBeenCalled()
     const answered = asked.provider.request({ method: 'eth_chainId' })

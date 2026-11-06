@@ -1,6 +1,7 @@
-// One race across sources for one answer, shared by block fetches and IPNS
-// lookups: the first source is asked, a second hedges it after a delay, the
-// first verified answer wins and the rest are cancelled.
+// One race across sources for one answer, shared by block fetches, IPNS
+// lookups and the light client's execution-server requests: the first source
+// is asked, a second hedges it after a delay, the first verified answer wins
+// and the rest are cancelled.
 
 import { ResolutionError } from '../resolution/records.js'
 

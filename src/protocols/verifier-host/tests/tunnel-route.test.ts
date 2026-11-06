@@ -320,18 +320,18 @@ describe('the light client of a tunnel-profile website', () => {
     await expect(tunnelFetch('https://elsewhere.example/')).rejects.toBeInstanceOf(EgressRefused)
   })
 
-  it('is told to wait the tunnel\'s time for a first sync, and the shared client is told the same, and to start late, only while the whole browser is on the tunnel', async () => {
-    const waits: Array<{ route: TunnelRoute | undefined, wait: number | undefined, startAfter: number | undefined }> = []
+  it('is told to wait the tunnel\'s time for a first sync and for its execution servers, and the shared client is told the same, and to start late, only while the whole browser is on the tunnel', async () => {
+    const waits: Array<{ route: TunnelRoute | undefined, wait: number | undefined, startAfter: number | undefined, hedge: number | undefined }> = []
     const lightClient = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
-    const record = (_config: LightClientConfig, _fetch: HostDeps['fetch'], _report: unknown, route?: TunnelRoute, pace?: { syncWaitMs: number, startAfterMs: number }): LightClient => { waits.push({ route, wait: pace?.syncWaitMs, startAfter: pace?.startAfterMs }); return lightClient() }
+    const record = (_config: LightClientConfig, _fetch: HostDeps['fetch'], _report: unknown, route?: TunnelRoute, pace?: { syncWaitMs: number, startAfterMs: number, rpcHedgeMs: number }): LightClient => { waits.push({ route, wait: pace?.syncWaitMs, startAfter: pace?.startAfterMs, hedge: pace?.rpcHedgeMs }); return lightClient() }
     const direct = await startHost(config({ lightClient: CONFIG }), deps({ startLightClient: record }))
     running.push(direct)
     await get(direct.port, 'unknown.eth', true)
-    expect(waits).toEqual([{ route: undefined, wait: DIRECT_PACE.syncWaitMs, startAfter: 0 }, { route: 'nym', wait: TUNNEL_PACE.syncWaitMs, startAfter: 0 }])
+    expect(waits).toEqual([{ route: undefined, wait: DIRECT_PACE.syncWaitMs, startAfter: 0, hedge: DIRECT_PACE.rpcHedgeMs }, { route: 'nym', wait: TUNNEL_PACE.syncWaitMs, startAfter: 0, hedge: TUNNEL_PACE.rpcHedgeMs }])
     waits.length = 0
     const through = await startHost(config({ lightClient: CONFIG, front: { port: 1, username: 'u', password: 'p' } }), deps({ startLightClient: record }))
     running.push(through)
-    expect(waits).toEqual([{ route: undefined, wait: TUNNEL_PACE.syncWaitMs, startAfter: TUNNEL_PACE.lightClientStartAfterMs }])
+    expect(waits).toEqual([{ route: undefined, wait: TUNNEL_PACE.syncWaitMs, startAfter: TUNNEL_PACE.lightClientStartAfterMs, hedge: TUNNEL_PACE.rpcHedgeMs }])
   })
 
   describe('when the light client runs outside the tunnel', () => {
@@ -348,7 +348,7 @@ describe('the light client of a tunnel-profile website', () => {
       const host = await startHost(config({ lightClient: CONFIG, front: FRONT, ethereumOutside: true }), spied)
       running.push(host)
       expect(starts).toHaveLength(1)
-      expect(starts[0]?.pace).toEqual({ syncWaitMs: DIRECT_PACE.syncWaitMs, startAfterMs: 0 })
+      expect(starts[0]?.pace).toEqual({ syncWaitMs: DIRECT_PACE.syncWaitMs, startAfterMs: 0, rpcHedgeMs: DIRECT_PACE.rpcHedgeMs, rpcAttemptTimeoutMs: DIRECT_PACE.rpcAttemptTimeoutMs })
       await starts[0]?.fetch('https://rpc.example/', { method: 'POST', body: '{}' })
       expect(outside).toEqual(['https://rpc.example/'])
       expect(spied.direct).toEqual([])

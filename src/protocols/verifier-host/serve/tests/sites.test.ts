@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GatewaysOffered, ResolutionError } from '../../../resolution/records.js'
 import type { NameRecord } from '../../../resolution/records.js'
 import type { DataGatherer, MountedSite, NameResolver } from '../../../resolution/providers.js'
@@ -106,6 +106,40 @@ describe('Sites', () => {
   it('gives up on a mount that takes too long, as unavailable', async () => {
     const { registry: r } = registry(async () => await new Promise<NameRecord[]>(() => {}))
     await expect(new Sites(r, Date.now, 50).get('slow.eth', P)).rejects.toMatchObject({ failure: 'unavailable', message: expect.stringMatching(/within 0.05 s/) })
+  })
+
+  describe('a mount that runs out of time says where it was, and not which name', () => {
+    const hanging = (): Promise<never> => new Promise<never>(() => {})
+    const lines = (spy: { mock: { calls: unknown[][] } }): string[] => spy.mock.calls.map((call) => String(call[0]))
+    afterEach(() => { vi.restoreAllMocks() })
+
+    it('names proving the name, when the name never resolves', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const { registry: r } = registry(hanging)
+      await expect(new Sites(r, Date.now, 50).get('slow.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+      expect(lines(spy)).toEqual(['[verifier] a name was not verified within 0.05 s while proving the name'])
+    })
+
+    it('names loading its content, when the gatherer never finishes mounting', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const resolver: NameResolver = { id: 'stub', namespaces: ['.eth'], resolve: async () => [record] }
+      const gatherer: DataGatherer = { id: 'slow', supports: () => true, mount: hanging }
+      const r = new ProtocolRegistry([defineProtocol(ENS, { resolvers: [resolver], gatherers: [gatherer] })])
+      await expect(new Sites(r, Date.now, 50).get('slow.eth', P)).rejects.toMatchObject({ failure: 'unavailable' })
+      expect(lines(spy)).toEqual(['[verifier] a name was not verified within 0.05 s while loading its content'])
+    })
+
+    it('names waiting for a free slot, for a name queued behind a full set of mounts', async () => {
+      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const { registry: r } = registry(hanging)
+      const sites = new Sites(r, Date.now, 50)
+      const names = Array.from({ length: MAX_CONCURRENT_MOUNTS + 1 }, (_, i) => `n${String(i)}.eth`)
+      await Promise.allSettled(names.map(async (name) => await sites.get(name, P)))
+      const said = lines(spy)
+      expect(said.filter((line) => line.endsWith('while proving the name'))).toHaveLength(MAX_CONCURRENT_MOUNTS)
+      expect(said.filter((line) => line.endsWith('while waiting for a free slot'))).toEqual(['[verifier] a name was not verified within 0.05 s while waiting for a free slot'])
+      expect(said.join(' ')).not.toMatch(/\.eth/)
+    })
   })
 
   it('reads the wait for a mount when the mount starts, so a route that has grown more patient is waited on for longer', async () => {
