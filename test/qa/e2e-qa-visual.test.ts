@@ -426,7 +426,7 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
-  it.skipIf(!underVirtualDisplay())(`the new tab shows the Update Orivon button at its top left while a release is on offer, readable on the picture and on none (${scheme})`, async () => {
+  it(`the new tab shows the Update Orivon button at its top left while a release is on offer, readable on the picture and on none (${scheme})`, async () => {
     const { app } = await launchShell({ scheme, env: { ORIVON_TEST_UPDATE_RELEASE: 'v99.0.0' } })
     try {
       await runPhase('visual state of the update button', async (check) => {
