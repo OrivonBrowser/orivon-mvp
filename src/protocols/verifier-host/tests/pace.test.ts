@@ -24,7 +24,10 @@ describe('the pace of the verifier host', () => {
 
   it('stretches the waits on the execution servers for a tunnel, and keeps a request that hangs inside the proof that waits on it', () => {
     const direct = paceOn(DIRECT_ROUTE)
-    const tunnel = paceOn(new RouteMeter(TUNNEL_PROFILE))
+    const meter = new RouteMeter(TUNNEL_PROFILE)
+    const tunnel = paceOn(meter)
+    // Sent once the client has synced over the tunnel: stretched, with no allowance for the tunnel coming up.
+    expect([tunnel.rpcHedgeMs, tunnel.rpcAttemptTimeoutMs]).toEqual([meter.wait(1_000), meter.wait(10_000)])
     expect(tunnel.rpcHedgeMs).toBeGreaterThan(direct.rpcHedgeMs)
     expect(tunnel.rpcAttemptTimeoutMs).toBeGreaterThan(direct.rpcAttemptTimeoutMs)
     for (const pace of [direct, tunnel]) {

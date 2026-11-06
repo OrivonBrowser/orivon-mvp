@@ -40,8 +40,9 @@ export function paceOn (route: RoutePace): Pace {
     syncWaitMs: route.firstWait(SYNC_WAIT_MS),
     mountTimeoutMs: route.firstWait(MOUNT_TIMEOUT_MS),
     lightClientStartAfterMs: route.slow() ? SLOW_ROUTE_START_AFTER_MS : 0,
-    rpcHedgeMs: route.firstWait(RPC_HEDGE_MS),
-    rpcAttemptTimeoutMs: route.firstWait(RPC_ATTEMPT_TIMEOUT_MS)
+    // The light client sends these only once it has synced over the route, so the route is up: no allowance for it coming up.
+    rpcHedgeMs: route.wait(RPC_HEDGE_MS),
+    rpcAttemptTimeoutMs: route.wait(RPC_ATTEMPT_TIMEOUT_MS)
   }
 }
 
