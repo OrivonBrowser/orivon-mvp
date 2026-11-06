@@ -53,6 +53,6 @@ export function newTabUpdate (notice: Pick<UpdateNotice, 'offer' | 'onChange' | 
       const stopSetting = settings.onChange(({ key }) => { if (key === 'updates.check') changed() })
       return () => { stopOffer(); stopSetting() }
     },
-    ask: () => { void notice.askAgain() }
+    ask: () => { notice.askAgain().catch((error: unknown) => { console.error('[self-update] the update button could not ask:', error) }) }
   }
 }

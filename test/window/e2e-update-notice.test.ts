@@ -75,7 +75,7 @@ async function launchedOnNewTab (options: { inUse?: boolean, release?: string } 
   return { ...base, dashboard }
 }
 
-const pillHidden = async (page: Page): Promise<boolean> => await page.evaluate(() => (document.querySelector('#update-pill') as HTMLElement | null)?.hidden ?? true)
+const pillHidden = async (page: Page): Promise<boolean> => await page.evaluate(() => (document.querySelector('#update-pill') as HTMLElement | null)?.hidden !== false)
 
 /** Runs one scheduled look and resolves when it is done. It asks the person, so it resolves once the question is answered. */
 const lookStarted = async (app: ElectronApplication): Promise<void> => {
