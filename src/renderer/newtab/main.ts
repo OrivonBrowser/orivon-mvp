@@ -1,8 +1,9 @@
 import type { Bookmark } from '../../main/browsing/bookmarks.js'
-import { closeIcon, faviconElement, path, svg } from '../icons.js'
+import { circle, closeIcon, faviconElement, path, svg } from '../icons.js'
 import { FEATURED, iconUrl } from './featured.js'
 import { pictureUrlOf, readBackground, type PageBackground } from './background-model.js'
 import { featuredRow, NO_PREFS, readPrefs, type FeaturedPrefs, type FeaturedTile } from './featured-model.js'
+import { readUpdate, updateLabel, type PageUpdate } from './update-model.js'
 
 // The dashboard's whole job: a search box, the featured apps and real bookmark tiles -- see
 // index.html's own header for the scope note.
@@ -16,6 +17,9 @@ interface OrivonNewTab {
   showHiddenFeatured: () => Promise<unknown>
   getBackground: () => Promise<unknown>
   onBackgroundChanged: (listener: () => void) => void
+  getUpdate: () => Promise<unknown>
+  onUpdateChanged: (listener: () => void) => void
+  askUpdate: () => void
 }
 
 declare global {
@@ -43,6 +47,7 @@ const bookmarksGrid = document.querySelector<HTMLDivElement>('#bookmarks-grid')
 const featuredGrid = document.querySelector<HTMLDivElement>('#featured-grid')
 const showHiddenButton = document.querySelector<HTMLButtonElement>('#featured-show-hidden')
 const reportBugButton = document.querySelector<HTMLButtonElement>('#report-bug')
+const updatePillButton = document.querySelector<HTMLButtonElement>('#update-pill')
 
 /** The page the "Report a bug" button opens: main shows it in a tab of its own, or brings the one already open to the front. */
 const REPORT_URL = 'orivon://report/'
@@ -71,6 +76,9 @@ if (shell !== undefined) {
     reportBugButton.hidden = false
     reportBugButton.addEventListener('click', () => { shell.navigate(REPORT_URL) })
   }
+
+  // Not among the rows below: it appears when main has a release to offer, whenever that is, and holds nothing back.
+  if (updatePillButton !== null) startUpdate(shell, updatePillButton)
 
   // Every row that main fills in; the page says it is settled once each has answered, or failed to.
   const drawing: Array<Promise<unknown>> = []
@@ -138,6 +146,34 @@ function startBackground (shell: OrivonNewTab): Promise<void> {
   }
   shell.onBackgroundChanged(() => { void draw() })
   return draw()
+}
+
+/**
+ * The update button at the page's top left: shown while main has a newer release on offer, hidden otherwise, and kept in step
+ * while the page is open (a release found, the running version catching up, the setting going off). A press asks main to put
+ * the question (the two downloads) under the address bar again; the page names no release.
+ */
+function startUpdate (shell: OrivonNewTab, button: HTMLButtonElement): void {
+  button.prepend(updateIcon())
+  let latest = 0
+  const draw = async (): Promise<void> => {
+    const turn = ++latest
+    let update: PageUpdate | null = null
+    try {
+      update = readUpdate(await shell.getUpdate())
+    } catch {}
+    // Another answer came while this one was awaited: it is the one to show.
+    if (turn !== latest) return
+    button.hidden = update === null
+    if (update === null) return
+    const label = updateLabel(update)
+    button.title = label
+    // The visible words come first in the name, so a person who says them to a voice control is understood.
+    button.setAttribute('aria-label', `Update Orivon. ${label}`)
+  }
+  button.addEventListener('click', () => { shell.askUpdate() })
+  shell.onUpdateChanged(() => { void draw() })
+  void draw()
 }
 
 /** The row is drawn once main has said what this profile pinned and hid, so it never shows in the wrong order first. */
@@ -250,6 +286,13 @@ function bugIcon (): SVGSVGElement {
     path('M22 13h-4', '2'),
     path('M17.2 17c2.1.1 3.8 1.9 3.8 4', '2')
   )
+  return icon
+}
+
+/** Lucide's `circle-arrow-up` (ISC licence, https://lucide.dev), as the other hand-drawn icons here are. */
+function updateIcon (): SVGSVGElement {
+  const icon = svg('0 0 24 24')
+  icon.append(circle(12, 12, 10), path('m16 12-4-4-4 4', '2'), path('M12 16V8', '2'))
   return icon
 }
 

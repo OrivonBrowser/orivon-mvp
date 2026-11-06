@@ -3,6 +3,7 @@ import type { IpcMainInvokeEvent, WebContents } from 'electron'
 import type { Bookmark, BookmarkStore } from '../../browsing/bookmarks.js'
 import type { BackgroundStore, PageBackground } from '../../newtab/background-store.js'
 import { FeaturedStore } from '../../newtab/featured-store.js'
+import type { NewTabUpdate, UpdatePill } from '../../self-update/update-pill.js'
 import type { WindowRegistry } from '../../shell/window-registry.js'
 
 // isFromDashboard's sender check, mirroring how ipc.ts's own isFromChrome is
@@ -30,6 +31,15 @@ const background = {
   onChange: (listener: () => void) => { changeListeners.add(listener); return () => { changeListeners.delete(listener) } }
 } as unknown as BackgroundStore
 
+let offered: UpdatePill | null = null
+const updateListeners = new Set<() => void>()
+const asked = vi.fn()
+const update: NewTabUpdate = {
+  shown: () => offered,
+  onChange: (listener) => { updateListeners.add(listener); return () => { updateListeners.delete(listener) } },
+  ask: asked
+}
+
 function dispatch (frameUrl: string, isTopFrame: boolean, command: unknown = { type: 'getBookmarks' }, contents: Partial<WebContents> = {}): unknown {
   const handler = handlers.get(NEWTAB_COMMAND_CHANNEL)
   if (handler === undefined) throw new Error('registerNewTabIpc did not register a handler')
@@ -43,7 +53,7 @@ describe('registerNewTabIpc -- isFromDashboard', () => {
   const load = vi.fn(async () => {})
   const bookmarks = { getAll: vi.fn(() => [BOOKMARK]), load } as unknown as BookmarkStore
   const windows = {} as WindowRegistry
-  registerNewTabIpc(DASHBOARD_URL, windows, bookmarks, featured, background)
+  registerNewTabIpc(DASHBOARD_URL, windows, bookmarks, featured, background, update)
 
   it('answers the dashboard\'s own top frame, once the bookmark file has been read', async () => {
     expect(await dispatch(DASHBOARD_URL, true)).toEqual([BOOKMARK])
@@ -115,5 +125,38 @@ describe('registerNewTabIpc -- the picture behind the page', () => {
     expect(send).toHaveBeenCalledWith('orivon-newtab:background-changed')
     expect(left.send).not.toHaveBeenCalled()
     expect(gone.send).not.toHaveBeenCalled()
+  })
+})
+
+describe('registerNewTabIpc -- the update button', () => {
+  it('answers the release on offer, or null for none, to the dashboard alone', async () => {
+    offered = { latest: '0.0.12', current: '0.0.11' }
+    expect(await dispatch(DASHBOARD_URL, true, { type: 'getUpdate' })).toEqual({ latest: '0.0.12', current: '0.0.11' })
+    expect(await dispatch('https://elsewhere.example/', true, { type: 'getUpdate' })).toBeUndefined()
+    expect(await dispatch(DASHBOARD_URL, false, { type: 'getUpdate' })).toBeUndefined()
+    offered = null
+    expect(await dispatch(DASHBOARD_URL, true, { type: 'getUpdate' })).toBeNull()
+  })
+
+  it('asks about the release again on a press from the dashboard, and from nothing else', async () => {
+    asked.mockClear()
+    expect(await dispatch(DASHBOARD_URL, true, { type: 'askUpdate' })).toBeUndefined()
+    expect(asked).toHaveBeenCalledTimes(1)
+    await dispatch('https://elsewhere.example/', true, { type: 'askUpdate' })
+    await dispatch(DASHBOARD_URL, false, { type: 'askUpdate' })
+    expect(asked).toHaveBeenCalledTimes(1)
+  })
+
+  it('tells a dashboard that asked, and has not left, when the button changes', async () => {
+    const send = vi.fn()
+    const stays = { send, isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
+    const left = { send: vi.fn(), isDestroyed: () => false, mainFrame: { url: DASHBOARD_URL } }
+    await dispatch(DASHBOARD_URL, true, { type: 'getUpdate' }, stays as unknown as Partial<WebContents>)
+    await dispatch(DASHBOARD_URL, true, { type: 'getUpdate' }, left as unknown as Partial<WebContents>)
+    left.mainFrame.url = 'https://elsewhere.example/'
+    for (const listener of updateListeners) listener()
+    expect(send).toHaveBeenCalledWith('orivon-newtab:update-changed')
+    expect(send).not.toHaveBeenCalledWith('orivon-newtab:background-changed')
+    expect(left.send).not.toHaveBeenCalled()
   })
 })

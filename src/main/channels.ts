@@ -27,6 +27,9 @@ export const NEWTAB_COMMAND_CHANNEL = 'orivon-newtab:command'
 /** Main -> a new-tab page: its picture changed, so it asks for it again. */
 export const NEWTAB_BACKGROUND_CHANGED_CHANNEL = 'orivon-newtab:background-changed'
 
+/** Main -> a new-tab page: the release its update button names changed, or went, so it asks for it again. */
+export const NEWTAB_UPDATE_CHANGED_CHANNEL = 'orivon-newtab:update-changed'
+
 // APPEND POINT: one const per channel, newest last.
 
 /** Ordinary tab -> broker: orivon.app.manifest/grants and orivon.fs.readFile/

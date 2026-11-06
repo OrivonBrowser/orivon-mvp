@@ -10,6 +10,7 @@ import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
 import { startFirstRunFlavour } from './flavour/start-first-run-flavour.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
+import { newTabUpdate } from './self-update/update-pill.js'
 import { applyThemeSetting } from './settings/settings-appliers.js'
 import { startInternalPages } from './pages/start-internal-pages.js'
 import { installShortcuts } from './shortcuts/install-shortcuts.js'
@@ -289,7 +290,7 @@ export function boot (runtime: Runtime): void {
     runShellInstallers(app, shell, ctx, runtime)
     installDownloads(app, { windows: shell.windows, downloads: shell.downloads, defaultSession: session.defaultSession, discardHeldAtQuit: runtime.isPrivate })
     installDownloadsPeek(shell)
-    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured, shell.newTabBackground)
+    registerNewTabIpc(resolveDashboardUrl(), shell.windows, shell.bookmarks, shell.featured, shell.newTabBackground, newTabUpdate(shell.browserUpdate, shell.settings, shell.kiosk))
     if (!runtime.isPrivate) {
       app.once('will-quit', () => { runtime.profiles.clearRunning(runtime.profileId) })
       setTimeout(() => { sweepPrivateDirs(); runtime.profiles.sweepDeleted() }, SWEEP_DELAY_MS).unref()

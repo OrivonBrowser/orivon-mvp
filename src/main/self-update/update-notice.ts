@@ -62,6 +62,8 @@ export interface UpdateNotice {
   readonly runScheduled: () => Promise<void>
   /** Asks if a release is waiting and there is a window in use. Never rejects. */
   readonly tryAsk: () => Promise<void>
+  /** The update button's press: asks about the release on offer in the window in use, though the person was told of it before. Does nothing with no release on offer or a question open. Never rejects. */
+  readonly askAgain: () => Promise<void>
   /** "Check now": looks whatever was asked last, keeps what it finds on offer and counts it as told. */
   readonly checkNow: () => Promise<UpdateAnswer>
   readonly offer: () => UpdateOffer | null
@@ -175,6 +177,38 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
     if (found !== null) deps.log(`release found: ${found}`)
   }
 
+  /**
+   * Asks about `shown` in `where` and counts it as told once the question was on screen. Only the automatic ask spends
+   * the budget of questions that closed unseen, and gives up until the next look when the panel cannot be shown: a
+   * person pressing the update button can simply press it again.
+   */
+  const askAbout = async (shown: UpdateOffer, where: { readonly place: Place }, automatic: boolean): Promise<void> => {
+    inFlight = true
+    try {
+      await changing(async () => {
+        deps.log(automatic ? `asking about ${shown.latest}` : `asking about ${shown.latest} again (update button)`)
+        const { seen } = await deps.ask(where.place, { version: shown.latest, url: shown.url })
+        if (!seen) {
+          if (automatic) {
+            unseen += 1
+            if (unseen >= UNSEEN_ASKS) broken = true
+          }
+          deps.log(`the question about ${shown.latest} closed before it was shown${automatic && broken ? '; not asking again until the next look' : ''}`)
+          return
+        }
+        unseen = 0
+        markTold(shown.latest)
+        state = stateWith(undefined)
+        await persist()
+      })
+    } catch (error) {
+      if (automatic) broken = true
+      deps.log(`could not ask about ${shown.latest}: ${reasonOf(error)}`)
+    } finally {
+      inFlight = false
+    }
+  }
+
   const tryAsk = async (): Promise<void> => {
     if (inFlight || broken) return
     const shown = offer()
@@ -186,33 +220,28 @@ export function createUpdateNotice<Place> (deps: NoticeDeps<Place>): UpdateNotic
       return
     }
     lastWait = undefined
-    inFlight = true
-    try {
-      await changing(async () => {
-        deps.log(`asking about ${shown.latest}`)
-        const { seen } = await deps.ask(where.place, { version: shown.latest, url: shown.url })
-        if (!seen) {
-          unseen += 1
-          if (unseen >= UNSEEN_ASKS) broken = true
-          deps.log(`the question about ${shown.latest} closed before it was shown${broken ? '; not asking again until the next look' : ''}`)
-          return
-        }
-        unseen = 0
-        markTold(shown.latest)
-        state = stateWith(undefined)
-        await persist()
-      })
-    } catch (error) {
-      broken = true
-      deps.log(`could not ask about ${shown.latest}: ${reasonOf(error)}`)
-    } finally {
-      inFlight = false
+    await askAbout(shown, where, true)
+  }
+
+  const askAgain = async (): Promise<void> => {
+    const shown = offer()
+    if (shown === null) return
+    if (inFlight) {
+      deps.log('the update button was pressed while a question is already open')
+      return
     }
+    const where = placeNow()
+    if ('waiting' in where) {
+      deps.log(`the update button could not ask now: ${where.waiting}`)
+      return
+    }
+    await askAbout(shown, where, false)
   }
 
   return {
     offer,
     tryAsk,
+    askAgain,
     onChange: (listener) => { listeners.add(listener); return () => { listeners.delete(listener) } },
     runScheduled: async () => {
       try {

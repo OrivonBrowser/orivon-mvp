@@ -77,3 +77,6 @@ export function compareVersions (a: ParsedVersion, b: ParsedVersion): number {
   }
   return 0
 }
+
+/** A release tag as the person reads it: the version without the tag's leading `v`. */
+export const bareVersion = (tag: string): string => tag.replace(/^v/i, '')
