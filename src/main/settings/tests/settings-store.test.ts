@@ -117,6 +117,33 @@ describe('SettingsStore', () => {
     expect(await onDisk()).toEqual({ version: 2, values: {} })
   })
 
+  it('keeps a number setting across a restart, refuses one outside its bounds, and writes nothing once it is back at the default', async () => {
+    const store = new SettingsStore(file)
+    await store.load()
+    const listener = vi.fn()
+    store.onChange(listener)
+
+    expect(store.get('appearance.newTabBrightness')).toBe(100)
+    expect(store.set('appearance.newTabBrightness', 60)).toEqual({ ok: true })
+    for (const bad of [19, 181, 60.5, '60', null]) expect(store.set('appearance.newTabBrightness', bad)).toEqual({ ok: false, reason: 'invalid-value' })
+    expect(listener).toHaveBeenCalledExactlyOnceWith({ key: 'appearance.newTabBrightness', value: 60 })
+    await store.flush()
+    expect(await onDisk()).toEqual({ version: 2, values: { 'appearance.newTabBrightness': 60 } })
+
+    const next = new SettingsStore(file)
+    await next.load()
+    expect(next.get('appearance.newTabBrightness')).toBe(60)
+    expect(next.snapshot().changed).toEqual(['appearance.newTabBrightness'])
+
+    expect(next.reset('appearance.newTabBrightness')).toEqual({ ok: true })
+    expect(next.get('appearance.newTabBrightness')).toBe(100)
+    next.set('appearance.newTabBrightness', 150)
+    next.resetAll()
+    expect(next.snapshot().changed).toEqual([])
+    await next.flush()
+    expect(await onDisk()).toEqual({ version: 2, values: {} })
+  })
+
   it('ignores an entry the schema would refuse, keeps the rest, and says so', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await mkdir(join(dir, 'nested'), { recursive: true })

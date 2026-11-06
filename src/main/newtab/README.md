@@ -7,7 +7,8 @@ through [`../ipc/newtab-ipc.ts`](../ipc/newtab-ipc.ts); the entries themselves a
 page, in [`../../renderer/newtab/featured/featured.json`](../../renderer/newtab/featured/featured.json).
 `background-image.ts` says what file may become the background picture (five formats, told by their leading bytes by the reader's `sniffImageType`, up to 20 MB);
 `background-store.ts` copies a chosen file into `<userData>/new-tab-background` and answers what the page draws given the
-`appearance.newTabBackground` setting; `background-domain.ts` is what Settings may ask: to choose a picture (the file picker is handed in).
+`appearance.newTabBackground` setting, and how bright it is drawn (`appearance.newTabBrightness`, a percent from 20 to 180, 100 being the
+picture as it is); `background-domain.ts` is what Settings may ask: to choose a picture (the file picker is handed in).
 
 **What it depends on.** `node:fs`, [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts), and for the background [`../settings/settings-store.ts`](../settings/settings-store.ts) (types and the `appearance.newTabBackground` setting) [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the domain's type) and [`../reader/reader-images.ts`](../reader/reader-images.ts) (`sniffImageType`, the one table of image signatures).
 
@@ -45,3 +46,9 @@ blocking and looked at through the open file, never by name first (the name can 
 type; the page makes a `blob:` URL of them, which is why its Content-Security-Policy lists `blob:` for images. The alternatives, a path or a
 second address on the shell scheme, would give a page a name to ask for; the bridge answers only the dashboard's own top frame, as every
 command there does. Main tells each dashboard that asked, and has not left, when the picture changes, and the page asks again.
+
+**The brightness is a number on a channel of its own, drawn by a layer of its own.** `getBrightness` answers the setting's value and the store tells
+its own listeners when that key changes, so moving the slider never makes an open page fetch a picture of up to 20 MB again. The page draws the
+picture on a fixed layer behind everything (`html::before` in `../../renderer/newtab/style.css`) and filters that layer with `brightness()`, so the
+base colour, the text, the tiles and the search box stay as they are, and nothing is laid over the picture. The same filter applies to the Orivon picture and
+the person's own; the Settings row is hidden while the choice is no picture, and the saved value waits for the picture's return.

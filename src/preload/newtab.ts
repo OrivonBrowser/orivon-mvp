@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Bookmark } from '../main/browsing/bookmarks.js'
-import { NEWTAB_BACKGROUND_CHANGED_CHANNEL, NEWTAB_COMMAND_CHANNEL, NEWTAB_UPDATE_CHANGED_CHANNEL } from '../main/channels.js'
+import { NEWTAB_BACKGROUND_CHANGED_CHANNEL, NEWTAB_BRIGHTNESS_CHANGED_CHANNEL, NEWTAB_COMMAND_CHANNEL, NEWTAB_UPDATE_CHANGED_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/ipc/newtab-ipc.js'
 import { exposeOrdinaryTabSurface } from './ordinary-tab.js'
 import { inMainFrame } from './frame.js'
@@ -46,6 +46,9 @@ if (topFrame && expectedUrl !== undefined && location.href === expectedUrl) {
     /** What this profile's new tab draws behind the page: the Orivon picture, nothing, or the bytes of the person's own (src/main/newtab/background-store.ts); the page checks the shape. */
     getBackground: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getBackground' }),
     onBackgroundChanged: (listener: () => void): void => { ipcRenderer.on(NEWTAB_BACKGROUND_CHANGED_CHANNEL, () => { listener() }) },
+    /** How bright the page draws that picture, in percent (the `appearance.newTabBrightness` setting); the page checks the shape. */
+    getBrightness: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getBrightness' }),
+    onBrightnessChanged: (listener: () => void): void => { ipcRenderer.on(NEWTAB_BRIGHTNESS_CHANGED_CHANNEL, () => { listener() }) },
     /** The newer Orivon release on offer, as `{ latest, current }`, or null for none (src/main/self-update/update-pill.ts); the page checks the shape. */
     getUpdate: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getUpdate' }),
     onUpdateChanged: (listener: () => void): void => { ipcRenderer.on(NEWTAB_UPDATE_CHANGED_CHANNEL, () => { listener() }) },

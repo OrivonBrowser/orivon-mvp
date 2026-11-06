@@ -30,6 +30,14 @@ describe('settingsFromFile', () => {
     }
   })
 
+  it('reads a number setting within its bounds, and drops one that is out of them or not a whole number', () => {
+    expect(settingsFromFile({ version: 2, values: { 'appearance.newTabBrightness': 40 } }).overrides.get('appearance.newTabBrightness')).toBe(40)
+    expect(settingsFromFile({ version: 2, values: { 'appearance.newTabBrightness': 100 } }).overrides.has('appearance.newTabBrightness')).toBe(false)
+    for (const bad of [5, 500, 40.5, '40']) {
+      expect(settingsFromFile({ version: 2, values: { 'appearance.newTabBrightness': bad } })).toEqual({ overrides: new Map(), dropped: 1 })
+    }
+  })
+
   it('holds nothing for text that is not a settings file of this version', () => {
     for (const parsed of [null, 'x', [], { version: 2, values: {} }, { version: 1 }, { version: 1, values: 3 }]) {
       expect(settingsFromFile(parsed)).toEqual({ overrides: new Map(), dropped: 0 })
