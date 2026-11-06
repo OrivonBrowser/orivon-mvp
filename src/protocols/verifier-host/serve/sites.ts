@@ -243,7 +243,7 @@ export class Sites {
     })
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
-        console.error(`[verifier] ${host} was not verified within ${String(timeoutMs / 1000)} s while ${stage}`)
+        console.error(`[verifier] a name was not verified within ${String(timeoutMs / 1000)} s while ${stage}`)
         controller.abort()
         // A gatherer that gives the person a way on when its time runs out (an offer of gateways) says so in the instant the abort reaches it.
         work.then(() => {}, (error: unknown) => { if (error instanceof GatewaysOffered) reject(error) })

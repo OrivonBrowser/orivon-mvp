@@ -12,14 +12,15 @@ import { checkMainnet, wrongChainText } from './chain-check.js'
 import { maskEndpoint } from './endpoint-mask.js'
 import { CLOCK_AHEAD_REASON, CLOCK_BEHIND_REASON, bootstrapFetchFailed, bootstrapMissing, clockBehind, heliosError, outOfSync, serverBehindReason } from './helios-errors.js'
 import { laneNames, publicText } from './lane-names.js'
-import { RPC_ATTEMPT_TIMEOUT_MS, RPC_HEDGE_MS } from '../pace.js'
-import { NO_ANSWER, failoverRpc } from './rpc-failover.js'
+import { DIRECT_LIGHT_CLIENT_PACE } from '../pace.js'
+import type { LightClientPace } from '../pace.js'
+import { failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
 import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
 import type { LightClient } from '../service.js'
 
 /** How long a `.eth` load waits for the first sync before "cannot verify yet", with no tunnel (pace.ts holds the tunnel's). */
-export const SYNC_WAIT_MS = 8_000
+export const SYNC_WAIT_MS = DIRECT_LIGHT_CLIENT_PACE.syncWaitMs
 const SYNC_TIMEOUT_MS = 5 * 60_000
 const FIRST_RETRY_MS = 5_000
 const MAX_RETRY_MS = 5 * 60_000
@@ -111,17 +112,7 @@ function dispatcher (): Dispatcher {
   return dispatch
 }
 
-/** What pace.ts says about when the client starts, how long a request waits for its first sync, and how long it waits on an execution server. */
-export interface LightClientPace {
-  readonly syncWaitMs: number
-  readonly startAfterMs: number
-  /** How long the first execution server is waited on before the next is asked too. */
-  readonly rpcHedgeMs: number
-  /** How long one execution server is waited on before it is given up on. */
-  readonly rpcAttemptTimeoutMs: number
-}
-
-export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | TunnelRoute = 'direct', pace: LightClientPace = { syncWaitMs: SYNC_WAIT_MS, startAfterMs: 0, rpcHedgeMs: RPC_HEDGE_MS, rpcAttemptTimeoutMs: RPC_ATTEMPT_TIMEOUT_MS }): LightClient {
+export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | TunnelRoute = 'direct', pace: LightClientPace = DIRECT_LIGHT_CLIENT_PACE): LightClient {
   if (!BLOCK_ROOT_PATTERN.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
   const primary = config.executionRpcs[0]
   if (primary === undefined) throw new Error('no execution RPC configured')
@@ -136,13 +127,17 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
       return
     }
     problems.set(endpoint, problem)
-    // A server that hangs shows nowhere else: the request it held is answered by another, and the name loads.
-    if (problem === NO_ANSWER) console.error(`[verifier] an execution server (${maskEndpoint(endpoint)}) did not answer in time${asked.at(-1) === endpoint ? '' : '; the request went to the next one'}`)
   }
-  const timing = { hedgeAfterMs: pace.rpcHedgeMs, attemptTimeoutMs: pace.rpcAttemptTimeoutMs }
   /** The execution servers in use: all of them, less those found on another chain. */
   let asked = config.executionRpcs
-  const lane: Lane = { ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(asked, fetch, noteProblem, timing), fetch }
+  /** A server that hangs shows nowhere else: the request it held is answered by another, and the name loads. One line when it is set aside, not one per request. */
+  const noteCooling = (endpoint: string, why: string, forMs: number): void => {
+    const others = asked.length > 1 ? `; the others are asked first for ${String(Math.ceil(forMs / 1000))} s` : ''
+    console.error(`[verifier] an execution server (${maskEndpoint(endpoint)}) ${why}${others}`)
+  }
+  const timing = { hedgeAfterMs: pace.rpcHedgeMs, attemptTimeoutMs: pace.rpcAttemptTimeoutMs }
+  const executionFetch = (servers: readonly string[]): WebFetch => failoverRpc(servers, fetch, noteProblem, timing, noteCooling)
+  const lane: Lane = { ...names, realConsensus: config.consensusRpc, viaExecution: executionFetch(asked), fetch }
   // A client of this route started before is replaced: only one lives in a process.
   const lanes = dispatcher().lanes
   const earlier = lanes.findIndex((other) => other.execution === lane.execution)
@@ -194,8 +189,10 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   const checkChain = async (): Promise<void> => {
     if (config.ownServers?.execution !== true) return
     const { usable, wrong } = await checkMainnet(config.executionRpcs, fetch)
+    // The failover keeps what it learned of each server, so it is replaced only when the servers in use change.
+    const changed = usable.length !== asked.length || usable.some((endpoint, index) => endpoint !== asked[index])
     asked = usable
-    lane.viaExecution = failoverRpc(asked, fetch, noteProblem, timing)
+    if (changed) lane.viaExecution = executionFetch(asked)
     for (const { endpoint, chainId } of wrong) {
       if (reportedWrongChain.has(endpoint)) continue
       reportedWrongChain.add(endpoint)

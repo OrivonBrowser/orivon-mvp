@@ -15,7 +15,17 @@ export interface Pace {
   readonly lightClientStartAfterMs: number
   /** How long the light client waits on the first execution server before it asks the next too. */
   readonly rpcHedgeMs: number
-  /** How long the light client waits on one execution server before it gives up on it; inside `mountTimeoutMs`, which waits on a proof of several of its requests. */
+  /** How long the light client waits on one execution server before it gives up on it, while another is still to be asked; inside `mountTimeoutMs`, which waits on a proof of several of its requests. */
+  readonly rpcAttemptTimeoutMs: number
+}
+
+/** What the light client takes of a pace. */
+export interface LightClientPace {
+  readonly syncWaitMs: number
+  readonly startAfterMs: number
+  /** How long the first execution server is waited on before the next is asked too. */
+  readonly rpcHedgeMs: number
+  /** How long one execution server is waited on before it is given up on, while another is still to be asked. */
   readonly rpcAttemptTimeoutMs: number
 }
 
@@ -24,7 +34,7 @@ const SYNC_WAIT_MS = 8_000
 const MOUNT_TIMEOUT_MS = 45_000
 /** How long the first execution server is waited on before the next is asked too. */
 export const RPC_HEDGE_MS = 1_000
-/** How long one execution server is waited on, headers and body, before it is given up on. */
+/** How long one execution server is waited on, headers and body, before it is given up on in favour of one not yet asked. */
 export const RPC_ATTEMPT_TIMEOUT_MS = 10_000
 
 /**
@@ -56,7 +66,9 @@ export function routeFor (tunnelled: boolean): RoutePace {
   return tunnelled ? new RouteMeter(TUNNEL_PROFILE) : DIRECT_ROUTE
 }
 
-/** What the light client takes of a pace. */
-export function lightClientPace (pace: Pace): { readonly syncWaitMs: number, readonly startAfterMs: number, readonly rpcHedgeMs: number, readonly rpcAttemptTimeoutMs: number } {
+export function lightClientPace (pace: Pace): LightClientPace {
   return { syncWaitMs: pace.syncWaitMs, startAfterMs: pace.lightClientStartAfterMs, rpcHedgeMs: pace.rpcHedgeMs, rpcAttemptTimeoutMs: pace.rpcAttemptTimeoutMs }
 }
+
+/** What a light client given no pace takes: the direct connection's, starting at once. */
+export const DIRECT_LIGHT_CLIENT_PACE: LightClientPace = lightClientPace(paceOn(DIRECT_ROUTE))

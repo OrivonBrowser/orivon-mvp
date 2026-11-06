@@ -108,7 +108,7 @@ describe('startHeliosLightClient -- servers the person named', () => {
     expect(JSON.stringify(status)).not.toContain(KEY)
   })
 
-  it('says in the log, with the address masked, which execution server did not answer in time, and that the request went on', async () => {
+  it('says in the log, once and with the address masked, that an execution server which keeps not answering in time is asked last', async () => {
     vi.mocked(createHeliosProvider).mockResolvedValue(fakeHelios() as never)
     const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
     try {
@@ -118,12 +118,37 @@ describe('startHeliosLightClient -- servers the person named', () => {
       }
       const client = startHeliosLightClient(OWN, fetch as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 0, rpcHedgeMs: 20, rpcAttemptTimeoutMs: 200 })
       await synced(client)
-      const answered = globalThis.fetch(new Request(heliosNames().executionRpc, { method: 'POST', body: rpc }))
-      await vi.advanceTimersByTimeAsync(30)
-      expect(await (await answered).json()).toMatchObject({ result: '0x1' })
-      await vi.advanceTimersByTimeAsync(10)
-      expect(logged.mock.calls.map((call) => String(call[0]))).toContain('[verifier] an execution server (mainnet.infura.io/••••) did not answer in time; the request went to the next one')
+      const ask = async (): Promise<unknown> => {
+        const answered = globalThis.fetch(new Request(heliosNames().executionRpc, { method: 'POST', body: rpc }))
+        await vi.advanceTimersByTimeAsync(30)
+        return await (await answered).json()
+      }
+      const said = (): string[] => logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes('execution server'))
+      expect(await ask()).toMatchObject({ result: '0x1' })
+      expect(said()).toEqual([])
+      expect(await ask()).toMatchObject({ result: '0x1' })
+      expect(said()).toEqual(['[verifier] an execution server (mainnet.infura.io/••••) did not answer in time; the others are asked first for 2 s'])
+      expect(await ask()).toMatchObject({ result: '0x1' })
+      expect(await ask()).toMatchObject({ result: '0x1' })
+      expect(said()).toHaveLength(1)
       expect(JSON.stringify(logged.mock.calls)).not.toContain(KEY)
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
+  it('says only why, when the one execution server in use cannot be reached, since there are no others to ask first', async () => {
+    vi.mocked(createHeliosProvider).mockResolvedValue(fakeHelios() as never)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const fetch = async (_url: string, init?: RequestInit): Promise<Response> => {
+        if (String(init?.body).includes('eth_chainId')) return answerWith('0x1')
+        throw Object.assign(new Error(`connect ECONNREFUSED ${B}`), { code: 'ECONNREFUSED' })
+      }
+      const client = startHeliosLightClient({ ...OWN, executionRpcs: [B] }, fetch as never, () => {}, 'direct')
+      await synced(client)
+      await expect(globalThis.fetch(new Request(heliosNames().executionRpc, { method: 'POST', body: rpc }))).rejects.toThrow()
+      expect(logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes('execution server'))).toEqual(['[verifier] an execution server (b.rpc) could not be reached'])
     } finally {
       logged.mockRestore()
     }
