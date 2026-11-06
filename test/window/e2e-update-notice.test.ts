@@ -352,7 +352,7 @@ run('hides the button on the page that is open when the update check is switched
 }, TEST_TIMEOUT_MS)
 
 run('draws no button on a new tab when the newest release is not newer than the running one', async () => {
-  const { app, dashboard } = await launchedOnNewTab({ inUse: false, release: 'v0.0.1' })
+  const { app, dashboard } = await launchedOnNewTab({ inUse: false, release: 'v0.0.0' })
   try {
     await lookDone(app)
     await delay(ABSENCE_SETTLE_MS)
