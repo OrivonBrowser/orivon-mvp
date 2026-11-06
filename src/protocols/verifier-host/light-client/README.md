@@ -1,14 +1,15 @@
 # `src/protocols/verifier-host/light-client/`: proving a `.eth` name
 
 **What lives here.** `light-client.ts` (Helios, behind one EIP-1193 provider), `helios-errors.ts`,
-`rpc-failover.ts` (trying execution RPCs in turn per request, and keeping why each one failed), `clock.ts` (a computer whose clock
+`rpc-failover.ts` (asking execution RPCs in turn per request, hedging a slow one, giving up on one that hangs, and keeping why each one failed), `clock.ts` (a computer whose clock
 is behind or ahead of the chain), and five files about the servers' addresses: `lane-names.ts` (the names Helios is given and the
 words it says back), `lane-fetch.ts` (which fetch carries a request to which server), `endpoint-mask.ts` (an address shown masked)
 and `chain-check.ts` (a server that is not Ethereum mainnet), and `server-address.ts` (what an address the person types may be, and why one is
 refused: pure code, which the settings store and the Settings page apply before the host ever sees an address, and which holds
 the one rule for a name that could be on the internet that `egress.ts` shares).
 
-**What it depends on.** [`../egress.ts`](../egress.ts), [`../protocol.ts`](../protocol.ts) and
+**What it depends on.** [`../egress.ts`](../egress.ts), [`../protocol.ts`](../protocol.ts), [`../pace.ts`](../pace.ts) (the two waits on an execution server, for a client given none),
+[`../../gateways/race.ts`](../../gateways/race.ts) (the race `rpc-failover.ts` runs its requests through, reused rather than copied) and
 `@a16z/helios`.
 
 **What it must never import.** [`../../../main/`](../../../main/) beyond type-only imports, as the
@@ -24,6 +25,8 @@ parent README says.
 URL on every response, since Electron's `net.fetch` leaves it empty and Helios throws parsing it;
 its revert text as `{ code: 3, data }`, or viem never sees a CCIP-Read `OffchainLookup`; and
 execution RPCs tried in turn, or one RPC's short proof window fails the name.
+
+**A slow execution server is hedged after 1 s, and one that hangs is given up on after 10 s.** `rpc-failover.ts` runs each request through `racePass`: the first server is asked, the next is asked too when the first has not answered within 1 s (never more than two at a time), the first good answer wins and the others are cancelled, and a server that fails at once is passed over at once. A server is given up on 10 s after it was asked, headers and body, and its fetch is aborted, which frees room for the next. Helios's `eth_call` waits on every request it sends and Electron's `net.fetch` has no timeout, so one `eth_getProof` held by a server would hold the name's proof until that server gave up, past the 45 s a mount waits. This is safe because Helios checks every answer against its proofs, whichever server sent it. `../pace.ts` gives both waits, stretched for a tunnel as the mount's wait is. A server that was outrun or given up on is said in the log, address masked (`an execution server (<address>) did not answer in time`), and a mount that runs out of time says whether it was waiting for a slot, proving the name or loading its content (`serve/sites.ts`). The two figures are provisional: the hedge rates and latencies of execution servers measured in bug reports would settle them.
 
 **One failed head refresh leaves the client `synced`; a second in a row, or a proven head over two
 minutes old, does not** (ADR-0030's 2026-09-26 amendment). A checkpoint read never changes sync

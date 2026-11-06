@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
+import type { WebFetch } from '../../egress.js'
 import { failoverRpc, problemOf } from '../rpc-failover.js'
 
 const A = 'https://a.rpc'
 const B = 'https://b.rpc'
+const C = 'https://c.rpc'
 const BODY = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_getProof', params: [] })
 
 function endpoints (answers: Record<string, () => Response>): { fetch: (url: string, init?: RequestInit) => Promise<Response>, asked: string[] } {
@@ -91,6 +93,122 @@ describe('failoverRpc -- which server failed, and why', () => {
     await failoverRpc([A], endpoints({ [A]: hostile }).fetch, note)(A, { method: 'POST', body: BODY })
     await failoverRpc([B], (async () => { throw new Error('fetch failed for https://b.rpc/v3/SECRET-KEY-VALUE') }) as never, note)(B, { method: 'POST', body: BODY }).catch(() => {})
     expect([...problems.values()].join(' ')).not.toContain('SECRET')
+  })
+})
+
+describe('failoverRpc -- a server that is slow or hangs', () => {
+  /** Small waits, so the tests run on real timers: the second server is asked after 20 ms, and a server is given up on after 200 ms. */
+  const TIMING = { hedgeAfterMs: 20, attemptTimeoutMs: 200 }
+  const request = { method: 'POST', body: BODY }
+  const noAnswer = 'did not answer in time'
+
+  /** A fetch that never answers and rejects as a real one does once its signal aborts. */
+  const hangs = async (signal: AbortSignal | null | undefined): Promise<Response> => await new Promise<Response>((_resolve, reject) => {
+    signal?.addEventListener('abort', () => { reject(signal.reason) }, { once: true })
+  })
+  const answersAfter = (ms: number, result: string) => async (): Promise<Response> => {
+    await new Promise((resolve) => setTimeout(resolve, ms))
+    return new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, result }))
+  }
+  const tick = async (): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, 5)) }
+
+  function servers (answers: Record<string, (signal: AbortSignal | null | undefined) => Promise<Response>>): { fetch: WebFetch, asked: string[], signals: Map<string, AbortSignal>, problems: Map<string, string | undefined>, note: (endpoint: string, problem: string | undefined) => void } {
+    const asked: string[] = []
+    const signals = new Map<string, AbortSignal>()
+    const problems = new Map<string, string | undefined>()
+    return {
+      asked,
+      signals,
+      problems,
+      note: (endpoint, problem) => { problems.set(endpoint, problem) },
+      fetch: async (url, init) => {
+        asked.push(url)
+        if (init?.signal != null) signals.set(url, init.signal)
+        return await answers[url]!(init?.signal)
+      }
+    }
+  }
+
+  it('asks the next server when the first has not answered in time, returns its answer, and gives up on the one that hung', async () => {
+    const s = servers({ [A]: hangs, [B]: async () => ok() })
+    const started = Date.now()
+    const response = await failoverRpc([A, B], s.fetch, s.note, TIMING)(A, request)
+    expect(await response.json()).toMatchObject({ result: '0x1' })
+    expect(Date.now() - started).toBeLessThan(TIMING.attemptTimeoutMs)
+    expect(s.asked).toEqual([A, B])
+    await tick()
+    expect(s.signals.get(A)?.aborted).toBe(true)
+    expect(s.problems.get(A)).toBe(noAnswer)
+    expect(s.problems.get(B)).toBeUndefined()
+  })
+
+  it('lets a slow first server answer before the hedged one, and cancels the hedge without calling it a problem', async () => {
+    const s = servers({ [A]: answersAfter(60, '0xa'), [B]: hangs })
+    const response = await failoverRpc([A, B], s.fetch, s.note, TIMING)(A, request)
+    expect(await response.json()).toMatchObject({ result: '0xa' })
+    expect(s.asked).toEqual([A, B])
+    await tick()
+    expect(s.signals.get(B)?.aborted).toBe(true)
+    expect(s.problems.has(B)).toBe(false)
+    expect(s.problems.get(A)).toBeUndefined()
+  })
+
+  it('frees room for the third server when two have hung, and says so of both', async () => {
+    const s = servers({ [A]: hangs, [B]: hangs, [C]: async () => ok() })
+    const response = await failoverRpc([A, B, C], s.fetch, s.note, TIMING)(A, request)
+    expect(await response.json()).toMatchObject({ result: '0x1' })
+    expect(s.asked).toEqual([A, B, C])
+    await tick()
+    expect(s.problems.get(A)).toBe(noAnswer)
+    expect(s.problems.get(B)).toBe(noAnswer)
+  })
+
+  it('passes over a server that fails at once without waiting for the hedge', async () => {
+    const s = servers({ [A]: async () => new Response('busy', { status: 503 }), [B]: async () => ok() })
+    const started = Date.now()
+    await failoverRpc([A, B], s.fetch, s.note, { hedgeAfterMs: 5_000, attemptTimeoutMs: 10_000 })(A, request)
+    expect(Date.now() - started).toBeLessThan(1_000)
+    expect(s.problems.get(A)).toBe('answered 503')
+  })
+
+  it('throws a timeout that reads as not answering in time when every server hangs', async () => {
+    const s = servers({ [A]: hangs, [B]: hangs })
+    const error = await failoverRpc([A, B], s.fetch, s.note, TIMING)(A, request).then(() => undefined, (thrown: unknown) => thrown)
+    expect(error).toBeInstanceOf(Error)
+    expect(problemOf(error)).toBe(noAnswer)
+    expect((error as Error).message).not.toContain('rpc')
+    expect(s.problems.get(A)).toBe(noAnswer)
+    expect(s.problems.get(B)).toBe(noAnswer)
+  })
+
+  it('gives up on a lone server that hangs, and on one that sends its headers and then stalls the body', async () => {
+    const stalled = async (): Promise<Response> => new Response(new ReadableStream<Uint8Array>({ start () {} }))
+    for (const answer of [hangs, stalled]) {
+      const s = servers({ [A]: answer })
+      const error = await failoverRpc([A], s.fetch, s.note, { hedgeAfterMs: 20, attemptTimeoutMs: 80 })(A, request).then(() => undefined, (thrown: unknown) => thrown)
+      expect(problemOf(error)).toBe(noAnswer)
+      expect(s.problems.get(A)).toBe(noAnswer)
+    }
+  })
+
+  it('moves on from servers whose fetch ignores the abort', async () => {
+    const ignores = async (): Promise<Response> => await new Promise<Response>(() => {})
+    const s = servers({ [A]: ignores, [B]: ignores, [C]: async () => ok() })
+    const response = await failoverRpc([A, B, C], s.fetch, s.note, TIMING)(A, request)
+    expect(await response.json()).toMatchObject({ result: '0x1' })
+  })
+
+  it('stops at once when the light client cancels the request, and calls no server at fault', async () => {
+    const s = servers({ [A]: hangs, [B]: hangs })
+    const cancel = new AbortController()
+    setTimeout(() => { cancel.abort(new Error('cancelled by the light client')) }, 40)
+    const started = Date.now()
+    await expect(failoverRpc([A, B], s.fetch, s.note, TIMING)(A, { ...request, signal: cancel.signal })).rejects.toThrow('cancelled by the light client')
+    expect(Date.now() - started).toBeLessThan(TIMING.attemptTimeoutMs)
+    await tick()
+    expect(s.signals.get(A)?.aborted).toBe(true)
+    expect(s.signals.get(B)?.aborted).toBe(true)
+    expect(s.problems.size).toBe(0)
   })
 })
 

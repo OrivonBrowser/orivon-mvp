@@ -108,6 +108,27 @@ describe('startHeliosLightClient -- servers the person named', () => {
     expect(JSON.stringify(status)).not.toContain(KEY)
   })
 
+  it('says in the log, with the address masked, which execution server did not answer in time, and that the request went on', async () => {
+    vi.mocked(createHeliosProvider).mockResolvedValue(fakeHelios() as never)
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const fetch = async (url: string, init?: RequestInit): Promise<Response> => {
+        if (String(init?.body).includes('eth_chainId') || url !== A) return answerWith('0x1')
+        return await new Promise<Response>((_resolve, reject) => { init?.signal?.addEventListener('abort', () => { reject(init.signal?.reason) }, { once: true }) })
+      }
+      const client = startHeliosLightClient(OWN, fetch as never, () => {}, 'direct', { syncWaitMs: 8_000, startAfterMs: 0, rpcHedgeMs: 20, rpcAttemptTimeoutMs: 200 })
+      await synced(client)
+      const answered = globalThis.fetch(new Request(heliosNames().executionRpc, { method: 'POST', body: rpc }))
+      await vi.advanceTimersByTimeAsync(30)
+      expect(await (await answered).json()).toMatchObject({ result: '0x1' })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(logged.mock.calls.map((call) => String(call[0]))).toContain('[verifier] an execution server (mainnet.infura.io/••••) did not answer in time; the request went to the next one')
+      expect(JSON.stringify(logged.mock.calls)).not.toContain(KEY)
+    } finally {
+      logged.mockRestore()
+    }
+  })
+
   it('reads the execution lane in Helios\'s words as the server still in use, not the first one named, once that one was dropped', async () => {
     vi.mocked(createHeliosProvider).mockImplementation((async (given: Names) => {
       await globalThis.fetch(new Request(given.executionRpc, { method: 'POST', body: rpc }))

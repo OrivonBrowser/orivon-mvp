@@ -15,7 +15,7 @@ file that imports `electron`; [`service.ts`](service.ts) takes Electron's `net` 
 as arguments, so everything else runs under plain vitest.
 
 **What it depends on.** [`../resolution/`](../resolution/), [`../ens/`](../ens/),
-[`../ipfs/`](../ipfs/), [`../swarm/`](../swarm/); from [`../../loader/`](../../loader/) the range parser, the content-type
+[`../ipfs/`](../ipfs/), [`../swarm/`](../swarm/), [`../gateways/`](../gateways/) (the fetch types, the block cache and the hedged race, reused rather than copied); from [`../../loader/`](../../loader/) the range parser, the content-type
 map and the redirect rule, and from [`../../broker/policy/`](../../broker/policy/) the address
 classifier, all reused rather than copied; `@a16z/helios`.
 

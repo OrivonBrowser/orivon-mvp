@@ -1,7 +1,7 @@
 // How long the host waits at each step, by the route its requests travel (../route-pace.ts). A mixnet opens a stream in
 // a few seconds and needs several round trips of about a second each before a first byte, so the steps that wait on the
-// network (the light client's first sync and a name's proof) are stretched by how much slower the route is; on a direct
-// connection they are what they were written as.
+// network (the light client's first sync, a name's proof, and each request the proof sends to an execution server) are
+// stretched by how much slower the route is; on a direct connection they are what they were written as.
 
 import { DIRECT_ROUTE, RouteMeter, TUNNEL_PROFILE, ceilingWait } from '../route-pace.js'
 import type { RoutePace } from '../route-pace.js'
@@ -13,11 +13,19 @@ export interface Pace {
   readonly mountTimeoutMs: number
   /** How long after the host starts the shared light client starts syncing if no `.eth` name has asked for it by then; see below. */
   readonly lightClientStartAfterMs: number
+  /** How long the light client waits on the first execution server before it asks the next too. */
+  readonly rpcHedgeMs: number
+  /** How long the light client waits on one execution server before it gives up on it; inside `mountTimeoutMs`, which waits on a proof of several of its requests. */
+  readonly rpcAttemptTimeoutMs: number
 }
 
 /** The waits below, written for a direct connection. */
 const SYNC_WAIT_MS = 8_000
 const MOUNT_TIMEOUT_MS = 45_000
+/** How long the first execution server is waited on before the next is asked too. */
+export const RPC_HEDGE_MS = 1_000
+/** How long one execution server is waited on, headers and body, before it is given up on. */
+export const RPC_ATTEMPT_TIMEOUT_MS = 10_000
 
 /**
  * The light client's first sync fetches about two megabytes from the beacon API, which a mixnet carries at some 15 to 20
@@ -31,7 +39,9 @@ export function paceOn (route: RoutePace): Pace {
   return {
     syncWaitMs: route.firstWait(SYNC_WAIT_MS),
     mountTimeoutMs: route.firstWait(MOUNT_TIMEOUT_MS),
-    lightClientStartAfterMs: route.slow() ? SLOW_ROUTE_START_AFTER_MS : 0
+    lightClientStartAfterMs: route.slow() ? SLOW_ROUTE_START_AFTER_MS : 0,
+    rpcHedgeMs: route.firstWait(RPC_HEDGE_MS),
+    rpcAttemptTimeoutMs: route.firstWait(RPC_ATTEMPT_TIMEOUT_MS)
   }
 }
 
@@ -46,6 +56,6 @@ export function routeFor (tunnelled: boolean): RoutePace {
 }
 
 /** What the light client takes of a pace. */
-export function lightClientPace (pace: Pace): { readonly syncWaitMs: number, readonly startAfterMs: number } {
-  return { syncWaitMs: pace.syncWaitMs, startAfterMs: pace.lightClientStartAfterMs }
+export function lightClientPace (pace: Pace): { readonly syncWaitMs: number, readonly startAfterMs: number, readonly rpcHedgeMs: number, readonly rpcAttemptTimeoutMs: number } {
+  return { syncWaitMs: pace.syncWaitMs, startAfterMs: pace.lightClientStartAfterMs, rpcHedgeMs: pace.rpcHedgeMs, rpcAttemptTimeoutMs: pace.rpcAttemptTimeoutMs }
 }

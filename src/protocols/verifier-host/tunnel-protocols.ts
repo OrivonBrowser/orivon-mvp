@@ -28,7 +28,7 @@ import { SWARM_NODE_IDENTITY, SWARM_NODE_WORDS } from '../swarm-node/protocol.js
 import type { HostDeps, LightClient } from './service.js'
 import type { Fetch } from '../gateways/gateways.js'
 import { lightClientFetch } from './light-client/lane-fetch.js'
-import { paceOn, routeFor } from './pace.js'
+import { lightClientPace, paceOn, routeFor } from './pace.js'
 import type { RoutePace } from '../route-pace.js'
 import { keptIn } from './swarm-chunk-memory.js'
 
@@ -85,7 +85,7 @@ function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'],
     resolvers.push(offResolver(`the Ethereum servers set in Settings cannot be used: ${reach.off}`))
     return defineProtocol(ENS, { resolvers })
   }
-  const provider = lazyProvider(() => deps.startLightClient(lightClient, reach.send, () => {}, tunnel, { syncWaitMs: paceOn(route).syncWaitMs, startAfterMs: 0 }))
+  const provider = lazyProvider(() => deps.startLightClient(lightClient, reach.send, () => {}, tunnel, { ...lightClientPace(paceOn(route)), startAfterMs: 0 }))
   const ccip = tunnelCcipDeps(fetch)
   resolvers.push(createEnsResolver({ provider, ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, ccip, DEFAULT_CCIP_LIMITS, signal) }))
   return defineProtocol(ENS, { resolvers })

@@ -31,6 +31,9 @@ const ABORT_GRACE_MS = 200
 /** Names being proven at once. The rest wait, inside their own deadline. */
 export const MAX_CONCURRENT_MOUNTS = 4
 
+/** What a mount was doing when its time ran out: the log says it, so a name that never loads says where it stopped. */
+type MountStage = 'waiting for a free slot' | 'proving the name' | 'loading its content'
+
 export interface SiteRecord {
   readonly site: MountedSite
   readonly resolver: string
@@ -222,9 +225,12 @@ export class Sites {
     const controller = new AbortController()
     const timeoutMs = typeof this.timeoutMs === 'function' ? this.timeoutMs() : this.timeoutMs
     let timer: ReturnType<typeof setTimeout> | undefined
+    let stage: MountStage = 'waiting for a free slot'
     const work = this.mounting.run(async () => {
       controller.signal.throwIfAborted()
+      stage = 'proving the name'
       const resolved = await this.registry.resolve(host, controller.signal)
+      stage = 'loading its content'
       const site = await this.registry.mount(resolved.name, resolved.records, controller.signal, partition, (gatherer) => {
         if (controller.signal.aborted) return
         try {
@@ -237,6 +243,7 @@ export class Sites {
     })
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => {
+        console.error(`[verifier] ${host} was not verified within ${String(timeoutMs / 1000)} s while ${stage}`)
         controller.abort()
         // A gatherer that gives the person a way on when its time runs out (an offer of gateways) says so in the instant the abort reaches it.
         work.then(() => {}, (error: unknown) => { if (error instanceof GatewaysOffered) reject(error) })

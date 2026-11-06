@@ -12,7 +12,8 @@ import { checkMainnet, wrongChainText } from './chain-check.js'
 import { maskEndpoint } from './endpoint-mask.js'
 import { CLOCK_AHEAD_REASON, CLOCK_BEHIND_REASON, bootstrapFetchFailed, bootstrapMissing, clockBehind, heliosError, outOfSync, serverBehindReason } from './helios-errors.js'
 import { laneNames, publicText } from './lane-names.js'
-import { failoverRpc } from './rpc-failover.js'
+import { RPC_ATTEMPT_TIMEOUT_MS, RPC_HEDGE_MS } from '../pace.js'
+import { NO_ANSWER, failoverRpc } from './rpc-failover.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
 import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
 import type { LightClient } from '../service.js'
@@ -110,13 +111,17 @@ function dispatcher (): Dispatcher {
   return dispatch
 }
 
-/** What pace.ts says about when the client starts and how long a request waits for its first sync. */
+/** What pace.ts says about when the client starts, how long a request waits for its first sync, and how long it waits on an execution server. */
 export interface LightClientPace {
   readonly syncWaitMs: number
   readonly startAfterMs: number
+  /** How long the first execution server is waited on before the next is asked too. */
+  readonly rpcHedgeMs: number
+  /** How long one execution server is waited on before it is given up on. */
+  readonly rpcAttemptTimeoutMs: number
 }
 
-export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | TunnelRoute = 'direct', pace: LightClientPace = { syncWaitMs: SYNC_WAIT_MS, startAfterMs: 0 }): LightClient {
+export function startHeliosLightClient (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route: 'direct' | TunnelRoute = 'direct', pace: LightClientPace = { syncWaitMs: SYNC_WAIT_MS, startAfterMs: 0, rpcHedgeMs: RPC_HEDGE_MS, rpcAttemptTimeoutMs: RPC_ATTEMPT_TIMEOUT_MS }): LightClient {
   if (!BLOCK_ROOT_PATTERN.test(config.checkpoint)) throw new Error(`not a checkpoint: ${config.checkpoint}`)
   const primary = config.executionRpcs[0]
   if (primary === undefined) throw new Error('no execution RPC configured')
@@ -125,10 +130,19 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
   const names = laneNames(route)
   /** The last trouble each execution server was seen in during this attempt to start, by address: a status or a code, never the address or a server's text. */
   const problems = new Map<string, string>()
-  const noteProblem = (endpoint: string, problem: string | undefined): void => { if (problem === undefined) problems.delete(endpoint); else problems.set(endpoint, problem) }
+  const noteProblem = (endpoint: string, problem: string | undefined): void => {
+    if (problem === undefined) {
+      problems.delete(endpoint)
+      return
+    }
+    problems.set(endpoint, problem)
+    // A server that hangs shows nowhere else: the request it held is answered by another, and the name loads.
+    if (problem === NO_ANSWER) console.error(`[verifier] an execution server (${maskEndpoint(endpoint)}) did not answer in time${asked.at(-1) === endpoint ? '' : '; the request went to the next one'}`)
+  }
+  const timing = { hedgeAfterMs: pace.rpcHedgeMs, attemptTimeoutMs: pace.rpcAttemptTimeoutMs }
   /** The execution servers in use: all of them, less those found on another chain. */
   let asked = config.executionRpcs
-  const lane: Lane = { ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(asked, fetch, noteProblem), fetch }
+  const lane: Lane = { ...names, realConsensus: config.consensusRpc, viaExecution: failoverRpc(asked, fetch, noteProblem, timing), fetch }
   // A client of this route started before is replaced: only one lives in a process.
   const lanes = dispatcher().lanes
   const earlier = lanes.findIndex((other) => other.execution === lane.execution)
@@ -181,7 +195,7 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
     if (config.ownServers?.execution !== true) return
     const { usable, wrong } = await checkMainnet(config.executionRpcs, fetch)
     asked = usable
-    lane.viaExecution = failoverRpc(asked, fetch, noteProblem)
+    lane.viaExecution = failoverRpc(asked, fetch, noteProblem, timing)
     for (const { endpoint, chainId } of wrong) {
       if (reportedWrongChain.has(endpoint)) continue
       reportedWrongChain.add(endpoint)
