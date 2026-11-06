@@ -271,3 +271,32 @@ img.tile-icon { border-radius: 4px; object-fit: contain; }
   background: rgba(13, 14, 20, 0.82);
 }
 .report-bug svg { width: 14px; height: 14px; flex: none; }
+
+/* The button that tells a newer release is on offer, at the page's top left: the accent fill makes it the one thing on the page to act
+   on, white on it reads on any picture, and the ring and shadow keep its edge on a bright one. The dashboard's 96px of top padding keeps
+   every row clear of it, so it never covers a tile; it sits in the document next to .report-bug, so nothing paints after it. */
+.update-pill {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px 0 10px;
+  border-radius: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: var(--waccent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.45);
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.update-pill[hidden] { display: none; }
+.update-pill:hover {
+  background: color-mix(in srgb, var(--waccent) 82%, white);
+  border-color: rgba(255, 255, 255, 0.5);
+}
+.update-pill svg { width: 15px; height: 15px; flex: none; }

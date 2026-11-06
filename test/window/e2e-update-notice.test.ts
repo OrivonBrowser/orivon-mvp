@@ -2,7 +2,8 @@
 // panel under the address bar, and never as an operating-system box or notification. GitHub is replaced by the test
 // seam (ORIVON_TEST_UPDATE_RELEASE) and the look runs when a case asks (`__orivonDevUpdateCheckNow`), since every
 // test launch forces the checks off. The pages a download button opens (the release page, the start page of
-// latest.orivonstack.eth) are asserted by their addresses: the network is a black hole.
+// latest.orivonstack.eth) are asserted by their addresses: the network is a black hole. The "Update Orivon" button on
+// the new-tab page follows the release on offer, whether or not the person was told of it.
 import { existsSync, readFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -42,11 +43,11 @@ interface State { lastCheckedAt?: number, lastFoundVersion?: string, lastNotifie
 interface Launched { app: ElectronApplication, chrome: Page, userData: string, state: () => State | undefined }
 
 /** Starts with the page in front given the keyboard, as a window in use is, unless `inUse` is false. */
-async function launched (options: { inUse?: boolean, args?: string[], reuseProfile?: string } = {}): Promise<Launched> {
+async function launched (options: { inUse?: boolean, args?: string[], reuseProfile?: string, release?: string } = {}): Promise<Launched> {
   const app = await launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER, ...(options.args ?? [])],
-    env: { ORIVON_TEST_UPDATE_RELEASE: TAG },
+    env: { ORIVON_TEST_UPDATE_RELEASE: options.release ?? TAG },
     ...(options.reuseProfile === undefined ? {} : { reuseProfile: options.reuseProfile })
   })
   expect(await waitFor(() => { try { findChrome(app); return true } catch { return false } })).toBe(true)
@@ -61,6 +62,20 @@ async function launched (options: { inUse?: boolean, args?: string[], reuseProfi
   }
   return { app, chrome, userData, state }
 }
+
+const dashboards = (app: ElectronApplication): Page[] => app.windows().filter((w) => w.url().includes('/newtab/') && !w.isClosed())
+
+/** Starts on the new tab the window opens with, drawn, and (unless `inUse` is false) with the keyboard in it, as a window in use has. */
+async function launchedOnNewTab (options: { inUse?: boolean, release?: string } = {}): Promise<Launched & { dashboard: Page }> {
+  const base = await launched({ inUse: false, ...(options.release === undefined ? {} : { release: options.release }) })
+  expect(await waitFor(() => dashboards(base.app).length === 1)).toBe(true)
+  const dashboard = dashboards(base.app)[0] as Page
+  await dashboard.waitForSelector('html[data-settled="1"]')
+  if (options.inUse !== false) await focusWebContents(base.app, dashboard.url())
+  return { ...base, dashboard }
+}
+
+const pillHidden = async (page: Page): Promise<boolean> => await page.evaluate(() => (document.querySelector('#update-pill') as HTMLElement | null)?.hidden ?? true)
 
 /** Runs one scheduled look and resolves when it is done. It asks the person, so it resolves once the question is answered. */
 const lookStarted = async (app: ElectronApplication): Promise<void> => {
@@ -234,6 +249,114 @@ run('never looks or asks from a private session', async () => {
     expect(await app.evaluate(() => typeof (globalThis as unknown as { __orivonDevUpdateCheckNow?: unknown }).__orivonDevUpdateCheckNow)).toBe('undefined')
     await delay(ABSENCE_SETTLE_MS)
     expect(await questionGone(app)).toBe(true)
+    expect(await noNativeDialogs(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+run('shows an Update Orivon button at the top left of a new tab once a release is found, keeps it after Not now and in a new tab opened later, and a press asks the question again', async () => {
+  const { app, chrome, dashboard, state } = await launchedOnNewTab()
+  try {
+    // Nothing found yet: the button is not drawn.
+    expect(await pillHidden(dashboard)).toBe(true)
+
+    await lookStarted(app)
+    await waitQuestion(app)
+    // It appears on the page that is open, with no reload, as soon as the release is found.
+    await dashboard.waitForSelector('#update-pill:not([hidden])')
+    const pill = dashboard.locator('#update-pill')
+    expect((await pill.textContent())?.trim()).toBe('Update Orivon')
+    expect(await pill.getAttribute('title')).toMatch(/^Orivon 99\.0\.0 is available\. You have \d+\.\d+\.\d+/)
+    expect(await pill.getAttribute('title')).not.toContain('v99')
+    expect(await pill.getAttribute('aria-label')).toContain(await pill.getAttribute('title') as string)
+    const box = await pill.boundingBox()
+    // At the page's top left, small: a pill, not a banner.
+    expect(box?.x).toBeGreaterThanOrEqual(8)
+    expect(box?.x).toBeLessThanOrEqual(24)
+    expect(box?.y).toBeGreaterThanOrEqual(8)
+    expect(box?.y).toBeLessThanOrEqual(24)
+    expect(box?.height).toBeLessThanOrEqual(36)
+
+    // Not now dismisses the question, counts the version as told, and leaves the button.
+    await answerQuestion(app, 'Not now')
+    expect(await waitFor(() => state()?.lastNotifiedVersion === TAG)).toBe(true)
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
+    expect(await pillHidden(dashboard)).toBe(false)
+    // The version was told, and a look that runs again asks nothing: only the button asks.
+    await lookDone(app)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await questionGone(app)).toBe(true)
+
+    await focusWebContents(app, dashboard.url())
+    await pill.click()
+    const again = await readQuestion(await waitQuestion(app))
+    expect(again.title).toBe('Orivon 99.0.0 is available')
+    expect(again.buttons).toEqual(['Not now', 'Download from GitHub', 'Download from latest.orivonstack.eth'])
+    expect(mainOutput(app)).toContain('[self-update] asking about v99.0.0 again (update button)')
+    await answerQuestion(app, 'Not now')
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
+    expect(await pillHidden(dashboard)).toBe(false)
+    expect(state()?.lastNotifiedVersion).toBe(TAG)
+
+    // A new tab opened afterwards shows it too.
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { newTab: () => void } }).orivonShell.newTab() })
+    expect(await waitFor(() => dashboards(app).length === 2)).toBe(true)
+    const second = dashboards(app).find((page) => page !== dashboard) as Page
+    await second.waitForSelector('#update-pill:not([hidden])')
+    expect(await noNativeDialogs(app)).toEqual([])
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+run('a download button on the question the update button asked opens its page in a new tab, and the update button stays', async () => {
+  const { app, chrome, dashboard, state } = await launchedOnNewTab()
+  try {
+    await lookStarted(app)
+    await waitQuestion(app)
+    await answerQuestion(app, 'Not now')
+    expect(await waitFor(() => state()?.lastNotifiedVersion === TAG)).toBe(true)
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
+    await focusWebContents(app, dashboard.url())
+    await dashboard.click('#update-pill')
+    await waitQuestion(app)
+    await answerQuestion(app, 'Download from latest.orivonstack.eth')
+    expect((await waitForTab(chrome, { address: LATEST_PAGE })).ok).toBe(true)
+    expect(await waitFor(async () => await questionGone(app))).toBe(true)
+    // Downloading leaves the button too: the running version is what removes it.
+    expect(await pillHidden(dashboard)).toBe(false)
+    expect(await noNativeDialogs(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+run('hides the button on the page that is open when the update check is switched off in Settings, and draws it again when it is switched on', async () => {
+  const { app, chrome, dashboard } = await launchedOnNewTab({ inUse: false })
+  try {
+    await lookDone(app)
+    await dashboard.waitForSelector('#update-pill:not([hidden])')
+    const settings = await openSettingsAbout(app, chrome)
+    const check = settings.locator('#row-updates-check input[type=checkbox]')
+    await check.waitFor()
+    await check.click()
+    expect(await waitFor(async () => await pillHidden(dashboard))).toBe(true)
+    await check.click()
+    expect(await waitFor(async () => !(await pillHidden(dashboard)))).toBe(true)
+    expect(await noNativeDialogs(app)).toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+run('draws no button on a new tab when the newest release is not newer than the running one', async () => {
+  const { app, dashboard } = await launchedOnNewTab({ inUse: false, release: 'v0.0.1' })
+  try {
+    await lookDone(app)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await pillHidden(dashboard)).toBe(true)
     expect(await noNativeDialogs(app)).toEqual([])
   } finally {
     await closeElectron(app)

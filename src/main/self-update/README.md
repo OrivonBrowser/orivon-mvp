@@ -5,7 +5,8 @@ using. `update-check.ts` is the decision table (is a look due, is a version newe
 the reason a look failed. `update-notice.ts` is the rules: the release found is kept until the running version
 catches up, the person is asked once per version, and a version counts as told only once its question was on screen and
 answered or dismissed.
-`update-ask.ts` is the question's words and buttons. `update-window.ts` picks the window to ask in and acts on the
+`update-ask.ts` is the question's words and buttons. `update-pill.ts` is what the new-tab page's update button shows (the
+rule, and the source `ipc/newtab-ipc.ts` reads). `update-window.ts` picks the window to ask in and acts on the
 answer; `update-check-runner.ts` is the real I/O (the state file, the GitHub fetch, `createBrowserUpdate`, which
 `shell/shell-services.ts` builds once per process); `install-update-notice.ts` is the shell installer that schedules
 the look and retries while a release waits for a window. `updates-domain.ts` is what Settings may ask: to look now,
@@ -25,8 +26,8 @@ services). The rest, `update-test-seam.ts` included, imports nothing from Electr
 `../shell/shell-installers.ts` (the installer type `install-update-notice.ts` fills), `../pages/internal-ipc.ts` (the
 domain type `updates-domain.ts` fills), `../os/install-default-browser-ask.ts` (`askPlace`, `RETRY_MS`),
 `../os/windows-store.ts`, `../route/own-requests.ts` and `../../broker/adapters/atomic-write.ts`. The shell depends on
-this directory in turn (`shell-services.ts` builds the notice, `shell-installers.ts` runs the installer), as `os/` and
-the shell do on each other.
+this directory in turn (`shell-services.ts` builds the notice, `shell-installers.ts` runs the installer, `index.ts` hands
+`update-pill.ts` to `ipc/newtab-ipc.ts`), as `os/` and the shell do on each other.
 
 **What it must never import.** [`../consent/`](../consent/) or [`../install/`](../install/): a browser update and an
 app grant are different questions, asked in different dialogs, under different rules.
@@ -45,7 +46,17 @@ dismisses it. Both download buttons are guarded, so a click or key meant for the
 page; the way out is not. It is never an operating-system notification or message box (`npm run check:native-dialogs` refuses
 both). With no window in use (minimised, hidden, behind the welcome screen or restore bar, another question open, full
 screen, or a kiosk) it waits and asks when one is, retrying every few seconds. There is no install button: nothing
-here downloads or installs a release. The look does not wait for the answer, so an hourly look still runs while a
+here downloads or installs a release.
+
+**The update button.** While a release newer than the running one is on offer, a button "Update Orivon" sits at the top
+left of the new-tab page, in every window of the profile, and stays until the running version catches up: "Not now",
+Escape or a closed tab dismiss the question and leave the button. It is accent-filled, and its tooltip names both
+versions ("Orivon 0.0.12 is available. You have 0.0.11."). A press asks the same question again in the window it was
+pressed in (`askAgain`), though the version was already told: the two download buttons are in the panel, so the button
+opens no page of its own. It follows the offer while the page is open (a release found, the version catching up) and
+hides when `updates.check` is switched off; it is never drawn in a kiosk, in a private session or in a Microsoft Store
+install. A press while a question is open does nothing, and one that finds no window in use (full screen, another
+question) logs why and asks nothing. The question on its own stays once per version. The look does not wait for the answer, so an hourly look still runs while a
 question stays open in a tab the person left.
 
 **State.** `update-check-state.json` in the profile holds `lastCheckedAt`, `lastFoundVersion` (the newest release the
@@ -56,7 +67,8 @@ write it at once, so `update-notice.ts` runs the writes one after another, each 
 
 **What a report says.** Every step logs a line starting `[self-update]` to the console log that `orivon://report`
 carries: a look that reached GitHub (newest tag, running version), one that did not (and why), a release found, a wait
-for a window (once per reason), the question asked, and the answer.
+for a window (once per reason), the question asked, and the answer; a press of the update button logs `asking about <tag> again (update button)`, or
+why it asked nothing.
 
 **Tests.** `ORIVON_TEST_UPDATE_RELEASE=<tag>` stands a release in for GitHub's answer and
 `__orivonDevUpdateCheckNow()` runs one scheduled look, in a test build only (`update-test-seam.ts`;

@@ -378,3 +378,94 @@ describe('"Check now"', () => {
     expect(s.notice.offer()).toMatchObject({ latest: 'v0.0.12' })
   })
 })
+
+describe('asking again, from the update button', () => {
+  it('asks about a release the person was already told about, and logs that the button asked', async () => {
+    const s = setup({ state: { lastCheckedAt: NOW - HOUR, lastFoundVersion: 'v0.0.12', lastNotifiedVersion: 'v0.0.12' } })
+    await s.notice.runScheduled()
+    await s.notice.tryAsk()
+    expect(s.ask).not.toHaveBeenCalled()
+    await s.notice.askAgain()
+    expect(s.ask).toHaveBeenCalledExactlyOnceWith('window-1', { version: 'v0.0.12', url: RELEASE_URL })
+    expect(s.logs).toContain('asking about v0.0.12 again (update button)')
+    expect(s.notice.offer()).toMatchObject({ latest: 'v0.0.12', pending: false })
+    expect(s.disk().lastNotifiedVersion).toBe('v0.0.12')
+  })
+
+  it('does nothing while no release is on offer, and never rejects', async () => {
+    const s = setup({ release: null })
+    await expect(s.notice.askAgain()).resolves.toBeUndefined()
+    await s.notice.runScheduled()
+    await expect(s.notice.askAgain()).resolves.toBeUndefined()
+    expect(s.place).not.toHaveBeenCalled()
+    expect(s.ask).not.toHaveBeenCalled()
+  })
+
+  it('does nothing while a question is already open, and says so', async () => {
+    let answer: () => void = () => {}
+    const s = setup({ ask: async () => { await new Promise<void>((resolve) => { answer = resolve }); return SEEN } })
+    await s.notice.runScheduled()
+    await vi.waitFor(() => { expect(s.ask).toHaveBeenCalledTimes(1) })
+    await s.notice.askAgain()
+    expect(s.ask).toHaveBeenCalledTimes(1)
+    expect(s.logs.some((line) => line.includes('a question is already open'))).toBe(true)
+    answer()
+    await settled()
+    expect(s.disk().lastNotifiedVersion).toBe('v0.0.12')
+  })
+
+  it('counts a release not yet told as told once the question it asked was on screen', async () => {
+    const s = setup({ place: () => BUSY })
+    await s.notice.runScheduled()
+    expect(s.notice.offer()?.pending).toBe(true)
+    const heard: boolean[] = []
+    s.notice.onChange((offer) => { heard.push(offer?.pending === true) })
+    s.place.mockImplementation(() => IN_USE)
+    await s.notice.askAgain()
+    expect(s.notice.offer()).toMatchObject({ pending: false })
+    expect(s.disk().lastNotifiedVersion).toBe('v0.0.12')
+    expect(heard).toEqual([false])
+  })
+
+  it('leaves the release as it was when the question closed before it was drawn', async () => {
+    const s = setup({ place: () => BUSY, ask: async () => UNSEEN })
+    await s.notice.runScheduled()
+    s.place.mockImplementation(() => IN_USE)
+    await s.notice.askAgain()
+    expect(s.notice.offer()).toMatchObject({ pending: true })
+    expect(s.disk().lastNotifiedVersion).toBeUndefined()
+    expect(s.logs.some((line) => line.includes('closed before it was shown'))).toBe(true)
+  })
+
+  it('asks even after the automatic asks gave up for this look, and does not spend their budget', async () => {
+    const s = setup({ ask: async () => UNSEEN })
+    await s.notice.runScheduled()
+    await settled()
+    for (let tries = 0; tries < 6; tries++) await s.notice.tryAsk()
+    expect(s.ask).toHaveBeenCalledTimes(3)
+    await s.notice.askAgain()
+    expect(s.ask).toHaveBeenCalledTimes(4)
+    s.clock.now += HOUR
+    await s.notice.runScheduled()
+    await settled()
+    expect(s.ask).toHaveBeenCalledTimes(5)
+  })
+
+  it('waits and says why when there is no window in use, and asks nothing', async () => {
+    const s = setup({ state: { lastCheckedAt: NOW - HOUR, lastFoundVersion: 'v0.0.12', lastNotifiedVersion: 'v0.0.12' }, place: () => BUSY })
+    await s.notice.runScheduled()
+    await expect(s.notice.askAgain()).resolves.toBeUndefined()
+    expect(s.ask).not.toHaveBeenCalled()
+    expect(s.logs).toContain('the update button could not ask now: the window is minimised')
+  })
+
+  it('never rejects when asking where to ask throws or the question cannot be shown', async () => {
+    const s = setup({ state: { lastCheckedAt: NOW - HOUR, lastFoundVersion: 'v0.0.12', lastNotifiedVersion: 'v0.0.12' }, place: () => { throw new Error('Object has been destroyed') } })
+    await s.notice.runScheduled()
+    await expect(s.notice.askAgain()).resolves.toBeUndefined()
+    const broken = setup({ state: { lastCheckedAt: NOW - HOUR, lastFoundVersion: 'v0.0.12', lastNotifiedVersion: 'v0.0.12' }, ask: async () => { throw new Error('no panel') } })
+    await broken.notice.runScheduled()
+    await expect(broken.notice.askAgain()).resolves.toBeUndefined()
+    expect(broken.logs.some((line) => line.includes('could not ask about v0.0.12: no panel'))).toBe(true)
+  })
+})

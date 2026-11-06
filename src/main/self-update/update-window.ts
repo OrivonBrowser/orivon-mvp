@@ -7,6 +7,7 @@ import type { AskQuestion } from '../shell/question/ask-question.js'
 import type { WindowRegistry } from '../shell/window-registry.js'
 import { readUpdateChoice, updateQuestion } from './update-ask.js'
 import type { Installable, UpdateChoice } from './update-ask.js'
+import { bareVersion } from './github-release-version.js'
 import type { ReleaseInfo } from './update-check.js'
 import { LATEST_RELEASE_NAME, LATEST_RELEASE_URL } from './release-url.js'
 import type { AskOutcome, PlaceResult } from './update-notice.js'
@@ -46,7 +47,7 @@ export async function askInWindow (
   place: AskPlace, release: ReleaseInfo, running: string, log: (line: string) => void, ask: AskQuestion = askQuestion
 ): Promise<AskOutcome> {
   let up = false
-  const spec = updateQuestion(release.version.replace(/^v/i, ''), running.replace(/^v/i, ''), INSTALLABLE)
+  const spec = updateQuestion(bareVersion(release.version), bareVersion(running), INSTALLABLE)
   const { response, clicked } = await ask({ window: place.window, tabId: place.tabId }, spec, { onShown: () => { up = true } })
   const seen = up || clicked === true
   const choice = readUpdateChoice(response, INSTALLABLE)

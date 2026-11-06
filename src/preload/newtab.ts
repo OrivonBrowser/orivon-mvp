@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { Bookmark } from '../main/browsing/bookmarks.js'
-import { NEWTAB_BACKGROUND_CHANGED_CHANNEL, NEWTAB_COMMAND_CHANNEL } from '../main/channels.js'
+import { NEWTAB_BACKGROUND_CHANGED_CHANNEL, NEWTAB_COMMAND_CHANNEL, NEWTAB_UPDATE_CHANGED_CHANNEL } from '../main/channels.js'
 import type { NewTabCommand } from '../main/ipc/newtab-ipc.js'
 import { exposeOrdinaryTabSurface } from './ordinary-tab.js'
 import { inMainFrame } from './frame.js'
@@ -46,6 +46,11 @@ if (topFrame && expectedUrl !== undefined && location.href === expectedUrl) {
     /** What this profile's new tab draws behind the page: the Orivon picture, nothing, or the bytes of the person's own (src/main/newtab/background-store.ts); the page checks the shape. */
     getBackground: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getBackground' }),
     onBackgroundChanged: (listener: () => void): void => { ipcRenderer.on(NEWTAB_BACKGROUND_CHANGED_CHANNEL, () => { listener() }) },
+    /** The newer Orivon release on offer, as `{ latest, current }`, or null for none (src/main/self-update/update-pill.ts); the page checks the shape. */
+    getUpdate: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'getUpdate' }),
+    onUpdateChanged: (listener: () => void): void => { ipcRenderer.on(NEWTAB_UPDATE_CHANGED_CHANNEL, () => { listener() }) },
+    /** The update button's press: main asks about the release on offer in this window. It takes no argument, so the page names no release. */
+    askUpdate: (): void => { send({ type: 'askUpdate' }) },
     hideFeatured: async (id: string): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'hideFeatured', id }),
     unpinFeatured: async (id: string): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'unpinFeatured', id }),
     showHiddenFeatured: async (): Promise<unknown> => await ipcRenderer.invoke(NEWTAB_COMMAND_CHANNEL, { type: 'showHiddenFeatured' }),

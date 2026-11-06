@@ -426,6 +426,34 @@ for (const scheme of SCHEMES) {
     }
   }, QA_TEST_TIMEOUT_MS)
 
+  it.skipIf(!underVirtualDisplay())(`the new tab shows the Update Orivon button at its top left while a release is on offer, readable on the picture and on none (${scheme})`, async () => {
+    const { app } = await launchShell({ scheme, env: { ORIVON_TEST_UPDATE_RELEASE: 'v99.0.0' } })
+    try {
+      await runPhase('visual state of the update button', async (check) => {
+        expect(await waitFor(() => dashboardOf(app) !== undefined)).toBe(true)
+        const dashboard = dashboardOf(app) as Page
+        await dashboard.waitForSelector('html[data-settled="1"]')
+        await stubNativeDialogs(app)
+        // The window is not given the keyboard, so the look finds the release and asks nothing: only the button shows.
+        await app.evaluate(async () => { await (globalThis as unknown as { __orivonDevUpdateCheckNow?: () => Promise<void> }).__orivonDevUpdateCheckNow?.() })
+        await dashboard.waitForSelector('#update-pill:not([hidden])')
+        check('the button names the release and the running version in its tooltip', /^Orivon 99\.0\.0 is available\. You have \d+\.\d+\.\d+/.test(await dashboard.getAttribute('#update-pill', 'title') ?? ''))
+        await state(check, app, `update-pill-${scheme}`, {
+          expected: 'The new-tab dashboard as it is with no release on offer, and in its top left corner, 16px in from the window edges, a small accent-filled (indigo) pill with an upward arrow in a circle and the white text "Update Orivon"; it is whole, vertically centred in its own height, clear of the Orivon mark and the search box, and the Report a bug pill is still at the bottom right.',
+          action: 'Pointed the update check at a release newer than the running one and ran the check with the window not in use, so no question opened.'
+        })
+        await dashboard.evaluate(() => { document.documentElement.dataset['background'] = 'none' })
+        await state(check, app, `update-pill-no-picture-${scheme}`, {
+          expected: 'The dashboard on its plain base colour (no picture), with the same indigo "Update Orivon" pill in its top left corner, whole and readable.',
+          action: 'Switched the page to the no-picture background, as the Settings choice does.'
+        })
+        check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
+      })
+    } finally {
+      await closeElectron(app)
+    }
+  }, QA_TEST_TIMEOUT_MS)
+
   it(`the dashboard and toolbar still fit in a narrow window (${scheme})`, async () => {
     const { app } = await launchShell({ scheme })
     try {

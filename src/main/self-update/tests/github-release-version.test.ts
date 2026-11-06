@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareVersions, parseVersion } from '../github-release-version.js'
+import { bareVersion, compareVersions, parseVersion } from '../github-release-version.js'
 
 // Direct tests for the semver subset in ../github-release-version.ts.
 //
@@ -119,5 +119,13 @@ describe('compareVersions', () => {
     expect(values.every((v) => v !== null)).toBe(true)
     const sorted = [...values].sort((a, b) => compareVersions(a!, b!)).map((v) => `${v!.major}.${v!.minor}.${v!.patch}`)
     expect(sorted).toEqual(['1.0.0', '2.0.0', '3.0.0'])
+  })
+})
+
+describe('bareVersion', () => {
+  it('drops a tag\'s leading v, in either case, and leaves a bare version alone', () => {
+    expect(bareVersion('v0.0.12')).toBe('0.0.12')
+    expect(bareVersion('V1.2.3-rc.1')).toBe('1.2.3-rc.1')
+    expect(bareVersion('0.0.12')).toBe('0.0.12')
   })
 })
