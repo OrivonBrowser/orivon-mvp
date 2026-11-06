@@ -68,7 +68,7 @@ it('draws the person\'s own picture on every new tab, then no picture, then the 
     expect(await waitFor(() => dashboards(app).length === 1)).toBe(true)
     const open = dashboards(app)[0] as Page
     expect(await waitFor(async () => await kindOf(open) === 'orivon')).toBe(true)
-    expect(await pictureOf(open)).toContain('intro-background')
+    expect(await pictureOf(open)).toContain('new-tab-background')
 
     const picked = join(await pictureDir(), 'my picture.png')
     await writeFile(picked, PNG)
@@ -100,7 +100,7 @@ it('draws the person\'s own picture on every new tab, then no picture, then the 
 
     await choice.selectOption('orivon')
     expect(await waitFor(async () => await kindOf(open) === 'orivon')).toBe(true)
-    expect(await pictureOf(open)).toContain('intro-background')
+    expect(await pictureOf(open)).toContain('new-tab-background')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectronApp(app)
