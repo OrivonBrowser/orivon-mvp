@@ -1,7 +1,7 @@
 import type { Bookmark } from '../../main/browsing/bookmarks.js'
 import { circle, closeIcon, faviconElement, path, svg } from '../icons.js'
 import { FEATURED, iconUrl } from './featured.js'
-import { pictureUrlOf, readBackground, type PageBackground } from './background-model.js'
+import { pictureUrlOf, readBackground, readBrightness, type PageBackground } from './background-model.js'
 import { featuredRow, NO_PREFS, readPrefs, type FeaturedPrefs, type FeaturedTile } from './featured-model.js'
 import { readUpdate, updateLabel, type PageUpdate } from './update-model.js'
 
@@ -17,6 +17,8 @@ interface OrivonNewTab {
   showHiddenFeatured: () => Promise<unknown>
   getBackground: () => Promise<unknown>
   onBackgroundChanged: (listener: () => void) => void
+  getBrightness: () => Promise<unknown>
+  onBrightnessChanged: (listener: () => void) => void
   getUpdate: () => Promise<unknown>
   onUpdateChanged: (listener: () => void) => void
   askUpdate: () => void
@@ -108,9 +110,10 @@ async function decoded (src: string): Promise<void> {
 }
 
 /**
- * The page's own picture is chosen on the root element (style.css), and follows the Settings choice while the page is open.
- * It resolves once the picture is on the page and has decoded (at once for none), which is what "settled" waits for: the welcome
- * screen captures this page behind its popup. A new picture is decoded before it replaces the old one, so no frame shows the base colour between.
+ * The page's own picture is chosen on the root element (style.css), and follows the Settings choice while the page is open,
+ * as does how bright it is drawn. It resolves once the picture is on the page and has decoded (at once for none), which is what
+ * "settled" waits for: the welcome screen captures this page behind its popup. A new picture is decoded before it replaces the old one,
+ * so no frame shows the base colour between, and the brightness is in place before the first picture is shown.
  */
 function startBackground (shell: OrivonNewTab): Promise<void> {
   const root = document.documentElement
@@ -140,12 +143,22 @@ function startBackground (shell: OrivonNewTab): Promise<void> {
     root.style.removeProperty('--new-tab-picture')
     root.dataset['background'] = background.kind
     if (before !== undefined) URL.revokeObjectURL(before)
-    // The Orivon picture is a file of the page's own bundle: the style sheet names it, and its address is read back from there.
-    const bundled = background.kind === 'orivon' ? pictureUrlOf(getComputedStyle(root).backgroundImage) : null
+    // The Orivon picture is a file of the page's own bundle: the style sheet names it on the layer that draws the picture, and its address is read back from there.
+    const bundled = background.kind === 'orivon' ? pictureUrlOf(getComputedStyle(root, '::before').backgroundImage) : null
     if (bundled !== null) await decoded(bundled)
   }
+  let latestBrightness = 0
+  const dim = async (): Promise<void> => {
+    const turn = ++latestBrightness
+    let percent = readBrightness(undefined)
+    try {
+      percent = readBrightness(await shell.getBrightness())
+    } catch {}
+    if (turn === latestBrightness) root.style.setProperty('--new-tab-brightness', String(percent / 100))
+  }
   shell.onBackgroundChanged(() => { void draw() })
-  return draw()
+  shell.onBrightnessChanged(() => { void dim() })
+  return dim().then(draw)
 }
 
 /**

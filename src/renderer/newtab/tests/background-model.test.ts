@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { pictureUrlOf, readBackground } from '../background-model.js'
+import { pictureUrlOf, readBackground, readBrightness } from '../background-model.js'
 
 const bytes = Uint8Array.from([1, 2, 3])
 
@@ -19,6 +19,16 @@ describe('readBackground', () => {
     { kind: 'custom', mime: 'image/png', bytes: new Uint8Array(0) }
   ])('draws the Orivon picture for an answer that is not well formed: %j', (answer) => {
     expect(readBackground(answer)).toEqual({ kind: 'orivon' })
+  })
+})
+
+describe('readBrightness', () => {
+  it('reads a whole number of percent within the setting\'s bounds, ends included', () => {
+    for (const percent of [20, 55, 100, 180]) expect(readBrightness(percent)).toBe(percent)
+  })
+
+  it.each([undefined, null, '60', 60.5, NaN, Infinity, 19, 181, 0, -50, {}, [60], true])('draws the picture as it is for an answer that is not well formed: %j', (answer) => {
+    expect(readBrightness(answer)).toBe(100)
   })
 })
 
