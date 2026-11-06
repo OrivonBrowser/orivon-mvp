@@ -41,6 +41,42 @@ export function renderChoice (control: Extract<Control, { type: 'choice' }>, sta
   return select
 }
 
+/** A slider over an `int` setting: the readout follows the thumb as it moves, and the value is saved when the person lets go (a key press is a release). */
+export function renderRange (control: Extract<Control, { type: 'range' }>, state: SettingsState, id: string): HTMLElement {
+  const description = state.description(control.key)
+  const spec = description?.kind === 'int' ? description : undefined
+  const saved = (): number => {
+    const value = state.value(control.key)
+    return typeof value === 'number' ? value : spec?.default ?? 0
+  }
+  const shown = (value: number): string => `${String(value)}${control.unit}`
+  // The type and the bounds first: a range input clamps whatever value it is given against the bounds it has by then.
+  const input = h('input', { type: 'range', className: 'range', id, min: String(spec?.min ?? 0), max: String(spec?.max ?? 100), step: String(control.step), value: String(saved()) })
+  const readout = h('span', { className: 'range-value', textContent: shown(saved()) })
+  // The value is said by the slider itself (with its unit); the text beside it would be read a second time.
+  readout.setAttribute('aria-hidden', 'true')
+  const show = (value: number): void => {
+    readout.textContent = shown(value)
+    input.setAttribute('aria-valuetext', shown(value))
+  }
+  show(saved())
+  // Moving the thumb again is unfinished, so a change made elsewhere does not redraw the page under the hand.
+  input.addEventListener('input', () => {
+    delete input.dataset['settled']
+    show(Number(input.value))
+  })
+  input.addEventListener('change', () => {
+    // A slider that was just used keeps the keyboard, and a focused input that is not settled holds every redraw (main.ts).
+    input.dataset['settled'] = 'true'
+    void state.set(control.key, Number(input.value)).then((error) => {
+      if (error === null) return
+      input.value = String(saved())
+      show(saved())
+    })
+  })
+  return h('span', { className: 'range-control' }, input, readout)
+}
+
 /** A switch that cannot act shows what is really happening: off when the setting has no effect, its saved value when it is locked. */
 export function toggleState (control: Extract<Control, { type: 'toggle' }>, state: SettingsState): { readonly checked: boolean, readonly disabled: boolean } {
   const disabled = control.disabled?.(state) === true
@@ -153,6 +189,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
     case 'choice': field = renderChoice(control, state, controlId); break
     case 'toggle': field = renderToggle(control, state, controlId); break
     case 'text': field = renderText(control, state, controlId); break
+    case 'range': field = renderRange(control, state, controlId); break
     case 'pageList': field = renderPageList(control, state, controlId); break
     case 'action': {
       const button = renderAction(control, state)
@@ -183,7 +220,7 @@ export function renderRow (row: Row, state: SettingsState): HTMLElement {
       onclick: () => { void state.reset(control.key) }
     })
     : null
-  const labelsControl = control.type === 'choice' || control.type === 'toggle' || control.type === 'text' || control.type === 'pageList'
+  const labelsControl = control.type === 'choice' || control.type === 'toggle' || control.type === 'text' || control.type === 'range' || control.type === 'pageList'
   // A control that is more than one compact field (several checkboxes, a
   // list of apps, the usage-statistics block) stacks under its own label
   // full width, rather than squeezed beside it at the row's right edge.

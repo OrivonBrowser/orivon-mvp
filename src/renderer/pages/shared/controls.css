@@ -47,6 +47,29 @@
 /* One ring, not two: an invalid field that has focus shows the focus ring in the error colour. */
 .text[aria-invalid="true"]:focus-visible { outline-color: var(--wdanger-text); }
 
+/* A slider with its value beside it, as wide as a select so a column of rows keeps one right edge. The thumb and the filled
+   part of the track take the accent in both themes. */
+.range-control {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 240px;
+}
+.range {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  accent-color: var(--waccent);
+  cursor: pointer;
+}
+.range:focus-visible { outline: 2px solid var(--waccent-text); outline-offset: 2px; }
+.range-value {
+  min-width: 4ch;
+  text-align: right;
+  color: var(--wink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
 .switch {
   position: relative;
   display: inline-block;
