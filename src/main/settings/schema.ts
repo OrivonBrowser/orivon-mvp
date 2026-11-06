@@ -36,6 +36,8 @@ const SPECS = {
   },
   // What the new-tab page shows behind its search box. 'custom' needs the picture copied into the profile (src/main/newtab/background-store.ts); without it the page shows the Orivon one. It is the last option on purpose: arrowing through a drop-down fires a change at each step, and passing 'custom' asks for a file.
   'appearance.newTabBackground': { kind: 'enum', options: ['orivon', 'none', 'custom'], default: 'orivon', labels: { orivon: 'The Orivon picture', none: 'No picture', custom: 'Your own picture' } },
+  // How bright the new-tab picture is drawn, in percent: 100 is the picture as it is, less is darker, more is brighter. It dims the picture alone, never the page's text, and applies to the Orivon picture and the person's own alike.
+  'appearance.newTabBrightness': { kind: 'int', default: 100, min: 20, max: 180 },
   'sidePanel.side': { kind: 'enum', options: ['right', 'left'], default: 'right' },
   // Which list an address-bar search goes to. The Web3 engine and the Web2 engine are kept apart, so switching modes loses neither choice.
   'search.mode': { kind: 'enum', options: SEARCH_MODES, default: DEFAULT_SEARCH_MODE, labels: { web3: 'Web3', web2: 'Web2' } },

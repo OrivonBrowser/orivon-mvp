@@ -12,13 +12,16 @@ type Choice = 'orivon' | 'custom' | 'none'
 
 interface Fake extends BackgroundSettings {
   value: () => Choice
+  /** Changes the brightness setting the way the settings store does, telling its listeners. */
+  setBrightness: (next: number) => void
   /** What the settings file's state says: true when it could not be read. */
   unreadable: boolean
 }
 
-/** Just enough of the settings store: one value that tells its listeners. */
+/** Just enough of the settings store: the background choice and the brightness, which tell their listeners. */
 function fakeSettings (initial: Choice = 'orivon', locked = false): Fake {
   let value = initial
+  let brightness = 100
   const listeners = new Set<(change: { key: string, value: unknown }) => void>()
   const apply = (next: Choice): void => {
     if (next === value) return
@@ -27,7 +30,12 @@ function fakeSettings (initial: Choice = 'orivon', locked = false): Fake {
   }
   const fake = {
     unreadable: false,
-    get: () => value,
+    get: (key: string) => key === 'appearance.newTabBrightness' ? brightness : value,
+    setBrightness: (next: number) => {
+      if (next === brightness) return
+      brightness = next
+      for (const listener of listeners) listener({ key: 'appearance.newTabBrightness', value: brightness })
+    },
     set: (_key: string, next: unknown) => {
       if (locked) return { ok: false, reason: 'locked' }
       apply(next as Choice)
@@ -196,6 +204,56 @@ describe('BackgroundStore: what the page draws', () => {
     await store.install(source)
     return store
   }
+})
+
+describe('BackgroundStore: brightness', () => {
+  it('reads the setting, and tells its own listeners about a change of it and no one else', () => {
+    const settings = fakeSettings()
+    const store = new BackgroundStore(copy, settings)
+    let brightnessTold = 0
+    let pictureTold = 0
+    store.onBrightnessChange(() => { brightnessTold += 1 })
+    store.onChange(() => { pictureTold += 1 })
+    expect(store.brightness()).toBe(100)
+    settings.setBrightness(60)
+    expect(store.brightness()).toBe(60)
+    expect([brightnessTold, pictureTold]).toEqual([1, 0])
+  })
+
+  it('does not tell the brightness listeners about a change of picture, nor ask the page for the picture again', async () => {
+    const settings = fakeSettings()
+    const store = new BackgroundStore(copy, settings)
+    let brightnessTold = 0
+    let pictureTold = 0
+    store.onBrightnessChange(() => { brightnessTold += 1 })
+    store.onChange(() => { pictureTold += 1 })
+    settings.set('appearance.newTabBackground', 'none')
+    await store.install(source)
+    expect([brightnessTold, pictureTold]).toEqual([0, 2])
+  })
+
+  it('keeps the picture and its copy when the brightness changes', async () => {
+    const settings = fakeSettings()
+    const store = new BackgroundStore(copy, settings)
+    await store.install(source)
+    settings.setBrightness(150)
+    expect(existsSync(copy)).toBe(true)
+    expect(await store.current()).toMatchObject({ kind: 'custom', mime: 'image/png' })
+  })
+
+  it('stops telling a listener that has been removed, and goes on telling the others when one fails', () => {
+    const settings = fakeSettings()
+    const store = new BackgroundStore(copy, settings)
+    let removed = 0
+    let told = 0
+    const off = store.onBrightnessChange(() => { removed += 1 })
+    store.onBrightnessChange(() => { throw new Error('a disposed page') })
+    store.onBrightnessChange(() => { told += 1 })
+    settings.setBrightness(80)
+    off()
+    settings.setBrightness(90)
+    expect([removed, told]).toEqual([1, 2])
+  })
 })
 
 describe('BackgroundStore: reconcile', () => {
