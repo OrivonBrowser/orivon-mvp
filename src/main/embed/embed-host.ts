@@ -17,6 +17,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { requestPartition, withPartition, withRoute } from '../verifier/partition.js'
 import { holdForVerifier } from '../verifier/verifier-access.js'
+import { refuseWhenProxySees } from '../route/verifier-name-guard.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
 import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
 import { embedPartitionFor, guestRequestAllowed, hardenGuest, showsLocalPageOn } from './embed-guard.js'
@@ -104,6 +105,9 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       // A callback Electron waits on is called exactly once: a rejection
       // refuses, the way every refusal here fails closed.
       .then((allowed) => !allowed, () => true)
+      // A session that follows the system's proxy would send a name the verifier serves to that proxy; a routed app's session is on a tunnel instead.
+      .then(async (cancel) => cancel || (!isRouted(appOrigin) && await refuseWhenProxySees(embedSession, details.url).then(() => false, () => true)))
+      .catch(() => true)
       .then(async (cancel) => {
         // The verifier host sleeps when unused: a shown page that names one of its hosts waits for it to listen.
         if (!cancel) await holdForVerifier(details.url).catch(() => {})

@@ -3,6 +3,7 @@ import { requestSlot } from '../overlays/tab-slots.js'
 import { upgradeTracker } from '../privacy/https-fallback.js'
 import { partitionAfterFileBlock } from '../local-files/partition.js'
 import { onionRefusals } from '../route/onion-guard.js'
+import { proxyRefusals } from '../route/verifier-name-guard.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { forgetLoadErrors, watchLoadErrors, type LoadErrorDeps } from './load-error-watch.js'
 
@@ -14,6 +15,7 @@ export const installLoadErrors: ShellInstaller = {
       ask: requestSlot,
       claimed: (id, url, code) => upgradeTracker.claims(id, url, code),
       onionRefused: (id, url) => onionRefusals.claims(id, url),
+      proxyRefused: (id, url) => proxyRefusals.claims(id, url),
       movesTab: (partition, url, code) => partitionAfterFileBlock(url, code, true, partition) !== undefined
     }
     services.tabLifecycle.subscribe({

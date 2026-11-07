@@ -18,6 +18,8 @@
 // the person's own SOCKS5 tunnel is unaffected. They come after the rules already given, so a test run's own mapping of an
 // onion name to a local server (the specs that prove a session never asks for one) still wins.
 
+import { exemptFromEnvironmentProxy } from './no-proxy.js'
+
 /** Every `.localhost` name, to the IPv4 loopback address (the port is kept). */
 const LOCALHOST_CLAUSE = 'MAP *.localhost 127.0.0.1'
 
@@ -31,4 +33,21 @@ export function composeResolverRules (parts: { readonly devClauses: string, read
     .map((clause) => clause.trim())
     .filter((clause) => clause !== '')
     .join(',')
+}
+
+/** The part of Electron's command line this writes to. */
+export interface CommandLineSwitches {
+  readonly getSwitchValue: (name: string) => string
+  readonly appendSwitch: (name: string, value: string) => void
+}
+
+/**
+ * Makes every name a protocol serves answer on this computer: the resolver rules go on the command line, and a proxy Chromium
+ * finds in the environment (Linux with no desktop proxy setting) is told not to carry these names. Every other system reads its
+ * own proxy settings, which no switch can exempt: see `../route/verifier-name-guard.ts`. The hosts and local nodes Orivon starts
+ * inherit the variable, and none of them asks a proxy about a name a protocol serves.
+ */
+export function answerNamesHere (commandLine: CommandLineSwitches, env: Record<string, string | undefined>, parts: { readonly devClauses: string, readonly port: number, readonly suffixes: readonly string[] }): void {
+  commandLine.appendSwitch('host-resolver-rules', composeResolverRules({ ...parts, existing: commandLine.getSwitchValue('host-resolver-rules') }))
+  exemptFromEnvironmentProxy(env, parts.suffixes)
 }

@@ -20,6 +20,8 @@ export interface LoadErrorDeps {
   readonly claimed?: (contentsId: number, url: string, code: number) => boolean
   /** The load was cancelled because its address is an onion address and the tab's session does not go through the person's own SOCKS5 tunnel, which the sheet then says. */
   readonly onionRefused?: (contentsId: number, url: string) => boolean
+  /** The load was cancelled because its name is one the verifier serves and the tab's session would send it to the system's proxy. */
+  readonly proxyRefused?: (contentsId: number, url: string) => boolean
   /** The tab is about to move to another session and load this address there, so the failure is not the page's last word. Asked with the partition the tab is in now. */
   readonly movesTab?: (partition: string | undefined, url: string, code: number) => boolean
 }
@@ -55,7 +57,7 @@ export function watchLoadErrors (contents: WebContents, deps: LoadErrorDeps): vo
       tabId: found.tabId,
       slot: 'center',
       overlay: LOAD_ERROR_OVERLAY,
-      payload: { code, name: isErrorName(name) ? name : '', ...(deps.onionRefused?.(contents.id, url) === true ? { onion: true } : {}) },
+      payload: { code, name: isErrorName(name) ? name : '', ...(deps.onionRefused?.(contents.id, url) === true ? { onion: true } : deps.proxyRefused?.(contents.id, url) === true ? { proxy: true } : {}) },
       closed: () => { pending = undefined }
     })
   })
