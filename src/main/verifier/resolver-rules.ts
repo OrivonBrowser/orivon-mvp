@@ -45,7 +45,7 @@ export interface CommandLineSwitches {
  * Makes every name a protocol serves answer on this computer: the resolver rules go on the command line, and a proxy Chromium
  * finds in the environment (Linux with no desktop proxy setting) is told not to carry these names. Every other system reads its
  * own proxy settings, which no switch can exempt: see `../route/verifier-name-guard.ts`. The hosts and local nodes Orivon starts
- * inherit the variable, and none of them asks a proxy about a name a protocol serves.
+ * inherit the variable; none of them is known to request a name a protocol serves.
  */
 export function answerNamesHere (commandLine: CommandLineSwitches, env: Record<string, string | undefined>, parts: { readonly devClauses: string, readonly port: number, readonly suffixes: readonly string[] }): void {
   commandLine.appendSwitch('host-resolver-rules', composeResolverRules({ ...parts, existing: commandLine.getSwitchValue('host-resolver-rules') }))

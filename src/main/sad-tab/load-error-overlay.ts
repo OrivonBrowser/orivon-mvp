@@ -3,8 +3,8 @@
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { slotClosed } from '../overlays/tab-slots.js'
 import { ADDRESS_LIMIT } from './sad-tab-text.js'
-import { isErrorName, loadErrorText } from './load-error-text.js'
-import type { LoadRefusal } from './load-error-text.js'
+import { isErrorName, isLoadRefusal, loadErrorText } from './load-error-text.js'
+import type { LoadRefusal } from '../route/load-refusals.js'
 import { LOAD_ERROR_OVERLAY } from './load-error-watch.js'
 
 export interface LoadErrorView {
@@ -17,9 +17,9 @@ export interface LoadErrorView {
 
 function asPayload (payload: unknown): { code: number, name: string, refusal: LoadRefusal | undefined } | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
-  const { code, name, onion, proxy } = payload as { code?: unknown, name?: unknown, onion?: unknown, proxy?: unknown }
+  const { code, name, refusal } = payload as { code?: unknown, name?: unknown, refusal?: unknown }
   if (typeof code !== 'number' || !Number.isInteger(code) || code >= 0 || (name !== '' && !isErrorName(name))) return undefined
-  return { code, name, refusal: onion === true ? 'onion' : proxy === true ? 'proxy' : undefined }
+  return { code, name, refusal: isLoadRefusal(refusal) ? refusal : undefined }
 }
 
 export const loadErrorOverlay: OverlayDef = {

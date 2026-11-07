@@ -148,7 +148,7 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
   // An origin set to off while the whole browser is on the tunnel is fetched on the system's proxy; otherwise the default session, which then is the tunnel's, whose front this request signs in to.
   const direct = ownRouteFor(new URL(url).origin) === 'direct' ? ownDirectSession() : undefined
   const used = direct ?? profile
-  // A name the verifier serves is never sent to a proxy: the one session this request is made in is asked first.
+  // A request for a name the verifier serves is refused when the session it is made in would send it to a proxy: that session is asked first.
   if (namesVerifierHost(url)) await refuseWhenProxySees((used ?? (await import('electron')).session.defaultSession) as Session, url)
   return await new Promise<FetchResponse>((resolve, reject) => {
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used as Session }) })

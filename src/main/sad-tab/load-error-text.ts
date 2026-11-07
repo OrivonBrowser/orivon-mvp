@@ -1,7 +1,8 @@
 // What the sheet over a page that failed to load says, as a fixed table by Chromium's network error code. The only
 // other text on it is the tab's own address and the error's short name, which is checked to be one.
 
-import { PROXY_REFUSAL_ADVICE, PROXY_WOULD_SEE_NAME } from '../route/verifier-name-guard.js'
+import type { LoadRefusal } from '../route/load-refusals.js'
+import { PLAIN_NAME_REFUSED, PROXY_NOT_KNOWN, PROXY_REFUSAL_ADVICE, PROXY_WOULD_SEE_NAME } from '../route/verifier-name-guard.js'
 
 export interface LoadErrorText {
   readonly title: string
@@ -46,18 +47,21 @@ const BY_CODE: ReadonlyMap<number, LoadErrorText> = new Map([
 const ONION_NEEDS_TOR: LoadErrorText = { title: UNREACHABLE, body: 'An onion address can be reached only through a Tor tunnel, so it was not looked up. To open it, set Tor\'s SOCKS5 address in Settings, then Tunnels, and send this site through it.' }
 
 const NAME_NOT_OPENED: LoadErrorText = { title: 'This name was not opened', body: `${PROXY_WOULD_SEE_NAME} ${PROXY_REFUSAL_ADVICE}` }
+const NAME_NOT_KNOWN: LoadErrorText = { title: 'This name was not opened', body: `${PROXY_NOT_KNOWN} Trying again may help. ${PROXY_REFUSAL_ADVICE}` }
+const NAME_NOT_PLAIN: LoadErrorText = { title: 'This name opens only over https', body: PLAIN_NAME_REFUSED }
 
 const DEFAULT_TEXT: LoadErrorText = { title: 'This page couldn\'t be loaded', body: 'Something went wrong while loading it. Trying again may help.' }
 
-/**
- * Why Orivon cancelled a load before anything was sent: `onion`, because its address is an onion address and the tab's session does
- * not go through the person's own SOCKS5 tunnel; `proxy`, because its name is one the verifier serves and the session's proxy would see it.
- */
-export type LoadRefusal = 'onion' | 'proxy'
+/** Whether `value` is one of the reasons Orivon cancels a load before sending it (`../route/load-refusals.ts`). */
+export function isLoadRefusal (value: unknown): value is LoadRefusal {
+  return value === 'onion' || value === 'would-see' || value === 'unsure' || value === 'plain'
+}
 
+const BY_REFUSAL: Readonly<Record<LoadRefusal, LoadErrorText>> = { onion: ONION_NEEDS_TOR, 'would-see': NAME_NOT_OPENED, unsure: NAME_NOT_KNOWN, plain: NAME_NOT_PLAIN }
+
+/** `refusal`: why Orivon cancelled the load before anything was sent, when it did; the sheet then says that instead of naming an extension. */
 export function loadErrorText (code: number, refusal?: LoadRefusal): LoadErrorText {
-  if (refusal === 'onion') return ONION_NEEDS_TOR
-  if (refusal === 'proxy') return NAME_NOT_OPENED
+  if (refusal !== undefined) return BY_REFUSAL[refusal]
   return BY_CODE.get(code) ?? DEFAULT_TEXT
 }
 

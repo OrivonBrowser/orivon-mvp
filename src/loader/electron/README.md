@@ -8,7 +8,8 @@ main).
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/),
 [`../cache/`](../cache/), [`../serve/`](../serve/), [`../reach/`](../reach/) and
-[`../fetch/`](../fetch/) (the `verifier-origin.ts` exception, `fetch/budget.ts`'s type).
+[`../fetch/`](../fetch/) (the `verifier-origin.ts` exception, `fetch/budget.ts`'s type) and
+[`../../main/route/verifier-name-guard.ts`](../../main/route/verifier-name-guard.ts) (`fetch.ts` asks whether the session's proxy would carry a name the verifier serves before it fetches it).
 
 **What it must never import.** [`../../shim/`](../../shim/), as the parent README says. This is
 the one folder in this directory that imports `electron`, and all of it is tied to Electron.

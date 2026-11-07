@@ -11,7 +11,6 @@ const { net, session } = await import('electron')
 const { netFetchJson } = await import('../score-provider-client.js')
 const { setLookupSessionSource, setDirectLookupSource } = await import('../../route/lookup-session.js')
 const { setOwnRequests } = await import('../../route/own-requests.js')
-const { noteProxySet } = await import('../../route/proxy-answers.js')
 
 const ROUTE = { name: 'route' } as unknown as Session
 const APP = 'https://app.example'
@@ -105,7 +104,6 @@ describe('netFetchJson while the whole browser is on the tunnel', () => {
 describe('netFetchJson, for a provider the verifier serves', () => {
   const resolveProxy = vi.mocked(session.defaultSession.resolveProxy)
   // The session remembers its answers for a few seconds; each test sets its own.
-  beforeEach(() => { noteProxySet(session.defaultSession) })
 
   it('is not asked when the session it would be asked in uses a proxy, which would see the name', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})

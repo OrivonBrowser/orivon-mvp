@@ -83,7 +83,7 @@ and in tabs opened from it, runs in that tunnel's profile until the tab closes, 
 | `src/main/pages/serve.ts` | The renderer's dev server on loopback, in a source run only | Answering an `orivon://` page in development | Loopback |
 | `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
 | `src/main/route/dead-end.ts` | Listens on a random `127.0.0.1` port, accepts and closes; reads and sends nothing | The place a session is pointed at to stop it (a session made while the whole browser is on the tunnel, one that could not be pointed, the requests made with no session), so a stopped request fails at once and no other listener on this computer is shown a destination name | Loopback |
-| `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions, and of every other session the runtime creates while the whole browser is on the tunnel: the front, or the dead end (the moment a session is made or switched on, before the front is had); also `app.setProxy` for the requests made with no session | Where a session takes the tunnel; it forgets a session's remembered proxy answers on either side of each `setProxy` | Routed (it makes sessions take it) |
+| `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions, and of every other session the runtime creates while the whole browser is on the tunnel: the front, or the dead end (the moment a session is made or switched on, before the front is had); also `app.setProxy` for the requests made with no session | Where a session takes the tunnel; it marks a session as changing from before each `setProxy` until the call ends (`proxy-answers.ts`) | Routed (it makes sessions take it) |
 | `src/main/route/route-subsystem.ts` | Nothing of its own: wires the sessions, `app.setProxy` and the system-proxy session that T20 and the lookups about a site set to off use; registers the guard that keeps a name the verifier serves from a proxy the system sets, on every website session | Starting the routes | Routed (it makes the rest take the tunnel) |
 | `src/main/self-update/update-check-runner.ts` | GitHub's releases API | Looking for a newer release | Tunnelled while the whole browser is on it (`ownFetch`): the check goes through the tunnel or does not happen. Not routed otherwise |
 | `src/main/sessions/web-context-host.ts` | Nothing from the session: its proxy is a port nothing listens on | A web context answers `https` itself (through `reach`), refuses `http` and WebSocket | Takes the app's route through `reach`; the session's proxy only confines it |
@@ -136,26 +136,41 @@ passes the name on unresolved and a resolver that is asked for one learns which 
 ## Names the verifier serves, behind a proxy the system sets
 
 A name the verifier serves (`.eth`, any other top-level domain a protocol serves, and `.orivon`) is answered on this
-computer: the resolver rules send it to the verifier's loopback server. A session on a tunnel bypasses those suffixes at its front. A session
-that follows the system's proxy cannot: `{ mode: 'system' }` takes no bypass list, so the proxy would be asked to carry
-`CONNECT name.eth:443`, would learn the name, and could answer a plain `http://name.eth/` with a page of its own that loads
-under the `.eth` address (the HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse). Two things
-keep the names from it ([T90](security-model.md)):
+computer: the resolver rules send it to the verifier's loopback server. Those rules bind Chromium's own resolution
+only; a proxy is asked before the resolver is. The default session and a website's own session are given the suffixes as a
+bypass at their front when they are on a tunnel; an app's routed session and a temporary routed tab are not, and send the
+name to the front, which is the person's own tunnel and not the system's proxy. A session that follows the system's proxy cannot
+be given a bypass list (`{ mode: 'system' }` takes none), so the proxy would be asked to carry `CONNECT name.eth:443`, would
+learn the name, and could answer a plain `http://name.eth/` with a page of its own that loads under the `.eth` address (the
+HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse). Two things keep the names from it
+([T90](security-model.md)):
 
 - **A proxy of the environment (Linux, no desktop proxy setting).** Before Chromium starts, `src/main/verifier/no-proxy.ts`
   appends `.suffix` for every routed suffix to `no_proxy` and `NO_PROXY`, after whatever the person wrote. Chromium then
-  resolves those names direct. A program Orivon forks inherits the variable and asks no proxy about these names either.
-  A PAC address in `auto_proxy` is not measured; the guard below covers it either way.
-- **Any proxy the session would use.** `src/main/route/verifier-name-guard.ts` is registered on the default session and on every
-  website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a temporary
-  routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. It asks `session.resolveProxy` for the
-  URL and cancels the request unless the answer is exactly `DIRECT`; a session that cannot be asked cancels as well. The
-  answer is kept three seconds per host and scheme and forgotten whenever Orivon sets the session's proxy. A session on a
-  tunnel, or held shut, is skipped. The requests Orivon makes itself ask the same question first and fail with the same
-  words: the loader's reads, a tab icon, the Web3 Score provider and the fetch of the system-proxy session. So does the
-  session of an app shown in a `<webview>`, unless the app is routed. A session that does not say which proxy it would use
-  within two seconds counts as one that would use a proxy. A main-frame load that is cancelled shows a sheet that says the
-  system proxy would have seen the name, and a line a minute in the log says so too, without the name.
+  resolves those names direct. A program Orivon starts inherits the variable, including one opened with `openExternal` or
+  `openPath`, and asks no proxy about these names either. A proxy found with a script (`auto_proxy`) is not exempted this
+  way; the guard below covers it.
+- **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
+  on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
+  temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held
+  shut, is not the system's to answer for and is skipped; a session whose proxy is being set counts as following the system,
+  since the tunnel recorded for it may not be the one it has. For a request to a name the verifier serves, the guard:
+  1. waits until no change of the session's proxy is under way (ten seconds at most);
+  2. cancels a request for plain `http:` or `ws:` whatever the session says, except for the developer names of a run that
+     serves them (`isDevEthName`): the verifier answers TLS only, so such a request never reached a page, and a proxy
+     auto-configuration script is shown the whole URL of a plain request, which the question the guard asks (it has no path)
+     cannot repeat;
+  3. asks `session.resolveProxy` for the origin and cancels the request unless the answer is exactly `DIRECT`. The answer is
+     never kept: only asks that overlap share one question, and an answer asked across a change of the session's proxy is
+     asked again (three times at most);
+  4. cancels the request when the session does not say within fifteen seconds, which is long enough for a proxy found by
+     automatic detection or a script, or when anything in the check throws. A held request is never sent.
+
+  The requests Orivon makes itself ask the same question first and fail with the same words: the loader's reads, a tab icon,
+  the Web3 Score provider and the fetch of the system-proxy session (`direct-fetch.ts`). So does the session of an app shown
+  in a `<webview>`, unless the app is routed. A main-frame load that is cancelled shows a sheet (`load-refusals.ts` holds why):
+  one that says the system proxy would have seen the name, one that says Orivon could not tell whether it would, and one that
+  says the name opens over https only; a line a minute of each kind in the log says so too, without the name.
 
 **Not guarded.** The requests made with no session (`app.setProxy`'s) and those of a utility process are not asked about
 beforehand; this build makes none of them for a name the verifier serves. The session that shows a saved local page and an
@@ -163,8 +178,14 @@ app's child host are not website sessions, so a name those ask for is not asked 
 is asked about at its first address only, so a redirect to such a name from a provider the person chose is not caught at
 that hop (a tab icon is, since it follows redirects one by one).
 
+**What remains for `https` and `wss`.** A script that answers the same host differently from one call to the next (by the
+time, by a counter, by load) can send the request to a proxy after the guard was told `DIRECT`. The proxy then learns the
+name from `CONNECT name.eth:443`; it holds no certificate that would be accepted for it, so it cannot serve a page under the
+name. This is the whole of what the guard leaves open for these schemes, and it needs a script written that way.
+
 **What this leaves.** Behind a proxy that GNOME or KDE settings, Windows or macOS provide, a name the verifier serves does not
-open in this build, and the sheet says why ([`known-limitations.md`](../known-limitations.md)).
+open while the proxy would carry it, and the sheet says why. Adding the routed suffixes (`*.eth` and the rest) to the proxy's
+exceptions opens them ([`known-limitations.md`](../known-limitations.md)).
 
 ## What the scan cannot see
 

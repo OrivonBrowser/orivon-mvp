@@ -14,7 +14,6 @@ vi.mock('electron', () => ({
 
 const { net, session } = await import('electron')
 const { setOwnRequests } = await import('../../../main/route/own-requests.js')
-const { noteProxySet } = await import('../../../main/route/proxy-answers.js')
 const { MAX_REDIRECTS, electronFetch, fetchFromVerifier, netFetch, redirectRefusal } = await import('../fetch.js')
 
 const requestMock = vi.mocked(net.request)
@@ -152,7 +151,6 @@ describe('electronFetch', () => {
 describe('netFetch, for a name the verifier serves', () => {
   const resolveProxyMock = vi.mocked(session.defaultSession.resolveProxy)
   // The session remembers its answers for a few seconds; each test sets its own.
-  beforeEach(() => { noteProxySet(session.defaultSession) })
   afterEach(() => { resolveProxyMock.mockReset() })
 
   it('is not sent when the session it is made in would use a proxy, and fails in the words the sheet uses', async () => {
@@ -195,7 +193,6 @@ describe('fetchFromVerifier, for a name the verifier serves', () => {
   const resolveProxyMock = vi.mocked(session.defaultSession.resolveProxy)
   const fetchMock = vi.mocked(net.fetch)
   const init = (): { method: string, headers: Record<string, string>, signal: AbortSignal } => ({ method: 'GET', headers: {}, signal: new AbortController().signal })
-  beforeEach(() => { noteProxySet(session.defaultSession) })
   afterEach(() => { resolveProxyMock.mockReset(); fetchMock.mockReset() })
 
   it('is not sent when the default session would use a proxy', async () => {

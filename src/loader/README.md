@@ -16,7 +16,8 @@ prompt / reject).
 | [`electron/`](electron/) | The Electron-specific machinery: `protocol.handle`, `net`, DNS |
 
 **What it depends on.** [`src/contracts/`](../contracts/) and [`src/broker/`](../broker/)
-(for storage and the grant ledger).
+(for storage and the grant ledger); `electron/` also reaches [`src/main/route/verifier-name-guard.ts`](../main/route/verifier-name-guard.ts)
+(whether the session's proxy would carry a name the verifier serves, before it is fetched).
 
 **What it must never import.** [`src/shim/`](../shim/).
 

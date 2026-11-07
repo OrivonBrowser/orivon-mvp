@@ -18,7 +18,6 @@ vi.mock('electron', () => ({
 
 const { net, session } = await import('electron')
 const { fetchFaviconDataUrlCached, isSafeFaviconUrl, MAX_FAVICON_REDIRECTS, readCapped } = await import('../favicon-fetch.js')
-const { noteProxySet } = await import('../../route/proxy-answers.js')
 const { fakeIncomingMessage, mockRequestOnce, PNG_BYTES, PUBLIC_PAGE, requests, respondOk } = await import('./favicon.test-helpers.js')
 
 /** The network path, with nothing it fetches kept: every call below that
@@ -528,7 +527,6 @@ describe('the icon of a page the verifier serves', () => {
   const resolveProxy = vi.mocked(session.defaultSession.resolveProxy)
   const PAGE = 'https://page.eth/'
   // The session remembers its answers for a few seconds; each test sets its own.
-  beforeEach(() => { noteProxySet(session.defaultSession) })
 
   it('is not requested when the session would send the name to a proxy', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
