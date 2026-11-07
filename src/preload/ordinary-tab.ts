@@ -7,6 +7,7 @@ import { exposeChildHostConnect } from './expose-child-host-connect.js'
 import { installEmbedEventRelay } from './embed-event-relay.js'
 import { installFormWatch } from './form-watch.js'
 import { installManifestHintWatcher } from './manifest-hint.js'
+import { installNavigationSource } from './navigation-source.js'
 import { installNoDragRegions } from './no-drag-regions.js'
 import { installPermissionQuery } from './permission-query.js'
 import { installWebGpuAsk } from './webgpu-ask.js'
@@ -33,6 +34,8 @@ export function exposeOrdinaryTabSurface (): void {
   // A tab out of sight reads as hidden to its page, as in Chrome -- ./page-visibility.ts. Before everything that
   // exposes anything, so it is in place before any page script reads the state.
   installPageVisibility()
+  // Notes what starts each of the page's navigations, for the referrer main sends when it moves the tab to another session.
+  installNavigationSource()
   exposeOrivon()
   // ADR-0055, ADR-0061: the page's getDisplayMedia asks for Orivon's picker; this world arms the ticket and starts the
   // real call the wrapper makes in the page's world. A tab's page and a new-tab page that went to a site get it; an

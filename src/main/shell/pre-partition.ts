@@ -6,12 +6,16 @@ import { partitionAfterFileBlock, partitionChanged } from './tab-partition.js'
 import { repartitionView } from './tab-parking.js'
 import { sessionRoutesLike } from '../route/site-routes.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
+import { referrerOfInitiator, topInitiatorUrl } from './initiator-referrer.js'
+import type { InitiatorFrame } from './initiator-referrer.js'
 import type { TabRecord } from './tab-types.js'
 
 interface NavigationEvent {
   readonly url: string
   readonly isMainFrame: boolean
   readonly defaultPrevented: boolean
+  /** The frame that started the navigation: absent on a redirect, null for one no frame started. */
+  readonly initiator?: InitiatorFrame | null | undefined
   preventDefault: () => void
 }
 
@@ -27,10 +31,15 @@ interface NavigationEvent {
  * `did-navigate`, where nothing of the app's is exposed to the page it reaches, unless the tab's session
  * would send the address less tunnelled than the shared one: then the first request must not
  * commit there either.
+ *
+ * Stopping a navigation loses the referrer Chromium would have sent with it, so a page's link, form or
+ * script navigation is re-issued with the one the initiating page would have sent (`./initiator-referrer.ts`):
+ * never more than Chromium would have, and none when the page cannot say. A redirect carries none, since the
+ * `Referrer-Policy` of the response that redirected is not visible here.
  */
 export function repartitionBeforeCommit (wc: WebContents, id: string, record: TabRecord, shown: () => boolean): void {
   const view = record.view
-  const handle = (event: NavigationEvent): void => {
+  const handle = (event: NavigationEvent, withReferrer: boolean): void => {
     // A new-tab page moves with its first address, unless the tab has a tunnel choice: then even a link of the page itself is a first request.
     if (!event.isMainFrame || event.defaultPrevented || !shown() || (record.isDashboardTab && record.tunnelChoice === undefined) || record.internalPage !== null) return
     if (isNavigationHeld(wc)) return
@@ -43,13 +52,15 @@ export function repartitionBeforeCommit (wc: WebContents, id: string, record: Ta
     if (swap.to === undefined && (isTemporaryRoutePartition(record.partition) || sessionRoutesLike(record.partition, url))) return
     const nextPartition = swap.to
     event.preventDefault()
-    // Not in the event: a view closed from inside its own navigation event is not safe to close.
+    const initiatorUrl = withReferrer ? topInitiatorUrl(event.initiator) : undefined
+    const target = event.url
+    // Not in the event: a view closed from inside its own navigation event is not safe to close. The page's note of the navigation was sent before it began, so it is here by this turn.
     setImmediate(() => {
-      if (record.view === view && !wc.isDestroyed()) repartitionView(id, record, url, nextPartition)
+      if (record.view === view && !wc.isDestroyed()) repartitionView(id, record, url, nextPartition, false, referrerOfInitiator(wc, initiatorUrl, target))
     })
   }
-  wc.on('will-navigate', handle)
-  wc.on('will-redirect', handle)
+  wc.on('will-navigate', (event) => { handle(event, true) })
+  wc.on('will-redirect', (event) => { handle(event, false) })
 }
 
 /**

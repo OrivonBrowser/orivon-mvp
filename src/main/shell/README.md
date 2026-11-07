@@ -282,6 +282,18 @@ headers: [`sign-in-identity-headers.ts`](sign-in-identity-headers.ts) rewrites t
 `../../preload/sign-in-identity.ts` deletes `navigator.userAgentData` at document start. The
 preload runs in a tab's main frame only, so a sign-in page in another site's iframe keeps it.
 
+**[`navigation-referrer.ts`](navigation-referrer.ts): a navigation moved to another session keeps its referrer, never more than Chromium sends.**
+`pre-partition.ts` cancels a page's link, form or script navigation that would commit in the wrong session and loads the address
+again there, which would drop the referrer. The top frame's preload ([`../../preload/navigation-source.ts`](../../preload/navigation-source.ts))
+sends a note as each navigation begins: what started it (a link, a form or a script, with the `rel` and `referrerpolicy` of the
+element) and the `<meta name="referrer">` values the document holds. [`initiator-referrer.ts`](initiator-referrer.ts) keeps the latest
+note of each tab; [`page-referrer-policy.ts`](page-referrer-policy.ts) keeps the `Referrer-Policy` header of each document a tab loaded,
+which no DOM property shows; and `navigation-referrer.ts` combines them in the order Chromium does (`rel="noreferrer"`, the link's
+`referrerpolicy`, the document's policy) into the policy and address `loadURL` passes, which Chromium applies to the target as for any
+navigation: the fragment and credentials stripped, the origin only where the policy says so. Whatever cannot be told sends none: a
+redirect, whose redirecting response is not visible here, a frame that is not the top one, a response that was not seen (a service
+worker's), a header and a tag that disagree, a link in a closed shadow root, a value with white space around it.
+
 **[`attach-view.ts`](attach-view.ts): a view goes into a window through `attachShown`, never a bare `addChildView`.** On
 Electron 44 (X11 and Wayland alike) a `WebContentsView` that left a window and is added back stays hidden: its page
 reads `visibilityState` `hidden` and never runs `requestAnimationFrame`, though it is attached, sized and focused. It
