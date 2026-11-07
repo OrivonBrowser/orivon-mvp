@@ -90,7 +90,7 @@ let ipfsLookupServiceChoice: () => boolean = () => true
 /** The Ethereum servers the light client asks: Orivon's, or the person's. Read at each host start and each time a view is drawn. */
 const ethServers = new EthServersSource()
 /** Puts the host to sleep so that its next request rebuilds its config. Set once the host exists. */
-let idleHost: () => void = () => {}
+export let idleHost: () => void = () => {}
 /** The routes, published after this subsystem starts: read when the host's config is built. */
 let routesOf: () => RouteService | undefined = () => undefined
 
@@ -181,7 +181,7 @@ function changed (): void {
   for (const listener of listeners) listener()
 }
 
-function installCertificateCheck (target: Session): void {
+export function installCertificateCheck (target: Session): void {
   target.setCertificateVerifyProc((request, callback) => {
     const verdict = verifierCertificateVerdict(request.hostname, request.certificate.fingerprint, fingerprint, (host) => BUILTIN_ADDRESSES.routesToVerifier(host))
     if (verdict === REJECT) console.error(refusalNote(request.hostname, request.certificate.fingerprint, fingerprint, hostDown !== undefined ? `down: ${hostDown}` : hostAsleep ? 'asleep' : 'running'))
