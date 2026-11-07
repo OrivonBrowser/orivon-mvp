@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
 import type { WebContents } from 'electron'
 import type { OverlayHandler, OverlayWindow } from '../../overlays/overlay-types.js'
+import type { LoadRefusal } from '../../route/load-refusals.js'
 import type { SlotAsk } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
 import { loadErrorOverlay } from '../load-error-overlay.js'
@@ -19,13 +20,35 @@ describe('what the load-error sheet says', () => {
   })
 
   it('says an onion address opens only through a Tor tunnel, and where to set one up, for a load cancelled for being one', () => {
-    const text = loadErrorText(-20, true)
+    const text = loadErrorText(-20, 'onion')
     expect(text.title).toBe('This site can\'t be reached')
     expect(text.body).toContain('onion address')
     expect(text.body).toContain('Tor')
     expect(text.body).toContain('Settings, then Tunnels')
     expect(text.body).not.toMatch(/extension|content filter/)
     expect(loadErrorText(-20)).toEqual({ title: 'This page was blocked', body: 'An extension or a content filter stopped this page from loading.' })
+  })
+
+  it('says the system proxy would see a name the verifier serves, and when it opens, for a load cancelled for that', () => {
+    const text = loadErrorText(-20, 'would-see')
+    expect(text.title).toBe('This name was not opened')
+    expect(text.body).toBe('Your system proxy would see this name, so Orivon did not open it. Names like this open when your system has no proxy, when the proxy\'s exceptions list names like *.eth, or with a tunnel turned on.')
+    expect(text.body).not.toMatch(/extension|content filter|onion/)
+  })
+
+  it('says it could not tell, apart from saying the proxy would see the name, and where the exceptions go', () => {
+    const text = loadErrorText(-20, 'unsure')
+    expect(text.title).toBe('This name was not opened')
+    expect(text.body).toContain('could not tell whether your system proxy would see this name')
+    expect(text.body).toContain('Trying again may help.')
+    expect(text.body).toContain('exceptions list names like *.eth')
+    expect(text.body).not.toContain('Your system proxy would see this name')
+  })
+
+  it('says a name over plain http opens only over a secure connection, whatever the proxy is', () => {
+    const text = loadErrorText(-20, 'plain')
+    expect(text.title).toBe('This name opens only over https')
+    expect(text.body).toBe('A name like this opens only over a secure connection, so Orivon did not open it over plain http.')
   })
 
   it('shows an error name only when it is one of Chromium\'s', () => {
@@ -95,16 +118,23 @@ describe('the load-error watcher', () => {
     expect(stays.asks).toHaveLength(1)
   })
 
-  it('marks a load that was cancelled for being an onion address, and only that one', () => {
+  it('marks a load that Orivon cancelled before sending it with the reason, and only that one', () => {
     const s = setup()
-    const refused = new Set<string>()
-    ;(s.deps as { onionRefused?: (id: number, url: string) => boolean }).onionRefused = (id, url) => refused.has(`${String(id)} ${url}`)
+    const refused = new Map<string, LoadRefusal>()
+    ;(s.deps as { refused?: (id: number, url: string) => LoadRefusal | undefined }).refused = (id, url) => refused.get(`${String(id)} ${url}`)
     watchLoadErrors(s.contents as unknown as WebContents, s.deps)
-    refused.add('7 http://abc.onion/')
-    fail(s, -20, 'http://abc.onion/', true, 'ERR_BLOCKED_BY_CLIENT')
-    fail(s, -20, 'http://other.example/', true, 'ERR_BLOCKED_BY_CLIENT')
-    expect(s.asks[0]?.payload).toEqual({ code: -20, name: 'ERR_BLOCKED_BY_CLIENT', onion: true })
-    expect(s.asks[1]?.payload).toEqual({ code: -20, name: 'ERR_BLOCKED_BY_CLIENT' })
+    refused.set('7 http://abc.onion/', 'onion')
+    refused.set('7 https://name.eth/', 'would-see')
+    refused.set('7 https://slow.eth/', 'unsure')
+    refused.set('7 http://plain.eth/', 'plain')
+    for (const url of ['http://abc.onion/', 'https://name.eth/', 'https://slow.eth/', 'http://plain.eth/', 'http://other.example/']) fail(s, -20, url, true, 'ERR_BLOCKED_BY_CLIENT')
+    expect(s.asks.map((ask) => ask.payload)).toEqual([
+      { code: -20, name: 'ERR_BLOCKED_BY_CLIENT', refusal: 'onion' },
+      { code: -20, name: 'ERR_BLOCKED_BY_CLIENT', refusal: 'would-see' },
+      { code: -20, name: 'ERR_BLOCKED_BY_CLIENT', refusal: 'unsure' },
+      { code: -20, name: 'ERR_BLOCKED_BY_CLIENT', refusal: 'plain' },
+      { code: -20, name: 'ERR_BLOCKED_BY_CLIENT' }
+    ])
   })
 
   it('passes no error name that is not one of Chromium\'s', () => {
@@ -175,10 +205,12 @@ describe('the load-error overlay', () => {
     for (const bad of [undefined, null, {}, { code: 0, name: '' }, { code: 3, name: '' }, { code: -1.5, name: '' }, { code: '-105', name: '' }, { code: -105, name: 'nope' }]) expect(s.handler.show?.(bad), JSON.stringify(bad)).toBeUndefined()
   })
 
-  it('draws the onion sentence when the watcher says the load was cancelled for being an onion address', () => {
+  it('draws the sentence of the reason the watcher gives for a load Orivon cancelled, and the ordinary one for anything else', () => {
     const s = setup()
-    expect(s.handler.show?.({ code: -20, name: 'ERR_BLOCKED_BY_CLIENT', onion: true })).toEqual({ ...loadErrorText(-20, true), address: 'unresolvable.invalid', name: 'ERR_BLOCKED_BY_CLIENT' })
-    expect(s.handler.show?.({ code: -20, name: '', onion: 'yes' })).toMatchObject(loadErrorText(-20))
+    for (const refusal of ['onion', 'would-see', 'unsure', 'plain'] as const) {
+      expect(s.handler.show?.({ code: -20, name: 'ERR_BLOCKED_BY_CLIENT', refusal }), refusal).toEqual({ ...loadErrorText(-20, refusal), address: 'unresolvable.invalid', name: 'ERR_BLOCKED_BY_CLIENT' })
+    }
+    for (const refusal of ['yes', true, 'proxy', 7, null]) expect(s.handler.show?.({ code: -20, name: '', refusal }), String(refusal)).toMatchObject(loadErrorText(-20))
   })
 
   it('tries the tab again and closes', () => {

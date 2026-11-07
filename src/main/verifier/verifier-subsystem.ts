@@ -28,7 +28,7 @@ import { hostForker } from '../diagnostics/host-fork.js'
 import { TrafficLedger } from './traffic-ledger.js'
 import type { ProcessInfo } from './process-supervisor.js'
 import { loopbackPort } from './loopback-port.js'
-import { composeResolverRules } from './resolver-rules.js'
+import { answerNamesHere } from './resolver-rules.js'
 import { ListeningGate } from './listening-gate.js'
 import { installFirstContact, noteAcceptedConnection, resetFirstContacts } from './first-contact-sessions.js'
 import { announceNameSchemeChange } from './name-scheme-events.js'
@@ -362,8 +362,7 @@ export const verifierSubsystem: Subsystem = {
   name: 'verifier',
   beforeReady: () => {
     const dev = devEthNames()
-    const existing = app.commandLine.getSwitchValue('host-resolver-rules')
-    app.commandLine.appendSwitch('host-resolver-rules', composeResolverRules({ devClauses: dev.rules, port: loopbackPort(), suffixes: BUILTIN_ADDRESSES.routedSuffixes(), existing }))
+    answerNamesHere(app.commandLine, process.env, { devClauses: dev.rules, port: loopbackPort(), suffixes: BUILTIN_ADDRESSES.routedSuffixes() })
     if (dev.secureOrigins !== '') app.commandLine.appendSwitch('unsafely-treat-insecure-origin-as-secure', dev.secureOrigins)
     app.on('session-created', installCertificateCheck)
   },

@@ -3,7 +3,8 @@
 import type { OverlayDef, OverlayHandler, OverlayWindow } from '../overlays/overlay-types.js'
 import { slotClosed } from '../overlays/tab-slots.js'
 import { ADDRESS_LIMIT } from './sad-tab-text.js'
-import { isErrorName, loadErrorText } from './load-error-text.js'
+import { isErrorName, isLoadRefusal, loadErrorText } from './load-error-text.js'
+import type { LoadRefusal } from '../route/load-refusals.js'
 import { LOAD_ERROR_OVERLAY } from './load-error-watch.js'
 
 export interface LoadErrorView {
@@ -14,11 +15,11 @@ export interface LoadErrorView {
   readonly name: string
 }
 
-function asPayload (payload: unknown): { code: number, name: string, onion: boolean } | undefined {
+function asPayload (payload: unknown): { code: number, name: string, refusal: LoadRefusal | undefined } | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
-  const { code, name, onion } = payload as { code?: unknown, name?: unknown, onion?: unknown }
+  const { code, name, refusal } = payload as { code?: unknown, name?: unknown, refusal?: unknown }
   if (typeof code !== 'number' || !Number.isInteger(code) || code >= 0 || (name !== '' && !isErrorName(name))) return undefined
-  return { code, name, onion: onion === true }
+  return { code, name, refusal: isLoadRefusal(refusal) ? refusal : undefined }
 }
 
 export const loadErrorOverlay: OverlayDef = {
@@ -41,7 +42,7 @@ export const loadErrorOverlay: OverlayDef = {
         tabId = asked === undefined ? null : state.activeTabId
         if (asked === undefined) return undefined
         const address = state.tabs.find((tab) => tab.id === tabId)?.displayUrl ?? ''
-        return { ...loadErrorText(asked.code, asked.onion), address: address.slice(0, ADDRESS_LIMIT), name: asked.name }
+        return { ...loadErrorText(asked.code, asked.refusal), address: address.slice(0, ADDRESS_LIMIT), name: asked.name }
       },
       request: (command) => {
         if (typeof command !== 'object' || command === null || (command as { type?: unknown }).type !== 'retry' || Object.keys(command).length !== 1) return undefined

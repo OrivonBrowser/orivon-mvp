@@ -13,6 +13,7 @@ import { mainRoutePace } from '../route/main-pace.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { ownFetch, ownRequestsTunnelled } from '../route/own-requests.js'
 import { fetchThroughRoute } from '../route/routed-fetch.js'
+import { namesVerifierHost, refuseWhenProxySees } from '../route/verifier-name-guard.js'
 import { readCapped } from './favicon-fetch.js'
 import { parseOmniboxInput } from './omnibox.js'
 
@@ -242,7 +243,11 @@ export async function netFetchJson (url: string, origin?: string): Promise<Fetch
     // With no route and the whole browser on the tunnel, the default session is the tunnel's: a site set to off is asked about on the system's proxy.
     // A lookup about no origin (an install, an update check) follows the default, as Orivon's own requests do: through the tunnel while it is on.
     const direct = routed === undefined && origin !== undefined ? directLookupSession() : undefined
-    const ordinary = async (target: string, options?: RequestInit): Promise<Response> => direct !== undefined ? await direct.fetch(target, options) : await net.fetch(target, options)
+    // A provider the verifier serves is read on this computer; a proxy that would carry the request is never asked about it.
+    const ordinary = async (target: string, options?: RequestInit): Promise<Response> => {
+      if (namesVerifierHost(target)) await refuseWhenProxySees(direct ?? (await import('electron')).session.defaultSession, target)
+      return direct !== undefined ? await direct.fetch(target, options) : await net.fetch(target, options)
+    }
     const response = routed !== undefined ? await fetchThroughRoute(net, routed, url, init.signal) : origin === undefined ? await ownFetch(ordinary)(url, init) : await ordinary(url, init)
     clock.progress()
     if (response.status === 404) return { kind: 'missing' }

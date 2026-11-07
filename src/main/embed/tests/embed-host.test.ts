@@ -15,6 +15,7 @@ interface FakeSession {
   on: ReturnType<typeof vi.fn>
   webRequest: { onBeforeRequest: ReturnType<typeof vi.fn>, onBeforeSendHeaders: ReturnType<typeof vi.fn> }
   resolveHost: ReturnType<typeof vi.fn>
+  resolveProxy: ReturnType<typeof vi.fn>
   setDevicePermissionHandler: ReturnType<typeof vi.fn>
 }
 
@@ -26,6 +27,7 @@ function fakeSession (): FakeSession {
     on: vi.fn(),
     webRequest: { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn() },
     resolveHost: vi.fn(async () => ({ endpoints: [] })),
+    resolveProxy: vi.fn(async () => 'DIRECT'),
     setDevicePermissionHandler: vi.fn()
   }
 }
@@ -219,10 +221,10 @@ describe('configureEmbedSession -- onBeforeRequest resolves through the guest se
     sessionsByPartition.clear()
   })
 
-  function attachAndGetSession (appOrigin: string): FakeSession {
+  function attachAndGetSession (appOrigin: string, routed = false): FakeSession {
     const attach = vi.fn((_origin: string, _destroy: () => void) => ({ release: vi.fn() }))
     const broker = fakeBroker(new Set([appOrigin]), attach)
-    installEmbedHost(broker, '/preload/embed.js')
+    installEmbedHost(broker, '/preload/embed.js', () => routed)
     const embedder = fakeEmbedder(`${appOrigin}/tab`)
     fakeApp.emit('web-contents-created', {}, embedder)
     embedder.emit('will-attach-webview', { preventDefault: vi.fn() }, {}, {})
@@ -283,6 +285,43 @@ describe('configureEmbedSession -- onBeforeRequest resolves through the guest se
     await new Promise((resolve) => { setImmediate(resolve) })
 
     expect(callback).toHaveBeenCalledWith({ cancel: true })
+  })
+
+  describe('a name the verifier serves, behind a proxy the session would use', () => {
+    async function request (session: FakeSession, url: string): Promise<ReturnType<typeof vi.fn>> {
+      session.resolveHost.mockImplementation(async () => ({ endpoints: [{ address: '93.184.216.34', family: 'ipv4' }] }))
+      const onBeforeRequest = session.webRequest.onBeforeRequest.mock.calls[0]?.[0] as
+        (details: { url: string, resourceType: string }, callback: (r: { cancel: boolean }) => void) => void
+      const callback = vi.fn()
+      onBeforeRequest({ url, resourceType: 'mainFrame' }, callback)
+      await new Promise((resolve) => { setImmediate(resolve) })
+      return callback
+    }
+
+    it('is cancelled when the session would send it to a proxy', async () => {
+      const session = attachAndGetSession(ORIGIN_A)
+      session.resolveProxy.mockImplementation(async () => 'PROXY 127.0.0.1:3128')
+      expect(await request(session, 'https://vitalik.eth/')).toHaveBeenCalledWith({ cancel: true })
+    })
+
+    it('goes ahead when the session would not use a proxy for it', async () => {
+      const session = attachAndGetSession(ORIGIN_A)
+      expect(await request(session, 'https://vitalik.eth/')).toHaveBeenCalledWith({ cancel: false })
+    })
+
+    it('is not asked about on a routed app, whose session is on a tunnel', async () => {
+      const session = attachAndGetSession(ORIGIN_A, true)
+      session.resolveProxy.mockImplementation(async () => 'PROXY 127.0.0.1:3128')
+      expect(await request(session, 'https://vitalik.eth/')).toHaveBeenCalledWith({ cancel: false })
+      expect(session.resolveProxy).not.toHaveBeenCalled()
+    })
+
+    it('leaves an ordinary name to the proxy without asking', async () => {
+      const session = attachAndGetSession(ORIGIN_A)
+      session.resolveProxy.mockImplementation(async () => 'PROXY 127.0.0.1:3128')
+      expect(await request(session, 'https://good.example/')).toHaveBeenCalledWith({ cancel: false })
+      expect(session.resolveProxy).not.toHaveBeenCalled()
+    })
   })
 })
 

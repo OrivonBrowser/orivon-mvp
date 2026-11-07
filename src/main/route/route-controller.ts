@@ -6,10 +6,12 @@ import type { Session, WebContents } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originHash } from '../../broker/grants/origin-hash.js'
 import { SHARED_ORIGIN } from './route-hub.js'
+import { trackProxySet } from './proxy-answers.js'
 import type { TunnelKind } from './route-state.js'
 import { profilePartitionFor } from './site-partition.js'
 import { ensureSiteSession } from './site-routes.js'
 import type { RouteChangeCause, RouteHub } from './route-hub.js'
+import { within } from './within.js'
 
 export type RouteSession = Pick<Session, 'setProxy' | 'closeAllConnections'>
 /** What a proxy is set to: Electron's own shape. */
@@ -121,14 +123,9 @@ const CONFINED_BYPASS = '<-loopback>'
 /** `pointedAt`'s value for a session held on the unreachable proxy: no front has this port. */
 const CONFINED_FRONT = 0
 
-async function within<T> (work: Promise<T>, ms = SESSION_CALL_MS): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const late = new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('a call did not finish')) }, ms) })
-  try {
-    return await Promise.race([work, late])
-  } finally {
-    clearTimeout(timer)
-  }
+/** Sets the proxy of `session` and tracks the change (`proxy-answers.ts`): the answers it gave about which proxy carries a URL are forgotten, and the session counts as changing until the call ends, however long `callMs` was waited for it. */
+async function setProxyOf (session: RouteSession, config: RouteProxyConfig, callMs: number): Promise<void> {
+  await trackProxySet(session, async () => { await session.setProxy(config) }, callMs)
 }
 
 export function createRouteController (deps: RouteControllerDeps): RouteController {
@@ -205,7 +202,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       return
     }
     const extra = bypasses.get(session)
-    await within(session.setProxy({ mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}`, proxyBypassRules: extra === undefined ? ROUTED_BYPASS : `${ROUTED_BYPASS};${extra}` }), callMs)
+    await within(setProxyOf(session, { mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}`, proxyBypassRules: extra === undefined ? ROUTED_BYPASS : `${ROUTED_BYPASS};${extra}` }, callMs), callMs)
     pointedAt.set(session, port)
     pointedVia.set(session, kind)
   }
@@ -216,7 +213,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       await pointAt(session, (await hub.front(origin)).port, kind)
     } else if (pointedAt.has(session)) {
       // Forgotten only once it is done: a session that could not be put back stays marked, so a later pass tries again.
-      await within(session.setProxy({ mode: 'system' }), callMs)
+      await within(setProxyOf(session, { mode: 'system' }, callMs), callMs)
       pointedAt.delete(session)
       pointedVia.delete(session)
     }
@@ -233,7 +230,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     pointedVia.set(session, 'held')
     const stop = async (): Promise<void> => {
       try {
-        await within(session.setProxy({ mode: 'fixed_servers', proxyRules: unreachable(), proxyBypassRules: CONFINED_BYPASS }), callMs)
+        await within(setProxyOf(session, { mode: 'fixed_servers', proxyRules: unreachable(), proxyBypassRules: CONFINED_BYPASS }, callMs), callMs)
       } catch (error) {
         console.error('[route] could not stop a session that could not be routed:', error)
       }
