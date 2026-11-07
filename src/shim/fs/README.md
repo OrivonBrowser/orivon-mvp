@@ -93,6 +93,16 @@ streams; `@seald-io/nedb` calls both on every load and compaction (`streams.ts`)
 64 KiB round trip per chunk. **Open:** whether this is permanent; once a port carries a file's
 bytes to the page, `streams.ts` can move onto the handle's streams with no app-facing change.
 
+**`readlink` answers as Node does on a disk with no links** (`core.ts`'s `doReadlink`, `core-sync.ts`'s `doReadlinkSync`). `orivon.fs` has no
+symbolic links (it follows one inside the root and denies one that leaves it), so a path that exists is not a link, `EINVAL`, and
+one that does not is `ENOENT`, both in Node's shape (`code`, `errno`, `syscall` `readlink`, `path` as written); a path beside the
+files is the `EACCES` every call gives. Existence is `doAccess`'s (`doAccessSync`'s), so confinement, picks, the root and the directories
+above it answer exactly as for `access`, and the callback, promise and synchronous forms cannot drift. The async forms never throw: a
+caller's `readlink(path).catch(() => null)` is how a write helper learns that a new file is not a link. `options` (an encoding) is
+accepted and ignored, since there is never a target to encode. On a pick the synchronous form has no wire, so it answers from the table
+of picks alone (`picked.ts`'s `pickedPresenceSync`: a pick's own paths are `EINVAL`, a stale pick or another name in a picked file's
+folder is `ENOENT`) and is `ENOSYS` for anything deeper in a picked folder, as every `*Sync` call on a pick is.
+
 **`fs.access`'s mode.** Provisional, AI recommendation: every mode checks existence only, since
 `orivon.fs` has no permission model (`core.ts`'s `doAccess`). **Open:** what a dependency asking
 `W_OK` to mean something narrower should get; the `orivon.fs` contract gives nothing to answer with.

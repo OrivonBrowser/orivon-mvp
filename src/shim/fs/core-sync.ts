@@ -16,9 +16,9 @@ import { NodeDirent, toNodeStats, type NodeStats } from './stats.js'
 import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
-import { confineSync, fsError, pathText, type PathLike } from './paths.js'
+import { asReadlinkError, confineSync, fsError, noSuchLinkError, notALinkError, pathText, type PathLike } from './paths.js'
 import { ancestorOf, ancestorStat, assertAncestorMkdirAllowed } from './ancestors.js'
-import { pickedExistsSync } from './picked.js'
+import { pickedExistsSync, pickedPresenceSync } from './picked.js'
 import { openHandleSync } from './handle.js'
 import { announce, announceWrite, watchersExist } from './notices.js'
 import { guardedSync, syncFs, tryStatSync, type SyncOrivonFs } from './sync-orivon.js'
@@ -174,11 +174,29 @@ export function doUnlinkSync (path: PathLike): void {
   announce(confined, 'rename')
 }
 
-export function doAccessSync (path: PathLike): void {
+export function doAccessSync (path: PathLike, syscall = 'access', api = 'fs.accessSync'): void {
   if (ancestorOf(pathText(path)) !== undefined) return
-  const confined = confineSync(path, 'access', 'fs.accessSync')
+  const confined = confineSync(path, syscall, api)
   if (isRootPath(confined)) return
-  guardedSync(() => { syncFs('fs.accessSync').stat(confined) })
+  guardedSync(() => { syncFs(api).stat(confined) })
+}
+
+/**
+ * doReadlink's synchronous twin (core.ts's own doc comment has the detail): existence is doAccessSync's. A pick has no
+ * synchronous wire, so the table of picks answers what it can (its own paths are present, a stale pick or another name
+ * in a picked file's folder is absent) and the rest meets the same ENOSYS every *Sync call on a pick does.
+ */
+export function doReadlinkSync (path: PathLike): never {
+  const text = pathText(path)
+  const presence = pickedPresenceSync(path)
+  if (presence === 'present') throw notALinkError(text)
+  if (presence === 'absent') throw noSuchLinkError(text)
+  try {
+    doAccessSync(path, 'readlink', 'fs.readlinkSync')
+  } catch (error) {
+    throw asReadlinkError(error, text)
+  }
+  throw notALinkError(text)
 }
 
 const COPYFILE_EXCL = 1
