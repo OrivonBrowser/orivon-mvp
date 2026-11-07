@@ -282,7 +282,7 @@ describe('a picked path', () => {
     expect(code('/orivon/picked')).toBe('ENOSYS')
   })
 
-  it('never reaches the broker, and no host path is in any error', async () => {
+  it('answers a pick from the table of picks and never reaches the broker', async () => {
     const touched = installUntouchable()
     const { registerPickedFile, fs } = await load()
     const file = registerPickedFile(pickedFile('x'), 'note.txt')
