@@ -30,10 +30,11 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   the system proxy off, or turn a tunnel on. A name asked for over plain `http:` is refused whatever the proxy is,
   except the developer names of a run that serves them. A proxy found by a script or by automatic detection is asked
   for up to fifteen seconds; a name opened in that time waits, and past it the tab says Orivon could not tell.
-  Whether automatic detection on Windows or a slow script ever takes that long has been measured with a script
-  served by GNOME's settings here and is not measured on Windows or macOS. A script that answers the same host
-  differently from one call to the next can still send an `https` request to a proxy after Orivon was told "none";
-  the proxy then learns the name but cannot serve a page under it. Reading the system's proxy settings and applying
+  Fifteen seconds is provisional: a script that answers after four seconds opens the names, and Windows' automatic
+  detection on a network with no detection server answers at once, but how long a slow detection server takes on
+  Windows and macOS is not measured; a run on a network with one would settle it. A script that answers the same
+  host differently from one call to the next can still send an `https` request to a proxy after Orivon was told
+  "none"; the proxy then learns the name but cannot serve a page under it. Reading the system's proxy settings and applying
   them to these sessions with the names left out is a separate decision: it would stop the sessions following a
   change of the system's proxy as it happens.
 - **The default secure DNS tells Quad9 the names you open.** Orivon looks site names up at Quad9
