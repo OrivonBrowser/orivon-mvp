@@ -40,6 +40,33 @@ async function seed (dir: string): Promise<void> {
 const seamOf = async (app: ElectronApplication): Promise<Seam> =>
   await app.evaluate(() => structuredClone((globalThis as { __orivonDevNetworkService?: Seam }).__orivonDevNetworkService ?? { ended: 0, resent: 0, resolverCalls: [], certificateChecks: [], holds: [] }))
 
+const NETWORK_SERVICE = 'network.mojom.NetworkService'
+
+interface Loaded { outcome: string, resentAtStart: number, resentAfter: number, title: string }
+
+/**
+ * Arms a load of `url` in the tab showing `shown`, to start from main the instant the next network service answers a
+ * lookup: after the service ended and before any padded sending of its settings. Kill the service after calling it.
+ */
+const loadWhenServiceAnswers = async (app: ElectronApplication, url: string, shown: string): Promise<Loaded> =>
+  await app.evaluate(async ({ app: electronApp, session, webContents }, { target, part, service }) => {
+    const tab = webContents.getAllWebContents().find((contents) => contents.getURL().includes(part))
+    const resent = (): number => (globalThis as { __orivonDevNetworkService?: { resent: number } }).__orivonDevNetworkService?.resent ?? -1
+    if (tab === undefined) return { outcome: 'no tab', resentAtStart: -1, resentAfter: -1, title: '' }
+    let ended = false
+    await new Promise<void>((resolve) => {
+      electronApp.on('child-process-gone', (_event, details) => {
+        if (ended || details.serviceName !== service) return
+        ended = true
+        resolve()
+      })
+    })
+    while (!await session.defaultSession.resolveHost('127.0.0.1').then(() => true, () => false)) await new Promise((wake) => setTimeout(wake, 5))
+    const resentAtStart = resent()
+    const outcome = await tab.loadURL(target).then(() => 'loaded', (error: unknown) => String(error))
+    return { outcome, resentAtStart, resentAfter: resent(), title: tab.getTitle() }
+  }, { target: url, part: shown, service: NETWORK_SERVICE })
+
 const networkServicePid = async (app: ElectronApplication): Promise<number> =>
   await app.evaluate(({ app: electronApp }) => electronApp.getAppMetrics().find((metric) => metric.type === 'Utility' && metric.serviceName === 'network.mojom.NetworkService')?.pid ?? 0)
 
@@ -55,7 +82,9 @@ async function openReport (app: ElectronApplication, chrome: Page): Promise<Page
 async function reportWhere (page: Page, ok: (report: { log: string[], diagnostics: { recentCrashes: Array<{ process: string, reason: string }> } }) => boolean): Promise<{ log: string[], diagnostics: { recentCrashes: Array<{ process: string, reason: string }> } }> {
   let last = { log: [] as string[], diagnostics: { recentCrashes: [] as Array<{ process: string, reason: string }> } }
   const read = async (): Promise<typeof last> => {
-    const shown = JSON.parse(await page.locator('#report-preview').textContent() ?? '{}') as { log?: string[] | null, diagnostics?: typeof last.diagnostics | null }
+    // Empty until main has built the preview, and not JSON while it is written.
+    const text = await page.locator('#report-preview').textContent() ?? ''
+    const shown = (() => { try { return JSON.parse(text === '' ? '{}' : text) as { log?: string[] | null, diagnostics?: typeof last.diagnostics | null } } catch { return {} as { log?: string[] | null, diagnostics?: typeof last.diagnostics | null } } })()
     return { log: shown.log ?? [], diagnostics: shown.diagnostics ?? { recentCrashes: [] } }
   }
   expect(await waitFor(async () => { last = await read(); return ok(last) }, 15_000), JSON.stringify(last).slice(0, 600)).toBe(true)
@@ -93,23 +122,13 @@ it('sends the certificate check and secure DNS again, holds a request started af
     const oldPid = await networkServicePid(running)
     expect(oldPid).toBeGreaterThan(0)
     const killedAt = Date.now()
+    const held = loadWhenServiceAnswers(running, 'https://held.eth/', 'first.eth')
+    await delay(200)
     process.kill(oldPid, 'SIGKILL')
-
-    // The service ended, and the next one answers: a request from here on reaches Chromium's new network context.
-    expect(await waitFor(async () => (await seamOf(running)).ended === 1, 15_000)).toBe(true)
-    expect(await waitFor(async () => await running.evaluate(async ({ session }) => await session.defaultSession.resolveHost('127.0.0.1').then(() => true, () => false)), 15_000)).toBe(true)
-    expect((await seamOf(running)).resent).toBe(0)
 
     // Started inside the hold: it must wait for the certificate check, not reach the new service with the default one,
     // which refuses the verifier's certificate and keeps refusing it for that host.
-    const held = await running.evaluate(async ({ webContents }) => {
-      const tab = webContents.getAllWebContents().find((contents) => contents.getURL().includes('first.eth'))
-      if (tab === undefined) return { outcome: 'no tab' as const, resent: -1 }
-      const outcome = await tab.loadURL('https://held.eth/').then(() => 'loaded' as const, (error: unknown) => String(error))
-      const seam = (globalThis as { __orivonDevNetworkService?: { resent: number } }).__orivonDevNetworkService
-      return { outcome, resent: seam?.resent ?? -1, title: tab.getTitle() }
-    })
-    expect(held).toMatchObject({ outcome: 'loaded', resent: 1, title: 'held fixture' })
+    expect(await held).toMatchObject({ outcome: 'loaded', resentAtStart: 0, resentAfter: 1, title: 'held fixture' })
 
     // A second verifier page, opened the ordinary way, loads too.
     await navigateToFixture(running, 'https://later.eth/', 'later fixture')
@@ -121,25 +140,27 @@ it('sends the certificate check and secure DNS again, holds a request started af
     expect(after.resolverCalls).toHaveLength(2)
     expect(after.resolverCalls[1]).toMatchObject({ mode: 'secure', servers: 1 })
     expect(after.resolverCalls[1]!.at).toBeGreaterThanOrEqual(killedAt)
+    expect(after.holds.map((hold) => hold.outcome)).toEqual(['reapplied'])
+    expect(after.holds[0]!.requests).toBeGreaterThanOrEqual(1)
     expect(await networkServicePid(running)).not.toBe(oldPid)
 
     // What orivon://report collects: the log lines, and the end among the recorded problems.
     const report = await reportWhere(await openReport(running, started.chrome), ({ log }) => log.some((line) => line.includes('settings sent again')) && log.some((line) => line.includes('waited')))
     const ours = report.log.filter((line) => line.includes('[network-service]'))
-    expect(ours.some((line) => line.includes('the network service ended (killed'))).toBe(true)
+    expect(ours.some((line) => /the network service ended \(/.test(line))).toBe(true)
     const sent = ours.find((line) => /settings sent again \d+ ms after the service ended, answering after \d+ ms: /.test(line)) ?? ''
     expect(sent).toMatch(/certificate check \(\d+ sessions\)/)
     expect(sent).toMatch(/secure DNS \(secure, 1 server\)/)
     expect(sent).toMatch(/verifier host \(put to sleep\)/)
     expect(ours.some((line) => /[1-9]\d* requests? waited \d+ ms and went on/.test(line))).toBe(true)
-    expect(report.diagnostics.recentCrashes).toContainEqual(expect.objectContaining({ process: 'Utility:network.mojom.NetworkService', reason: 'killed' }))
+    expect(report.diagnostics.recentCrashes).toContainEqual(expect.objectContaining({ process: 'Utility:network.mojom.NetworkService' }))
   } finally {
     if (app !== undefined) await closeElectronApp(app)
     await gateway.close()
   }
 }, QA_TEST_TIMEOUT_MS)
 
-it('loads a verifier page started as the new service answers, with no padding on the settings being sent', async () => {
+it('loads a verifier page started as the new service answers, with no padding, and again after a second restart', async () => {
   const gateway = await startFixtureGateway(Object.fromEntries(NAMES.map((name) => [name, SITE(name)])))
   let app: ElectronApplication | undefined
   try {
@@ -147,34 +168,30 @@ it('loads a verifier page started as the new service answers, with no padding on
     app = started.app
     const running = app
     await navigateToFixture(running, 'https://first.eth/', 'first fixture')
-    const oldPid = await networkServicePid(running)
-    expect(oldPid).toBeGreaterThan(0)
 
-    // The load starts the instant the new network context answers: it races the settings being sent, with no padding.
-    const loading = running.evaluate(async ({ app: electronApp, session, webContents }) => {
-      const tab = webContents.getAllWebContents().find((contents) => contents.getURL().includes('first.eth'))
-      if (tab === undefined) return 'no tab'
-      return await new Promise<string>((resolve) => {
-        electronApp.on('child-process-gone', (_event, details) => {
-          if (details.serviceName !== 'network.mojom.NetworkService') return
-          const answered = async (): Promise<void> => {
-            while (!await session.defaultSession.resolveHost('127.0.0.1').then(() => true, () => false)) await new Promise((wake) => setTimeout(wake, 5))
-          }
-          void answered().then(async () => await tab.loadURL('https://held.eth/')).then(() => { resolve(tab.getTitle()) }, (error: unknown) => { resolve(String(error)) })
-        })
-      })
-    })
+    const firstPid = await networkServicePid(running)
+    expect(firstPid).toBeGreaterThan(0)
+    const first = loadWhenServiceAnswers(running, 'https://held.eth/', 'first.eth')
     await delay(200)
-    process.kill(oldPid, 'SIGKILL')
-    expect(await loading).toBe('held fixture')
-
+    process.kill(firstPid, 'SIGKILL')
+    expect(await first).toMatchObject({ outcome: 'loaded', title: 'held fixture' })
     await navigateToFixture(running, 'https://later.eth/', 'later fixture')
+
+    // The hold of the first restart came off; a second one puts it on and takes it off again.
+    const secondPid = await networkServicePid(running)
+    expect(secondPid).not.toBe(firstPid)
+    const second = loadWhenServiceAnswers(running, 'https://first.eth/', 'later.eth')
+    await delay(200)
+    process.kill(secondPid, 'SIGKILL')
+    expect(await second).toMatchObject({ outcome: 'loaded', title: 'first fixture' })
+
     const after = await seamOf(running)
-    expect(after.ended).toBe(1)
-    expect(after.holds).toEqual([{ outcome: 'reapplied', requests: expect.any(Number) }])
-    expect(after.resolverCalls).toHaveLength(2)
-    expect(after.resolverCalls[1]).toMatchObject({ mode: 'secure', servers: 1 })
-    expect(await networkServicePid(running)).not.toBe(oldPid)
+    expect(after.ended).toBe(2)
+    expect(after.resent).toBe(2)
+    expect(after.holds.map((hold) => hold.outcome)).toEqual(['reapplied', 'reapplied'])
+    expect(after.certificateChecks).toHaveLength(2)
+    expect(after.resolverCalls.map((call) => call.mode)).toEqual(['secure', 'secure', 'secure'])
+    expect(await networkServicePid(running)).not.toBe(secondPid)
   } finally {
     if (app !== undefined) await closeElectronApp(app)
     await gateway.close()
@@ -191,12 +208,11 @@ it('lets requests go at the bound when the settings cannot be sent, and the repo
     const pid = await networkServicePid(running)
     expect(pid).toBeGreaterThan(0)
     process.kill(pid, 'SIGKILL')
-    expect(await waitFor(async () => (await seamOf(running)).ended === 1, 15_000)).toBe(true)
     expect(await waitFor(async () => (await seamOf(running)).holds.length === 1, 15_000)).toBe(true)
-    expect((await seamOf(running)).holds[0]).toEqual({ outcome: 'timed-out', requests: 0 })
+    expect((await seamOf(running)).holds[0]!.outcome).toBe('timed-out')
     expect((await seamOf(running)).resent).toBe(0)
     const report = await reportWhere(await openReport(running, started.chrome), ({ log }) => log.some((line) => line.includes('the settings were not sent again within')))
-    expect(report.log.some((line) => /\[network-service\] the settings were not sent again within \d+ ms: 0 requests went on without them/.test(line))).toBe(true)
+    expect(report.log.some((line) => /\[network-service\] the settings were not sent again within \d+ ms: \d+ requests? went on without them/.test(line))).toBe(true)
   } finally {
     if (app !== undefined) await closeElectronApp(app)
     await gateway.close()

@@ -103,10 +103,12 @@ describe('a network-service restart', () => {
     const first = recovery.onEnded({ reason: 'killed', exitCode: 9 })
     await vi.advanceTimersByTimeAsync(10)
     const second = recovery.onEnded({ reason: 'killed', exitCode: 9 })
-    await second
+    expect(await second).toBe(true)
     expect(restart.isHolding()).toBe(false)
+    expect(sent).toEqual(['dns'])
     up()
-    await first
+    expect(await first).toBe(false)
+    expect(sent).toEqual(['dns'])
     expect(log.some((line) => line.includes('ended again before its settings were sent'))).toBe(true)
   })
 

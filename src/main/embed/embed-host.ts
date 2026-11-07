@@ -94,24 +94,22 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
   })
   const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
-    guestRequestAllowed(
+    // This session registers its own listener, which a second one would replace, so it waits here for the network service's
+    // settings after a restart (sessions/README.md): before the guard, which looks a named host up.
+    holdWhileNetworkServiceRestarts().then(async () => await guestRequestAllowed(
       details.url,
       details.resourceType,
       broker.embed.originsSync(appOrigin),
       resolve,
       (port) => broker.embed.holdsListenerSync(appOrigin, port),
       isRouted(appOrigin)
-    )
+    ))
       // A callback Electron waits on is called exactly once: a rejection
       // refuses, the way every refusal here fails closed.
       .then((allowed) => !allowed, () => true)
       .then(async (cancel) => {
         // The verifier host sleeps when unused: a shown page that names one of its hosts waits for it to listen.
-        // This session registers its own listener, which a second one would replace, so it waits here for the network service's settings after a restart (sessions/README.md).
-        if (!cancel) {
-          await holdWhileNetworkServiceRestarts()
-          await holdForVerifier(details.url).catch(() => {})
-        }
+        if (!cancel) await holdForVerifier(details.url).catch(() => {})
         callback({ cancel })
       }).catch((error: unknown) => { console.error('[embed] answering a guest request failed:', error) })
   })

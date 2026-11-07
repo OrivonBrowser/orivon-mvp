@@ -24,6 +24,9 @@ export interface HoldReport {
   readonly requests: number
 }
 
+/** A service that keeps ending cannot hold requests for ever: the whole hold lasts at most this many bounds. */
+const MAX_BOUNDS = 3
+
 /** What a restart cost, counted for the whole run. */
 export interface RestartCounts {
   readonly restarts: number
@@ -51,7 +54,8 @@ export class NetworkServiceRestart {
 
   /**
    * The service ended: requests wait from now on. Returns the number to hand back to `reapplied`. A second end during a
-   * hold starts the bound again, since the settings must be sent to the process that is now running.
+   * hold starts the bound again, since the settings must be sent to the process that is now running, up to
+   * `MAX_BOUNDS` bounds in all.
    */
   gone (): number {
     this.generation += 1
@@ -63,8 +67,14 @@ export class NetworkServiceRestart {
     }
     clearTimeout(this.timer)
     const mine = this.generation
-    this.timer = setTimeout(() => { this.finish('timed-out', mine) }, this.deps.boundMs)
+    const left = this.since + this.deps.boundMs * MAX_BOUNDS - this.deps.now()
+    this.timer = setTimeout(() => { this.finish('timed-out', mine) }, Math.max(0, Math.min(this.deps.boundMs, left)))
     return mine
+  }
+
+  /** Whether no later end has superseded `generation`: only the current one sends the settings. */
+  isCurrent (generation: number): boolean {
+    return generation === this.generation
   }
 
   /**
@@ -72,7 +82,7 @@ export class NetworkServiceRestart {
    * the later one's own `reapplied` ends the hold.
    */
   reapplied (generation: number): boolean {
-    if (generation !== this.generation) return false
+    if (!this.isCurrent(generation)) return false
     if (this.holding) this.finish('reapplied', generation)
     return true
   }

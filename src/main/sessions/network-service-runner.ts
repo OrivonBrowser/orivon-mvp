@@ -9,7 +9,7 @@ import { NetworkServiceRecovery, holdLine, untilAnswered } from './network-servi
 import type { Reapplier } from './network-service-recovery.js'
 import { HOLD_BOUND_MS, networkServiceRestart, onHoldEnded } from './network-service-hold.js'
 import { isNetworkServiceEnd } from './network-service-restart.js'
-import { holdBoundOverrideMs, noteHoldEnded, noteServiceEnded, noteSettingsResent, reapplyDelayMs } from './network-service-test-seam.js'
+import { noteHoldEnded, noteServiceEnded, noteSettingsResent, reapplyDelayMs } from './network-service-test-seam.js'
 import { webRequestOwnerFor } from './web-request-owner.js'
 import type { WebRequestHandlerHandle } from './web-request-owner.js'
 import { forEachWebsiteSession, websiteSessions } from './website-sessions.js'
@@ -33,8 +33,13 @@ export function reapplyAfterNetworkServiceRestart (name: string, reapply: Reappl
 const restart = networkServiceRestart
 
 onHoldEnded((report) => {
-  for (const handle of holds.values()) handle.remove()
-  holds.clear()
+  try {
+    for (const handle of holds.values()) handle.remove()
+  } catch (error) {
+    console.error('[network-service] taking the hold off a session failed:', error)
+  } finally {
+    holds.clear()
+  }
   if (report.outcome === 'timed-out') console.error(holdLine(report))
   else console.log(holdLine(report))
   noteHoldEnded(report)
@@ -51,12 +56,27 @@ function hold (target: Session): void {
 /** An address literal: needs no DNS, so what answers it is the session's network context and nothing else. */
 const PROBE_ADDRESS = '127.0.0.1'
 
-/** Resolves once every session's new network context answers a call; a test build may then wait on, so a request can be started inside the hold. */
+/** Once the default session answers, how long the others are given: a session nobody uses may be slow to answer, and must not delay the rest. */
+const OTHERS_GRACE_MS = 1_000
+
+const pause = async (ms: number): Promise<void> => await new Promise<void>((resolve) => { setTimeout(resolve, ms) })
+
+/**
+ * Resolves once the default session's new network context answers a call and the other sessions have had a moment to; a
+ * test build may then wait on, so a request can be started inside the hold. Rejects when the default session never answers.
+ */
 async function networkServiceAnswers (targets: readonly Session[]): Promise<void> {
-  const boundMs = holdBoundOverrideMs() ?? HOLD_BOUND_MS
-  await Promise.all(targets.map(async (target) => await untilAnswered(async () => await target.resolveHost(PROBE_ADDRESS), { boundMs })))
+  let done = false
+  const asked = targets.map(async (target) => await untilAnswered(async () => await target.resolveHost(PROBE_ADDRESS), { boundMs: HOLD_BOUND_MS, stop: () => done }))
+  for (const one of asked) one.catch(() => {})
+  try {
+    await asked[Math.max(0, targets.indexOf(session.defaultSession))]
+    await Promise.race([Promise.allSettled(asked), pause(OTHERS_GRACE_MS)])
+  } finally {
+    done = true
+  }
   const wait = reapplyDelayMs()
-  if (wait > 0) await new Promise<void>((resolve) => { setTimeout(resolve, wait) })
+  if (wait > 0) await pause(wait)
 }
 
 const recovery = new NetworkServiceRecovery<Session>({
@@ -67,7 +87,13 @@ const recovery = new NetworkServiceRecovery<Session>({
   now: Date.now,
   log: (line) => { console.log(line) },
   holdBegan: () => {
-    for (const target of websiteSessions()) hold(target)
+    for (const target of websiteSessions()) {
+      try {
+        hold(target)
+      } catch (error) {
+        console.error('[network-service] could not hold requests of a session:', error)
+      }
+    }
   }
 })
 
@@ -79,7 +105,7 @@ export const networkServiceSubsystem: Subsystem = {
     app.on('child-process-gone', (_event, details) => {
       if (quitting || !isNetworkServiceEnd(details)) return
       noteServiceEnded()
-      recovery.onEnded({ reason: details.reason, exitCode: details.exitCode }).then(noteSettingsResent, (error: unknown) => {
+      recovery.onEnded({ reason: details.reason, exitCode: details.exitCode }).then((sent) => { if (sent) noteSettingsResent() }, (error: unknown) => {
         console.error('[network-service] sending the settings again failed:', error)
       })
     })

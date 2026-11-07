@@ -32,8 +32,8 @@ const word = (count: number, one: string, many: string): string => `${String(cou
 export class NetworkServiceRecovery<Target> {
   constructor (private readonly deps: RecoveryDeps<Target>) {}
 
-  /** The network service ended. Resolves when the settings have been sent again (or the attempt was superseded). */
-  async onEnded (ended: Ended): Promise<void> {
+  /** The network service ended. Resolves when the settings have been sent again: true, or false when a later end superseded this one and left the sending to its own. */
+  async onEnded (ended: Ended): Promise<boolean> {
     const { restart, log, now } = this.deps
     const begun = now()
     const generation = restart.gone()
@@ -47,6 +47,10 @@ export class NetworkServiceRecovery<Target> {
     } catch (error) {
       log(`[network-service] could not tell when the new service was up (${String(error)}); sending its settings anyway`)
     }
+    if (!restart.isCurrent(generation)) {
+      log('[network-service] the network service ended again before its settings were sent; the later restart sends them')
+      return false
+    }
     const failed: string[] = []
     const sent: string[] = []
     for (const reapplier of this.deps.reappliers()) {
@@ -58,14 +62,11 @@ export class NetworkServiceRecovery<Target> {
         log(`[network-service] could not send the ${reapplier.name} again: ${String(error)}`)
       }
     }
-    const current = restart.reapplied(generation)
+    restart.reapplied(generation)
     const took = now() - begun
-    if (!current) {
-      log('[network-service] the network service ended again before its settings were sent; the later restart sends them')
-      return
-    }
     const tail = failed.length === 0 ? '' : `; not sent: ${failed.join(', ')}`
     log(`[network-service] settings sent again ${String(took)} ms after the service ended${answeredAfter}: ${sent.length === 0 ? 'none to send' : sent.join(', ')}${tail}`)
+    return true
   }
 }
 
@@ -84,6 +85,8 @@ export interface AnswerOptions {
   readonly attemptMs?: number
   /** The wait between one call's refusal and the next. */
   readonly retryMs?: number
+  /** True once nobody wants the answer any more: the asking stops. */
+  readonly stop?: () => boolean
 }
 
 const pause = async (ms: number): Promise<void> => await new Promise<void>((resolve) => { setTimeout(resolve, ms) })
@@ -94,7 +97,7 @@ const pause = async (ms: number): Promise<void> => await new Promise<void>((reso
  * until one gets an answer; that answer is what says the context a setting would be sent to is the new one.
  */
 export async function untilAnswered (ask: () => Promise<unknown>, options: AnswerOptions): Promise<number> {
-  const { boundMs, attemptMs = 250, retryMs = 5 } = options
+  const { boundMs, attemptMs = 250, retryMs = 5, stop = () => false } = options
   const deadline = Date.now() + boundMs
   for (let tries = 1; ; tries += 1) {
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -102,7 +105,7 @@ export async function untilAnswered (ask: () => Promise<unknown>, options: Answe
     const answered = await Promise.race([ask().then(() => true, () => false), silent])
     clearTimeout(timer)
     if (answered) return tries
-    if (Date.now() >= deadline) throw new Error(`no answer after ${String(tries)} tries`)
+    if (Date.now() >= deadline || stop()) throw new Error(`no answer after ${String(tries)} tries`)
     await pause(retryMs)
   }
 }

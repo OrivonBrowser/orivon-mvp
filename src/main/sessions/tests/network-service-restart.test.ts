@@ -103,6 +103,31 @@ describe('a second end during a hold', () => {
   })
 })
 
+describe('a service that keeps ending', () => {
+  it('holds requests for three bounds at most, whatever the number of ends', async () => {
+    const { restart, reports } = restartWithClock()
+    restart.gone()
+    const waiting = restart.whenOpen()
+    for (let end = 0; end < 3; end += 1) {
+      await vi.advanceTimersByTimeAsync(BOUND_MS - 1000)
+      restart.gone()
+    }
+    expect(await settled(waiting)).toBe(false)
+    await vi.advanceTimersByTimeAsync(BOUND_MS)
+    expect(await settled(waiting)).toBe(true)
+    expect(reports).toEqual([{ outcome: 'timed-out', heldMs: BOUND_MS * 3, requests: 1 }])
+  })
+
+  it('names the current end and no earlier one', () => {
+    const { restart } = restartWithClock()
+    const first = restart.gone()
+    expect(restart.isCurrent(first)).toBe(true)
+    const second = restart.gone()
+    expect(restart.isCurrent(first)).toBe(false)
+    expect(restart.isCurrent(second)).toBe(true)
+  })
+})
+
 describe('the settings sent after the bound', () => {
   it('end nothing a second time', async () => {
     const { restart, reports } = restartWithClock()
