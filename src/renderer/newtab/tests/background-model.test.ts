@@ -27,8 +27,8 @@ describe('readBrightness', () => {
     for (const percent of [20, 55, 100, 180]) expect(readBrightness(percent)).toBe(percent)
   })
 
-  it.each([undefined, null, '60', 60.5, NaN, Infinity, 19, 181, 0, -50, {}, [60], true])('draws the picture as it is for an answer that is not well formed: %j', (answer) => {
-    expect(readBrightness(answer)).toBe(100)
+  it.each([undefined, null, '60', 60.5, NaN, Infinity, 19, 181, 0, -50, {}, [60], true])('draws the picture at the default for an answer that is not well formed: %j', (answer) => {
+    expect(readBrightness(answer)).toBe(80)
   })
 })
 

@@ -25,9 +25,9 @@ export function readBackground (answer: unknown): PageBackground {
 /** The bounds of `appearance.newTabBrightness` (src/main/settings/schema.ts), which this page may not import. */
 const BRIGHTNESS_MIN = 20
 const BRIGHTNESS_MAX = 180
-const BRIGHTNESS_DEFAULT = 100
+const BRIGHTNESS_DEFAULT = 80
 
-/** How bright to draw the picture, in percent: a whole number within the setting's bounds, else the picture as it is. */
+/** How bright to draw the picture, in percent: a whole number within the setting's bounds, else the setting's default. */
 export function readBrightness (answer: unknown): number {
   return typeof answer === 'number' && Number.isInteger(answer) && answer >= BRIGHTNESS_MIN && answer <= BRIGHTNESS_MAX ? answer : BRIGHTNESS_DEFAULT
 }

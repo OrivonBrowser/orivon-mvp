@@ -65,7 +65,7 @@ html[data-background="custom"]::before {
   z-index: -1;
   pointer-events: none;
   background: center / cover no-repeat;
-  filter: brightness(var(--new-tab-brightness, 1));
+  filter: brightness(var(--new-tab-brightness, 0.8));
 }
 html[data-background="orivon"]::before {
   background-image: url('../assets/new-tab-background.webp');

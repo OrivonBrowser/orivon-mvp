@@ -161,14 +161,14 @@ it('dims and lifts the picture of a new tab that is already open, with no reload
     expect(await waitFor(async () => await kindOf(open) === 'orivon')).toBe(true)
     // Only the page that is open now carries this: a reload would lose it.
     await open.evaluate(() => { (window as unknown as { __kept?: boolean }).__kept = true })
-    expect(await filterOf(open)).toBe('brightness(1)')
+    expect(await filterOf(open)).toBe('brightness(0.8)')
 
     const settings = await openSettings(app, chrome)
     const slider = settings.locator('#row-new-tab-brightness input[type=range]')
     const readout = settings.locator('#row-new-tab-brightness .range-value')
     expect(await settings.locator('#row-new-tab-brightness .row-label').textContent()).toContain('Background brightness')
-    expect(await slider.evaluate((input) => { const range = input as HTMLInputElement; return [range.min, range.max, range.step, range.value] })).toEqual(['20', '180', '5', '100'])
-    expect(await readout.textContent()).toBe('100%')
+    expect(await slider.evaluate((input) => { const range = input as HTMLInputElement; return [range.min, range.max, range.step, range.value] })).toEqual(['20', '180', '5', '80'])
+    expect(await readout.textContent()).toBe('80%')
     // The row's label names the slider.
     expect(await slider.evaluate((input) => (input as HTMLInputElement).labels?.[0]?.textContent)).toContain('Background brightness')
 
@@ -205,10 +205,10 @@ it('dims and lifts the picture of a new tab that is already open, with no reload
     expect(await filterOf(open)).toBe('brightness(1.5)')
     expect(await settings.locator('#row-new-tab-brightness input[type=range]').inputValue()).toBe('150')
 
-    // Reset puts the picture back as it is, in the page that is open. Settings is behind the second new tab, which draws no frames for a click's stability wait.
+    // Reset puts the brightness back to its default, in the page that is open. Settings is behind the second new tab, which draws no frames for a click's stability wait.
     await settings.locator('#row-new-tab-brightness').getByRole('button', { name: 'Reset' }).evaluate((button) => { (button as HTMLButtonElement).click() })
-    expect(await waitFor(async () => await filterOf(open) === 'brightness(1)')).toBe(true)
-    expect(await settings.locator('#row-new-tab-brightness input[type=range]').inputValue()).toBe('100')
+    expect(await waitFor(async () => await filterOf(open) === 'brightness(0.8)')).toBe(true)
+    expect(await settings.locator('#row-new-tab-brightness input[type=range]').inputValue()).toBe('80')
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectronApp(app)

@@ -8,7 +8,7 @@ page, in [`../../renderer/newtab/featured/featured.json`](../../renderer/newtab/
 `background-image.ts` says what file may become the background picture (five formats, told by their leading bytes by the reader's `sniffImageType`, up to 20 MB);
 `background-store.ts` copies a chosen file into `<userData>/new-tab-background` and answers what the page draws given the
 `appearance.newTabBackground` setting, and how bright it is drawn (`appearance.newTabBrightness`, a percent from 20 to 180, 100 being the
-picture as it is); `background-domain.ts` is what Settings may ask: to choose a picture (the file picker is handed in).
+picture as it is and 80 the setting's default); `background-domain.ts` is what Settings may ask: to choose a picture (the file picker is handed in).
 
 **What it depends on.** `node:fs`, [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts), and for the background [`../settings/settings-store.ts`](../settings/settings-store.ts) (types and the `appearance.newTabBackground` setting) [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts) (the domain's type) and [`../reader/reader-images.ts`](../reader/reader-images.ts) (`sniffImageType`, the one table of image signatures).
 

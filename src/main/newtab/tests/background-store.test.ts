@@ -21,7 +21,7 @@ interface Fake extends BackgroundSettings {
 /** Just enough of the settings store: the background choice and the brightness, which tell their listeners. */
 function fakeSettings (initial: Choice = 'orivon', locked = false): Fake {
   let value = initial
-  let brightness = 100
+  let brightness = 80
   const listeners = new Set<(change: { key: string, value: unknown }) => void>()
   const apply = (next: Choice): void => {
     if (next === value) return
@@ -214,7 +214,7 @@ describe('BackgroundStore: brightness', () => {
     let pictureTold = 0
     store.onBrightnessChange(() => { brightnessTold += 1 })
     store.onChange(() => { pictureTold += 1 })
-    expect(store.brightness()).toBe(100)
+    expect(store.brightness()).toBe(80)
     settings.setBrightness(60)
     expect(store.brightness()).toBe(60)
     expect([brightnessTold, pictureTold]).toEqual([1, 0])
@@ -249,7 +249,7 @@ describe('BackgroundStore: brightness', () => {
     const off = store.onBrightnessChange(() => { removed += 1 })
     store.onBrightnessChange(() => { throw new Error('a disposed page') })
     store.onBrightnessChange(() => { told += 1 })
-    settings.setBrightness(80)
+    settings.setBrightness(100)
     off()
     settings.setBrightness(90)
     expect([removed, told]).toEqual([1, 2])
