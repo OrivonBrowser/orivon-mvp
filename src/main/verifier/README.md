@@ -137,9 +137,9 @@ kept session. An embed guest's session is not covered. Making Chromium accept th
 host) would end the race for good, and is a change to the certificate check.
 
 **The certificate check goes on every session, through `session-created`.** A partition without
-it cannot load any host the verifier serves. A network service that restarts starts without it, so the check goes on every
-session again once the new service answers, and the host is put to sleep, so its next request starts one (its own `net`
-context ended with the old service); requests wait meanwhile ([`../sessions/README.md`](../sessions/README.md), the network service's design note).
+it cannot load any host the verifier serves. A network service that restarts starts without it, so the check goes on each
+session again when that session's own context answers, and the host is put to sleep, so its next request starts one (its own `net`
+context ended with the old service; the IPFS and Swarm nodes stop with it and start again at their next ask); requests wait meanwhile ([`../sessions/README.md`](../sessions/README.md), the network service's design note).
 
 **The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts), asked by [`host-proxy.ts`](host-proxy.ts), which also hands the host the tunnel's front while the whole browser is on the tunnel, and the tunnel profile's front for the fetches of a website in that profile). It needs
 `app.resolveProxy`, and a `utilityProcess` has no `session` to ask. It runs once per host start,

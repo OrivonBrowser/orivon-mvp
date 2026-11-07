@@ -27,10 +27,14 @@ export interface HoldReport {
 /** A service that keeps ending cannot hold requests for ever: the whole hold lasts at most this many bounds. */
 const MAX_BOUNDS = 3
 
-/** What a restart cost, counted for the whole run. */
+/** What the restarts of the network service cost, counted for the whole run. */
 export interface RestartCounts {
+  /** Times the service ended. */
   readonly restarts: number
+  /** Holds that ended at the bound, with the settings not yet back. */
   readonly timedOut: number
+  /** How the latest hold ended, or `none` when the service has not ended. */
+  readonly last: HoldOutcome | 'none'
 }
 
 export interface RestartDeps {
@@ -49,6 +53,7 @@ export class NetworkServiceRestart {
   private readonly waiting = new Set<() => void>()
   private count = 0
   private expired = 0
+  private latest: HoldOutcome | 'none' = 'none'
 
   constructor (private readonly deps: RestartDeps) {}
 
@@ -99,7 +104,7 @@ export class NetworkServiceRestart {
   }
 
   counts (): RestartCounts {
-    return { restarts: this.count, timedOut: this.expired }
+    return { restarts: this.count, timedOut: this.expired, last: this.latest }
   }
 
   private finish (outcome: HoldOutcome, generation: number): void {
@@ -108,6 +113,7 @@ export class NetworkServiceRestart {
     this.timer = undefined
     this.holding = false
     if (outcome === 'timed-out') this.expired += 1
+    this.latest = outcome
     const report: HoldReport = { outcome, heldMs: this.deps.now() - this.since, requests: this.requests }
     const release = [...this.waiting]
     this.waiting.clear()

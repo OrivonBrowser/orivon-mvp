@@ -1,12 +1,13 @@
 // The Electron half of a network-service restart (network-service-recovery.ts is its order, network-service-restart.ts
 // the hold). When Chromium's network service ends, a web request handler is put first on every website session so no
 // request reaches certificate verification or DNS, the new service is waited for, each setting registered here is sent
-// to every session again, and the handlers come off. Tied to Electron: `child-process-gone`, `session-created`, the sessions.
+// again (the ones of the service as a whole once, the ones of a session to each session when its own context answers),
+// and the handlers come off. Tied to Electron: `child-process-gone`, `session-created`, the sessions.
 import { app, session } from 'electron'
 import type { Session } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { NetworkServiceRecovery, holdLine, untilAnswered } from './network-service-recovery.js'
-import type { Reapplier } from './network-service-recovery.js'
+import type { ServiceSetting, SessionSetting } from './network-service-recovery.js'
 import { HOLD_BOUND_MS, networkServiceRestart, onHoldEnded } from './network-service-hold.js'
 import { isNetworkServiceEnd } from './network-service-restart.js'
 import { noteHoldEnded, noteServiceEnded, noteSettingsResent, reapplyDelayMs } from './network-service-test-seam.js'
@@ -19,27 +20,35 @@ const HOLD_ORDER = Number.MIN_SAFE_INTEGER
 /** The requests that reach certificate verification or DNS. */
 const NETWORK_REQUESTS = { urls: ['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'] }
 
-const reappliers: Array<Reapplier<Session>> = []
+const serviceSettings: ServiceSetting[] = []
+const sessionSettings: Array<SessionSetting<Session>> = []
 /** Every session Electron has made, the default one included: the certificate check lives on each. */
 const known = new Set<Session>()
+const madeListeners = new Set<(target: Session) => void>()
 const holds = new Map<Session, WebRequestHandlerHandle>()
 let quitting = false
 
-/** Registers a setting that lives on the network service: `reapply` runs for every session each time a new service starts. */
-export function reapplyAfterNetworkServiceRestart (name: string, reapply: Reapplier<Session>['reapply']): void {
-  reappliers.push({ name, reapply })
+/** Registers a setting that lives on the network service as a whole: `reapply` runs once each time a new service starts and its first session answers. */
+export function reapplyAfterNetworkServiceRestart (name: string, reapply: ServiceSetting['reapply']): void {
+  serviceSettings.push({ name, reapply })
+}
+
+/** Registers a setting that lives on each session's network context: `reapply` runs for every session each time a new service starts, when that session's own context answers. */
+export function reapplyToSessionsAfterNetworkServiceRestart (name: string, reapply: SessionSetting<Session>['reapply']): void {
+  sessionSettings.push({ name, reapply })
 }
 
 const restart = networkServiceRestart
 
 onHoldEnded((report) => {
-  try {
-    for (const handle of holds.values()) handle.remove()
-  } catch (error) {
-    console.error('[network-service] taking the hold off a session failed:', error)
-  } finally {
-    holds.clear()
+  for (const handle of holds.values()) {
+    try {
+      handle.remove()
+    } catch (error) {
+      console.error('[network-service] taking the hold off a session failed:', error)
+    }
   }
+  holds.clear()
   if (report.outcome === 'timed-out') console.error(holdLine(report))
   else console.log(holdLine(report))
   noteHoldEnded(report)
@@ -61,29 +70,22 @@ const OTHERS_GRACE_MS = 1_000
 
 const pause = async (ms: number): Promise<void> => await new Promise<void>((resolve) => { setTimeout(resolve, ms) })
 
-/**
- * Resolves once the default session's new network context answers a call and the other sessions have had a moment to; a
- * test build may then wait on, so a request can be started inside the hold. Rejects when the default session never answers.
- */
-async function networkServiceAnswers (targets: readonly Session[]): Promise<void> {
-  let done = false
-  const asked = targets.map(async (target) => await untilAnswered(async () => await target.resolveHost(PROBE_ADDRESS), { boundMs: HOLD_BOUND_MS, stop: () => done }))
-  for (const one of asked) one.catch(() => {})
-  try {
-    await asked[Math.max(0, targets.indexOf(session.defaultSession))]
-    await Promise.race([Promise.allSettled(asked), pause(OTHERS_GRACE_MS)])
-  } finally {
-    done = true
-  }
-  const wait = reapplyDelayMs()
-  if (wait > 0) await pause(wait)
-}
-
 const recovery = new NetworkServiceRecovery<Session>({
   restart,
-  ready: networkServiceAnswers,
+  primary: () => session.defaultSession,
+  answers: async (target, stop) => { await untilAnswered(async () => await target.resolveHost(PROBE_ADDRESS), { boundMs: HOLD_BOUND_MS, stop }) },
   targets: () => [...known],
-  reappliers: () => reappliers,
+  watch: (listener) => {
+    madeListeners.add(listener)
+    return () => { madeListeners.delete(listener) }
+  },
+  beforeSending: async () => {
+    const wait = reapplyDelayMs()
+    if (wait > 0) await pause(wait)
+  },
+  graceMs: OTHERS_GRACE_MS,
+  serviceSettings: () => serviceSettings,
+  sessionSettings: () => sessionSettings,
   now: Date.now,
   log: (line) => { console.log(line) },
   holdBegan: () => {
@@ -100,7 +102,10 @@ const recovery = new NetworkServiceRecovery<Session>({
 export const networkServiceSubsystem: Subsystem = {
   name: 'network-service',
   beforeReady: () => {
-    app.on('session-created', (created) => { known.add(created) })
+    app.on('session-created', (created) => {
+      known.add(created)
+      for (const listener of [...madeListeners]) listener(created)
+    })
     app.on('before-quit', () => { quitting = true })
     app.on('child-process-gone', (_event, details) => {
       if (quitting || !isNetworkServiceEnd(details)) return

@@ -89,8 +89,8 @@ let ipfsSourceChoice: () => 'node' | 'gateways' = () => 'node'
 let ipfsLookupServiceChoice: () => boolean = () => true
 /** The Ethereum servers the light client asks: Orivon's, or the person's. Read at each host start and each time a view is drawn. */
 const ethServers = new EthServersSource()
-/** Puts the host to sleep so that its next request rebuilds its config. Set once the host exists. */
-export let idleHost: () => void = () => {}
+/** Puts the host to sleep so that its next request rebuilds its config; does nothing before the host exists. */
+export function idleHost (): void { supervisor?.idle() }
 /** The routes, published after this subsystem starts: read when the host's config is built. */
 let routesOf: () => RouteService | undefined = () => undefined
 
@@ -453,7 +453,6 @@ export const verifierSubsystem: Subsystem = {
       }
     })
     supervisor = host
-    idleHost = () => { host.idle() }
     /** Tells the host what a node is doing; it holds a mount that reads from the node on the answer. */
     function tellHost (name: string, node: LocalNodeSubsystem): void {
       const state = node.state()

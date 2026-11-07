@@ -62,7 +62,7 @@ describe('a request after the network service ended', () => {
     expect(await settled(waiting)).toBe(true)
     expect(restart.isHolding()).toBe(false)
     expect(reports).toEqual([{ outcome: 'timed-out', heldMs: BOUND_MS, requests: 1 }])
-    expect(restart.counts()).toEqual({ restarts: 1, timedOut: 1 })
+    expect(restart.counts()).toEqual({ restarts: 1, timedOut: 1, last: 'timed-out' })
   })
 
   it('goes on at once once the hold has ended', async () => {
@@ -87,7 +87,7 @@ describe('a second end during a hold', () => {
     expect(await settled(waiting)).toBe(true)
     expect(reports).toHaveLength(1)
     expect(reports[0]).toMatchObject({ outcome: 'reapplied', heldMs: 100, requests: 1 })
-    expect(restart.counts()).toEqual({ restarts: 2, timedOut: 0 })
+    expect(restart.counts()).toEqual({ restarts: 2, timedOut: 0, last: 'reapplied' })
   })
 
   it('starts the bound again from the later end', async () => {

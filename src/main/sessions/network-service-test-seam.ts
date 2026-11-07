@@ -12,7 +12,7 @@ export interface NetworkServiceSeam {
   resent: number
   /** Every call that set the host resolver, in order, with the mode it set. */
   resolverCalls: Array<{ readonly at: number, readonly mode: string | undefined, readonly servers: number }>
-  /** Every certificate check bound to a session, in order: the number of sessions it covered. */
+  /** Every certificate check bound to a session, in order: the number of the restart (1 for the first) it was sent after. */
   certificateChecks: number[]
   /** How each hold ended, in order. */
   holds: Array<{ readonly outcome: string, readonly requests: number }>
@@ -46,8 +46,9 @@ export function noteHoldEnded (report: { readonly outcome: string, readonly requ
   seam()?.holds.push({ outcome: report.outcome, requests: report.requests })
 }
 
-export function noteCertificateChecks (sessions: number): void {
-  seam()?.certificateChecks.push(sessions)
+export function noteCertificateCheck (): void {
+  const state = seam()
+  if (state !== undefined) state.certificateChecks.push(state.ended)
 }
 
 const positive = (value: string | undefined): number | undefined => {
