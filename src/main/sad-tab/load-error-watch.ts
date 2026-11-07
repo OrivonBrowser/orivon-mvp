@@ -5,6 +5,7 @@
 import type { WebContents } from 'electron'
 import { isCertError } from '../auth/cert-error-text.js'
 import type { requestSlot } from '../overlays/tab-slots.js'
+import type { LoadRefusal } from '../route/load-refusals.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { isErrorName } from './load-error-text.js'
 
@@ -18,11 +19,13 @@ export interface LoadErrorDeps {
   readonly ask: typeof requestSlot
   /** Another sheet explains this failure (HTTPS-only upgraded the address and the upgrade failed), so this one stays out. */
   readonly claimed?: (contentsId: number, url: string, code: number) => boolean
-  /** The load was cancelled because its address is an onion address and the tab's session does not go through the person's own SOCKS5 tunnel, which the sheet then says. */
-  readonly onionRefused?: (contentsId: number, url: string) => boolean
+  /** Why Orivon cancelled this load before sending it (an onion address outside the person's own SOCKS5 tunnel, a name the verifier serves that the system's proxy would see), which the sheet then says; undefined for any other failure. */
+  readonly refused?: (contentsId: number, url: string) => LoadRefusal | undefined
   /** The tab is about to move to another session and load this address there, so the failure is not the page's last word. Asked with the partition the tab is in now. */
   readonly movesTab?: (partition: string | undefined, url: string, code: number) => boolean
 }
+
+const refusalPayload = (refusal: LoadRefusal | undefined): { refusal?: LoadRefusal } => refusal === undefined ? {} : { refusal }
 
 /** Each watched web contents, with what takes its sheet away. */
 const watched = new WeakMap<WebContents, () => void>()
@@ -55,7 +58,7 @@ export function watchLoadErrors (contents: WebContents, deps: LoadErrorDeps): vo
       tabId: found.tabId,
       slot: 'center',
       overlay: LOAD_ERROR_OVERLAY,
-      payload: { code, name: isErrorName(name) ? name : '', ...(deps.onionRefused?.(contents.id, url) === true ? { onion: true } : {}) },
+      payload: { code, name: isErrorName(name) ? name : '', ...refusalPayload(deps.refused?.(contents.id, url)) },
       closed: () => { pending = undefined }
     })
   })

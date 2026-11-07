@@ -3,7 +3,7 @@ import { createServer } from 'node:net'
 import { BUILTIN_ADDRESSES } from '../../../protocols/builtin.js'
 import { ACCEPT, CHROMIUM_VERDICT, REJECT, refusalNote, verifierCertificateVerdict } from '../certificate-check.js'
 import { loopbackPort } from '../loopback-port.js'
-import { composeResolverRules } from '../resolver-rules.js'
+import { answerNamesHere, composeResolverRules } from '../resolver-rules.js'
 
 describe('composeResolverRules', () => {
   const suffixes = BUILTIN_ADDRESSES.routedSuffixes()
@@ -30,6 +30,21 @@ describe('composeResolverRules', () => {
     const rules = composeResolverRules({ devClauses: '', port: 40001, suffixes, existing: 'MAP abc.onion 127.0.0.1:9' })
     expect(rules.split(',').slice(-3)).toEqual(['MAP *.onion ~NOTFOUND', 'MAP *.onion. ~NOTFOUND', 'MAP onion ~NOTFOUND'])
     expect(rules.indexOf('MAP abc.onion 127.0.0.1:9')).toBeLessThan(rules.indexOf('MAP *.onion ~NOTFOUND'))
+  })
+})
+
+describe('answerNamesHere', () => {
+  const suffixes = BUILTIN_ADDRESSES.routedSuffixes()
+
+  it('sets the resolver rules after the ones already given and exempts the names from an environment proxy', () => {
+    const switches = new Map([['host-resolver-rules', 'MAP test.example 127.0.0.1']])
+    const env: Record<string, string | undefined> = { http_proxy: 'http://127.0.0.1:3128', no_proxy: 'localhost' }
+    answerNamesHere({ getSwitchValue: (name) => switches.get(name) ?? '', appendSwitch: (name, value) => { switches.set(name, value) } }, env, { devClauses: '', port: 40001, suffixes })
+    expect(switches.get('host-resolver-rules')).toContain('MAP *.eth 127.0.0.1:40001')
+    expect(switches.get('host-resolver-rules')).toContain('MAP test.example 127.0.0.1')
+    expect(env.no_proxy).toBe('localhost,.eth,.orivon')
+    expect(env.NO_PROXY).toBe('localhost,.eth,.orivon')
+    expect(env.http_proxy).toBe('http://127.0.0.1:3128')
   })
 })
 
