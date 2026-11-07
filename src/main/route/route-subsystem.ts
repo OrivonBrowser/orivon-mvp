@@ -26,13 +26,15 @@ import { prepareProfileSession, wakeProfileSession } from '../extensions/extensi
 import { servedOrigin } from './served-origin.js'
 import { ensureSiteSession, mustLeaveSession, setSiteRoutes, setMadeSiteSessions, setSiteSessionEnsurer, siteProfileOf } from './site-routes.js'
 import { onionRefusals, onionRefused } from './onion-guard.js'
+import { proxyAnswerFor } from './proxy-answers.js'
+import { namesVerifierHost, refusingProxiedNames, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
 import { kindOfProfile, profilePartition, profilePartitionFor } from './site-partition.js'
 import { tabChoiceOfContents, tabKindShowing } from './tab-tunnel.js'
 import type { SiteSession } from './site-sessions.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { announceWebsiteSession } from '../sessions/website-sessions.js'
+import { announceWebsiteSession, forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { webRequestOwnerFor, type WebRequestHandlerHandle } from '../sessions/web-request-owner.js'
 import { createTemporaryRoutes, temporarySessionShowing } from './temporary-routes.js'
 import { createNym } from './nym-launch.js'
@@ -47,6 +49,8 @@ import type { DeadEnd } from './dead-end.js'
 
 /** Where an onion guard runs among a session's `onBeforeRequest` handlers: after the main-frame guard (-2) and the hold on a session not yet pointed (-1). */
 const ONION_GUARD_ORDER = 0
+/** Where the guard for names the verifier serves runs: after the hold on a session not yet pointed (-1), ahead of the verifier's listening gate (0), so a refused request wakes nothing. */
+const VERIFIER_NAME_GUARD_ORDER = -0.5
 /** Every scheme a request for an onion host can use; the root-dot spelling is a host of its own to a match pattern. */
 const ONION_FILTER: WebRequestFilter = { urls: ['http://*.onion/*', 'https://*.onion/*', 'ws://*.onion/*', 'wss://*.onion/*', 'http://*.onion./*', 'https://*.onion./*', 'ws://*.onion./*', 'wss://*.onion./*'] }
 
@@ -131,6 +135,13 @@ export const routeSubsystem: Subsystem = {
     // The default session is the shared identity's, and is stopped before anything else is done while the whole browser is on the tunnel.
     adopt(session.defaultSession)
     routes.controller.startShared()
+    // A session that follows the system sends a name the verifier serves to the system's proxy, whatever the resolver rules say: it never does.
+    forEachWebsiteSession((target) => {
+      webRequestOwnerFor(target).onBeforeRequest(VERIFIER_NAME_GUARD_ORDER, verifierNameFilter(), namesVerifierHost, verifierNameGuard({
+        followsSystem: () => routes.controller.tunnelOf(target) === undefined,
+        ask: async (url) => await proxyAnswerFor(target, url)
+      }))
+    })
 
     // The session that asks what the system's proxy is (T20) never follows the tunnel; the lookups about a website set to off go through it too.
     let systemSession: Session | undefined
@@ -146,7 +157,7 @@ export const routeSubsystem: Subsystem = {
     setSystemProxyProbe(async (url) => await systemProxySession().resolveProxy(url))
     setDirectLookupSource(() => routes.everywhere() ? systemProxySession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
-    const directFetch = createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } })
+    const directFetch = refusingProxiedNames(systemProxySession(), createRequestFetch({ net, session: systemProxySession(), answer: (_info, callback) => { callback() } }))
     // A website with a tunnel of its own, or one a tab with a tunnel choice shows or is loading, is asked about (its app manifest, its files by the loader) in that tunnel's profile session, never the default one, which is direct while the whole browser is off the tunnel and may be the other tunnel when it is on.
     const siteTunnelled = (origin: string): boolean => {
       const profile = routes.hub.profileFor(origin)

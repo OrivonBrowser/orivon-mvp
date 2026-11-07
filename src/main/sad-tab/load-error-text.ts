@@ -1,6 +1,8 @@
 // What the sheet over a page that failed to load says, as a fixed table by Chromium's network error code. The only
 // other text on it is the tab's own address and the error's short name, which is checked to be one.
 
+import { PROXY_REFUSAL_ADVICE, PROXY_WOULD_SEE_NAME } from '../route/verifier-name-guard.js'
+
 export interface LoadErrorText {
   readonly title: string
   readonly body: string
@@ -43,11 +45,19 @@ const BY_CODE: ReadonlyMap<number, LoadErrorText> = new Map([
 
 const ONION_NEEDS_TOR: LoadErrorText = { title: UNREACHABLE, body: 'An onion address can be reached only through a Tor tunnel, so it was not looked up. To open it, set Tor\'s SOCKS5 address in Settings, then Tunnels, and send this site through it.' }
 
+const NAME_NOT_OPENED: LoadErrorText = { title: 'This name was not opened', body: `${PROXY_WOULD_SEE_NAME} ${PROXY_REFUSAL_ADVICE}` }
+
 const DEFAULT_TEXT: LoadErrorText = { title: 'This page couldn\'t be loaded', body: 'Something went wrong while loading it. Trying again may help.' }
 
-/** `onion`: the load was cancelled because its address is an onion address and the tab's session does not go through the person's own SOCKS5 tunnel. */
-export function loadErrorText (code: number, onion = false): LoadErrorText {
-  if (onion) return ONION_NEEDS_TOR
+/**
+ * Why Orivon cancelled a load before anything was sent: `onion`, because its address is an onion address and the tab's session does
+ * not go through the person's own SOCKS5 tunnel; `proxy`, because its name is one the verifier serves and the session's proxy would see it.
+ */
+export type LoadRefusal = 'onion' | 'proxy'
+
+export function loadErrorText (code: number, refusal?: LoadRefusal): LoadErrorText {
+  if (refusal === 'onion') return ONION_NEEDS_TOR
+  if (refusal === 'proxy') return NAME_NOT_OPENED
   return BY_CODE.get(code) ?? DEFAULT_TEXT
 }
 

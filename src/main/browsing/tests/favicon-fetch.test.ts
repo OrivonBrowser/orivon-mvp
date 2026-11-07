@@ -12,11 +12,13 @@ import { FAVICON_TIMEOUT_MS, faviconTimeoutMs, VERIFIED_FAVICON_TIMEOUT_MS } fro
 // below arrives through a dynamic import rather than a static one: it has
 // to be registered before favicon-fetch.js is evaluated.
 vi.mock('electron', () => ({
-  net: { request: vi.fn() }
+  net: { request: vi.fn() },
+  session: { defaultSession: { resolveProxy: vi.fn() } }
 }))
 
-const { net } = await import('electron')
+const { net, session } = await import('electron')
 const { fetchFaviconDataUrlCached, isSafeFaviconUrl, MAX_FAVICON_REDIRECTS, readCapped } = await import('../favicon-fetch.js')
+const { noteProxySet } = await import('../../route/proxy-answers.js')
 const { fakeIncomingMessage, mockRequestOnce, PNG_BYTES, PUBLIC_PAGE, requests, respondOk } = await import('./favicon.test-helpers.js')
 
 /** The network path, with nothing it fetches kept: every call below that
@@ -521,3 +523,24 @@ describe('isSafeFaviconUrl: an onion address', () => {
   })
 })
 
+
+describe('the icon of a page the verifier serves', () => {
+  const resolveProxy = vi.mocked(session.defaultSession.resolveProxy)
+  const PAGE = 'https://page.eth/'
+  // The session remembers its answers for a few seconds; each test sets its own.
+  beforeEach(() => { noteProxySet(session.defaultSession) })
+
+  it('is not requested when the session would send the name to a proxy', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resolveProxy.mockResolvedValue('PROXY 127.0.0.1:3128')
+    await expect(fetchUncached('https://page.eth/favicon.ico', PAGE)).resolves.toBeNull()
+    expect(net.request).not.toHaveBeenCalled()
+  })
+
+  it('is requested when the session sends the name to the verifier', async () => {
+    resolveProxy.mockResolvedValue('DIRECT')
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    await expect(fetchUncached('https://page.eth/favicon.ico', PAGE)).resolves.not.toBeNull()
+    expect(net.request).toHaveBeenCalledTimes(1)
+  })
+})

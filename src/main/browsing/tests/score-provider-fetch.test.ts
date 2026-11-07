@@ -5,12 +5,13 @@ import { Readable } from 'node:stream'
 import type { Session } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('electron', () => ({ net: { fetch: vi.fn(), request: vi.fn() } }))
+vi.mock('electron', () => ({ net: { fetch: vi.fn(), request: vi.fn() }, session: { defaultSession: { resolveProxy: vi.fn() } } }))
 
-const { net } = await import('electron')
+const { net, session } = await import('electron')
 const { netFetchJson } = await import('../score-provider-client.js')
 const { setLookupSessionSource, setDirectLookupSource } = await import('../../route/lookup-session.js')
 const { setOwnRequests } = await import('../../route/own-requests.js')
+const { noteProxySet } = await import('../../route/proxy-answers.js')
 
 const ROUTE = { name: 'route' } as unknown as Session
 const APP = 'https://app.example'
@@ -98,5 +99,27 @@ describe('netFetchJson while the whole browser is on the tunnel', () => {
     setDirectLookupSource(() => ({ fetch: fetchOnSession }) as unknown as Session)
     expect(await netFetchJson('http://provider.example/a.json', 'https://off.example')).toEqual({ kind: 'ok', body: { through: 'off' } })
     expect(tunnel).not.toHaveBeenCalled()
+  })
+})
+
+describe('netFetchJson, for a provider the verifier serves', () => {
+  const resolveProxy = vi.mocked(session.defaultSession.resolveProxy)
+  // The session remembers its answers for a few seconds; each test sets its own.
+  beforeEach(() => { noteProxySet(session.defaultSession) })
+
+  it('is not asked when the session it would be asked in uses a proxy, which would see the name', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    resolveProxy.mockResolvedValue('PROXY 127.0.0.1:3128')
+
+    expect(await netFetchJson('https://scores.eth/provider.json')).toMatchObject({ kind: 'failed' })
+
+    expect(net.fetch).not.toHaveBeenCalled()
+  })
+
+  it('is asked when the session sends the name to the verifier', async () => {
+    resolveProxy.mockResolvedValue('DIRECT')
+    vi.mocked(net.fetch).mockResolvedValueOnce(new Response('{"a":1}', { status: 200 }))
+
+    expect(await netFetchJson('https://scores-direct.eth/provider.json')).toEqual({ kind: 'ok', body: { a: 1 } })
   })
 })

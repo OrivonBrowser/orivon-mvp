@@ -1,7 +1,9 @@
 // What the system-proxy specs share: a forward proxy on loopback that logs every request it is asked to make, the
 // environment that makes Chromium follow it as the computer's proxy, and a visit that reports what the tab showed.
-import { connect, createServer as createTcpServer, type AddressInfo, type Server as TcpServer } from 'node:net'
+import { connect, type AddressInfo } from 'node:net'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { activeTabInfo, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
@@ -13,8 +15,8 @@ export interface LoggingProxy {
   readonly port: number
   readonly url: string
   readonly seen: ProxyLog
-  /** Answers a plain-HTTP request for `host` (with its port, when it has one) with this page. */
-  serve: (host: string, title: string) => void
+  /** Answers a plain-HTTP request for `host` (with its port, when it has one) with a page of this title, and this body (the title, when none is given). */
+  serve: (host: string, title: string, body?: string) => void
   /** Carries a `CONNECT` for `host:443` to a TLS server on this computer, as a proxy that terminates TLS for a name would. */
   tunnelTo: (host: string, port: number) => void
   close: () => Promise<void>
@@ -26,15 +28,15 @@ export interface LoggingProxy {
  */
 export async function startLoggingProxy (): Promise<LoggingProxy> {
   const seen: ProxyLog = []
-  const pages = new Map<string, string>()
+  const pages = new Map<string, { title: string, body: string }>()
   const tunnels = new Map<string, number>()
   const sockets = new Set<import('node:net').Socket>()
   const server: Server = createServer((request: IncomingMessage, response: ServerResponse) => {
     seen.push(`${request.method ?? ''} ${request.url ?? ''}`)
     const host = request.headers.host ?? ''
-    const title = pages.get(host)
-    if (title === undefined) { response.writeHead(404, { 'content-type': 'text/plain' }).end('the proxy serves nothing for this'); return }
-    response.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><meta charset="utf-8"><title>${title}</title><body>${title}</body>`)
+    const page = pages.get(host)
+    if (page === undefined) { response.writeHead(404, { 'content-type': 'text/plain' }).end('the proxy serves nothing for this'); return }
+    response.writeHead(200, { 'content-type': 'text/html' }).end(`<!doctype html><meta charset="utf-8"><title>${page.title}</title><body>${page.body}</body>`)
   })
   server.on('connection', (socket) => { sockets.add(socket); socket.on('close', () => { sockets.delete(socket) }) })
   server.on('connect', (request: IncomingMessage, client) => {
@@ -57,21 +59,13 @@ export async function startLoggingProxy (): Promise<LoggingProxy> {
     port,
     url: `http://127.0.0.1:${String(port)}`,
     seen,
-    serve: (host, title) => { pages.set(host, title) },
+    serve: (host, title, body = title) => { pages.set(host, { title, body }) },
     tunnelTo: (host, local) => { tunnels.set(host, local) },
     close: async () => {
       for (const socket of sockets) socket.destroy()
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     }
   }
-}
-
-/** A TCP server that counts the connections it accepts and drops them: what a TLS server sees of a client that refuses it. */
-export async function startCountingListener (): Promise<{ port: number, accepted: () => number, close: () => Promise<void> }> {
-  let count = 0
-  const server: TcpServer = createTcpServer((socket) => { count += 1; socket.destroy() })
-  await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
-  return { port: (server.address() as AddressInfo).port, accepted: () => count, close: async () => { await new Promise<void>((resolve) => { server.close(() => { resolve() }) }) } }
 }
 
 /** Every variable Chromium reads on Linux to find a proxy, in both cases. */
@@ -82,6 +76,27 @@ const DESKTOP_VARIABLES = ['XDG_CURRENT_DESKTOP', 'DESKTOP_SESSION', 'GNOME_DESK
 /** `proxy` as the environment of a launch that has the computer's proxy set the way a shell profile sets it. */
 export function proxyEnvironment (proxy: string, extra: Record<string, string> = {}): Record<string, string> {
   return { http_proxy: proxy, https_proxy: proxy, HTTP_PROXY: proxy, HTTPS_PROXY: proxy, ...extra }
+}
+
+/** The schema Chromium reads GNOME's proxy through; a keyfile backend cannot answer for a schema that is not installed. */
+const GNOME_PROXY_SCHEMA = '/usr/share/glib-2.0/schemas/org.gnome.system.proxy.gschema.xml'
+
+/**
+ * A computer whose desktop (GNOME's settings) carries the proxy, in a keyfile settings backend of the test's own. Chromium reads
+ * a desktop's settings and only then the environment, so no `no_proxy` in the environment exempts anything on such a computer.
+ * `write` changes the setting the way the desktop's settings window would.
+ */
+export function gnomeProxy (dir: string, port: number, ignore: readonly string[] = ['localhost', '127.0.0.0/8', '::1']): { env: Record<string, string>, write: (port: number) => void } {
+  if (!existsSync(GNOME_PROXY_SCHEMA)) throw new Error('GNOME\'s proxy settings need the package gsettings-desktop-schemas: without it Chromium reads no proxy from the desktop, whatever this writes')
+  mkdirSync(join(dir, 'glib-2.0', 'settings'), { recursive: true })
+  const file = join(dir, 'glib-2.0', 'settings', 'keyfile')
+  const write = (next: number): void => {
+    const text = `[system/proxy]\nmode='manual'\nignore-hosts=[${ignore.map((host) => `'${host}'`).join(', ')}]\n\n[system/proxy/http]\nhost='127.0.0.1'\nport=${String(next)}\n\n[system/proxy/https]\nhost='127.0.0.1'\nport=${String(next)}\n`
+    writeFileSync(`${file}.tmp`, text)
+    renameSync(`${file}.tmp`, file)
+  }
+  write(port)
+  return { env: { XDG_CURRENT_DESKTOP: 'GNOME', GSETTINGS_BACKEND: 'keyfile', XDG_CONFIG_HOME: dir }, write }
 }
 
 /**
@@ -123,6 +138,8 @@ export interface Visit {
   readonly title: string
   /** The sheet's name for the error (`ERR_PROXY_CONNECTION_FAILED`), empty when there was none. */
   readonly error: string
+  /** What the sheet says (its heading and its sentence), empty when there was none. */
+  readonly sheet: string
 }
 
 const sheetPage = (app: ElectronApplication): Page | undefined => app.windows().filter((w) => w.url().includes('overlay=load-error') && !w.isClosed()).at(-1)
@@ -131,13 +148,19 @@ const sheetPage = (app: ElectronApplication): Page | undefined => app.windows().
 export async function visitReporting (app: ElectronApplication, chrome: Page, url: string, title: string, timeoutMs = 25_000): Promise<Visit> {
   const before = (await loadFailures(app)).length
   await clickAddressBarRetrying(chrome, url)
-  let found: Visit = { result: 'neither', title: '', error: '' }
+  let found: Visit = { result: 'neither', title: '', error: '', sheet: '' }
   await waitFor(async () => {
     const tab = await activeTabInfo(chrome)
-    if (tab.title === title) { found = { result: 'page', title: tab.title ?? '', error: '' }; return true }
+    if (tab.title === title) { found = { result: 'page', title: tab.title ?? '', error: '', sheet: '' }; return true }
     if ((await loadFailures(app)).length > before && await popoverShown(app, 'overlay=load-error')) {
-      const name = await sheetPage(app)?.locator('.load-error-name').textContent({ timeout: 1_000 }).catch(() => '') ?? ''
-      if (name !== '') { found = { result: 'error', title: tab.title ?? '', error: name }; return true }
+      const sheet = sheetPage(app)
+      const name = await sheet?.locator('.load-error-name').textContent({ timeout: 1_000 }).catch(() => '') ?? ''
+      if (name !== '') {
+        const heading = await sheet?.locator('#load-error-title').textContent({ timeout: 1_000 }).catch(() => '') ?? ''
+        const sentence = await sheet?.locator('#load-error-text').textContent({ timeout: 1_000 }).catch(() => '') ?? ''
+        found = { result: 'error', title: tab.title ?? '', error: name, sheet: `${heading} ${sentence}`.trim() }
+        return true
+      }
     }
     return false
   }, timeoutMs)
