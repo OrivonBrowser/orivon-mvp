@@ -43,6 +43,8 @@ import { manifestHintSubsystem } from './install/manifest-hint.js'
 import { telemetrySubsystem } from '../telemetry/runner.js'
 import { pagesSubsystem } from './pages/pages-subsystem.js'
 import { diagnosticsSubsystem } from './diagnostics/diagnostics-runner.js'
+import { networkServiceSubsystem } from './sessions/network-service-runner.js'
+import { verifierNetworkServiceSubsystem } from './verifier/network-service-reapply.js'
 
 export const subsystems: Subsystem[] = [
   diagnosticsSubsystem, // native crash dumps, collected here and never uploaded -> src/main/diagnostics/. Reads neither ctx.broker nor ctx.loader.
@@ -51,6 +53,7 @@ export const subsystems: Subsystem[] = [
   // including one a later entry's own beforeReady might trigger. Reads
   // neither ctx.broker nor ctx.loader, so it has no ordering constraint
   // from either of those -- only this one, self-imposed.
+  networkServiceSubsystem, // sends the settings Chromium's network service starts without to every session again, and holds requests until then -> src/main/sessions/network-service-runner.ts. Listed ahead of the other subsystems so it hears of every session. Reads neither ctx.broker nor ctx.loader.
   permissionGateSubsystem, // security -> src/main/permission-gate.ts
   // Cancels every request to a port a local node holds, in every session -> src/main/sessions/local-node-port-gate.ts. Its beforeReady also listens for sessions as they are created, so it sits beside the permission gate. Reads neither ctx.broker nor ctx.loader.
   localNodePortGateSubsystem,
@@ -62,6 +65,7 @@ export const subsystems: Subsystem[] = [
   // Where documents opened from this computer run, and what a session answers `file:` with -> src/main/local-files/. Reads ctx.broker only when a request arrives.
   localFilesSubsystem,
   verifierSubsystem, // .eth names: resolver rules, certificate check, verifier host -> src/main/verifier/. Reads neither ctx.broker nor ctx.loader.
+  verifierNetworkServiceSubsystem, // sends the certificate check and a restart of the verifier host again when Chromium's network service restarts -> src/main/verifier/network-service-reapply.ts. Reads neither ctx.broker nor ctx.loader.
   signInIdentitySubsystem, // Firefox request headers on Google's sign-in hosts -> src/main/shell/sign-in-identity-headers.ts. Reads neither ctx.broker nor ctx.loader.
   // The network route an app can have: its store, fronts and Chromium sessions -> src/main/route/. Critical. Publishes ctx.routes, which brokerIpcSubsystem reads -- must stay above it. Reads ctx.broker only when a route changes. Listed ahead of the extensions on purpose: with the whole browser on the tunnel, the default session is stopped and pointed at the front before the first extension loads into it.
   routeSubsystem,

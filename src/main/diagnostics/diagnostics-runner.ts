@@ -10,6 +10,7 @@ import { setCrashLookups, takeEndedOnPurpose } from './crash-lookup.js'
 import { DiagnosticsService } from './diagnostics-service.js'
 import { captureConsole } from './log-ring.js'
 import { childProcessName, isOrdinaryEnd, processName, rendererLine, shellPageName } from './shell-console.js'
+import { isNetworkServiceEnd } from '../sessions/network-service-restart.js'
 import { isShellSchemeUrl } from '../shell/shell-session.js'
 
 let service: DiagnosticsService | undefined
@@ -86,7 +87,7 @@ export function startDiagnostics (runtime: { readonly dir: string, readonly isPr
       })
     })
     app.on('child-process-gone', (_event, details) => {
-      if (isOrdinaryEnd('child', details.reason, quitting)) return
+      if (isOrdinaryEnd(isNetworkServiceEnd(details) ? 'network-service' : 'child', details.reason, quitting)) return
       const name = childProcessName({ type: details.type, serviceName: details.serviceName, name: details.name })
       started.record({ kind: 'child-process', process: name, reason: details.reason, exitCode: details.exitCode, message: `The ${name} process ended: ${details.reason}.`, stack: '' })
     })

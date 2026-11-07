@@ -16,6 +16,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { requestPartition, withPartition, withRoute } from '../verifier/partition.js'
+import { holdWhileNetworkServiceRestarts } from '../sessions/network-service-hold.js'
 import { holdForVerifier } from '../verifier/verifier-access.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
 import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
@@ -106,7 +107,11 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
       .then((allowed) => !allowed, () => true)
       .then(async (cancel) => {
         // The verifier host sleeps when unused: a shown page that names one of its hosts waits for it to listen.
-        if (!cancel) await holdForVerifier(details.url).catch(() => {})
+        // This session registers its own listener, which a second one would replace, so it waits here for the network service's settings after a restart (sessions/README.md).
+        if (!cancel) {
+          await holdWhileNetworkServiceRestarts()
+          await holdForVerifier(details.url).catch(() => {})
+        }
         callback({ cancel })
       }).catch((error: unknown) => { console.error('[embed] answering a guest request failed:', error) })
   })

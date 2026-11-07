@@ -22,7 +22,7 @@ import `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../READM
 [`../../broker/`](../../broker/) (`grants/node-ledger-storage.ts`'s atomic write,
 `policy/pin.ts`), [`../../loader/fetch/`](../../loader/fetch/) (`verifier-origin.ts`,
 `content-root.ts`), [`../../trust/website-level.ts`](../../trust/website-level.ts),
-[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), [`../auth/note-certificate.ts`](../auth/note-certificate.ts) (told which certificate each connection presented, from the verify proc), the top-level
+[`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), [`../sessions/network-service-runner.ts`](../sessions/network-service-runner.ts) (`network-service-reapply.ts` registers the certificate check and the host's sleep there, to be sent again when Chromium's network service restarts), [`../auth/note-certificate.ts`](../auth/note-certificate.ts) (told which certificate each connection presented, from the verify proc), the top-level
 `registry.ts`, `node:fs`, `node:fs/promises`, `node:net`, `node:path`, and `multiformats` (`cid`,
 `bases/base36`) for the same IPNS-key shape check `ipfs/ipns.ts` applies, never that file itself
 (this directory's own boundary, below).
@@ -137,7 +137,9 @@ kept session. An embed guest's session is not covered. Making Chromium accept th
 host) would end the race for good, and is a change to the certificate check.
 
 **The certificate check goes on every session, through `session-created`.** A partition without
-it cannot load any host the verifier serves.
+it cannot load any host the verifier serves. A network service that restarts starts without it, so the check goes on every
+session again once the new service answers, and the host is put to sleep, so its next request starts one (its own `net`
+context ended with the old service); requests wait meanwhile ([`../sessions/README.md`](../sessions/README.md), the network service's design note).
 
 **The proxy check runs in main, not in the host** ([`proxy-check.ts`](proxy-check.ts), asked by [`host-proxy.ts`](host-proxy.ts), which also hands the host the tunnel's front while the whole browser is on the tunnel, and the tunnel profile's front for the fetches of a website in that profile). It needs
 `app.resolveProxy`, and a `utilityProcess` has no `session` to ask. It runs once per host start,

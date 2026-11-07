@@ -69,6 +69,12 @@ describe('isOrdinaryEnd', () => {
     expect(isOrdinaryEnd('renderer', 'killed', true)).toBe(true)
   })
 
+  it('keeps a network service that was killed, which Orivon never does itself, unless the browser is quitting', () => {
+    expect(isOrdinaryEnd('network-service', 'killed', false)).toBe(false)
+    expect(isOrdinaryEnd('network-service', 'killed', true)).toBe(true)
+    expect(isOrdinaryEnd('network-service', 'clean-exit', false)).toBe(true)
+  })
+
   it('keeps the crashes', () => {
     for (const reason of ['crashed', 'oom', 'launch-failed', 'integrity-failure', 'abnormal-exit']) {
       expect(isOrdinaryEnd('renderer', reason, true)).toBe(false)
