@@ -32,7 +32,8 @@ describe('settingsFromFile', () => {
 
   it('reads a number setting within its bounds, and drops one that is out of them or not a whole number', () => {
     expect(settingsFromFile({ version: 2, values: { 'appearance.newTabBrightness': 40 } }).overrides.get('appearance.newTabBrightness')).toBe(40)
-    expect(settingsFromFile({ version: 2, values: { 'appearance.newTabBrightness': 100 } }).overrides.has('appearance.newTabBrightness')).toBe(false)
+    expect(settingsFromFile({ version: 2, values: { 'appearance.newTabBrightness': 80 } }).overrides.has('appearance.newTabBrightness')).toBe(false)
+    expect(settingsFromFile({ version: 2, values: { 'appearance.newTabBrightness': 100 } }).overrides.get('appearance.newTabBrightness')).toBe(100)
     for (const bad of [5, 500, 40.5, '40']) {
       expect(settingsFromFile({ version: 2, values: { 'appearance.newTabBrightness': bad } })).toEqual({ overrides: new Map(), dropped: 1 })
     }

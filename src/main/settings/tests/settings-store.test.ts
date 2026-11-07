@@ -123,7 +123,7 @@ describe('SettingsStore', () => {
     const listener = vi.fn()
     store.onChange(listener)
 
-    expect(store.get('appearance.newTabBrightness')).toBe(100)
+    expect(store.get('appearance.newTabBrightness')).toBe(80)
     expect(store.set('appearance.newTabBrightness', 60)).toEqual({ ok: true })
     for (const bad of [19, 181, 60.5, '60', null]) expect(store.set('appearance.newTabBrightness', bad)).toEqual({ ok: false, reason: 'invalid-value' })
     expect(listener).toHaveBeenCalledExactlyOnceWith({ key: 'appearance.newTabBrightness', value: 60 })
@@ -136,7 +136,7 @@ describe('SettingsStore', () => {
     expect(next.snapshot().changed).toEqual(['appearance.newTabBrightness'])
 
     expect(next.reset('appearance.newTabBrightness')).toEqual({ ok: true })
-    expect(next.get('appearance.newTabBrightness')).toBe(100)
+    expect(next.get('appearance.newTabBrightness')).toBe(80)
     next.set('appearance.newTabBrightness', 150)
     next.resetAll()
     expect(next.snapshot().changed).toEqual([])

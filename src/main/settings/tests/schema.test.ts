@@ -77,12 +77,12 @@ describe('the settings schema', () => {
     expect(SETTINGS['appearance.newTabBackground']).toMatchObject({ kind: 'enum', default: 'orivon', options: ['orivon', 'none', 'custom'] })
   })
 
-  it('draws the new tab picture as it is by default, and lets a person dim it to a fifth or lift it to nearly twice', () => {
+  it('draws the new tab picture a little dimmed by default, and lets a person dim it to a fifth or lift it to nearly twice', () => {
     const spec = SETTINGS['appearance.newTabBrightness']
-    expect(spec).toEqual({ kind: 'int', default: 100, min: 20, max: 180 })
+    expect(spec).toEqual({ kind: 'int', default: 80, min: 20, max: 180 })
     for (const good of [20, 55, 100, 180]) expect(validateSetting(spec, good)).toBe(good)
     for (const bad of [19, 181, 99.5, '100', null, NaN]) expect(validateSetting(spec, bad)).toBeUndefined()
-    expect(describeSettings().find((d) => d.key === 'appearance.newTabBrightness')).toEqual({ key: 'appearance.newTabBrightness', kind: 'int', default: 100, min: 20, max: 180 })
+    expect(describeSettings().find((d) => d.key === 'appearance.newTabBrightness')).toEqual({ key: 'appearance.newTabBrightness', kind: 'int', default: 80, min: 20, max: 180 })
   })
 
   it('reads IPFS from the node on this computer, with a lookup service, unless told otherwise', () => {
