@@ -159,13 +159,14 @@ export const routeSubsystem: Subsystem = {
     systemProxySession()
     // Orivon's own direct requests and the lookups about a website set to off go through a session of their own that follows the system as the controller sets it (`systemConfig`), never the one above.
     let mirrorSession: Session | undefined
+    let mirrorSet: Promise<void> = Promise.resolve()
     const systemMirrorSession = (): Session => {
       if (mirrorSession === undefined) {
         const made = session.fromPartition('orivon-system-mirror')
         mirrorSession = made
         markOwnProxy(made)
         markFollowsSystem(made)
-        routes.controller.mirrorSystem(made).catch((error: unknown) => { console.error('[route] could not put the system-mirror session on the system\'s proxy:', error) })
+        mirrorSet = routes.controller.mirrorSystem(made).catch((error: unknown) => { console.error('[route] could not put the system-mirror session on the system\'s proxy:', error) })
       }
       return mirrorSession
     }
@@ -304,6 +305,8 @@ export const routeSubsystem: Subsystem = {
     publishRoutes(ctx, routes)
     // Whatever loads next (the person's extensions, the first window) finds the sessions already following the setting.
     await routes.controller.settled()
+    // Its first set waits for the stop its adoption gave it, so it is awaited here as well.
+    await mirrorSet
     app.once('will-quit', () => {
       void Promise.all([routes.hub.dispose(), temporary.dispose(), deadEnd.close()]).catch((error: unknown) => { console.error('[route] stopping the fronts failed:', error) })
     })
