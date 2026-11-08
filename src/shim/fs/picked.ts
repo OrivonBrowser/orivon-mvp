@@ -12,8 +12,8 @@ import {
 } from './root.js'
 import { openFlagged } from './flags.js'
 
-/** The size a read asks of the pick's handle at a time. */
-const READ_CHUNK = 1024 * 1024
+/** The size one read asks of a handle at a time: a pick's `readFile`, and `FileHandle#readFile`. */
+export const READ_CHUNK = 1024 * 1024
 
 interface PickedOps {
   readonly stat: (rel: string) => Promise<FileStat>
