@@ -11,6 +11,7 @@ import type { TunnelKind } from './route-state.js'
 import { profilePartitionFor } from './site-partition.js'
 import { ensureSiteSession } from './site-routes.js'
 import type { RouteChangeCause, RouteHub } from './route-hub.js'
+import { createSystemFollow } from './system-follow.js'
 import { within } from './within.js'
 
 export type RouteSession = Pick<Session, 'setProxy' | 'closeAllConnections'>
@@ -52,6 +53,8 @@ export interface RouteControllerDeps {
   readonly followsSystem?: (session: RouteSession) => boolean
   /** The proxy rule that reaches nothing: a listener on this computer that Orivon holds and that accepts and closes. A port nothing is expected to answer on when left out. */
   readonly deadEnd?: () => string
+  /** What a session that follows the system is set to, answered from memory: `{ mode: 'system' }` when left out. */
+  readonly systemConfig?: () => RouteProxyConfig
 }
 
 export interface PrepareOptions {
@@ -92,6 +95,10 @@ export interface RouteController {
    * either); undefined for a session that is not pointed at anything, whose requests follow the system.
    */
   tunnelOf: (session: object) => TunnelKind | 'held' | undefined
+  /** `systemConfig` now answers differently: every session that follows the system is set to it, except one on a front or the dead end, which takes it when it leaves. Resolves when the sets ended. */
+  systemChanged: () => Promise<void>
+  /** A session that sets a proxy of its own and follows `systemConfig` all the time is set to it now and at every `systemChanged`, and never pointed at a front. */
+  mirrorSystem: (session: RouteSession) => Promise<void>
   /** Points the shared identity once at start: its sessions, and the requests made with no session. Nothing while the browser-wide setting is off. */
   startShared: () => void
   /** Resolves when the switches heard so far have been applied. */
@@ -171,6 +178,12 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   const turns = new Map<RouteSession, Promise<void>>()
   /** Sessions an origin prepared: the shared identity never takes them. */
   const claimed = new WeakSet<RouteSession>()
+  const follow = createSystemFollow<RouteSession>({
+    config: deps.systemConfig,
+    set: async (session, config) => { await within(setProxyOf(session, config, callMs), callMs) },
+    kept: (session) => pointedAt.has(session) || temporarySessions.has(session) || deps.ownProxy?.(session) === true,
+    inTurn
+  })
 
   async function prepare (origin: string, session: RouteSession, options: PrepareOptions = {}): Promise<void> {
     // A session belongs to one origin's identity: an origin that prepares it takes it from the shared one.
@@ -213,7 +226,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       await pointAt(session, (await hub.front(origin)).port, kind)
     } else if (pointedAt.has(session)) {
       // Forgotten only once it is done: a session that could not be put back stays marked, so a later pass tries again.
-      await within(setProxyOf(session, { mode: 'system' }, callMs), callMs)
+      await follow.put(session)
       pointedAt.delete(session)
       pointedVia.delete(session)
     }
@@ -389,6 +402,14 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     confineSite: confine,
     // The session that follows the system is stopped for an instant when it is made (before its maker has marked it), but it sends as the system does, so it is never reported as held.
     tunnelOf: (session) => deps.followsSystem?.(session as RouteSession) === true ? undefined : pointedVia.get(session as RouteSession) ?? (deps.ownProxy?.(session as RouteSession) === true ? 'held' : undefined),
+    // A routed origin's sessions are on its front, or being stopped and pointed at it.
+    systemChanged: async () => { await follow.changed([...known].filter(([origin]) => !hub.isRouted(origin)).flatMap(([, sessions]) => [...sessions.keys()])) },
+    mirrorSystem: async (session) => {
+      await follow.mirror(session)
+      // The stop its adoption put it under while the browser was on the tunnel is over: it sets its own proxy.
+      pointedAt.delete(session)
+      pointedVia.delete(session)
+    },
     startShared: () => {
       if (!hub.isRouted(SHARED_ORIGIN)) return
       stopFirst(SHARED_ORIGIN)
@@ -398,7 +419,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       const shared = sessionsOf(SHARED_ORIGIN)
       if (claimed.has(session) || shared.has(session)) return
       shared.set(session, true)
-      if (!hub.isRouted(SHARED_ORIGIN)) return
+      if (!hub.isRouted(SHARED_ORIGIN)) { follow.adopted(session); return }
       // Stopped before anything can load in it, then pointed once the shared front runs (or claimed away meanwhile).
       confine(session).catch((error: unknown) => { console.error('[route] could not stop a new session:', error) })
       enqueue(SHARED_ORIGIN, async () => {

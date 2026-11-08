@@ -142,7 +142,7 @@ export const routeSubsystem: Subsystem = {
       webRequestOwnerFor(target).onBeforeRequest(VERIFIER_NAME_GUARD_ORDER, verifierNameFilter(), namesVerifierHost, verifierNameGuard(guardOfSession(target, routes.controller.tunnelOf)))
     })
 
-    // The session that asks what the system's proxy is (T20) never follows the tunnel; the lookups about a website set to off go through it too.
+    // The session that asks what the system's proxy is (T20) never follows the tunnel and always stays on `{ mode: 'system' }`: Chromium's own answer.
     let systemSession: Session | undefined
     const systemProxySession = (): Session => {
       if (systemSession === undefined) {
@@ -155,9 +155,23 @@ export const routeSubsystem: Subsystem = {
       return systemSession
     }
     setSystemProxyProbe(async (url) => await systemProxySession().resolveProxy(url))
-    setDirectLookupSource(() => routes.everywhere() ? systemProxySession() : undefined)
+    // Made now, so that the first question finds its proxy set.
+    systemProxySession()
+    // Orivon's own direct requests and the lookups about a website set to off go through a session of their own that follows the system as the controller sets it (`systemConfig`), never the one above.
+    let mirrorSession: Session | undefined
+    const systemMirrorSession = (): Session => {
+      if (mirrorSession === undefined) {
+        const made = session.fromPartition('orivon-system-mirror')
+        mirrorSession = made
+        markOwnProxy(made)
+        markFollowsSystem(made)
+        routes.controller.mirrorSystem(made).catch((error: unknown) => { console.error('[route] could not put the system-mirror session on the system\'s proxy:', error) })
+      }
+      return mirrorSession
+    }
+    setDirectLookupSource(() => routes.everywhere() ? systemMirrorSession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
-    const directFetch = createDirectFetch(net, systemProxySession())
+    const directFetch = createDirectFetch(net, systemMirrorSession())
     // A website with a tunnel of its own, or one a tab with a tunnel choice shows or is loading, is asked about (its app manifest, its files by the loader) in that tunnel's profile session, never the default one, which is direct while the whole browser is off the tunnel and may be the other tunnel when it is on.
     const siteTunnelled = (origin: string): boolean => {
       const profile = routes.hub.profileFor(origin)
@@ -182,7 +196,7 @@ export const routeSubsystem: Subsystem = {
       ensureSiteSession(partition, false)
       return createRequestFetch({ net, session: session.fromPartition(partition), answer: answerRouteChallenge })
     }
-    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemProxySession, settled: routes.controller.sharedSettled, siteTunnelled, siteSession, through, profileFetch, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved, carriesOnion: (origin) => lookupKind(origin) === 'socks5' })
+    setOwnRequests({ everywhere: routes.everywhere, isRouted: routes.hub.isRouted, tunnel: tunnelFetch, direct: directFetch, directSession: systemMirrorSession, settled: routes.controller.sharedSettled, siteTunnelled, siteSession, through, profileFetch, nodeEndpoint: routes.nodeEndpoint, onNodeRouteMoved: routes.onNodeRouteMoved, carriesOnion: (origin) => lookupKind(origin) === 'socks5' })
 
     const siteSessions = createSiteSessions({
       controller: routes.controller,
