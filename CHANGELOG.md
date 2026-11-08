@@ -18,6 +18,7 @@ now do and which ports to recheck. CI requires a line here for a row of that pag
 public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **`webgpu-asked-per-site`**: new row. A website whose page calls `navigator.gpu.requestAdapter()` is now asked under the address bar, and a Block or a closed question gives it `null`, as on a computer without WebGPU. A page whose own fallback runs on `null` needs no change; an installed app that holds grants is not asked, and a private window is asked when there is an adapter to give. Recheck: any port that uses WebGPU.
+- **`node-fs-readlink-finds-no-links`**: new row. `fs.readlink`, `fs.readlinkSync` and `fs.promises.readlink` no longer throw "not implemented" before the call returns: they answer `ENOENT` for a path that is not there and `EINVAL` for one that is, since the app's files hold no links, and the async forms reject or call back. Code that probes a new file with `readlink(...).catch(...)` now works. Ports that bundle the shim must be rebuilt to get it. Recheck: Actual Budget, ZenNotes, WebTorrent, The Lounge, Wikifolder, DecentraWiki, Share, TorSocks.
 
 ### Added
 
@@ -33,6 +34,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Fixed
 
+- **Behind a system proxy, a `.eth` name is no longer sent to the proxy.** On Linux with a proxy set by environment variables it opens as it does without one. Behind a proxy that your desktop, Windows or macOS sets, Orivon asks which proxy the request would use and refuses it before it is sent unless the answer is none; the tab says whether the proxy would have seen the name or Orivon could not tell, and adding `*.eth` to the proxy's exceptions opens the names. A proxy found by a script or by automatic detection is waited for up to fifteen seconds, and a plain-http page the proxy serves under a `.eth` name no longer loads.
 - **A strong password fills the password and its confirmation, and nothing else,** on sign-up pages with no `<form>` or with each box in layers of its own: a PIN after them, a login in the page's header and the current-password box of a change-password form stay as they were, also from the password button. A press on the sign-in list under a box that grows or moves as it takes the focus no longer opens the list again with another password before the click lands. A press that fills nothing leaves a line in the bug report saying why.
 - **The top of the window no longer goes blank when Explore asks for Web3 Score data on a first search.** The question comes up while the page still loads, and Chromium then counted the tab strip and toolbar as covered by the loading screen, so they stopped drawing until the window moved or the tab changed. The loading screen now stops one pixel short of the window's right edge, which Chromium does not count as covering them, and a repair that still finds them hidden shows them again and says so in the bug report.
 - **Restart Orivon from an AppImage** starts the AppImage file again, for the Settings rows that restart and for the WebGPU offer; it quit before and never came back, because the program it named sat in a mount that ends with the process.

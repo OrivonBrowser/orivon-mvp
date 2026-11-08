@@ -10,6 +10,7 @@ import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js
 import { servedByVerifier } from '../fetch/verifier-origin.js'
 import { answerRouteChallenge } from '../../main/route/lookup-session.js'
 import { ownDirectSession, ownRequestsSettled, ownRouteFor, ownSiteSession } from '../../main/route/own-requests.js'
+import { namesVerifierHost, refuseWhenProxySees } from '../../main/route/verifier-name-guard.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
@@ -144,10 +145,12 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
   await ownRequestsSettled()
   // A website with a tunnel of its own is fetched in that tunnel's profile session whatever the browser-wide setting says; a rejection means its route cannot be had, and nothing is fetched.
   const profile = await ownSiteSession(new URL(url).origin)
+  // An origin set to off while the whole browser is on the tunnel is fetched on the system's proxy; otherwise the default session, which then is the tunnel's, whose front this request signs in to.
+  const direct = ownRouteFor(new URL(url).origin) === 'direct' ? ownDirectSession() : undefined
+  const used = direct ?? profile
+  // A request for a name the verifier serves is refused when the session it is made in would send it to a proxy: that session is asked first.
+  if (namesVerifierHost(url)) await refuseWhenProxySees((used ?? (await import('electron')).session.defaultSession) as Session, url)
   return await new Promise<FetchResponse>((resolve, reject) => {
-    // An origin set to off while the whole browser is on the tunnel is fetched on the system's proxy; otherwise the default session, which then is the tunnel's, whose front this request signs in to.
-    const direct = ownRouteFor(new URL(url).origin) === 'direct' ? ownDirectSession() : undefined
-    const used = direct ?? profile
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used as Session }) })
     request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
     for (const [name, value] of Object.entries(headers ?? {})) request.setHeader(name, value)
@@ -185,5 +188,6 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
  */
 export async function fetchFromVerifier (url: string, init: { readonly method: string, readonly headers: Record<string, string>, readonly signal: AbortSignal }): Promise<Response> {
   const { net } = await import('electron')
+  if (namesVerifierHost(url)) await refuseWhenProxySees((await import('electron')).session.defaultSession, url)
   return await net.fetch(url, { method: init.method, headers: init.headers, signal: init.signal, redirect: 'error', credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true })
 }

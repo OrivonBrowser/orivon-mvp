@@ -36,6 +36,22 @@ export function fsError (code: string, description: string, syscall: string, pat
   return dest === undefined ? error : Object.assign(error, { dest })
 }
 
+/** `readlink` of a path that exists: orivon.fs has no symbolic links, so nothing it holds is one, and Node answers EINVAL for a path that is not a link. */
+export function notALinkError (path: string): NodeFsError {
+  return fsError('EINVAL', 'invalid argument', 'readlink', path)
+}
+
+/** `readlink` of a path that is not there. */
+export function noSuchLinkError (path: string): NodeFsError {
+  return fsError('ENOENT', 'no such file or directory', 'readlink', path)
+}
+
+/** What `readlink` throws for a failed existence check: ENOENT becomes Node's own for a missing link, naming the path as written; any other failure (a denial, a confinement EACCES) stays as it came. */
+export function asReadlinkError (error: unknown, path: string): unknown {
+  const failure = error as { code?: unknown, syscall?: unknown } | null
+  return failure?.code === 'ENOENT' && failure.syscall !== 'readlink' ? noSuchLinkError(path) : error
+}
+
 /**
  * Runs one orivon.fs call, rethrowing its OrivonError as a Node-shaped one.
  * Wrap the orivon.fs call only: an error already Node-shaped (from this

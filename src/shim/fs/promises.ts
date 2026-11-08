@@ -9,7 +9,7 @@ import { doCopyFile, doCp, doMkdtemp, type CpOptions } from './copy.js'
 import { doChmod } from './permissions.js'
 import { watchPromise } from './watch.js'
 import {
-  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRealpath, doRename, doRm, doRmdir, doStat,
+  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doReadlink, doRealpath, doRename, doRm, doRmdir, doStat,
   doUnlink, doWriteFile,
   type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmdirOptions, type RmOptions, type WriteFileOptions
 } from './core.js'
@@ -75,6 +75,11 @@ async function realpath (path: PathLike, options?: { encoding?: string | null } 
   return encodingOf(options) === 'buffer' ? Buffer.from(result) : result
 }
 
+/** Takes Node's `encoding` for the signature; there is never a link target to encode (core.ts's doReadlink). */
+async function readlink (path: PathLike, _options?: { encoding?: string | null } | string | null): Promise<string | Buffer> {
+  return await doReadlink(path)
+}
+
 async function copyFile (src: PathLike, dest: PathLike, mode?: number): Promise<void> {
   await doCopyFile(src, dest, mode)
 }
@@ -118,6 +123,7 @@ export const promises = refusingProxy({
   unlink,
   rmdir,
   realpath,
+  readlink,
   mkdir,
   readdir,
   stat,
@@ -133,6 +139,6 @@ export const promises = refusingProxy({
 
 // The `fs/promises` module target (module-map.ts) is this file itself: the
 // same object as fs.promises, as default export and as named members.
-export { openHandle as open, access, chmod, chmod as lchmod, watchPromise as watch, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, mkdir, readdir, stat, lstat, rm, copyFile, cp, mkdtemp }
+export { openHandle as open, access, chmod, chmod as lchmod, watchPromise as watch, readFile, writeFile, appendFile, rename, unlink, rmdir, realpath, readlink, mkdir, readdir, stat, lstat, rm, copyFile, cp, mkdtemp }
 export const constants = FS_CONSTANTS
 export default promises

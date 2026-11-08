@@ -29,7 +29,8 @@ a path string.
 [`../../protocols/resolution/dns-name.ts`](../../protocols/resolution/dns-name.ts) (`dnsName`, for `eth-gateway.ts`),
 [`../../broker/transport/token-bucket.ts`](../../broker/transport/token-bucket.ts) and `../../broker/errors.ts`
 (`page-score-lookup.ts`'s rate limit and its `limit` refusal),
-[`../verifier/name-evidence.ts`](../verifier/name-evidence.ts) (types), `node:crypto`,
+[`../verifier/name-evidence.ts`](../verifier/name-evidence.ts) (types),
+[`../route/verifier-name-guard.ts`](../route/verifier-name-guard.ts) (`favicon-fetch.ts` and `score-provider-client.ts` ask whether the session's proxy would carry a name the verifier serves before they fetch it), `node:crypto`,
 `node:fs/promises`, `node:path`, `node:stream`.
 
 **What it must never import.** [`../shell/tabs.ts`](../shell/tabs.ts): `favicon.ts` has no

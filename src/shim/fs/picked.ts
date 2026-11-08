@@ -240,12 +240,15 @@ export async function pickedRmdir (target: PickedTarget, opts: { recursive?: boo
   await target.ops.rm(target.rel, { recursive: true })
 }
 
+export type PickedPresence = 'present' | 'absent' | 'unknown'
+
 /**
- * `existsSync` of a picked path: the table is in memory, so a live pick's own path (a file, its stand-in folder, a
- * picked folder's root) is known to exist without a wire. Anything deeper would need a stat, which a pick cannot
- * answer synchronously, and a path no pick answers does not exist.
+ * What the table of picks alone says about a picked path, with no wire: a live pick's own path (a file, its stand-in
+ * folder, a picked folder's root) is present, a path no pick answers and any other name in a picked file's folder is
+ * absent, and anything deeper in a picked folder, like the list itself, would need a stat a pick cannot answer
+ * synchronously. `undefined` for a path that is not a picked one.
  */
-export function pickedExistsSync (path: PathLike): boolean | undefined {
+export function pickedPresenceSync (path: PathLike): PickedPresence | undefined {
   let text: string
   try {
     text = pathText(path)
@@ -254,7 +257,16 @@ export function pickedExistsSync (path: PathLike): boolean | undefined {
   }
   const resolved = resolvePickedPath(text)
   if (resolved === undefined) return undefined
-  if (resolved.status !== 'pick') return false
+  if (resolved.status === 'stale') return 'absent'
+  if (resolved.status === 'list') return 'unknown'
   const { entry, relative } = resolved
-  return relative === '' || (entry.kind === 'file' && relative === entry.name)
+  if (relative === '') return 'present'
+  if (entry.kind === 'file') return relative === entry.name ? 'present' : 'absent'
+  return 'unknown'
+}
+
+/** `existsSync` of a picked path: true only for what `pickedPresenceSync` knows is there, so anything it cannot tell reads as missing. */
+export function pickedExistsSync (path: PathLike): boolean | undefined {
+  const presence = pickedPresenceSync(path)
+  return presence === undefined ? undefined : presence === 'present'
 }
