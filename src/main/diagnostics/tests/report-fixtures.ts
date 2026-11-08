@@ -31,7 +31,7 @@ export const FACTS: DiagnosticsFacts = {
   gpuInfo: { gpuDevice: [{ vendorId: 32902, deviceId: 4680, driverVersion: '25.1', active: true, deviceString: 'ignored' }, {}] },
   displays: [{ width: 1920, height: 1080, scaleFactor: 1.25 }],
   processes: [{ type: 'Tab', workingSetKb: 2048 }, { type: 'Tab', workingSetKb: 1024 }, { type: 'GPU', workingSetKb: 512 }],
-  browser: { windows: 1, tabs: 3, privateSession: false, tunnels: { tabs: { nym: 1, socks5: 0, direct: 0 } }, extensions: [{ id: 'abc', name: 'Ext', version: '1.0', enabled: true }], appSockets: [{ open: 5, inFlight: 2, allowance: 64 }], settings: { 'appearance.theme': 'system' } },
+  browser: { windows: 1, tabs: 3, privateSession: false, tunnels: { tabs: { nym: 1, socks5: 0, direct: 0 } }, networkService: { restarts: 2, timedOut: 1, last: 'reapplied' }, extensions: [{ id: 'abc', name: 'Ext', version: '1.0', enabled: true }], appSockets: [{ open: 5, inFlight: 2, allowance: 64 }], settings: { 'appearance.theme': 'system' } },
   crashes: [CRASH]
 }
 

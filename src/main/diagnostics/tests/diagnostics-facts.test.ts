@@ -11,13 +11,20 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
     expect(Object.keys(diagnostics.app)).toEqual(['commit', 'channel', 'electron', 'chromium', 'node', 'v8', 'packaged', 'uptimeSec'])
     expect(Object.keys(diagnostics.system)).toEqual(['platform', 'release', 'arch', 'cpus', 'cpuModel', 'memoryMb', 'freeMemoryMb', 'locale', 'session', 'desktop', 'ozone'])
-    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'extensions', 'appSockets', 'settings'])
+    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'networkService', 'extensions', 'appSockets', 'settings'])
   })
 
   it('states how many tabs carry each tunnel choice, as counts and nothing else', () => {
     expect(diagnostics.browser.tunnels).toEqual({ tabs: { nym: 1, socks5: 0, direct: 0 } })
     expect(Object.keys(diagnostics.browser.tunnels)).toEqual(['tabs'])
     expect(Object.values(diagnostics.browser.tunnels.tabs).every((count) => Number.isInteger(count))).toBe(true)
+  })
+
+  it('states how often the network service restarted and how the latest hold ended, as counts and one fixed word', () => {
+    expect(diagnostics.browser.networkService).toEqual({ restarts: 2, timedOut: 1, last: 'reapplied' })
+    expect(Object.keys(diagnostics.browser.networkService)).toEqual(['restarts', 'timedOut', 'last'])
+    const never = buildDiagnostics({ ...FACTS, browser: { ...FACTS.browser, networkService: { restarts: 0, timedOut: 0, last: 'none' } } })
+    expect(never.browser.networkService).toEqual({ restarts: 0, timedOut: 0, last: 'none' })
   })
 
   it('rounds the uptime to whole seconds', () => {
