@@ -21,7 +21,7 @@ page may ask about it. The site-info popover uses the first two through
 [`../ipc/site-info-ipc.ts`](../ipc/site-info-ipc.ts).
 
 **What it depends on.** `electron` (types: the sessions cleared; the installer and the runner use it directly);
-[`../sessions/`](../sessions/) (the web-request owner and the site-asker registry), [`../overlays/`](../overlays/)
+[`../sessions/`](../sessions/) (the web-request owner and the site-asker registry, and `network-service-runner.ts`, to which `install-privacy-net.ts` registers secure DNS so a restarted network service is given it again), [`../overlays/`](../overlays/)
 (`tab-slots.ts`, the overlay types), [`../../protocols/`](../../protocols/) (which names the verifier routes) and [`../dev/eth-resolver.ts`](../dev/eth-resolver.ts)
 (this run's developer names);
 [`../history/`](../history/) and [`../zoom/`](../zoom/) (what is forgotten through them);
@@ -113,7 +113,7 @@ when the tab starts loading another page, and the error page's own navigation do
 
 **Secure DNS is on by default, as Quad9 with a fallback.** The default asks Quad9 first (resolver mode `automatic` with Quad9's address) and lets this computer's own DNS answer when Quad9 cannot be reached; Cloudflare and Quad9 alone are `secure` mode, with no fallback. Electron's built-in resolver is on by default only on
 macOS, so `off` is applied at launch there and nowhere else (on Linux and Windows `off` leaves the resolver alone); any other choice turns the built-in resolver on
-and sets the mode and the provider. `ORIVON_SECURE_DNS=off` replaces the default with `off` for one run (every test and smoke launch), and a profile that names a choice keeps it. A tunnelled request carries its host name to the tunnel's far end, so no name of a tunnelled site reaches the provider. Names that `--host-resolver-rules` maps (the
+and sets the mode and the provider. `secure-dns.ts` keeps the options last applied: a network service that restarts starts with secure DNS off, and they are applied to the new one before the requests that waited for it go on (`../sessions/README.md`, the network service's design note). `ORIVON_SECURE_DNS=off` replaces the default with `off` for one run (every test and smoke launch), and a profile that names a choice keeps it. A tunnelled request carries its host name to the tunnel's far end, so no name of a tunnelled site reaches the provider. Names that `--host-resolver-rules` maps (the
 `.eth` names, a test's fixtures) are answered by those rules first and never reach the provider.
 
 **Storage access follows the cookie choice and never prompts.** The two permissions are answered only for a tab:

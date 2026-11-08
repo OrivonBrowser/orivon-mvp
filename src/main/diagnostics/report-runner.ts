@@ -7,6 +7,7 @@ import type { WebContents } from 'electron'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { currentOzonePlatform, x11VulkanReading } from '../graphics/x11-vulkan-runner.js'
 import { ownFetch } from '../route/own-requests.js'
+import { networkServiceRestart } from '../sessions/network-service-hold.js'
 import type { SubsystemContext } from '../registry.js'
 import type { ShellServices } from '../shell/shell-services.js'
 import { tabChoiceCounts } from '../shell/tab-tunnel-facts.js'
@@ -84,6 +85,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       tabs: windows.reduce((sum, window) => sum + window.tabs.getState().tabs.length, 0),
       privateSession: services.isPrivate,
       tunnels: { tabs: tabChoiceCounts(services.windows) },
+      networkService: networkServiceRestart.counts(),
       extensions: (ctx.extensions?.list() ?? []).map(({ id, name, version, enabled }) => ({ id, name, version, enabled })),
       appSockets: readAppSockets(broker),
       settings: reportedSettings((key) => services.settings.get(key))

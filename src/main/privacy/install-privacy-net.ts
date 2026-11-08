@@ -12,13 +12,14 @@ import { isDevEthName } from '../dev/eth-resolver.js'
 import { requestSlot } from '../overlays/tab-slots.js'
 import { handlerWhileNeeded } from '../sessions/handler-while-needed.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { reapplyAfterNetworkServiceRestart } from '../sessions/network-service-runner.js'
 import { forEachWebsiteSession, websiteSessions } from '../sessions/website-sessions.js'
 import { siteAsks } from '../sessions/site-asks.js'
 import { upgradeTracker } from './https-fallback.js'
 import { createFallbackSheets } from './https-fallback-runner.js'
 import { httpsState } from './https-state.js'
 import { createNetHandlers } from './net-handlers.js'
-import { applySecureDns, configureResolver, effectiveSecureDns, needsResolverCall, secureDnsForcedOff } from './secure-dns.js'
+import { applySecureDns, configureResolver, effectiveSecureDns, needsResolverCall, reapplyResolver, secureDnsForcedOff } from './secure-dns.js'
 import { PROBE_NAME, QUAD9_PROBE_TIMEOUT_MS, createQuad9Fallback, probeWithin } from './secure-dns-fallback.js'
 import type { Quad9Fallback } from './secure-dns-fallback.js'
 import type { SecureDnsValue } from './secure-dns.js'
@@ -109,6 +110,7 @@ export const installPrivacyNet: ShellInstaller = {
       }
     }
     if (needsResolverCall(dns())) applyDns()
+    reapplyAfterNetworkServiceRestart('secure DNS', () => reapplyResolver(app))
     services.settings.onChange(({ key }) => { if (key === 'privacy.secureDns') applyDns() })
   }
 }

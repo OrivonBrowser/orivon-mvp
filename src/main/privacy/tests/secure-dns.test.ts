@@ -58,3 +58,39 @@ describe('the forced-off switch', () => {
     expect(effectiveSecureDns('quad9Fallback', true, false)).toBe('quad9Fallback')
   })
 })
+
+describe('reapplyResolver', () => {
+  const fresh = async (): Promise<typeof import('../secure-dns.js')> => {
+    vi.resetModules()
+    return await import('../secure-dns.js')
+  }
+
+  it('has nothing to send while the resolver was never set', async () => {
+    const dns = await fresh()
+    const configureHostResolver = vi.fn()
+    expect(dns.reapplyResolver({ configureHostResolver })).toBeUndefined()
+    expect(configureHostResolver).not.toHaveBeenCalled()
+  })
+
+  it('sets the resolver to what it was last set to, and says what that was', async () => {
+    const dns = await fresh()
+    const configureHostResolver = vi.fn()
+    dns.applySecureDns({ configureHostResolver }, 'cloudflare')
+    dns.applySecureDns({ configureHostResolver }, 'quad9')
+    const summary = dns.reapplyResolver({ configureHostResolver })
+    expect(configureHostResolver).toHaveBeenCalledTimes(3)
+    expect(configureHostResolver.mock.calls[2]?.[0]).toEqual(configureHostResolver.mock.calls[1]?.[0])
+    expect(summary).toBe('secure, 1 server')
+  })
+
+  it('does not count a refused call as the last one set, and lets a refusal reach the caller', async () => {
+    const dns = await fresh()
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    dns.applySecureDns({ configureHostResolver: () => { throw new Error('before ready') } }, 'quad9')
+    error.mockRestore()
+    expect(dns.reapplyResolver({ configureHostResolver: vi.fn() })).toBeUndefined()
+    const configureHostResolver = vi.fn()
+    dns.applySecureDns({ configureHostResolver }, 'cloudflare')
+    expect(() => dns.reapplyResolver({ configureHostResolver: () => { throw new Error('refused') } })).toThrow('refused')
+  })
+})

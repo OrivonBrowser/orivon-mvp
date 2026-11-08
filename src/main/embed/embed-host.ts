@@ -16,6 +16,7 @@ import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { requestPartition, withPartition, withRoute } from '../verifier/partition.js'
+import { holdWhileNetworkServiceRestarts } from '../sessions/network-service-hold.js'
 import { holdForVerifier } from '../verifier/verifier-access.js'
 import { refuseWhenProxySees } from '../route/verifier-name-guard.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
@@ -94,14 +95,16 @@ function configureEmbedSession (embedSession: Session, appOrigin: string, broker
   })
   const resolve = resolveViaSession(embedSession)
   embedSession.webRequest.onBeforeRequest((details, callback) => {
-    guestRequestAllowed(
+    // This session registers its own listener, which a second one would replace, so it waits here for the network service's
+    // settings after a restart (sessions/README.md): before the guard, which looks a named host up.
+    holdWhileNetworkServiceRestarts().then(async () => await guestRequestAllowed(
       details.url,
       details.resourceType,
       broker.embed.originsSync(appOrigin),
       resolve,
       (port) => broker.embed.holdsListenerSync(appOrigin, port),
       isRouted(appOrigin)
-    )
+    ))
       // A callback Electron waits on is called exactly once: a rejection
       // refuses, the way every refusal here fails closed.
       .then((allowed) => !allowed, () => true)

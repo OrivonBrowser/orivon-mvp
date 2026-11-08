@@ -7,6 +7,7 @@
 // resolver is asked, so they never reach a DNS provider. Tied to Electron
 // only through the `configureHostResolver` it is given.
 import type { ConfigureHostResolverOptions } from 'electron'
+import { noteResolverCall } from '../sessions/network-service-test-seam.js'
 
 export type SecureDnsValue = 'quad9Fallback' | 'off' | 'automatic' | 'cloudflare' | 'quad9'
 
@@ -52,13 +53,31 @@ export function needsResolverCall (value: SecureDnsValue, platform: string = pro
   return value !== 'off' || platform === 'darwin'
 }
 
+/** What the resolver was last set to, so a network service that starts without it can be given it again. */
+let lastApplied: ConfigureHostResolverOptions | undefined
+
 /** Applies `options`; a rejected call is logged and leaves the resolver as it was. */
 export function configureResolver (target: ResolverTarget, options: ConfigureHostResolverOptions): void {
   try {
     target.configureHostResolver(options)
+    lastApplied = options
+    noteResolverCall(options)
   } catch (error) {
     console.error('[privacy] could not configure secure DNS:', error)
   }
+}
+
+/**
+ * Sets the resolver to what it was last set to, for a network service that started without it: Electron gives a new
+ * one secure DNS off. Returns a few words on what was set, or undefined when the resolver was never set (the platform's
+ * default is what a new service starts with, so there is nothing to give it). A rejected call throws.
+ */
+export function reapplyResolver (target: ResolverTarget): string | undefined {
+  const options = lastApplied
+  if (options === undefined) return undefined
+  target.configureHostResolver(options)
+  noteResolverCall(options)
+  return `${options.secureDnsMode ?? 'unset'}${options.secureDnsServers === undefined ? '' : `, ${String(options.secureDnsServers.length)} ${options.secureDnsServers.length === 1 ? 'server' : 'servers'}`}`
 }
 
 /** Applies `value`; for `quad9Fallback` this is only the platform fallback half, `secure-dns-fallback.ts` decides when it applies. */
