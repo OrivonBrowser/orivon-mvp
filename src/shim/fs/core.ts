@@ -27,7 +27,7 @@ import { announce, announceWrite, watchersExist } from './notices.js'
 import {
   assertRootMkdirAllowed, isRootPath, rootIsDirectoryError, rootNotRemovableError, rootReaddirError, rootStat
 } from './root.js'
-import { confine, fsError, guarded, pathText, type PathLike } from './paths.js'
+import { asReadlinkError, confine, fsError, guarded, notALinkError, pathText, type PathLike } from './paths.js'
 import { ancestorOf, ancestorStat, assertAncestorMkdirAllowed } from './ancestors.js'
 import { decode, encode, encodingOf } from '../encoding.js'
 import { VIRTUAL_ROOT } from '../virtual-root.js'
@@ -256,4 +256,20 @@ export async function doAccess (path: PathLike, syscall = 'access'): Promise<voi
   const confined = await confine(path, syscall)
   if (isRootPath(confined)) return
   await guarded(async () => { await getOrivon().fs.stat(confined) })
+}
+
+/**
+ * `readlink` answers as Node does on a disk with no symbolic links: orivon.fs has none (a link it meets is followed
+ * inside the root and denied outside it), so a path that exists is not a link (`EINVAL`) and one that does not is
+ * `ENOENT`. Existence is doAccess's, so confinement, picked paths and the directories above the root answer the same
+ * way here as for every other call, and this never resolves with a target. README.md's Design notes has the rest.
+ */
+export async function doReadlink (path: PathLike): Promise<never> {
+  const text = pathText(path)
+  try {
+    await doAccess(path, 'readlink')
+  } catch (error) {
+    throw asReadlinkError(error, text)
+  }
+  throw notALinkError(text)
 }

@@ -35,13 +35,13 @@ import { doCopyFile, doCp, doMkdtemp, type CpOptions } from './copy.js'
 import { FS_CONSTANTS } from './constants.js'
 import { getOrivon } from '../orivon-global.js'
 import {
-  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doRealpath, doRename, doRm, doRmdir, doStat,
+  doAccess, doAppendFile, doMkdir, doReaddir, doReadFile, doReadlink, doRealpath, doRename, doRm, doRmdir, doStat,
   doUnlink, doWriteFile,
   type MkdirOptions, type ReaddirOptions, type ReadFileOptions, type RmdirOptions, type RmOptions, type WriteFileOptions
 } from './core.js'
 import {
   doAccessSync, doAppendFileSync, doCopyFileSync, doLstatSync, doMkdirSync, doMkdtempSync, doReaddirSync,
-  doRealpathSync, doRenameSync, doRmSync, doRmdirSync, doStatSync, doUnlinkSync, doWriteFileSync, existsSyncCore
+  doReadlinkSync, doRealpathSync, doRenameSync, doRmSync, doRmdirSync, doStatSync, doUnlinkSync, doWriteFileSync, existsSyncCore
 } from './core-sync.js'
 import type { NodeDirent } from './stats.js'
 import { Buffer } from 'buffer'
@@ -325,6 +325,20 @@ export function mkdtemp (prefix: PathLike, ...args: readonly unknown[]): void {
   doMkdtemp(prefix, args.length > 1 ? args[0] as { encoding?: string | null } | string : undefined).then((path) => done(null, path), (error) => done(error as Error))
 }
 
+export interface ReadlinkOptions { encoding?: string | null }
+
+/** Takes Node's `encoding` for the signature; there is never a link target to encode (core.ts's doReadlink). */
+export function readlink (path: PathLike, callback: NodeCallback<string | Buffer>): void
+export function readlink (path: PathLike, options: ReadlinkOptions | string | null, callback: NodeCallback<string | Buffer>): void
+export function readlink (path: PathLike, ...args: readonly unknown[]): void {
+  const done = callbackOf(args.at(-1))
+  doReadlink(path).catch((error) => { done(error as Error) })
+}
+
+export function readlinkSync (path: PathLike, _options?: ReadlinkOptions | string | null): string | Buffer {
+  return doReadlinkSync(path)
+}
+
 export type { NodeStats }
 
 export function chmodSync (path: PathLike, mode: unknown): void {
@@ -355,10 +369,10 @@ export * from './generated/fs.js'
 
 export default refusingProxy({
   readFile, readFileSync, writeFile, writeFileSync, appendFile, unlink, access,
-  mkdir, readdir, stat, lstat, rm, rmdir, rename, realpath, open, close, read, write, fstat, ftruncate, fsync, promises,
+  mkdir, readdir, stat, lstat, rm, rmdir, rename, realpath, readlink, open, close, read, write, fstat, ftruncate, fsync, promises,
   createReadStream, createWriteStream,
   statSync, lstatSync, mkdirSync, readdirSync, rmSync, rmdirSync, renameSync, existsSync, accessSync,
-  copyFile, cp, mkdtemp, appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, openSync, closeSync, readSync, writeSync, fstatSync,
+  copyFile, cp, mkdtemp, appendFileSync, unlinkSync, copyFileSync, mkdtempSync, realpathSync, readlinkSync, openSync, closeSync, readSync, writeSync, fstatSync,
   chmod, chmodSync, lchmod, lchmodSync, fchmod, fchmodSync, watch, FSWatcher,
   // fs.constants is data (POSIX flag numbers), not a function -- a
   // throwing-function refusal (A169) would misreport its own type, so this

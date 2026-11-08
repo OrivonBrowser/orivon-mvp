@@ -18,6 +18,7 @@ now do and which ports to recheck. CI requires a line here for a row of that pag
 public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **`webgpu-asked-per-site`**: new row. A website whose page calls `navigator.gpu.requestAdapter()` is now asked under the address bar, and a Block or a closed question gives it `null`, as on a computer without WebGPU. A page whose own fallback runs on `null` needs no change; an installed app that holds grants is not asked, and a private window is asked when there is an adapter to give. Recheck: any port that uses WebGPU.
+- **`node-fs-readlink-finds-no-links`**: new row. `fs.readlink`, `fs.readlinkSync` and `fs.promises.readlink` no longer throw "not implemented" before the call returns: they answer `ENOENT` for a path that is not there and `EINVAL` for one that is, since the app's files hold no links, and the async forms reject or call back. Code that probes a new file with `readlink(...).catch(...)` now works. Ports that bundle the shim must be rebuilt to get it. Recheck: Actual Budget, ZenNotes, WebTorrent, The Lounge, Wikifolder, DecentraWiki, Share, TorSocks.
 
 ### Added
 
