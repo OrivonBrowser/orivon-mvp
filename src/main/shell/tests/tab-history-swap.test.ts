@@ -33,6 +33,7 @@ interface FakeWebContents extends EventEmitter {
   ipc: { on: ReturnType<typeof vi.fn> }
   close: ReturnType<typeof vi.fn>
   setAudioMuted: ReturnType<typeof vi.fn>
+  mainFrame: object
 }
 
 interface RecordedView {
@@ -76,6 +77,7 @@ function makeFakeWebContents (): FakeWebContents {
   emitter.ipc = { on: vi.fn() }
   emitter.close = vi.fn(() => { destroyed = true; emitter.emit('destroyed') })
   emitter.setAudioMuted = vi.fn()
+  emitter.mainFrame = {}
   return emitter
 }
 
@@ -96,6 +98,8 @@ vi.mock('../../../loader/electron/serve.js', () => ({
 }))
 
 const { TabManager } = await import('../tabs.js')
+const { noteDocumentResponse } = await import('../page-referrer-policy.js')
+const { takeNavigationNote } = await import('../initiator-referrer.js')
 
 const fakeContentView = { children: [] as unknown[], addChildView: vi.fn(), removeChildView: vi.fn() }
 const fakeBounds = { x: 0, y: 0, width: 800, height: 600 }
@@ -315,5 +319,42 @@ describe('a swap across partitions keeps the list on the tab', () => {
 
     commit(back, ['https://site.example/a', 'https://site.example/c'], 1)
     expect(manager.getState().tabs[0]?.canGoForward).toBe(false)
+  })
+})
+
+describe('a page navigation stopped to move the tab into an app\'s own session', () => {
+  const FROM = 'https://site.example/'
+  /** What the page's preload sent as the navigation began, a script's. */
+  const report = { href: FROM, documentUrl: FROM, metaPolicies: [], destination: `${APP}/`, source: { kind: 'script' } }
+
+  function leave (answer: unknown): RecordedView {
+    served.add(APP)
+    const manager = managerWith(new Set([APP]))
+    manager.createTab(FROM)
+    const oldView = createdViews[0] as RecordedView
+    noteDocumentResponse(oldView.webContents as never, FROM, {})
+    takeNavigationNote(oldView.webContents as never, oldView.webContents.mainFrame, answer)
+    const event = { url: `${APP}/`, isMainFrame: true, defaultPrevented: false, initiator: { url: FROM, parent: null }, preventDefault: vi.fn() }
+    oldView.webContents.emit('will-navigate', event)
+    expect(event.preventDefault).toHaveBeenCalledOnce()
+    return oldView
+  }
+
+  it('is loaded again with the referrer the page would have sent', async () => {
+    leave(report)
+    await vi.waitFor(() => { expect(createdViews).toHaveLength(2) })
+    expect((createdViews[1] as RecordedView).webContents.loadURL).toHaveBeenCalledExactlyOnceWith(`${APP}/`, { httpReferrer: { url: FROM, policy: 'default' } })
+  })
+
+  it('is loaded again with none when the page cannot say what started it', async () => {
+    leave({ ...report, source: undefined })
+    await vi.waitFor(() => { expect(createdViews).toHaveLength(2) })
+    expect((createdViews[1] as RecordedView).webContents.loadURL).toHaveBeenCalledExactlyOnceWith(`${APP}/`)
+  })
+
+  it('is loaded again with none when the page named another navigation', async () => {
+    leave({ ...report, destination: 'https://elsewhere.example/' })
+    await vi.waitFor(() => { expect(createdViews).toHaveLength(2) })
+    expect((createdViews[1] as RecordedView).webContents.loadURL).toHaveBeenCalledExactlyOnceWith(`${APP}/`)
   })
 })

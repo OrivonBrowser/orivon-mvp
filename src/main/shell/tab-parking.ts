@@ -10,6 +10,7 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { INTERNAL_PARTITION } from '../pages/internal-pages.js'
 import { isLocalPartition } from '../local-files/partition.js'
 import type { TabRecord } from './tab-types.js'
+import type { NavigationReferrer } from './navigation-referrer.js'
 import { applyTabSignals } from './tab-signals.js'
 import { carryHistory, listOf } from './tab-history.js'
 import { EMPTY_OUTER, keepBehind, leaveView } from './tab-outer-history.js'
@@ -89,13 +90,18 @@ export function closeParkedViews (record: TabRecord): void {
  * `NavigationHistory.restore`. Any other swap moves the pages of the view
  * being left into the tab's outer history (tab-outer-history.ts), where the
  * Back button still reaches them; a returning parked view is left holding
- * only the page it returns to (tab-history.ts's `settleOuterHistory`). */
+ * only the page it returns to (tab-history.ts's `settleOuterHistory`).
+ *
+ * `referrer`, when the caller stopped a page's own navigation to make the move,
+ * is the document address and policy Chromium applies to `target` (pre-partition.ts);
+ * a view that loads nothing (`carried`) has none to send. */
 export function repartitionView (
   id: string,
   record: TabRecord,
   target: string,
   nextPartition: string | undefined,
-  step = false
+  step = false,
+  referrer?: NavigationReferrer
 ): void {
   const { host } = record
   // A navigation that commits as the window closes must not make a view nobody will close.
@@ -139,5 +145,8 @@ export function repartitionView (
 
   if (wasShown) host.attachView(id, newView)
 
-  if (!carried) void newView.webContents.loadURL(target)
+  if (!carried) {
+    if (referrer === undefined) void newView.webContents.loadURL(target)
+    else void newView.webContents.loadURL(target, { httpReferrer: referrer })
+  }
 }

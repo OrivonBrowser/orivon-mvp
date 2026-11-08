@@ -12,6 +12,8 @@ const partitionAfterFileBlock = vi.fn()
 vi.mock('../tab-partition.js', () => ({ partitionChanged, partitionAfterFileBlock }))
 const isNavigationHeld = vi.fn(() => false)
 vi.mock('../navigation-hold.js', () => ({ isNavigationHeld }))
+const referrerOfInitiator = vi.fn((..._args: unknown[]): { url: string, policy: string } | undefined => undefined)
+vi.mock('../initiator-referrer.js', async (importOriginal) => ({ ...await importOriginal<typeof import('../initiator-referrer.js')>(), referrerOfInitiator }))
 
 const { repartitionBeforeCommit, repartitionOnFileBlock } = await import('../pre-partition.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
@@ -30,7 +32,7 @@ function rig (record: Record<string, unknown> = {}) {
   return { fire, tab, hide: () => { on = false } }
 }
 
-beforeEach(() => { setSiteRoutes(undefined); repartitionView.mockReset(); partitionChanged.mockReset(); partitionAfterFileBlock.mockReset(); isNavigationHeld.mockReset().mockReturnValue(false) })
+beforeEach(() => { setSiteRoutes(undefined); referrerOfInitiator.mockReset().mockReturnValue(undefined); repartitionView.mockReset(); partitionChanged.mockReset(); partitionAfterFileBlock.mockReset(); isNavigationHeld.mockReset().mockReturnValue(false) })
 
 describe('repartitionBeforeCommit', () => {
   it.each(['will-navigate', 'will-redirect'] as const)('stops a main-frame %s into a cache-served partition and loads it there', async (name) => {
@@ -39,7 +41,54 @@ describe('repartitionBeforeCommit', () => {
     const event = fire(name)
     expect(event.preventDefault).toHaveBeenCalled()
     await new Promise((resolve) => setImmediate(resolve))
-    expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1')
+    expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1', false, undefined)
+  })
+
+  describe('the referrer of the navigation it stops', () => {
+    const top = { url: 'https://a.eth/page', parent: null }
+
+    it('loads the address with the referrer the initiating page would have sent', async () => {
+      partitionChanged.mockReturnValue({ to: 'persist:app-1' })
+      referrerOfInitiator.mockReturnValue({ url: 'https://a.eth/page', policy: 'default' })
+      rig().fire('will-navigate', { initiator: top })
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(referrerOfInitiator).toHaveBeenCalledWith(expect.anything(), 'https://a.eth/page', 'https://app.eth/')
+      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1', false, { url: 'https://a.eth/page', policy: 'default' })
+    })
+
+    it('works the referrer out after the event, not inside it', () => {
+      partitionChanged.mockReturnValue({ to: 'persist:app-1' })
+      rig().fire('will-navigate', { initiator: top })
+      expect(referrerOfInitiator).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['a frame inside the page', { initiator: { url: 'https://a.eth/frame', parent: {} } }],
+      ['no frame', { initiator: null }],
+      ['an event that names none', {}]
+    ])('asks about no initiating document when %s started it', async (_label, extra) => {
+      partitionChanged.mockReturnValue({ to: 'persist:app-1' })
+      rig().fire('will-navigate', extra)
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(referrerOfInitiator).toHaveBeenCalledWith(expect.anything(), undefined, 'https://app.eth/')
+      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1', false, undefined)
+    })
+
+    it('sends none with a redirect, whose response may have set a policy of its own', async () => {
+      partitionChanged.mockReturnValue({ to: 'persist:app-1' })
+      rig().fire('will-redirect', { initiator: top })
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(referrerOfInitiator).toHaveBeenCalledWith(expect.anything(), undefined, 'https://app.eth/')
+    })
+
+    it('does not load the address when the tab\'s view was replaced before the turn it moves in', async () => {
+      partitionChanged.mockReturnValue({ to: 'persist:app-1' })
+      const r = rig()
+      r.fire('will-navigate', { initiator: top })
+      r.tab.view = {}
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(repartitionView).not.toHaveBeenCalled()
+    })
   })
 
   it.each(['ipfs://app.eth/', 'ipns://app.eth/'])('stops a link written as %s and loads the address it is served at', async (shown) => {
@@ -49,7 +98,7 @@ describe('repartitionBeforeCommit', () => {
     expect(event.preventDefault).toHaveBeenCalled()
     expect(partitionChanged).toHaveBeenCalledWith('https://app.eth/', undefined, undefined)
     await new Promise((resolve) => setImmediate(resolve))
-    expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1')
+    expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:app-1', false, undefined)
   })
 
   it('leaves a navigation that stays in the tab\'s partition, or leaves for the open web', () => {
@@ -69,7 +118,7 @@ describe('repartitionBeforeCommit', () => {
       const event = fire(name, { url: 'https://news.example/' })
       expect(event.preventDefault).toHaveBeenCalled()
       await new Promise((resolve) => setImmediate(resolve))
-      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://news.example/', undefined)
+      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://news.example/', undefined, false, undefined)
     })
 
     it('leaves it to run when the session sends the address as the shared one would', () => {
@@ -117,7 +166,7 @@ describe('repartitionBeforeCommit', () => {
       const event = fire('will-navigate', { url: 'https://news.example/' })
       expect(event.preventDefault).toHaveBeenCalled()
       await new Promise((resolve) => setImmediate(resolve))
-      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://news.example/', 'persist:tunnel-profile')
+      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://news.example/', 'persist:tunnel-profile', false, undefined)
     })
 
     it('still leaves an internal page alone', () => {
