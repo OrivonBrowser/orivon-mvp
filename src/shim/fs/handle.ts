@@ -20,7 +20,8 @@
 import type { FileHandle } from '../../contracts/handles.js'
 import { getOrivon } from '../orivon-global.js'
 import { toNodeStats, type NodeStats } from './stats.js'
-import { encode, encodingOf } from '../encoding.js'
+import { decode, encode, encodingOf } from '../encoding.js'
+import { toBytesJoined } from '../stream-bytes.js'
 import { announce, canCreate, watchersExist } from './notices.js'
 import { normalizeOpenFlags, openFlagged, openFlaggedSync } from './flags.js'
 import { assertMode, confine, confineSync, fsError, guarded, type PathLike } from './paths.js'
@@ -29,7 +30,7 @@ import {
   assertRootOpenAllowed, isRootPath, rootDirectoryHandle, rootDirectoryHandleSync, rootReadError, rootTruncateError, rootWriteError
 } from './root.js'
 import { guardedSync, syncFsWithOpen, tryStatSync, type SyncFileHandleWire } from './sync-orivon.js'
-import { pickedOpen, pickedTarget } from './picked.js'
+import { pickedOpen, pickedTarget, READ_CHUNK } from './picked.js'
 
 export type NodeCallback<T> = (error: Error | null, result?: T) => void
 
@@ -62,27 +63,10 @@ async function initialCursor (handle: FileHandle, flags: string): Promise<number
 /** fd -> handle, shared by fs.promises.open and the callback open/read/write/close family below (one registry, matching real Node's own fd being usable through either surface -- not two competing tables). */
 const openByFd = new Map<number, NodeFileHandle>()
 /**
- * fd -> handle for the *Sync family (SyncNodeFileHandle, below) -- a SEPARATE
- * table from openByFd, not unified with it: real Node shares one fd space
- * across fs.open and fs.openSync, but the two client-side wrappers this
- * shim's `open` and `openSync` return are not interchangeable underneath,
- * even though the broker itself would let them be (worker/orivon-server.ts's
- * `handles` map is generic -- a handle it hands back from a `sync: true`
- * request lives in the exact same table as one from an ordinary async
- * request, addressed the same way). What cannot be unified is client-side:
- * `openHandle`'s `FileHandle` methods always round-trip over
- * `worker/orivon-client.ts`'s async `call()` (a real postMessage, however
- * long it takes), while `openHandleSync`'s `SyncFileHandleWire` methods
- * always block over its `callSync()` (the shared-memory channel) -- neither
- * has a way to make its own calls through the other's transport, so an
- * async-opened handle has no synchronous method to give a `*Sync` caller,
- * and a Worker with no synchronous twin at all could never have produced a
- * `SyncFileHandleWire` to begin with. A fd real only in the OTHER table is
- * therefore a genuine EBADF here, not a gap -- `badFdAsync`/`badFdSync`
- * (below) name which family actually holds it, rather than reporting a bare
- * "bad file descriptor" indistinguishable from an fd that was never open at
- * all. `nextFd` itself is still shared, so a fd number never collides
- * between the two tables. fs/README.md's own Design notes has the summary.
+ * fd -> handle for the *Sync family (SyncNodeFileHandle, below), a SEPARATE table from openByFd: an async-opened handle has no
+ * blocking method to give a *Sync caller, and a Worker with no synchronous twin could never have produced a SyncFileHandleWire,
+ * so a fd real only in the other table is a genuine EBADF, which badFdAsync/badFdSync name. `nextFd` is shared, so a number
+ * never collides between the tables. README.md's Design notes has the summary.
  */
 const openByFdSync = new Map<number, SyncNodeFileHandle>()
 let nextFd = 4
@@ -193,6 +177,23 @@ export class NodeFileHandle {
     }
   }
 
+  /** Real Node's FileHandle#appendFile: an alias of writeFile, since the handle's own flags already say where a write lands. */
+  async appendFile (data: unknown, options?: { encoding?: string | null } | string | null): Promise<void> { await this.writeFile(data, options) }
+
+  /** Real Node's FileHandle#readFile: from the current position to the end of the file, moving the position, so a second call finds nothing left. An unknown encoding fails before a byte is read. */
+  async readFile (options?: { encoding?: string | null } | string | null): Promise<Uint8Array | string> {
+    const encoding = encodingOf(options)
+    decode(new Uint8Array(0), encoding)
+    const chunk = new Uint8Array(READ_CHUNK)
+    const parts: Uint8Array[] = []
+    for (;;) {
+      const { bytesRead } = await this.read(chunk, 0, READ_CHUNK)
+      if (bytesRead === 0) break
+      parts.push(chunk.slice(0, bytesRead))
+    }
+    return decode(toBytesJoined(parts), encoding)
+  }
+
   async stat (): Promise<NodeStats> { return await guarded(async () => toNodeStats(await this.handle.stat(), this.identity)) }
 
   async truncate (length = 0): Promise<void> {
@@ -201,14 +202,10 @@ export class NodeFileHandle {
     announce(this.identity, 'change')
   }
 
-  // No file-vs-directory branch, on purpose: whatever `getOrivon().fs.open`
-  // does with a directory path and flags 'r' (real Node's own fsync-a-
-  // directory support is platform-dependent -- works on Linux/macOS, EISDIR
-  // on some others) is exactly what this passes through. @seald-io/nedb's
-  // own crashSafeWriteFileLinesAsync fsyncs a directory's fd this way, and
-  // already tolerates the platforms where opening one fails. For the ROOT
-  // specifically (this.isRoot), `this.handle` is fs/root.ts's own fake,
-  // whose sync() already resolves -- no branch needed here either.
+  // No file-vs-directory branch, on purpose: whatever `getOrivon().fs.open` does with a directory path and flags 'r'
+  // (fsync of a directory works on Linux/macOS and is EISDIR on some others) is exactly what this passes through, and
+  // @seald-io/nedb's directory fsync already tolerates the platforms where opening one fails. For the ROOT (this.isRoot),
+  // `this.handle` is fs/root.ts's own fake, whose sync() already resolves.
   async sync (): Promise<void> { await guarded(async () => { await this.handle.sync() }) }
 
   /** Real Node's FileHandle#datasync -- fdatasync, a lighter-weight sync. orivon.fs's FileHandle contract has one durability primitive, not two (handles.ts's own FileHandle doc), so this is the same call as sync() under a second name, matching what a ported dependency expects to find. */

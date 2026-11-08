@@ -103,6 +103,12 @@ accepted and ignored, since there is never a target to encode. On a pick the syn
 of picks alone (`picked.ts`'s `pickedPresenceSync`: a pick's own paths are `EINVAL`, a stale pick or another name in a picked file's
 folder is `ENOENT`) and is `ENOSYS` for anything deeper in a picked folder, as every `*Sync` call on a pick is.
 
+**`FileHandle#readFile` reads over `read`, and `appendFile` is `writeFile`** (`handle.ts`). `readFile` is the handle's own positional
+`read` in megabyte pieces from the local cursor until a read returns nothing, so it starts where the handle is, moves the position,
+and works for an app file and a picked one alike, with no second read path. A short answer from the broker is not the end of the
+file. The encoding is checked before the first read, as Node's is, so a bad option moves nothing. `signal` is ignored, as the other
+members ignore it. `appendFile` is Node's alias of `writeFile`: the handle's flags already say where a write lands.
+
 **`fs.access`'s mode.** Provisional, AI recommendation: every mode checks existence only, since
 `orivon.fs` has no permission model (`core.ts`'s `doAccess`). **Open:** what a dependency asking
 `W_OK` to mean something narrower should get; the `orivon.fs` contract gives nothing to answer with.
