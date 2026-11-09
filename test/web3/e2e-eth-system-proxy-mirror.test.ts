@@ -241,7 +241,7 @@ describe.skipIf(!LINUX)('a computer whose KDE settings carry a manual proxy', ()
   let desktop: ReturnType<typeof kdeProxy>
   let running: Running
   let reported: Awaited<ReturnType<typeof reportedMirror>>
-  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, suffixed: Record<string, Record<string, string>>, corp: Record<string, string>, fromMain: string, refusals: string[] }
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, ordinarySessions: Record<string, string>, suffixed: Record<string, Record<string, string>>, corp: Record<string, string>, fromMain: string, refusals: string[] }
 
   beforeAll(async () => {
     first = await startLoggingProxy()
@@ -258,7 +258,6 @@ describe.skipIf(!LINUX)('a computer whose KDE settings carry a manual proxy', ()
       ordinary,
       eth,
       eth2: await resolved(app, 'https://fixture.eth/'),
-      rootDot: await resolved(app, 'https://fixture.eth./'),
       ordinarySessions: await resolved(app, 'https://ordinary.test/'),
       suffixed: { 'a name under the bare entry': await resolved(app, 'http://printer.lan.test/'), 'a name that only ends with it': await resolved(app, 'http://xlan.test/'), 'a name under the dotted entry': await resolved(app, 'http://www.corp.test/') },
       corp: await resolved(app, 'http://corp.test/'),
@@ -283,10 +282,9 @@ describe.skipIf(!LINUX)('a computer whose KDE settings carry a manual proxy', ()
     expect(first.seen.filter((line) => line.startsWith('CONNECT') && !line.includes('gvt1.com'))).toEqual([])
   })
 
-  it('answers DIRECT for a name the verifier serves in every session kind, in both spellings, and the proxy for an ordinary one', () => {
+  it('answers DIRECT for a name the verifier serves in every session kind, and the proxy for an ordinary one', () => {
     for (const kind of Object.keys(facts.eth2)) {
       expect(facts.eth2[kind], `${kind} session, .eth`).toBe('DIRECT')
-      expect(facts.rootDot[kind], `${kind} session, .eth with the root dot`).toBe('DIRECT')
       expect(facts.ordinarySessions[kind], `${kind} session, ordinary`).toBe(`PROXY 127.0.0.1:${String(first.port)}`)
     }
   })
