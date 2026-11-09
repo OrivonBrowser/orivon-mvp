@@ -153,12 +153,14 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   way; the guard below covers it.
 - **A manual proxy in GNOME's settings (and the desktops that share them).** `src/main/route/proxy-mirror/` reads the settings
   (`gsettings list-recursively org.gnome.system.proxy`, run without a shell, three seconds at most, its output never logged) and
-  sets every session that would follow the system to the same servers and exceptions, plus `*.suffix` and `*.suffix.` for every
-  routed suffix, so Chromium resolves those names direct. A copy reaches a session only after `orivon-system-check`, a session of the
+  sets every session that would follow the system to the same servers and exceptions, plus `*.suffix` for every
+  routed suffix, so Chromium resolves those names direct. The root-dot spelling (`name.eth.`) gets no rule, because the resolver rules
+  do not map it to the verifier: it stays on the proxy and the guard refuses it. A copy reaches a session only after `orivon-system-check`, a session of the
   mirror's own set to it, answers as `orivon-system-proxy` (Chromium's own answer, never leaving `{ mode: 'system' }`) does for
   two ordinary addresses and up to three the system's exceptions cover; a difference, read again at once, leaves every session
   on `{ mode: 'system' }`. Settings that name a script or detection, cannot be carried exactly or cannot be read stay on it
-  too. The settings are read every thirty seconds and Chromium's answer asked every two.
+  too, but a copy already applied outlasts a read that failed, or a check that got no answer, while Chromium's answers for the two
+  ordinary addresses are what they were when it passed. The settings are read every thirty seconds and Chromium's answer asked every two.
 - **A manual proxy in KDE's settings.** The same copy, read from the `kioslaverc` files Chromium reads (`$HOME/.config`, the
   `XDG_CONFIG_DIRS` below it, or `$KDEHOME/share/config`; a file read of at most a megabyte, three seconds at most, nothing run and
   nothing logged). Its hostname exceptions are turned into the suffix matches Chromium makes of them, since `setProxy` makes none.
