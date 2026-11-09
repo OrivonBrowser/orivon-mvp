@@ -5,12 +5,12 @@
 // (test/app-behaviours/catalogue.md).
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-wake-lock.test.ts
-import type { Page } from 'playwright'
+import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, startAppServer, type AppServer } from './app-behaviour-support.js'
 import { runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
+import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, visitWithoutPage, type FixtureServer } from '../support/qa-helpers.js'
 import { tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const HTML = 'text/html; charset=utf-8'
@@ -47,34 +47,66 @@ const request = async (run: (fn: () => Promise<Outcome>) => Promise<Outcome>): P
   }
 })
 
-const sentinelState = async (view: Page): Promise<{ released: boolean, visibility: string }> =>
-  await view.evaluate(() => ({ released: (window as unknown as { __sentinel?: WakeLockSentinel }).__sentinel?.released ?? false, visibility: document.visibilityState }))
+interface SentinelState { released: boolean, visibility: string }
+
+const readSentinel = (): SentinelState =>
+  ({ released: (window as unknown as { __sentinel?: WakeLockSentinel }).__sentinel?.released ?? false, visibility: document.visibilityState })
+
+const releaseSentinel = async (): Promise<void> => { await (window as unknown as { __sentinel?: WakeLockSentinel }).__sentinel?.release() }
+
+const sentinelState = async (view: Page): Promise<SentinelState> => await view.evaluate(readSentinel)
+
+/** Runs `fn` in the page whose address is `url`, from the main process. The first spec below works in tabs opened after
+ * the first, and a macOS runner sometimes never attaches Playwright's page for one of those (test/README.md, Known
+ * risk), so it reaches every page this way, the same on each system. */
+const inTab = async <T>(app: ElectronApplication, url: string, fn: () => T | Promise<T>): Promise<T> =>
+  await app.evaluate(async ({ webContents }, [target, code]) => {
+    const contents = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL() === target)
+    if (contents === undefined) throw new Error(`no webContents at ${target}`)
+    return await contents.executeJavaScript(code)
+  }, [url, `(${fn.toString()})()`] as const) as T
+
+/** What a screen lock asked for by the frame of `frameOrigin` inside the page at `pageUrl` comes to, or `no frame` when the page has none. */
+const frameWakeLock = async (app: ElectronApplication, pageUrl: string, frameOrigin: string): Promise<string> => {
+  let outcome = 'no frame'
+  await waitFor(async () => {
+    outcome = await app.evaluate(async ({ webContents }, [target, origin]) => {
+      const contents = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL() === target)
+      const frame = contents?.mainFrame.framesInSubtree.find((candidate) => candidate.url.startsWith(origin))
+      if (frame === undefined) return 'no frame'
+      return String(await frame.executeJavaScript(`navigator.wakeLock.request('screen').then(() => 'granted', (error) => 'refused:' + error.name)`))
+    }, [pageUrl, frameOrigin] as const)
+    return outcome !== 'no frame'
+  })
+  return outcome
+}
 
 it('[app:wake-lock-held-on-a-visible-page] a visible tab, an app\'s or a website\'s, is granted a screen wake lock with no question, and the page releases it', async () => {
   const { app, chrome } = await launchShell()
   try {
     await runPhase('wake lock on visible tabs', async (check) => {
       await grantApp(app, appServer.origin, appManifest('wake-lock', { fs: { quotaBytes: 1024 } }), [{ capability: 'fs', patterns: [] }])
-      const appPage = await visit(app, chrome, `${appServer.origin}/`)
-      expect(await appPage.evaluate(() => document.visibilityState)).toBe('visible')
+      const appUrl = `${appServer.origin}/`
+      await visitWithoutPage(app, chrome, appUrl)
+      expect(await inTab(app, appUrl, () => document.visibilityState)).toBe('visible')
 
-      const held = await request(async (fn) => await appPage.evaluate(fn))
+      const held = await request(async (fn) => await inTab(app, appUrl, fn))
       check('[app:wake-lock-held-on-a-visible-page] an app tab in front is granted a screen wake lock', held.outcome === 'granted' && held.type === 'screen' && held.released === false, JSON.stringify(held))
-      await appPage.evaluate(async () => { await (window as unknown as { __sentinel?: WakeLockSentinel }).__sentinel?.release() })
-      check('[app:wake-lock-held-on-a-visible-page] the page releases the lock it holds', (await sentinelState(appPage)).released)
+      await inTab(app, appUrl, releaseSentinel)
+      check('[app:wake-lock-held-on-a-visible-page] the page releases the lock it holds', (await inTab(app, appUrl, readSentinel)).released)
 
       await chrome.click('#new-tab')
-      const sitePage = await visit(app, chrome, `${website.origin}/`)
-      const siteHeld = await request(async (fn) => await sitePage.evaluate(fn))
+      const siteUrl = `${website.origin}/`
+      await visitWithoutPage(app, chrome, siteUrl)
+      const siteHeld = await request(async (fn) => await inTab(app, siteUrl, fn))
       check('[app:wake-lock-held-on-a-visible-page] an ordinary website tab in front is granted a screen wake lock', siteHeld.outcome === 'granted' && siteHeld.type === 'screen' && siteHeld.released === false, JSON.stringify(siteHeld))
-      check('[app:wake-lock-held-on-a-visible-page] the lock of a visible website tab is still held a moment later', await waitFor(async () => (await sentinelState(sitePage)).released === false))
-      await sitePage.evaluate(async () => { await (window as unknown as { __sentinel?: WakeLockSentinel }).__sentinel?.release() })
-      check('[app:wake-lock-held-on-a-visible-page] the website releases the lock it holds', (await sentinelState(sitePage)).released)
+      check('[app:wake-lock-held-on-a-visible-page] the lock of a visible website tab is still held a moment later', await waitFor(async () => (await inTab(app, siteUrl, readSentinel)).released === false))
+      await inTab(app, siteUrl, releaseSentinel)
+      check('[app:wake-lock-held-on-a-visible-page] the website releases the lock it holds', (await inTab(app, siteUrl, readSentinel)).released)
 
-      const framed = await visit(app, chrome, `${website.origin}/framed`)
-      const frame = await waitFor(() => framed.frames().find((candidate) => candidate.url().startsWith(embedded.origin)) !== undefined)
-      const inner = framed.frames().find((candidate) => candidate.url().startsWith(embedded.origin))
-      const frameOutcome = frame && inner !== undefined ? await inner.evaluate(async () => await navigator.wakeLock.request('screen').then(() => 'granted', (error: Error) => `refused:${error.name}`)) : 'no frame'
+      const framedUrl = `${website.origin}/framed`
+      await visitWithoutPage(app, chrome, framedUrl)
+      const frameOutcome = await frameWakeLock(app, framedUrl, embedded.origin)
       check('[app:wake-lock-held-on-a-visible-page] a frame embedded in the page is refused, since only the top frame is released when its tab goes behind another', frameOutcome === 'refused:NotAllowedError', frameOutcome)
     })
   } finally {
