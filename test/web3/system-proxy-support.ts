@@ -318,3 +318,106 @@ export async function visitSubresources (app: ElectronApplication, chrome: Page)
 
 /** The lines of the main process's log that say a request was refused for the proxy's sake: what a bug report carries. */
 export const refusalLines = (app: ElectronApplication): string[] => mainOutput(app).split('\n').filter((line) => line.includes('[route] refused a '))
+
+/** What `scutil --proxy` prints now: the dictionary Chromium reads macOS's proxy settings from. */
+function macosProxyDictionary (): string {
+  return execFileSync('/usr/sbin/scutil', ['--proxy'], { encoding: 'utf8' })
+}
+
+/** Runs `networksetup` as root: GitHub's macOS runners let `sudo` run it without a password. */
+function networksetup (...args: string[]): string {
+  return execFileSync('/usr/bin/sudo', ['-n', '/usr/sbin/networksetup', ...args], { encoding: 'utf8' })
+}
+
+/** The network service macOS keeps the proxy settings of: the one the default route leaves by. */
+function macosPrimaryService (): string {
+  const device = /interface: (\S+)/.exec(execFileSync('/sbin/route', ['-n', 'get', 'default'], { encoding: 'utf8' }))?.[1]
+  const order = execFileSync('/usr/sbin/networksetup', ['-listnetworkserviceorder'], { encoding: 'utf8' })
+  for (const found of order.matchAll(/\(\d+\) (.+)\n\(Hardware Port: .*, Device: (\S*)\)/g)) {
+    if (found[2] === device) return found[1] as string
+  }
+  throw new Error('no network service leaves by the default route, so there is no proxy setting to change')
+}
+
+export interface MacosProxy {
+  /** The web and secure web proxy at `127.0.0.1:port`, with these exceptions in place of the ones the system has (all of them stay when none are given), and no SOCKS proxy. */
+  readonly manual: (port: number, exceptions?: readonly string[]) => Promise<void>
+  /** A SOCKS proxy at `127.0.0.1:port`, and no web proxy. */
+  readonly socks: (port: number) => Promise<void>
+  /** Every proxy off. */
+  readonly off: () => Promise<void>
+  /** "Exclude simple hostnames" ticked or not. */
+  readonly simpleHostnames: (excluded: boolean) => Promise<void>
+  /** Puts back what the calls changed. */
+  readonly restore: () => void
+}
+
+/**
+ * The proxy settings of the network service this computer's traffic leaves by, changed with `networksetup` the way the
+ * Network settings window would. It writes the computer's own settings, so it belongs on a runner that is thrown away after
+ * the run and lets `sudo` run without a password; `restore` puts the settings back all the same.
+ */
+export function macosProxy (): MacosProxy {
+  const service = macosPrimaryService()
+  const field = (text: string, label: string): string => new RegExp(`^${label}: ?(.*)$`, 'm').exec(text)?.[1]?.trim() ?? ''
+  const read = (...args: string[]): string => execFileSync('/usr/sbin/networksetup', args, { encoding: 'utf8' })
+  const servers = [
+    { set: '-setwebproxy', state: '-setwebproxystate', get: '-getwebproxy' },
+    { set: '-setsecurewebproxy', state: '-setsecurewebproxystate', get: '-getsecurewebproxy' },
+    { set: '-setsocksfirewallproxy', state: '-setsocksfirewallproxystate', get: '-getsocksfirewallproxy' }
+  ] as const
+  const [web, secure, socks] = servers
+  const before = servers.map((server) => {
+    const text = read(server.get, service)
+    return { server, on: field(text, 'Enabled') === 'Yes', host: field(text, 'Server'), port: field(text, 'Port') }
+  })
+  const exceptions = (): string[] => read('-getproxybypassdomains', service).split('\n').filter((line) => line.trim() !== '' && !line.startsWith('There aren\'t any'))
+  const setExceptions = (list: readonly string[]): void => { networksetup('-setproxybypassdomains', service, ...(list.length === 0 ? ['Empty'] : list)) }
+  const exceptionsBefore = exceptions()
+  const serviceId = /PrimaryService : (\S+)/.exec(execFileSync('/usr/sbin/scutil', [], { input: 'show State:/Network/Global/IPv4\n', encoding: 'utf8' }))?.[1] ?? ''
+  const simplePath = `:NetworkServices:${serviceId}:Proxies:ExcludeSimpleHostnames`
+  const plist = (command: string): string => execFileSync('/usr/bin/sudo', ['-n', '/usr/libexec/PlistBuddy', '-c', command, '/Library/Preferences/SystemConfiguration/preferences.plist'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+  const simpleBefore = ((): string | undefined => { try { return plist(`Print ${simplePath}`).trim() } catch { return undefined } })()
+  const setSimple = (value: string | undefined): void => {
+    try { plist(`Delete ${simplePath}`) } catch { /* it was not there */ }
+    if (value !== undefined && /^\d+$/.test(value)) plist(`Add ${simplePath} integer ${value}`)
+  }
+  /** Waits until `scutil --proxy` shows the change, which is what Chromium reads it from. */
+  const shown = async (what: string, until: (dictionary: string) => boolean): Promise<void> => {
+    if (!await waitFor(() => until(macosProxyDictionary()), 15_000)) throw new Error(`scutil --proxy never showed ${what}: ${macosProxyDictionary()}`)
+  }
+  const flagOn = (dictionary: string, key: string): boolean => new RegExp(`^ {2}${key} : [1-9]`, 'm').test(dictionary)
+  return {
+    manual: async (port, list) => {
+      networksetup(socks.state, service, 'off')
+      networksetup(web.set, service, '127.0.0.1', String(port))
+      networksetup(secure.set, service, '127.0.0.1', String(port))
+      if (list !== undefined) setExceptions(list)
+      await shown('the proxy', (dictionary) => flagOn(dictionary, 'HTTPSEnable') && dictionary.includes(`HTTPSPort : ${String(port)}`) && !flagOn(dictionary, 'SOCKSEnable') && (list === undefined || list.every((entry) => dictionary.includes(` : ${entry}\n`))))
+    },
+    socks: async (port) => {
+      networksetup(web.state, service, 'off')
+      networksetup(secure.state, service, 'off')
+      networksetup(socks.set, service, '127.0.0.1', String(port))
+      await shown('the SOCKS proxy', (dictionary) => flagOn(dictionary, 'SOCKSEnable') && dictionary.includes(`SOCKSPort : ${String(port)}`) && !flagOn(dictionary, 'HTTPEnable') && !flagOn(dictionary, 'HTTPSEnable'))
+    },
+    off: async () => {
+      for (const { state } of servers) networksetup(state, service, 'off')
+      await shown('every proxy off', (dictionary) => !flagOn(dictionary, 'HTTPEnable') && !flagOn(dictionary, 'HTTPSEnable') && !flagOn(dictionary, 'SOCKSEnable'))
+    },
+    simpleHostnames: async (excluded) => {
+      setSimple(excluded ? '1' : '0')
+      // The system reads the file again on the next change through networksetup, so the exceptions are set to what they are.
+      setExceptions(exceptions())
+      await shown('the setting for simple host names', (dictionary) => flagOn(dictionary, 'ExcludeSimpleHostnames') === excluded)
+    },
+    restore: () => {
+      for (const { server, on, host, port } of before) {
+        if (on && host !== '') networksetup(server.set, service, host, port)
+        else networksetup(server.state, service, 'off')
+      }
+      setSimple(simpleBefore)
+      setExceptions(exceptionsBefore)
+    }
+  }
+}

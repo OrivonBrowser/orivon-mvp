@@ -157,7 +157,11 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   mirror's own set to it, answers as `orivon-system-proxy` (Chromium's own answer, never leaving `{ mode: 'system' }`) does for
   two ordinary addresses and up to three the system's exceptions cover; a difference, read again at once, leaves every session
   on `{ mode: 'system' }`. Settings that name a script or detection, cannot be carried exactly or cannot be read stay on it
-  too. The settings are read every thirty seconds and Chromium's answer asked every two. This runs nothing on other desktops, Windows or macOS.
+  too. The settings are read every thirty seconds and Chromium's answer asked every two. This runs nothing on other desktops or Windows.
+- **A manual proxy in macOS's settings.** The same copy, read from `/usr/sbin/scutil --proxy` (run without a shell, three seconds at
+  most, its output never logged): the web, secure web and SOCKS servers that are switched on, the SOCKS one as SOCKS5, and the
+  exceptions as listed, with `<local>` first when "Exclude simple hostnames" is ticked. A script, even beside a manual proxy, and
+  automatic discovery alone stay on `{ mode: 'system' }`.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
   temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held

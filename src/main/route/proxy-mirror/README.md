@@ -9,7 +9,8 @@ A session that follows the system takes the copy through the route controller's 
 |---|---|---|
 | `settings-source.ts` | Which of the computer's settings carry its proxy (GNOME, KDE, Windows, macOS, the environment), picked as Chromium's `system` mode picks them, and the words for what a read comes to (`SystemSettings`) | Durable: pure over the platform and the environment |
 | `read-gnome.ts` | `gsettings list-recursively org.gnome.system.proxy` turned into `SystemSettings`; reads only the keys it needs, so a password in the output reaches nothing | Durable: pure |
-| `run-readers.ts` | Runs `gsettings` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments) | Tied to the operating system: it starts a program |
+| `read-macos.ts` | `scutil --proxy` turned into `SystemSettings`; reads only the keys it needs and only the top level of the dictionary | Durable: pure |
+| `run-readers.ts` | Runs `gsettings` or `/usr/sbin/scutil` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments), and `readerFor` names the read for a source | Tied to the operating system: it starts a program |
 | `mirrored-config.ts` | The config for manual settings: the system's rules and exceptions, then `*.suffix` and `*.suffix.` for every routed suffix | Durable: pure |
 | `canaries.ts` | The addresses the copy is checked with: two ordinary sites and up to three the system's exceptions cover | Durable: pure |
 | `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, checks a copy before applying it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, carry or check | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
@@ -41,6 +42,21 @@ not read at all; a server with an empty host is unset; a `socks` server is SOCKS
 `ignore-hosts` entries match as Chromium matches a bypass rule written the same way (`*.corp.test` and `.corp.test` match `www.corp.test` and
 not `corp.test`; `corp.test` alone matches that host only). `*.eth` does not match `fixture.eth.`, the root-dot spelling, so each routed
 suffix is added in both spellings. A bare IPv6 address in the list is bracketed.
+
+**Each macOS rule is what Chromium's `SCDynamicStoreCopyProxies` reader makes of the dictionary `scutil --proxy` prints, read from its source and measured on a macOS runner.** Only the top
+level counts, never `__SCOPED__`, the copy each network interface keeps below it. A server counts when its `Enable` switch is non-zero and
+it names a host; a server that is off has no host or port in the output, and an FTP proxy has no line at all and no effect on `http:` or
+`https:`. The HTTPS server is an HTTP proxy for `https:` addresses, a port that is not printed is the scheme's default, and the SOCKS
+server is SOCKS5 (`SOCKS5 127.0.0.1:1080`, for every scheme with no server of its own, `ws:` and `wss:` included), so its rule is
+`socks=socks5://`. A script that is on beats a manual proxy beside it, since Chromium asks the script first, so it is `script`; but
+macOS also turns its script on, at `http://wpad/wpad.dat`, when automatic discovery is ticked, and that is `detect`, never a script of the
+person's. Discovery beside a manual proxy copies the manual part, which Chromium answers with when no discovery server is found, and the
+check judges it. The exceptions are Chromium bypass rules, and the copy goes through the same parser as the system's own list: a list of
+fourteen kinds of entry came out the same in both, one that holds `;` or `,` included, which both cut in the same place, so each entry is
+passed as it stands. `169.254/16` changes nothing (link-local addresses bypass a proxy anyway), and `*.local` matches `printer.local`, not
+`local`. `<local>` comes first exactly when "Exclude simple hostnames" is on: `http://intranet/` is the proxy's without it and direct with it.
+A change made in the Network settings shows in `scutil --proxy` within a tenth of a second and in Chromium's answer a few milliseconds
+later, so the delay a person sees is the mirror's own two-second question.
 
 **An unchanged read does nothing.** The settings and Chromium's two base answers are compared with the last pass; only a difference, or a
 state that is not settled (`unreadable`, `disagrees`), runs the check again. The 2-second question is asked in process of the session

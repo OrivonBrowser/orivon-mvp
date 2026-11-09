@@ -3,7 +3,8 @@
 
 import { execFile } from 'node:child_process'
 import { parseGnomeSettings } from './read-gnome.js'
-import type { SystemSettings } from './settings-source.js'
+import { parseMacosSettings } from './read-macos.js'
+import type { SettingsSourceName, SystemSettings } from './settings-source.js'
 
 /** A read that takes longer is a read that failed: the sessions stay on the system's own config meanwhile. */
 export const READ_TIMEOUT_MS = 3_000
@@ -27,4 +28,20 @@ export async function readGnomeSettings (run: CommandRunner = runCommand): Promi
   } catch {
     return { kind: 'unreadable' }
   }
+}
+
+/** macOS's proxy settings; `unreadable` when `scutil` fails or prints nothing it can read. */
+export async function readMacosSettings (run: CommandRunner = runCommand): Promise<SystemSettings> {
+  try {
+    return parseMacosSettings(await run('/usr/sbin/scutil', ['--proxy']))
+  } catch {
+    return { kind: 'unreadable' }
+  }
+}
+
+/** The read for the settings `source` names, or undefined while no reader for them exists: the mirror then does nothing at all. */
+export function readerFor (source: SettingsSourceName): (() => Promise<SystemSettings>) | undefined {
+  if (source === 'gnome') return readGnomeSettings
+  if (source === 'macos') return readMacosSettings
+  return undefined
 }

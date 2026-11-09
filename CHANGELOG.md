@@ -32,7 +32,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **Split view has no ring**: the purple line round the pane in use is gone and the panes meet the edges of their area; the lit tab in the strip shows which one you are in, and the gap between the panes is the toolbar's colour.
 - **New-tab pictures keep their own colours**: nothing dark lies over the Orivon picture or your own any more; the text on it has a soft shadow instead.
 - **The Orivon picture on the new tab is in evening light**: the same scene, darker and still in full colour, so the default background is no longer glaring.
-- **A `.eth` name opens behind a manual proxy in GNOME's settings.** Orivon copies the proxy's servers and exceptions into its sessions with the names it serves left out, after checking the copy against Chromium's own answer; ordinary sites still go through the proxy and a change of the setting is followed within seconds. KDE, Windows, macOS and scripts keep the refusal. `orivon://report` says whether the proxy is copied and why not.
+- **A `.eth` name opens behind a manual proxy in GNOME's or macOS's settings.** Orivon copies the proxy's servers and exceptions into its sessions with the names it serves left out, after checking the copy against Chromium's own answer; ordinary sites still go through the proxy and a change of the setting is followed within seconds. KDE, Windows and scripts keep the refusal. `orivon://report` says whether the proxy is copied and why not.
 
 ### Fixed
 
