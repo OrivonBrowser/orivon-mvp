@@ -6,7 +6,9 @@ import { appTabFlagGained, partitionAfterFileBlock, partitionChanged } from './t
 import { repartitionView } from './tab-parking.js'
 import { sessionRoutesLike } from '../route/site-routes.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
-import { referrerOfInitiator, topInitiatorUrl } from './initiator-referrer.js'
+import { referrerOfInitiator, startedWithoutBody, topInitiatorUrl } from './initiator-referrer.js'
+import { runsAsWebsite } from './app-session.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
 import type { InitiatorFrame } from './initiator-referrer.js'
 import type { TabRecord } from './tab-types.js'
 
@@ -49,14 +51,15 @@ export function repartitionBeforeCommit (wc: WebContents, id: string, record: Ta
     // that scheme is served at (`./served-address.ts`), and that URL is the one whose partition counts.
     const url = BUILTIN_ADDRESSES.servedUrl(event.url) ?? event.url
     const swap = partitionChanged(url, record.partition, record.tunnelChoice)
-    // An app that runs in the session the tab is in still needs a view built with the app-tab flag, and the first request must not commit in one built without it.
-    const flagOnly = swap === undefined && appTabFlagGained(url, record.view, record.host.broker)
+    const initiatorUrl = withReferrer ? topInitiatorUrl(event.initiator) : undefined
+    // An app that runs where websites run, reached by a plain GET the page reported, needs a view built with the app-tab flag, and the first request must not commit in one built without it. Any other navigation (a form's POST, whose body a re-issue would drop; a redirect, whose method is not visible here) is let through and the view rebuilt at `did-navigate`.
+    const origin = originFromUrl(url)
+    const flagOnly = swap === undefined && origin !== null && runsAsWebsite(origin) && appTabFlagGained(url, record.view, record.host.broker) && startedWithoutBody(wc, initiatorUrl, event.url)
     if (swap === undefined && !flagOnly) return
     // A move to the shared session waits for `did-navigate` when the tab's session sends the address as the shared one would (a popup then keeps its opener); when it would send it differently, as a direct profile or an app set to off does for an address on the tunnel, the first request must not commit there, so the tab moves now and a popup's opener is cut.
     if (swap !== undefined && swap.to === undefined && (isTemporaryRoutePartition(record.partition) || sessionRoutesLike(record.partition, url))) return
     const nextPartition = swap === undefined ? record.partition : swap.to
     event.preventDefault()
-    const initiatorUrl = withReferrer ? topInitiatorUrl(event.initiator) : undefined
     const target = event.url
     // Not in the event: a view closed from inside its own navigation event is not safe to close. The page's note of the navigation was sent before it began, so it is here by this turn.
     setImmediate(() => {

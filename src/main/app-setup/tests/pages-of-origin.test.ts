@@ -17,6 +17,7 @@ vi.mock('electron', () => ({
 
 const { pagesOfOrigin } = await import('../pages-of-origin.js')
 const { partitionFor } = await import('../../../broker/grants/origin-hash.js')
+const { setSiteRoutes } = await import('../../route/site-routes.js')
 const { session } = await import('electron')
 
 const KEPT = 'https://kept.eth'
@@ -28,7 +29,7 @@ function page (id: number, home: unknown, url: string, destroyed = false): numbe
 }
 const ids = (origin: string): number[] => pagesOfOrigin(origin).map((found) => (found as unknown as { id: number }).id)
 
-afterEach(() => { contents.length = 0; served.clear(); sessions.clear() })
+afterEach(() => { contents.length = 0; served.clear(); sessions.clear(); setSiteRoutes(undefined) })
 
 describe('the pages of an allowed app a block must stop', () => {
   it('are, for an app that runs where websites run, every page at the origin in any session', () => {

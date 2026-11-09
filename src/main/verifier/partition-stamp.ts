@@ -10,7 +10,7 @@ import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import { failedFiles } from './failed-files-store.js'
 import { noteCompletedFile } from './failed-files.js'
-import { originOfUrl, requestPartition, withPartition, withoutHttpCache, withRoute } from './partition.js'
+import { requestPartition, withPartition, withoutHttpCache, withRoute } from './partition.js'
 import { isHandedToShell } from './shell-serves.js'
 
 /** Only a request whose host a protocol actually routes to the verifier --
@@ -60,9 +60,8 @@ export function installPartitionStamp (target: Session, tunnel: TunnelRoute | un
     }
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
     const stamped = withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnel)
-    const origin = originOfUrl(details.url)
-    const handedToShell = origin !== undefined && isHandedToShell(origin, current.requestHeaders, tunnel !== undefined)
-    return { ...current, requestHeaders: handedToShell ? withoutHttpCache(stamped) : stamped }
+    // The stamped headers: the host decides on what it receives, and the stamp is part of its rule.
+    return { ...current, requestHeaders: isHandedToShell(details.url, stamped, tunnel !== undefined) ? withoutHttpCache(stamped) : stamped }
   })
 }
 

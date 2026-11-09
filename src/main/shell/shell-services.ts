@@ -24,6 +24,7 @@ import { SHELL_PARTITION } from './shell-session.js'
 import { isShellUiPage } from './shell-ui-page.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { hasOwnPartition } from './app-session.js'
 import { appOrigin } from './devtools-app-origin.js'
 import { HistoryService } from '../history/history-service.js'
 import { NullHistoryStore } from '../history/history-store.js'
@@ -219,7 +220,7 @@ export function createShellServices (userDataPath: string, runtime: Runtime, ctx
         return pageTunnelLook(routes, { origin, holder, temporary: isTemporaryRoutePartition(partition), choice })
       },
       newTabLookOf: (choice) => ctx.routes === undefined ? { mark: null, via: null } : newTabTunnelLook(ctx.routes, choice),
-      isApp: isOriginServedFromCacheSync,
+      isApp: hasOwnPartition,
       onChange: (listener) => ctx.routes?.hub.onChange(() => { listener() }) ?? (() => {})
     },
     networks: createNetworks(settings, ctx),

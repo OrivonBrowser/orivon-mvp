@@ -46,6 +46,7 @@ export function registerAppOrigin (appSession: Session, origin: string, handler:
  * a worker or a popup still alive there reaches nothing, the network included. Never for an origin served from its pin.
  */
 export function retireAppOrigin (appSession: Session, origin: string): void {
+  for (const listener of [...retireListeners]) listener(origin)
   const scheme = new URL(origin).protocol.replace(':', '')
   if (appSession.protocol.isProtocolHandled(scheme)) appSession.protocol.unhandle(scheme)
   appSession.protocol.handle(scheme, async () => new Response('Orivon: this app was stopped', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
@@ -103,6 +104,14 @@ export function onServingChange (listener: () => void): () => void {
   return () => { servingListeners.delete(listener) }
 }
 
+const retireListeners = new Set<(origin: string) => void>()
+
+/** Calls `listener` with the origin of every app `retireAppOrigin` stops serving: what was tied to its being served ends there. */
+export function onAppOriginRetired (listener: (origin: string) => void): () => void {
+  retireListeners.add(listener)
+  return () => { retireListeners.delete(listener) }
+}
+
 /** The sessions `registerAppOrigin` has served an origin from, and who wants to hear of each. */
 const appSessions = new Set<Session>()
 const appSessionListeners = new Set<(appSession: Session) => void>()
@@ -133,23 +142,39 @@ export async function prepareAppSession (appSession: Session, origin: string, fr
   for (const preparer of appSessionPreparers) await preparer(appSession, origin, from)
 }
 
+/** A preparer fails with this to say, in words the person reads, why the app did not open. Any other failure gets `UNKNOWN_REASON`. */
+export class AppNotReady extends Error {
+  /** `reason` completes "Orivon did not open this app because ..."; `advice` is what the person can do about it. */
+  constructor (readonly reason: string, readonly advice = 'Open it again in a moment.', options?: ErrorOptions) {
+    super(reason, options)
+    this.name = 'AppNotReady'
+  }
+}
+
+const UNKNOWN_NOT_READY = new AppNotReady('the session it opens in could not be made ready')
+
 /**
  * `prepareAppSession`, and when it fails the app is still given its partition, answered by a handler that refuses
  * every request and says why, before the failure is passed on. Without that the origin has no partition of its own,
  * so a tab for it opens as an ordinary website on the shared session: for an app whose tunnel could not start,
- * that is a direct connection. The only preparer is the route's, which is what the page says.
+ * that is a direct connection, and for an app whose website's workers could not be cleared, a worker the check never saw.
+ * The page says what a preparer's `AppNotReady` says.
  */
 export async function prepareAppSessionOrStop (appSession: Session, origin: string, from: 'pin' | 'verifier'): Promise<void> {
   try {
     await prepareAppSession(appSession, origin, from)
   } catch (error) {
     console.error('[loader] an app\'s session could not be prepared; the app is stopped, not opened as a website:', origin, error)
-    registerAppOrigin(appSession, origin, async () => new Response(STOPPED_PAGE, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }), from)
+    const page = stoppedPage(error instanceof AppNotReady ? error : UNKNOWN_NOT_READY)
+    registerAppOrigin(appSession, origin, async () => new Response(page, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }), from)
     throw error
   }
 }
 
-const STOPPED_PAGE = '<!doctype html><meta charset="utf-8"><title>This app did not open</title><body style="font-family:system-ui;margin:3rem"><h1>This app did not open</h1><p>The tunnel could not start, so Orivon did not open this app and sent nothing. Check the tunnel under Tunnels, then open it again.</p></body>'
+/** The page a stopped app answers every request with. The reason and advice are Orivon's own sentences, never a page's text. */
+function stoppedPage (why: AppNotReady): string {
+  return `<!doctype html><meta charset="utf-8"><title>This app did not open</title><body style="font-family:system-ui;margin:3rem"><h1>This app did not open</h1><p>Orivon did not open this app, and sent nothing, because ${why.reason}. ${why.advice}</p></body>`
+}
 
 /** The partitions whose handler answers from the origin's pin, a subset of `servedPartitions`: the rest answer from the verifier until the pin lands. */
 const pinnedPartitions = new Set<string>()

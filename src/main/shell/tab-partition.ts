@@ -4,7 +4,6 @@
 import type { WebContentsView } from 'electron'
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '../local-files/partition.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { appSessionPartition } from './app-session.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
@@ -16,16 +15,15 @@ import type { TabTunnelChoice } from '../route/tab-tunnel.js'
  * `appTabArgsFor` gives below; within this file it is one constant. */
 export const APP_TAB_FLAG = '--orivon-app-tab'
 
-/** Which Electron session `target` must run in: its own isolated partition,
- * or undefined for the shell's shared default session.
+/** Which Electron session `target` must run in: its own isolated partition, a tunnel
+ * profile's, or undefined for the shell's shared default session.
  *
- * An allowed app runs where a website at its origin runs, the shared session,
- * when the shell can serve its kept copy there: the verifier hands every
- * request for a host a protocol serves to the shell, which answers with the
- * app's own handler (`../verifier/shell-serves.ts`), and the person's
- * extensions are loaded in that session (`./app-session.ts` says when).
- * Any other served origin (a plain https host, a loopback address, an app
- * whose own tunnel entry the shared session does not follow) gets a
+ * An allowed app runs where a website at its origin runs, with a website's
+ * session, tunnel and identity, when the shell can serve its kept copy there: the
+ * verifier hands every request for a host a protocol serves to the shell, which
+ * answers with the app's own handler (`../verifier/shell-serves.ts`), and the
+ * person's extensions are loaded in that session (`./app-session.ts` says when).
+ * Any other served origin (a plain https host, a loopback address) gets a
  * partition of its own: ADR-0007 intercepts a cached bundle with
  * `protocol.handle`, scoped to one session, and nothing else answers its
  * scheme. This reads the registry `registerAppOrigin` itself writes --
@@ -41,9 +39,11 @@ export const APP_TAB_FLAG = '--orivon-app-tab'
  * the shared one before (`localPartitionFor`).
  *
  * A website whose tunnel state differs from the browser's default runs in a session of its own
- * (`../route/site-partition.ts`), which an installed app never needs: its own route decides its session, and a tab's tunnel
- * choice does not apply to it. A tab with a tunnel choice puts every website it opens in that choice's profile
- * (`../route/tab-tunnel.ts`), so every caller that decides a session for a tab passes the tab's choice (`partitionForTab`).
+ * (`../route/site-partition.ts`), which an installed app with a partition of its own never needs: its own route decides its
+ * session, and a tab's tunnel choice does not apply to it. An allowed app that runs as a website (`./app-session.ts`) has the
+ * website's rule whole: its entry's profile, or the shared session. A tab with a tunnel choice puts every website it opens in
+ * that choice's profile (`../route/tab-tunnel.ts`), so every caller that decides a session for a tab passes the tab's choice
+ * (`partitionForTab`).
  *
  * `originFromUrl` derives an origin only for `http:`/`https:`, so a
  * `chrome-extension:` target always answers undefined: tabs.ts's
@@ -54,7 +54,9 @@ export function partitionForTab (target: string, choice: TabTunnelChoice | undef
   if (local !== undefined) return local
   const origin = originFromUrl(target)
   if (origin === null) return undefined
-  if (isOriginServedFromCacheSync(origin)) return appSessionPartition(origin)
+  // An app that runs as a website has a website's session, tunnel profile included; any other app that is served has the partition of its own.
+  const own = appSessionPartition(origin)
+  if (own !== undefined) return own
   // A website whose tunnel state differs from the browser's default keeps its storage apart from the shared session.
   return sitePartitionForTab(origin, choice)
 }

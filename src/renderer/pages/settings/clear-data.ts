@@ -68,11 +68,11 @@ export function renderClearData (state: SettingsState): HTMLElement {
   range.value = selection.range
   range.addEventListener('change', () => { selection.range = range.value as HistoryRange })
   range.setAttribute('aria-label', 'How far back to clear history')
-  const siteData = option('Cookies and site data', 'Signs you out of websites and removes what they stored in this browser. Always for all time.', selection.siteData, (checked) => { selection.siteData = checked })
+  const siteData = option('Cookies and site data', 'Signs you out of websites and removes what they stored in this browser, but not the data of apps you allowed (App data does). Always for all time.', selection.siteData, (checked) => { selection.siteData = checked })
   const cache = option('Cached files', 'Pages and images kept to load sites faster, and which network each .eth name was last found on. Always for all time.', selection.cache, (checked) => { selection.cache = checked })
   const zoom = option('Saved zoom levels', null, selection.zoomLevels, (checked) => { selection.zoomLevels = checked })
   const siteSettings = option('Site settings and permissions', 'Forgets what you allowed or blocked for each site.', selection.siteSettings, (checked) => { selection.siteSettings = checked })
-  const appData = option('App data', 'What apps that hold permissions keep in the browser, such as a signed-in session or a local database. It cannot be undone. Files an app saved in its own folder are not removed.', selection.appData, (checked) => { selection.appData = checked })
+  const appData = option('App data', 'What apps that hold permissions keep in the browser, such as a signed-in session or a local database, including those of a web3 site you allowed. It cannot be undone. Files an app saved in its own folder are not removed.', selection.appData, (checked) => { selection.appData = checked })
   appData.classList.add('danger-option')
   const result = h('p', { className: 'muted', role: 'status', textContent: clearWords(state.privacy.lastClear) })
   const button = h('button', { className: 'btn danger', type: 'button', textContent: 'Clear data' })

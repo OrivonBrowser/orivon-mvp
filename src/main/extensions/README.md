@@ -284,7 +284,8 @@ including a granted app, and an allowed Web3 site runs in the session websites r
 (`../shell/app-session.ts`), so they reach it as they reach any website. The one exception
 `GRANTED_APPS_CLAUSE` (`../../broker/policy/extension-manifest.ts`) carries is an app that runs
 in a session of its own: a plain `https` host or a loopback address the shell serves from a kept
-copy, and an app whose own tunnel entry the shared session does not follow. Naming extensions
+copy. An allowed web3 site with a tunnel entry runs in that entry's profile session, as a website does, and
+the extensions loaded there reach it. Naming extensions
 on such an origin's site-info popup or grant prompt would say something false, so this file
 matches that exception exactly rather than letting its own answer drift from what the install
 prompt and the extensions page already say. The check is an injected predicate (`runsApart`,

@@ -772,7 +772,7 @@ describe('registerServingFor -- A200 real wiring (reach socket allowance)', () =
 // The session of a routed app that could not be pointed at its proxy route (its front failed to bind, say) must not
 // leave the app to open as an ordinary website on the shared session, which would send its traffic direct.
 describe('registerServingFor -- a session that cannot be prepared', () => {
-  it('still gives the app its own partition, answered by a handler that refuses everything and says the tunnel could not start', async () => {
+  it('still gives the app its own partition, answered by a handler that refuses everything and says what its preparer says', async () => {
     const userData = await mkdtemp(join(tmpdir(), 'orivon-serving-unprepared-'))
     const storage = nodeLoaderStorage(userData)
     await pinRealOrigin(storage, 'https://routed.example')
@@ -780,9 +780,10 @@ describe('registerServingFor -- a session that cannot be prepared', () => {
     vi.resetModules()
     vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
     const { registerServingFor, beforeAppSessionServes, isOriginServedFromCacheSync, isOriginPinnedSync } = await import('../serve.js')
-    beforeAppSessionServes(async () => { throw new Error('the front would not bind') })
+    const { AppNotReady } = await import('../app-partitions.js')
+    beforeAppSessionServes(async () => { throw new AppNotReady('its tunnel could not start', 'Check the tunnel under Tunnels, then open it again.', { cause: new Error('the front would not bind') }) })
 
-    await expect(registerServingFor(storage, 'https://routed.example')).rejects.toThrow('the front would not bind')
+    await expect(registerServingFor(storage, 'https://routed.example')).rejects.toThrow('its tunnel could not start')
 
     expect(isOriginServedFromCacheSync('https://routed.example'), 'a tab for it runs in the app\'s partition, not on the shared session').toBe(true)
     expect(isOriginPinnedSync('https://routed.example'), 'it is still an app Orivon holds').toBe(true)
@@ -791,7 +792,28 @@ describe('registerServingFor -- a session that cannot be prepared', () => {
     for (const path of ['/', '/index.html', '/anything-else']) {
       const answer = await handler(new Request(`https://routed.example${path}`))
       expect(answer.status).toBe(503)
-      expect(await answer.text()).toContain('tunnel could not start')
+      const text = await answer.text()
+      expect(text).toContain('its tunnel could not start')
+      expect(text).toContain('Check the tunnel under Tunnels')
     }
+  })
+
+  it('says only what is true of a failure no preparer explained: not the tunnel', async () => {
+    const userData = await mkdtemp(join(tmpdir(), 'orivon-serving-unexplained-'))
+    const storage = nodeLoaderStorage(userData)
+    await pinRealOrigin(storage, 'https://unexplained.example')
+    const session = fakeSession()
+    vi.resetModules()
+    vi.doMock('electron', () => ({ session: { fromPartition: () => session } }))
+    const { registerServingFor, beforeAppSessionServes } = await import('../serve.js')
+    beforeAppSessionServes(async () => { throw new Error('disk full') })
+
+    await expect(registerServingFor(storage, 'https://unexplained.example')).rejects.toThrow('disk full')
+
+    const answer = await session.handlers.get('https')?.(new Request('https://unexplained.example/'))
+    expect(answer?.status).toBe(503)
+    const text = await answer?.text()
+    expect(text).toContain('the session it opens in could not be made ready')
+    expect(text).not.toContain('tunnel')
   })
 })

@@ -7,7 +7,7 @@ import { timingSafeEqual } from 'node:crypto'
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import { OWN_READ_HEADER } from '../../../loader/fetch/content-root.js'
 import { isOwnSiteRequest } from '../../../loader/fetch/own-site-request.js'
-import { MAX_RELAYS } from '../protocol.js'
+import { isHeaderPairs, MAX_RELAYS } from '../protocol.js'
 import type { FromHost, HeaderPairs, RelayToHost } from '../protocol.js'
 
 /** Request headers that belong to this connection or describe a body the relay does not carry, and the mark of the shell's own reads. */
@@ -50,10 +50,6 @@ function relayedHeaders (req: IncomingMessage): HeaderPairs {
     if (name !== '' && !NOT_RELAYED_REQUEST.has(name)) pairs.push([name, req.rawHeaders[at + 1] ?? ''])
   }
   return pairs
-}
-
-function isHeaderPairs (value: unknown): value is HeaderPairs {
-  return Array.isArray(value) && value.every((pair) => Array.isArray(pair) && pair.length === 2 && typeof pair[0] === 'string' && typeof pair[1] === 'string')
 }
 
 /** The hosts of the default-port `https:` origins in `origins`: the only ones this server could be asked for. */

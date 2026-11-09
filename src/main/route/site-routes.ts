@@ -16,11 +16,6 @@ export interface SiteRoutes {
    * a session that is not tunnelled, or goes through the other tunnel, for an address that has a tunnel gives no.
    */
   readonly sentLikeItsOwn?: (partition: string | undefined, origin: string) => boolean
-  /**
-   * Whether the shared session sends the app at `origin` as the app's own route would: the same tunnel, or none for both. An app
-   * with a route of its own (an entry, or a list that cannot be read) is not sent as the shared session sends.
-   */
-  readonly sharedLikeItsOwn?: (origin: string) => boolean
   /** The tunnel this window is held to (a private window held to Nym), when it is: a tab's choice other than it is not honoured. */
   readonly heldTo?: TunnelKind
   /** Records that the website at `origin` has storage in `profile` that stays until the person removes it: a website a tab's tunnel choice put there has no entry to say so. */
@@ -37,11 +32,6 @@ export function setSiteRoutes (next: SiteRoutes | undefined): void {
 /** `choice` as this window allows it: in a window held to one tunnel (`SiteRoutes.heldTo`) that tunnel or none, anywhere else unchanged. */
 export function allowedTabChoice (choice: TabTunnelChoice | undefined): TabTunnelChoice | undefined {
   return choiceUnderHold(choice, source?.heldTo)
-}
-
-/** `SiteRoutes.sharedLikeItsOwn` for an app: true when nothing is known (a test, a start-up not done). */
-export function sharedSessionRoutesLike (origin: string): boolean {
-  return source?.sharedLikeItsOwn?.(origin) ?? true
 }
 
 /** The session the website at `origin` must run in when it is opened in a tab with `choice` (none: by its own entry alone), or undefined for the shared one. */

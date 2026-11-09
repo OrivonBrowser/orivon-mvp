@@ -12,7 +12,8 @@ export interface PageRequest {
   readonly topUrl: string | undefined
 }
 
-function originOf (url: string): string | undefined {
+/** The origin of `url`, or undefined when it has none. */
+export function originOf (url: string): string | undefined {
   try {
     const origin = new URL(url).origin
     return origin === 'null' ? undefined : origin
@@ -29,11 +30,6 @@ function originOf (url: string): string | undefined {
 export function requestPartition (request: PageRequest): string | undefined {
   if (request.resourceType === 'mainFrame') return originOf(request.url)
   return request.topUrl === undefined ? undefined : originOf(request.topUrl)
-}
-
-/** The origin of `url`, or undefined when it has none. */
-export function originOfUrl (url: string): string | undefined {
-  return originOf(url)
 }
 
 /**

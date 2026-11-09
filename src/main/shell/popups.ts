@@ -19,8 +19,8 @@ export type PopupRoute = 'adopt' | 'new-tab'
 export interface PopupOpener {
   readonly url: string
   readonly partition: string | undefined
-  /** False when the opener's view was built without the app-tab flag: its page is a website's, even at an origin that is an app now. */
-  readonly appTab?: boolean
+  /** True when the opener's page is a website's that was open when its origin became an app that runs where websites run: its view was built without the app-tab flag. */
+  readonly websitePageOfApp?: boolean
 }
 
 /** Whether the open names window features: a page's own popup does, a link opened into a window (a shift-click) never does. */
@@ -67,10 +67,10 @@ export function routePopup (
   // `targetPartition === opener.partition` below cannot be trusted to
   // catch this case (both are commonly undefined at
   // once: the app's own default-session partition and an ordinary site's).
-  // A same-origin popup (an app opening one to itself) is unaffected, unless the opener is no app's page: a website's page
-  // that was open when the origin became an app shares its origin with the popup, and would script it and use its grants.
+  // A same-origin popup (an app opening one to itself) is unaffected, unless the opener is a website's page that was open when
+  // the origin became an app: it shares its origin with the popup, and would script it and use its grants.
   const targetOrigin = originFromUrl(details.url)
-  if (targetOrigin !== null && (targetOrigin !== originFromUrl(opener.url) || opener.appTab === false) && isApp(details.url)) return 'new-tab'
+  if (targetOrigin !== null && (targetOrigin !== originFromUrl(opener.url) || opener.websitePageOfApp === true) && isApp(details.url)) return 'new-tab'
   if (targetPartition === opener.partition) return 'adopt'
   // An isolated app's pinned bundle is served only in its own session.
   // Adopted anywhere else, its origin would run whatever the network sends,

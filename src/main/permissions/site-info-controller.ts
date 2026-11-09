@@ -304,10 +304,13 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     }
   }
 
+  /** An app with a session of its own keeps its own route; one that runs where websites run has a website's. */
+  const ownsItsSession = trustSources.hasOwnPartition ?? trustSources.isOriginServedFromCacheSync
+
   async function setTunnel (origin: string, kind: SiteTunnelKind | null): Promise<boolean> {
     const routes = ctx.routes
     // Only a web origin has an entry: nothing of the shell's own (`orivon://`) ever gets one, whatever the loader says it is.
-    if (routes === undefined || originFromUrl(origin) !== origin || (!trustSources.isOriginServedFromCacheSync(origin) && !canTunnel(origin))) return false
+    if (routes === undefined || originFromUrl(origin) !== origin || (!ownsItsSession(origin) && !canTunnel(origin))) return false
     // A window held to Nym keeps every switch where it is (the store refuses it too).
     if (ctx.privateTunnel === 'nym' && kind !== 'nym') return false
     if (kind !== null && (routes.routeSwitch.blockedFor(origin, kind) !== undefined || (kind === 'nym' && nymSwitchedOff(routes)))) return false
@@ -321,7 +324,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   }
 
   const tabs = createTabTunnelController({
-    ctx, tabTunnels, isApp: trustSources.isOriginServedFromCacheSync, websiteTunnel: tunnelFor, blocked: tabBlocked, extensionsFor, setWebsiteTunnel: setTunnel,
+    ctx, tabTunnels, isApp: ownsItsSession, websiteTunnel: tunnelFor, blocked: tabBlocked, extensionsFor, setWebsiteTunnel: setTunnel,
     proxy: (routes) => ({ address: proxySetup.address(), users: proxyUsers(routes) })
   })
 

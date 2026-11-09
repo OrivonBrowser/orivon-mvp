@@ -77,6 +77,7 @@ import { isWebOrigin } from '../site-settings/site-settings-controller.js'
 import { resetAllSiteSettings, sitesDomain } from '../site-settings/sites-domain.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { relayableOrigins } from '../verifier/shell-serves.js'
 import { nodeLoaderStorage } from '../../loader/cache/node-storage.js'
 import { createPermissionsController } from '../permissions/permissions.js'
 import type { SubsystemContext } from '../registry.js'
@@ -200,8 +201,10 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       localFiles: () => allLocalPartitions().map((partition) => session.fromPartition(partition)),
       // A website with a tunnel setting keeps its storage in a profile, which the shared session's clearing never reaches; a profile session nothing has made is not created to be cleared.
       siteSessions: () => profilePartitionsToClear((profile) => routes.store.apart(profile).length > 0, madeSiteSessions()).map((partition) => session.fromPartition(partition)),
+      // The allowed apps that run where websites run: their data is in the sessions above, under their origin, apart from the websites'.
+      appOrigins: relayableOrigins,
       // Every CACHE-SERVED app has a partition registered, which holds what the app stored there: all of it for an app with its own
-      // route, and what an earlier run left for one that now runs in the shared session, whose storage `websites` above reaches.
+      // partition, and what an earlier run left for one that now runs in the websites' sessions.
       // A granted-without-install app has none, and calling session.fromPartition on it would only mint a fresh, never-used,
       // empty partition for each -- ADR-0018's own warning against probing session.fromPartition speculatively.
       appSessions: async () => (await permissions.list())

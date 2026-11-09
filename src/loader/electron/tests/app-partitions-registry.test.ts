@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Session } from 'electron'
 import type { AppRequestHandler } from '../../serve/serve.js'
-import { onServingChange, registerAppOrigin, retireAppOrigin, servedOrigins, servingHandlerFor } from '../app-partitions.js'
+import { onAppOriginRetired, onServingChange, registerAppOrigin, retireAppOrigin, servedOrigins, servingHandlerFor } from '../app-partitions.js'
 
 // The handler each origin is answered with, kept beside the partition sets: the verifier's server hands a request of
 // the shared session for such an origin to it.
@@ -102,5 +102,19 @@ describe('hearing of the origins served changing', () => {
     stopThrowing()
     stopHearing()
     expect(heard).toEqual(['heard'])
+  })
+})
+
+describe('hearing of an app being retired', () => {
+  it('calls the listener with the origin of each retired app, and not after the listener is stopped', async () => {
+    const session = fakeSession()
+    const retired: string[] = []
+    const stop = onAppOriginRetired((origin) => { retired.push(origin) })
+    registerAppOrigin(session, 'https://one.retired.example', answering('1'), 'verifier')
+    retireAppOrigin(session, 'https://one.retired.example')
+    stop()
+    registerAppOrigin(session, 'https://two.retired.example', answering('2'), 'verifier')
+    retireAppOrigin(session, 'https://two.retired.example')
+    expect(retired).toEqual(['https://one.retired.example'])
   })
 })

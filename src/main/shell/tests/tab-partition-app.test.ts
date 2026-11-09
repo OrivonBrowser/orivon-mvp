@@ -45,18 +45,20 @@ describe('the session a tab shows an allowed app in', () => {
     expect(partitionChanged(`${NAMED}/`, partitionFor(NAMED), undefined)).toEqual({ to: undefined })
   })
 
-  it('is not changed by the tunnel choice of the tab: an app keeps the session of its own route', () => {
+  it('follows the tunnel choice of the tab as a website does, for a host the verifier answers, and not for an app with a partition of its own', () => {
     served.add(NAMED)
+    served.add(PLAIN)
     setSiteRoutes({ profileFor: () => undefined })
-    expect(partitionForTab(`${NAMED}/`, 'nym')).toBeUndefined()
-    expect(partitionForTab(`${NAMED}/`, 'direct')).toBeUndefined()
-    expect(partitionForTab(`${PLAIN}/`, 'nym')).toBe(profilePartitionFor('nym', PLAIN))
+    expect(partitionForTab(`${NAMED}/`, 'nym')).toBe(profilePartitionFor('nym', NAMED))
+    expect(partitionForTab(`${NAMED}/`, 'direct')).toBe(profilePartitionFor('direct', NAMED))
+    expect(partitionForTab(`${NAMED}/`, undefined)).toBeUndefined()
+    expect(partitionForTab(`${PLAIN}/`, 'nym')).toBe(partitionFor(PLAIN))
   })
 
-  it('is the app\'s own partition while the shared session would send the app differently from its own route', () => {
+  it('is the profile of the entry for an allowed app with a tunnel entry of its own, as for a website', () => {
     served.add(NAMED)
-    setSiteRoutes({ profileFor: () => undefined, sharedLikeItsOwn: () => false })
-    expect(partitionForTarget(`${NAMED}/`)).toBe(partitionFor(NAMED))
+    setSiteRoutes({ profileFor: (origin) => origin === NAMED ? 'nym' : undefined })
+    expect(partitionForTarget(`${NAMED}/`)).toBe(profilePartitionFor('nym', NAMED))
   })
 
   it('is the profile of the entry for a website at the same host that is not allowed', () => {
