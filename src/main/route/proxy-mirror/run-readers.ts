@@ -5,7 +5,7 @@ import { execFile } from 'node:child_process'
 import { win32 } from 'node:path'
 import { parseGnomeSettings } from './read-gnome.js'
 import { parseWindowsSettings } from './read-windows.js'
-import type { SettingsSourceName, SystemSettings } from './settings-source.js'
+import type { SystemSettings } from './settings-source.js'
 
 /** A read that takes longer is a read that failed: the sessions stay on the system's own config meanwhile. */
 export const READ_TIMEOUT_MS = 3_000
@@ -64,11 +64,4 @@ export async function readWindowsSettings (run: CommandRunner = runCommand, syst
   } catch {
     return { kind: 'unreadable' }
   }
-}
-
-/** The reader for the computer's settings, or undefined where none exists yet: the mirror then does nothing at all. */
-export function readerFor (source: SettingsSourceName): (() => Promise<SystemSettings>) | undefined {
-  if (source === 'gnome') return readGnomeSettings
-  if (source === 'windows') return readWindowsSettings
-  return undefined
 }

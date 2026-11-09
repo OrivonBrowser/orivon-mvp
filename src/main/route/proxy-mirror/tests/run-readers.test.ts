@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { gsettingsOutput } from './gsettings-output.test-helpers.js'
 import { blobHex, connectionBlob, internetSettings, perUserPolicy } from './reg-output.test-helpers.js'
-import { CommandFailed, readerFor, readGnomeSettings, readWindowsSettings, runCommand } from '../run-readers.js'
+import { CommandFailed, readGnomeSettings, readWindowsSettings, runCommand } from '../run-readers.js'
 
 describe('reading GNOME\'s settings', () => {
   it('asks gsettings for the proxy schema, recursively, and parses what it prints', async () => {
@@ -80,14 +80,6 @@ describe('reading Windows\' settings', () => {
     const calls: string[] = []
     await readWindowsSettings(async (file) => { calls.push(file); throw new CommandFailed(1) }, undefined)
     expect(calls).toEqual(Array(3).fill('C:\\Windows\\System32\\reg.exe'))
-  })
-})
-
-describe('which settings can be read', () => {
-  it('names a reader for GNOME and Windows, and none where a copy is not made yet', () => {
-    expect(readerFor('gnome')).toBe(readGnomeSettings)
-    expect(readerFor('windows')).toBe(readWindowsSettings)
-    expect(readerFor('environment')).toBeUndefined()
   })
 })
 

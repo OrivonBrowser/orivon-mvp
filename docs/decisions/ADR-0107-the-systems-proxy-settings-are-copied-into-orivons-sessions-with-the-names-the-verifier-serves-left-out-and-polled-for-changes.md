@@ -95,7 +95,7 @@ commands, so each system's output is a unit fixture.
   cannot be fetched. `docs/known-limitations.md`, T90, T84, T20 and the egress section on these names change with the
   behaviour.
 - Provisional until measured: that Chromium's PAC context runs `Function(...)` and reads an accessor `FindProxyForURL`
-  (else the script is checked to parse on its own and concatenated); the macOS and KDE paths. Each is settled by the run the
+  (else the script is checked to parse on its own and concatenated); the macOS path. Each is settled by the run the
   design names before the pull request that relies on it.
 - Measured on a Windows runner for the Windows reader: Chromium takes the registry values when `ProxyEnable` is on, or off
   beside a `ProxyServer`, and the `DefaultConnectionSettings` blob otherwise, so a tool that writes only one form is followed;
