@@ -7,7 +7,7 @@
 // `https_proxy`), Orivon adds the verifier's suffixes to `no_proxy` before it starts and the names load. Where it comes
 // from the desktop's own settings, GNOME's manual proxy is copied into the sessions with the suffixes left out and the names
 // load (e2e-eth-system-proxy-mirror.test.ts follows it as it changes); where the settings are a script, or cannot be copied
-// (KDE, Windows and macOS read theirs too), nothing Orivon can set exempts a name, so a request for one is cancelled before it
+// (Windows and macOS read theirs too, and KDE's when its exceptions are reversed), nothing Orivon can set exempts a name, so a request for one is cancelled before it
 // is sent and the tab says why. A proxy that is found with a script (PAC)
 // answers its first question slowly, and a request that waits for it is not sent: the name opens when the script says DIRECT,
 // and the tab says Orivon could not tell when the script never answers. A name asked for over plain http is never sent, whatever
