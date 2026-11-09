@@ -13,7 +13,7 @@ import { SqliteHistoryStore } from '../../src/main/history/sqlite-history-store.
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { runCommand } from '../support/auth-support.js'
 import { clearFocusLog, readFocusLog, startFocusLog, underVirtualDisplay } from '../support/focus-helpers.js'
-import { waitForStartPageLoaded } from '../support/e2e-helpers.js'
+import { startPagesHeld, waitForStartPageLoaded } from '../support/e2e-helpers.js'
 import { pressPointer } from '../support/native-pointer.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
@@ -90,9 +90,10 @@ const tabAddresses = async (app: App): Promise<string[]> =>
 
 async function openTab (app: App, chrome: Page): Promise<void> {
   const before = (await tabIds(chrome)).length
+  const held = await startPagesHeld(app)
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('tab.new') })
   expect(await waitFor(async () => (await tabIds(chrome)).length === before + 1)).toBe(true)
-  expect(await waitForStartPageLoaded(app)).toBe(true)
+  expect(await waitForStartPageLoaded(app, held)).toBe(true)
 }
 
 async function go (app: App, chrome: Page, address: string): Promise<void> {
