@@ -57,11 +57,11 @@ async function createInPlace (): Promise<NonNullable<NodeGapsResults['createInPl
  * Dials to an address that never answers, then ordinary file calls beside them. A dial holds one of the
  * origin's operation slots until the broker gives up on it, so the file calls only run if the dials left room.
  */
-async function filesBesideHungDials (port: number): Promise<NonNullable<NodeGapsResults['filesBesideHungDials']>> {
+async function filesBesideHungDials (host: string, port: number): Promise<NonNullable<NodeGapsResults['filesBesideHungDials']>> {
   const dialErrors: string[] = []
   let dialConnects = 0
   const sockets = Array.from({ length: HUNG_DIALS }, () => {
-    const socket = net.connect({ host: '127.0.0.1', port })
+    const socket = net.connect({ host, port })
     socket.on('error', (error) => { dialErrors.push(String(error)) })
     socket.on('connect', () => { dialConnects += 1 })
     return socket
@@ -145,6 +145,7 @@ async function requestsAfterUrlParse (port: number): Promise<NonNullable<NodeGap
 }
 
 async function run (): Promise<NodeGapsResults> {
+  const silentHost = document.querySelector('meta[name=silent-host]')?.getAttribute('content') ?? ''
   const port = Number(document.querySelector('meta[name=silent-port]')?.getAttribute('content'))
   const httpPort = Number(document.querySelector('meta[name=http-port]')?.getAttribute('content'))
   return {
@@ -156,7 +157,7 @@ async function run (): Promise<NodeGapsResults> {
     },
     execPath: { type: typeof process.execPath, dirname: path.dirname(process.execPath) },
     createInPlace: await createInPlace(),
-    filesBesideHungDials: await filesBesideHungDials(port),
+    filesBesideHungDials: await filesBesideHungDials(silentHost, port),
     randomInt: await randomIntegers(),
     copies: await copiesAndTempFolders(),
     requests: await requestsAfterUrlParse(httpPort)
