@@ -171,8 +171,9 @@ const IE_CONNECTIONS = `${IE_SETTINGS}\\Connections`
 const IE_VALUES = { ProxyEnable: 'DWord', ProxyServer: 'String', ProxyOverride: 'String', AutoConfigURL: 'String', AutoDetect: 'DWord' } as const
 type IeValue = keyof typeof IE_VALUES
 
+/** Runs `script` and throws when a statement of it fails (a terminating error), which a `try` around a removal of a value that is not there still reports as a failed command unless the script ends with `exit 0`. */
 function powershell (script: string): string {
-  return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8' }).trim()
+  return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `$ErrorActionPreference = 'Stop'; ${script}; exit 0`], { encoding: 'utf8' }).trim()
 }
 
 const quoted = (text: string): string => `'${text.replaceAll("'", "''")}'`
@@ -180,7 +181,7 @@ const quoted = (text: string): string => `'${text.replaceAll("'", "''")}'`
 /** Sets each value as Windows' Internet Options would: a number is a DWORD, a text a string, `null` removes the value. */
 function setIeValues (values: Partial<Record<IeValue, number | string | null>>): void {
   const lines = Object.entries(values).map(([name, value]) => value === null
-    ? `Remove-ItemProperty -Path '${IE_SETTINGS}' -Name ${name} -ErrorAction SilentlyContinue`
+    ? `try { Remove-ItemProperty -Path '${IE_SETTINGS}' -Name ${name} -ErrorAction Stop } catch { }`
     : `Set-ItemProperty -Path '${IE_SETTINGS}' -Name ${name} -Value ${typeof value === 'number' ? String(value) : quoted(String(value))} -Type ${IE_VALUES[name as IeValue]}`)
   powershell(lines.join('; '))
 }
@@ -197,7 +198,7 @@ function ieBlob (flags: number, proxy = '', bypass = ''): number[] {
 
 function setIeBlob (bytes: readonly number[] | null): void {
   powershell(bytes === null
-    ? `Remove-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -ErrorAction SilentlyContinue`
+    ? `try { Remove-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -ErrorAction Stop } catch { }`
     : `if (-not (Test-Path '${IE_CONNECTIONS}')) { New-Item -Path '${IE_CONNECTIONS}' | Out-Null }; Set-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -Value ([byte[]](${bytes.join(',')})) -Type Binary`)
 }
 
