@@ -11,9 +11,8 @@ import type { ElectronApplication, Frame, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, startAppServer, type AppServer } from './app-behaviour-support.js'
 import { runPhase } from '../support/e2e-helpers.js'
-import { underVirtualDisplay } from '../support/focus-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { pressPointer } from '../support/native-pointer.js'
+import { pressPointer, realPointerAvailable } from '../support/native-pointer.js'
 import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
@@ -70,16 +69,18 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-/** Where the page's top-left corner is on the screen: the window's content, plus the view's place in it. */
-async function pageOrigin (app: ElectronApplication, origin: string): Promise<{ x: number, y: number }> {
-  const at = await app.evaluate(({ BaseWindow }, wanted) => {
+/** A point of the page that `origin` names, in the screen pixels the pointer moves in: the window's content, plus the view's place in it, plus the point. */
+async function screenPointOf (app: ElectronApplication, origin: string, point: { x: number, y: number }): Promise<{ x: number, y: number }> {
+  const at = await app.evaluate(({ BaseWindow, screen }, wanted) => {
     const win = BaseWindow.getAllWindows()[0]
     if (win === undefined) return null
     const content = win.getContentBounds()
-    const view = win.contentView.children.find((child) => (child as unknown as { webContents?: { getURL: () => string } }).webContents?.getURL().startsWith(wanted) === true)
+    const view = win.contentView.children.find((child) => (child as unknown as { webContents?: { getURL: () => string } }).webContents?.getURL().startsWith(wanted.origin) === true)
     const bounds = view?.getBounds()
-    return bounds === undefined ? null : { x: content.x + bounds.x, y: content.y + bounds.y }
-  }, origin)
+    if (bounds === undefined) return null
+    const dip = { x: content.x + bounds.x + wanted.point.x, y: content.y + bounds.y + wanted.point.y }
+    return typeof screen.dipToScreenPoint === 'function' ? screen.dipToScreenPoint(dip) : dip
+  }, { origin, point })
   if (at === null) throw new Error(`no view shows ${origin}`)
   return at
 }
@@ -88,13 +89,14 @@ async function pageOrigin (app: ElectronApplication, origin: string): Promise<{ 
 async function pressAndWatch (app: ElectronApplication, page: Page | Frame, origin: string, id: string): Promise<boolean> {
   const box = await page.locator(`#${id}`).boundingBox()
   if (box === null) throw new Error(`#${id} has no box`)
-  const at = await pageOrigin(app, origin)
-  pressPointer(at.x + box.x + box.width / 2, at.y + box.y + box.height / 2, 1)
+  const at = await screenPointOf(app, origin, { x: box.x + box.width / 2, y: box.y + box.height / 2 })
+  pressPointer(at.x, at.y, 1)
   return await waitFor(async () => await page.evaluate((wanted) => (window as unknown as { __clicks: string[] }).__clicks.includes(wanted), id), 4_000)
 }
 
-it('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a page\'s drag region reaches the page, in an app tab and on a website', async () => {
-  expect(underVirtualDisplay()).toBe(true)
+// Linux needs the virtual display; Windows and macOS need a hosted runner, because the press takes the pointer.
+it.skipIf(process.platform !== 'linux' && !realPointerAvailable())('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a page\'s drag region reaches the page, in an app tab and on a website', async () => {
+  expect(realPointerAvailable()).toBe(true)
   const { app, chrome } = await launchShell({ args: [`--host-resolver-rules=MAP ${OTHER_SITE} 127.0.0.1:${new URL(website.origin).port}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`] })
   try {
     await runPhase('page drag regions', async (check) => {

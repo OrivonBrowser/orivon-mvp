@@ -396,9 +396,12 @@ call: it sends no window-manager focus change and never meets the window's own h
 depends on what a real press does to focus (the main menu's hold-the-button reopen is one), or on a
 region the window answers for (a page's `-webkit-app-region: drag` swallows a real press but not a
 debugger click), needs real events. `test/support/native-pointer.ts`'s `pressPointer(x, y, button)`
-sends X11 XTest fake events (move, button down, button up) to the virtual display of the headless
-runner, so a spec calls it where `underVirtualDisplay()` holds; no window manager is needed for hit
-testing, `e2e-app-page-drag-regions` is the worked example. A press that depends on window-manager
+sends the system's own events (move, button down, button up): X11 XTest to the virtual display of the headless
+runner on Linux, `mouse_event` through PowerShell on Windows, a CoreGraphics event through `osascript` on macOS.
+A spec calls it where `realPointerAvailable()` holds: the virtual display, or a GitHub-hosted Windows or macOS
+runner, whose desktop belongs to the job. On a person's own Windows or macOS machine the press would take their
+pointer, so the spec skips there. No window manager is needed for hit testing, `e2e-app-page-drag-regions` is the
+worked example. A press that depends on window-manager
 focus needs `openbox` in the virtual display as well (`test/support/with-window-manager.mjs`): write
 a short probe, read the outcome with `popoverShown`, and finish with `assertNoElectronSurvivors`. A
 page's own coordinates become screen coordinates by adding the window's content bounds and the view's
