@@ -2,6 +2,8 @@ import { Readable } from 'node:stream'
 import type { Session } from 'electron'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Resolver } from '../../../broker/policy/connect.js'
+import { OWN_READ_HEADER } from '../../../loader/fetch/content-root.js'
+import { ownReadToken } from '../../../loader/fetch/own-read.js'
 import { MAX_FAVICON_BYTES } from '../favicon-format.js'
 import { FAVICON_TIMEOUT_MS, faviconTimeoutMs, VERIFIED_FAVICON_TIMEOUT_MS } from '../favicon-timeout.js'
 
@@ -540,5 +542,12 @@ describe('the icon of a page the verifier serves', () => {
     mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
     await expect(fetchUncached('https://page.eth/favicon.ico', PAGE)).resolves.not.toBeNull()
     expect(net.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('is read as the shell\'s own, so a copy the shell keeps of that site never answers it', async () => {
+    resolveProxy.mockResolvedValue('DIRECT')
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    await fetchUncached('https://page.eth/favicon.ico', PAGE)
+    expect(requests[0]?.setHeader).toHaveBeenCalledWith(OWN_READ_HEADER, ownReadToken())
   })
 })

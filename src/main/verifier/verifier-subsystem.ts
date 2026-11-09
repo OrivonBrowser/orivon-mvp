@@ -10,7 +10,7 @@ import { app, session } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames, isDevEthName } from '../dev/eth-resolver.js'
-import type { HostConfig, LightClientState, NodeNotice, SiteProvenance, TunnelRoute } from '../../protocols/verifier-host/protocol.js'
+import type { HostConfig, LightClientState, SiteProvenance, TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
@@ -57,10 +57,8 @@ import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 import { configureNodeRoute, ethereumOutsideTunnel, nodesMayServeTunnelSites, nodesRunThroughTunnel } from './node-route.js'
 import { forgetNodeData as forgetNodes } from './forget-node-data.js'
-import { ownReadToken } from '../../loader/fetch/own-read.js'
-import { onServingChange } from '../../loader/electron/app-partitions.js'
-import { ShellResponder } from './shell-responder.js'
-import { relayHandlerFor, relayableOrigins } from './shell-serves.js'
+import { announceServed, hostShell, serveShell } from './shell-serves.js'
+import { followNodes, tellHost } from './node-notices.js'
 
 /** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
 const MOUNT_GRACE_MS = 5_000
@@ -259,7 +257,7 @@ async function hostConfig (): Promise<HostConfig> {
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(swarmChunks !== undefined && { swarmChunks }),
     ...(seam === undefined ? {} : { fixtures: seam.fixtures }),
-    shell: { ownReadToken: ownReadToken(), origins: relayableOrigins() }
+    shell: hostShell()
   }
 }
 
@@ -407,8 +405,7 @@ export const verifierSubsystem: Subsystem = {
           hostDown = undefined
           hostAsleep = false
           noteVerifierListening(true)
-          // Before the held requests are let go: an origin served between the host's configuration and now is then in its set too.
-          host.send({ type: 'shell-serves', origins: relayableOrigins() })
+          announceServed(host)
           listeningGate.listening()
           changed()
         },
@@ -456,29 +453,13 @@ export const verifierSubsystem: Subsystem = {
             pending = node.ensure().finally(() => { asking.delete(name) })
             asking.set(name, pending)
           }
-          pending.then(() => { tellHost(name, node) }, (error: unknown) => { console.error(`[verifier] could not ask for the ${name}:`, error) })
+          pending.then(() => { tellHost(host, name, node) }, (error: unknown) => { console.error(`[verifier] could not ask for the ${name}:`, error) })
         }
       }
     })
     supervisor = host
-    // A request for a host the shell serves from a copy it keeps, handed over by the host, is answered with that app's own handler.
-    const responder = new ShellResponder({ send: (message) => host.send(message), handlerFor: relayHandlerFor })
-    // The host holds the set it was started with, and hears of every change after.
-    onServingChange(() => { host.send({ type: 'shell-serves', origins: relayableOrigins() }) })
-    /** Tells the host what a node is doing; it holds a mount that reads from the node on the answer. */
-    function tellHost (name: string, node: LocalNodeSubsystem): void {
-      const state = node.state()
-      const notice: NodeNotice = { type: 'node', node: name, state: state.state, ...(state.state === 'off' && state.reason !== undefined && { reason: state.reason }), ...(state.state === 'failed' && { reason: state.reason }) }
-      host.send(notice)
-    }
-    for (const [name, node] of NODES) {
-      node.onChange(() => {
-        tellHost(name, node)
-        changed()
-      })
-      // The host holds the node's endpoint from its start: with the port renewed, it starts afresh (its next request forks it with the new one).
-      node.onEndpointChange(() => { host.idle() })
-    }
+    const responder = serveShell(host)
+    followNodes(NODES, host, changed)
     const lifecycle = new HostLifecycle({
       start: () => { host.start() },
       idle: () => { host.idle() },

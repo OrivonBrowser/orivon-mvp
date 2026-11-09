@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { Session } from 'electron'
 import { registerAppOrigin, retireAppOrigin } from '../../../loader/electron/app-partitions.js'
-import { isRelayable, relayHandlerFor, relayableOrigins } from '../shell-serves.js'
+import { ownReadToken } from '../../../loader/fetch/own-read.js'
+import { announceServed, hostShell, isRelayable, relayHandlerFor, relayableOrigins, serveShell } from '../shell-serves.js'
 
 // Which of the origins the shell serves the verifier's server may hand over: the hosts it answers, on its one port.
 
@@ -43,5 +44,27 @@ describe('what the host is told and asked for', () => {
     retireAppOrigin(session, 'https://ordinary.example')
     expect(relayableOrigins()).not.toContain('https://relayed.eth')
     expect(relayHandlerFor('https://relayed.eth')).toBeUndefined()
+  })
+})
+
+describe('what the host is started and kept informed with', () => {
+  it('starts it with the secret mark and the set served now', () => {
+    const session = fakeSession()
+    registerAppOrigin(session, 'https://started.eth', async () => new Response('kept'))
+    expect(hostShell()).toEqual({ ownReadToken: ownReadToken(), origins: expect.arrayContaining(['https://started.eth']) })
+    retireAppOrigin(session, 'https://started.eth')
+  })
+
+  it('sends it the whole set, and again on every change, to the end of the run', () => {
+    const session = fakeSession()
+    const sent: unknown[] = []
+    const host = { send: vi.fn((message: unknown) => { sent.push(message); return true }) }
+    serveShell(host)
+    registerAppOrigin(session, 'https://changing.eth', async () => new Response('kept'))
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.arrayContaining(['https://changing.eth']) })
+    retireAppOrigin(session, 'https://changing.eth')
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.not.arrayContaining(['https://changing.eth']) })
+    announceServed(host)
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: relayableOrigins() })
   })
 })

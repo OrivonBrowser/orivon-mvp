@@ -47,7 +47,7 @@ export class ShellResponder {
 
   receive (message: RelayFromHost): void {
     switch (message.type) {
-      case 'relay-request': void this.answer(message); break
+      case 'relay-request': this.answer(message).catch((error: unknown) => { console.error('[verifier] answering a relayed request failed:', error) }); break
       case 'relay-wrote': {
         const state = this.answering.get(message.id)
         if (state === undefined) break
