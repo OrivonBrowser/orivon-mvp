@@ -60,21 +60,20 @@ function mergeFile (settings: Settings, text: string): void {
   let inSection = false
   for (const line of lines) {
     if (Buffer.byteLength(line) > MOST_LINE_BYTES) continue
-    const whole = line.endsWith('\r') ? line.slice(0, -1) : line
-    if (whole.startsWith('[')) {
-      inSection = whole.startsWith('[Proxy Settings]')
+    if (line.startsWith('[')) {
+      inSection = line.startsWith('[Proxy Settings]')
       continue
     }
-    const equals = whole.indexOf('=')
+    const equals = line.indexOf('=')
     if (!inSection || equals === -1) continue
-    let key = trim(whole.slice(0, equals))
+    let key = trim(line.slice(0, equals))
     if (key.endsWith(']')) {
       // A localised or expanded key, `name[$e]`: the mark is dropped.
       const open = key.lastIndexOf('[')
       if (open === -1) continue
       key = key.slice(0, open).replace(/[ \t\n\v\f\r]+$/, '')
     }
-    if (key !== '') apply(settings, key, trim(whole.slice(equals + 1)))
+    if (key !== '') apply(settings, key, trim(line.slice(equals + 1)))
   }
 }
 

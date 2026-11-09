@@ -56,6 +56,7 @@ describe('where Chromium reads KDE\'s proxy settings', () => {
     expect(await kdeConfigDirectories(four, files({ [older]: { text: '', at: 3 }, [newer]: { text: '', at: 2 } }))).toEqual([older])
     expect(await kdeConfigDirectories(four, files({ [newer]: { text: '', at: 2 } }))).toEqual([newer])
     expect(await kdeConfigDirectories(four, files({ [older]: { text: '', at: 2 }, [newer]: { text: '', at: 2 } }))).toEqual([newer])
+    expect(await kdeConfigDirectories(three, files({ [older]: { text: '', at: 1 }, [newer]: { text: '', at: 2 } }))).toEqual([older])
   })
 
   it('is nowhere without a home to look in, and for a desktop that is not KDE', async () => {
