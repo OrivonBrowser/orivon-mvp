@@ -166,24 +166,91 @@ export function proxyScript (verifierNames: string, others: string): string {
   return `function FindProxyForURL(url, host) { if (/\\.(eth|orivon)\\.?$/.test(host)) return ${JSON.stringify(verifierNames)}; return ${JSON.stringify(others)} }`
 }
 
+const IE_SETTINGS = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
+const IE_CONNECTIONS = `${IE_SETTINGS}\\Connections`
+const IE_VALUES = { ProxyEnable: 'DWord', ProxyServer: 'String', ProxyOverride: 'String', AutoConfigURL: 'String', AutoDetect: 'DWord' } as const
+type IeValue = keyof typeof IE_VALUES
+
+function powershell (script: string): string {
+  return execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8' }).trim()
+}
+
+const quoted = (text: string): string => `'${text.replaceAll("'", "''")}'`
+
+/** Sets each value as Windows' Internet Options would: a number is a DWORD, a text a string, `null` removes the value. */
+function setIeValues (values: Partial<Record<IeValue, number | string | null>>): void {
+  const lines = Object.entries(values).map(([name, value]) => value === null
+    ? `Remove-ItemProperty -Path '${IE_SETTINGS}' -Name ${name} -ErrorAction SilentlyContinue`
+    : `Set-ItemProperty -Path '${IE_SETTINGS}' -Name ${name} -Value ${typeof value === 'number' ? String(value) : quoted(String(value))} -Type ${IE_VALUES[name as IeValue]}`)
+  powershell(lines.join('; '))
+}
+
+let blobChanges = 0x20
+
+/** The blob WinINET keeps beside the values: signature, change counter, flags (1 direct, 2 proxy, 4 script, 8 detect), three length-prefixed strings, 32 reserved bytes. */
+function ieBlob (flags: number, proxy = '', bypass = ''): number[] {
+  const word = (value: number): number[] => [value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255]
+  const string = (text: string): number[] => [...word(text.length), ...Buffer.from(text, 'latin1')]
+  blobChanges += 1
+  return [...word(0x46), ...word(blobChanges), ...word(flags), ...string(proxy), ...string(bypass), ...string(''), ...new Array<number>(32).fill(0)]
+}
+
+function setIeBlob (bytes: readonly number[] | null): void {
+  powershell(bytes === null
+    ? `Remove-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -ErrorAction SilentlyContinue`
+    : `New-Item -Path '${IE_CONNECTIONS}' -Force | Out-Null; Set-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -Value ([byte[]](${bytes.join(',')})) -Type Binary`)
+}
+
+/** Remembers the Windows proxy settings of the user running this, in both forms, and returns what puts them back. */
+function rememberIeSettings (): () => void {
+  const blob = powershell(`$v = (Get-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -ErrorAction SilentlyContinue).DefaultConnectionSettings; if ($v) { ($v | ForEach-Object { $_.ToString() }) -join ',' }`)
+  const before = Object.fromEntries((Object.keys(IE_VALUES) as IeValue[]).map((name) => {
+    const text = powershell(`(Get-ItemProperty -Path '${IE_SETTINGS}' -Name ${name} -ErrorAction SilentlyContinue).${name}`)
+    return [name, text === '' ? null : IE_VALUES[name] === 'DWord' ? Number(text) : text]
+  })) as Record<IeValue, number | string | null>
+  return () => {
+    setIeBlob(blob === '' ? null : blob.split(',').map(Number))
+    setIeValues(before)
+  }
+}
+
 /**
  * Turns Windows' "Automatically detect settings" on for the user running this, as its settings page does and as a new
  * installation has it, and returns what puts the setting back. Chromium reads it when a session starts, so it is done before a launch.
  */
 export function windowsAutoDetect (): () => void {
-  const run = (script: string): string => execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { encoding: 'utf8' }).trim()
-  const settings = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
-  const connections = `${settings}\\Connections`
-  const before = run(`$v = (Get-ItemProperty -Path '${connections}' -Name DefaultConnectionSettings -ErrorAction SilentlyContinue).DefaultConnectionSettings; if ($v) { ($v | ForEach-Object { $_.ToString() }) -join ',' }`)
-  const detectBefore = run(`(Get-ItemProperty -Path '${settings}' -Name AutoDetect -ErrorAction SilentlyContinue).AutoDetect`)
-  // The blob WinINET keeps: signature, change counter, flags (1 direct, 8 detect automatically), then three empty strings and 32 reserved bytes.
-  run(`New-Item -Path '${connections}' -Force | Out-Null; $b = [byte[]](0x46,0,0,0, 0x21,0,0,0, 9,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0) + (New-Object byte[] 32); Set-ItemProperty -Path '${connections}' -Name DefaultConnectionSettings -Value $b -Type Binary; Set-ItemProperty -Path '${settings}' -Name AutoDetect -Value 1 -Type DWord`)
-  return () => {
-    if (before === '') run(`Remove-ItemProperty -Path '${connections}' -Name DefaultConnectionSettings -ErrorAction SilentlyContinue`)
-    else run(`Set-ItemProperty -Path '${connections}' -Name DefaultConnectionSettings -Value ([byte[]](${before})) -Type Binary`)
-    if (detectBefore === '') run(`Remove-ItemProperty -Path '${settings}' -Name AutoDetect -ErrorAction SilentlyContinue`)
-    else run(`Set-ItemProperty -Path '${settings}' -Name AutoDetect -Value ${detectBefore} -Type DWord`)
+  const restore = rememberIeSettings()
+  setIeBlob(ieBlob(9))
+  setIeValues({ AutoDetect: 1 })
+  return restore
+}
+
+/** A manual proxy as Windows keeps it: `bypass` is the list written in Internet Options, `detect` the "Automatically detect settings" box. */
+export interface WindowsProxy {
+  readonly server: string
+  readonly bypass?: string
+  readonly detect?: boolean
+}
+
+/** What a tool wrote: `values` (only `ProxyEnable` and kin, as most proxy tools do), `blob` (only the connection settings) or `both` (what Internet Options writes). */
+export type WindowsProxyForm = 'values' | 'blob' | 'both'
+
+/**
+ * A computer whose Windows settings carry a manual proxy in one of the forms a tool writes it in. Chromium reads the settings when
+ * a session starts and follows a change within a second or two, so `write` also moves the proxy of a running shell; `off` turns the
+ * proxy off and `restore` puts the user's own settings back.
+ */
+export function windowsManualProxy (form: WindowsProxyForm, first: WindowsProxy): { write: (next: WindowsProxy) => void, off: () => void, restore: () => void } {
+  const restore = rememberIeSettings()
+  const write = (next: WindowsProxy | undefined): void => {
+    const detect = next?.detect === true
+    if (form !== 'values') setIeBlob(ieBlob((next === undefined ? 1 : 3) | (detect ? 8 : 0), next?.server, next?.bypass))
+    else setIeBlob(null)
+    if (form === 'blob') setIeValues({ ProxyEnable: null, ProxyServer: null, ProxyOverride: null, AutoConfigURL: null, AutoDetect: null })
+    else setIeValues({ ProxyEnable: next === undefined ? 0 : 1, ProxyServer: next?.server ?? null, ProxyOverride: next?.bypass ?? null, AutoConfigURL: null, AutoDetect: detect ? 1 : 0 })
   }
+  write(first)
+  return { write, off: () => { write(undefined) }, restore }
 }
 
 /**

@@ -157,7 +157,12 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   mirror's own set to it, answers as `orivon-system-proxy` (Chromium's own answer, never leaving `{ mode: 'system' }`) does for
   two ordinary addresses and up to three the system's exceptions cover; a difference, read again at once, leaves every session
   on `{ mode: 'system' }`. Settings that name a script or detection, cannot be carried exactly or cannot be read stay on it
-  too. The settings are read every thirty seconds and Chromium's answer asked every two. This runs nothing on other desktops, Windows or macOS.
+  too. The settings are read every thirty seconds and Chromium's answer asked every two. This runs nothing on other desktops or macOS.
+- **A manual proxy in Windows' settings.** The same, reading the registry with `%SystemRoot%\System32\reg.exe` (three `query` calls
+  run without a shell, three seconds at most, the output never logged): the per-user Internet Settings key, its
+  `DefaultConnectionSettings` blob, and the machine policy `ProxySettingsPerUser`, which makes the settings `unsupported`.
+  `ProxyServer` and `ProxyOverride` are copied as written, `<local>` included, by the rule Chromium's reader follows
+  (`proxy-mirror/README.md`). A proxy found by detection beside a manual one is copied and left to the check.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
   temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held

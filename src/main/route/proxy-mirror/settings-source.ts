@@ -1,7 +1,7 @@
 // Which of this computer's settings carry its proxy, picked as Chromium's `system` mode picks them, and what a read of them
 // comes to whichever they were. Pure: the platform and the environment are handed in.
 
-/** Where a computer keeps its proxy settings. Only `gnome` can be read yet; the others are named so a report can say which one it was. */
+/** Where a computer keeps its proxy settings: `readerFor` in `run-readers.ts` says which can be read; a report names the one it was. */
 export type SettingsSourceName = 'gnome' | 'kde' | 'windows' | 'macos' | 'environment'
 
 /** What a read of the settings comes to, in words that hold no address, URL or exception. */

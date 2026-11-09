@@ -9,14 +9,16 @@ A session that follows the system takes the copy through the route controller's 
 |---|---|---|
 | `settings-source.ts` | Which of the computer's settings carry its proxy (GNOME, KDE, Windows, macOS, the environment), picked as Chromium's `system` mode picks them, and the words for what a read comes to (`SystemSettings`) | Durable: pure over the platform and the environment |
 | `read-gnome.ts` | `gsettings list-recursively org.gnome.system.proxy` turned into `SystemSettings`; reads only the keys it needs, so a password in the output reaches nothing | Durable: pure |
-| `run-readers.ts` | Runs `gsettings` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments) | Tied to the operating system: it starts a program |
+| `read-windows.ts` | `reg query` of the per-user Internet Settings key, its connection blob and the machine policy turned into `SystemSettings`, by the rule Chromium's reader follows; reads only the values it needs | Durable: pure |
+| `run-readers.ts` | Runs `gsettings` and `reg.exe` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments), and says which reader a computer has (`readerFor`) | Tied to the operating system: it starts a program |
 | `mirrored-config.ts` | The config for manual settings: the system's rules and exceptions, then `*.suffix` and `*.suffix.` for every routed suffix | Durable: pure |
 | `canaries.ts` | The addresses the copy is checked with: two ordinary sites and up to three the system's exceptions cover | Durable: pure |
 | `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, checks a copy before applying it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, carry or check | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
 | `mirror-status.ts` | What `orivon://report` and the log say about the mirror: four fixed words | Durable: pure |
 
 **What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), and
-[`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process`.
+[`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process`
+and `node:path`.
 
 **What it must never import.** The Electron package: `../route-subsystem.ts` supplies the sessions. Nothing here calls `setProxy` or dials
 anything; the sessions it asks are handed in, so a unit test drives all of it against fakes.
@@ -42,10 +44,25 @@ not read at all; a server with an empty host is unset; a `socks` server is SOCKS
 not `corp.test`; `corp.test` alone matches that host only). `*.eth` does not match `fixture.eth.`, the root-dot spelling, so each routed
 suffix is added in both spellings. A bare IPv6 address in the list is bracketed.
 
+**Windows keeps the proxy in two forms, and Chromium reads them by a rule that is neither one alone, measured.** The values under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` (`ProxyEnable`, `ProxyServer`, `ProxyOverride`, `AutoConfigURL`,
+`AutoDetect`) are what most tools write; the `DefaultConnectionSettings` blob under its `Connections` key (flags 1 direct, 2 proxy, 4 script,
+8 detect, then the three strings) is what Internet Options writes beside them. A `ProxyEnable` value, whatever it holds, makes the values the
+manual proxy's and the blob's proxy is not looked at (`ProxyEnable` 0 with a blob of flags 3 is no proxy); without one the blob is, and a
+`ProxyServer` value alone is ignored. A script comes from the `AutoConfigURL` value or from a blob with flag 4 and an address, and wins over a
+manual proxy in both forms; a blob address under flag 1 is not used. A running session follows a change of either form at its next question.
+Detection is reported from the `AutoDetect` value or the blob's flag 8, which of them Windows honours was not measured (the runners have no
+detection server); beside a manual proxy it changes nothing here, since the manual part is copied and the canary check judges it. `ProxyServer`
+and `ProxyOverride` pass as written, because `setProxy` reads them with the parser that reads them in `system` mode, and the override list is
+split at the separators Chromium's Windows reader splits it at (`;`, `,` and white space), so no entry holds one. The machine policy that
+makes the settings per machine (`ProxySettingsPerUser` 0) is `unsupported`; a blob cut short or of a layout this reader does not know is
+too, and a blob of no bytes is no blob. `reg.exe` exits with 1 for a key or value that is not there and with anything else, or not at all,
+for a failure, so only the first is read as nothing set.
+
 **An unchanged read does nothing.** The settings and Chromium's two base answers are compared with the last pass; only a difference, or a
 state that is not settled (`unreadable`, `disagrees`), runs the check again. The 2-second question is asked in process of the session
 that only follows the system: it costs no process and no network for fixed rules.
 
-**The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`), what the read came to (`manual`,
+**The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`, `windows`), what the read came to (`manual`,
 `none`, `script`, `detect`, `unsupported`, `unreadable`, `unknown`), whether the sessions are mirrored or on the system's own, and why.
 `gsettings` prints an `authentication-password` line, so no output is logged and the parser has no field a password could reach.
