@@ -19,7 +19,8 @@ describe('planning one cookie', () => {
   })
 
   it('leaves out the expiry of a session cookie, so it stays one', () => {
-    const plan = planCookie({ ...base, session: true, expirationDate: undefined }, NOW)
+    const { expirationDate: _gone, ...noExpiry } = base
+    const plan = planCookie({ ...noExpiry, session: true }, NOW)
     expect(plan.kind === 'set' && 'expirationDate' in plan.cookie).toBe(false)
   })
 

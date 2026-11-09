@@ -84,9 +84,13 @@ session where the extensions are.
 - A block empties and closes the site's pages in every session they are in.
 - The extensions' install prompt, the grant prompt and the site-info popover name the extensions that reach an allowed
   web3 site, as they do for any website.
-- What such an app stored in its own partition before this change stays there. A later step carries it into the shared
-  session once, the first time the app opens there: cookies, local storage and databases are carried, and what cannot be
-  is named in the log. Until then an app that moved starts with empty storage.
+- What such an app stored in its own partition stays there, and a copy is made in the shared session once per origin,
+  before the app's first page loads there. Cookies (with their attributes), local storage and IndexedDB (each database at
+  its version, with its stores, indexes and records) are copied. The page waits for the copy up to 45 seconds and loads
+  after that with the copy still running. Nothing the shared session already holds is replaced. Service workers, Cache
+  Storage and the private file system are not copied, and the app makes them again. A cookie or database that cannot be
+  copied is named in the log and the rest still copy; a copy that fails is tried again at later starts, three times at
+  most. A file in the profile records each origin copied or failed, and why.
 - The verifier must be running for an allowed web3 site to open, as for every web3 site. A tab of such an app keeps the
   host awake, a request for its host waits until the host listens, and the shell sends the host the hosts it serves
   before any held request is let go, on a start and on a restart alike.

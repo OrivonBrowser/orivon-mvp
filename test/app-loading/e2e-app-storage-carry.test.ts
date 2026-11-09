@@ -224,7 +224,7 @@ it('[app:storage-follows-an-app-into-the-website-session] carries an allowed app
       check('a store of more records than one batch arrived whole', found?.['bulk'] === 450 && found['bulkLast'] === 'row 449 '.length + 1500)
 
       const hidden = await two.evaluate(async ({ session }, { at }) => (await session.defaultSession.cookies.get({ url: `${at}/`, name: 'carry-http-only' })).map((cookie) => ({ value: cookie.value, httpOnly: cookie.httpOnly, secure: cookie.secure, sameSite: cookie.sameSite, hostOnly: cookie.hostOnly })), { at: origin })
-      check(`the http-only cookie arrived with its attributes (${JSON.stringify(hidden)})`, hidden.length === 1 && hidden[0]?.value === 'http-only-value' && hidden[0].httpOnly && hidden[0].secure && hidden[0].sameSite === 'strict' && hidden[0].hostOnly)
+      check(`the http-only cookie arrived with its attributes (${JSON.stringify(hidden)})`, hidden.length === 1 && hidden[0]?.value === 'http-only-value' && hidden[0].httpOnly === true && hidden[0].secure === true && hidden[0].sameSite === 'strict' && hidden[0].hostOnly === true)
 
       const kept = await two.evaluate(async ({ session }, { name, at }) => ({
         cookies: (await session.fromPartition(name).cookies.get({ url: `${at}/` })).map((cookie) => cookie.name).sort(),

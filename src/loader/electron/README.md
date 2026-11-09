@@ -3,7 +3,8 @@
 **What lives here.** `fetch.ts` (`Fetch` over Electron `net`, with the redirect rule; while the whole browser is on the tunnel it resolves no name here and signs in to the tunnel's front), `request-fetch.ts` (a `fetch` over `net.request` that answers a proxy's challenge itself, which `net.fetch` cannot do for a request without web contents),
 `resolve.ts` (DNS through `net.resolveHost`), `serve.ts` (registers `protocol.handle` and
 `restorePinnedServing`), `app-partitions.ts` (which origins have a session of their own, the handler each is answered with, and the preparers that finish
-a session before an app is served from it) and `reach-route.ts` (the route of an app's third-party reach, supplied by
+a session before an app is served from it), `carry-page.ts` (the empty document every served origin answers, which the storage carry opens in
+the old session and the shared one) and `reach-route.ts` (the route of an app's third-party reach, supplied by
 main).
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/),
@@ -33,6 +34,12 @@ response, and nothing reads grants from disk, A158) are documented in [`serve.ts
 being served, and when it moves between read live and served from its pin (not when its handler is replaced and neither changed). The partition is where the app's own page runs when it has one of its own; the record is
 how the same handler answers a request for the origin made anywhere else, which [`../../main/verifier/README.md`](../../main/verifier/README.md) describes.
 `fetch.ts` marks every read of a host the verifier serves as the shell's own (`../fetch/own-read.ts`), so a live-served handler's read of the verifier is never answered by a handler.
+
+**`registerAppOrigin` wraps the handler it is given in `answeringCarryPage`, so the one registry answers the carry page.** The storage carry
+([`../../main/storage-carry/`](../../main/storage-carry/README.md)) must put a hidden page at an app's origin in two sessions, the partition the app
+used to run in and the shared one, and the shell may add no second route to either. The wrapped handler answers GET of one path, which holds a
+secret chosen at random per process, with an empty document, and every other request as the app's handler does. Both the partition's
+`protocol.handle` and the record the verifier relay reads hold the wrapped handler, so the page is answered wherever the origin is served.
 
 **When the cached bundle fails verification, nothing is served, and the next visit reinstalls
 it.** A handler that denied every request would stop the page loading, so its hint would never
