@@ -117,9 +117,17 @@ const rows: readonly Row[] = [
     control: { type: 'custom', render: renderTunnelTest('socks5') }
   },
   {
+    id: 'route-separate-sign-ins',
+    label: 'Keep tunneled sites separate',
+    help: 'Sites in a tunnel get their own sign-ins, so they can\'t link your tunneled visits to your accounts. Turn off to stay signed in to the same accounts in tunneled tabs: the cookies of your tunnel profiles and of normal browsing are then kept the same, both ways (a site\'s other storage stays apart). Turning it back on clears the cookies of the tunnel profiles, so each site asks you to sign in once.',
+    keywords: ['tunnel', 'separate', 'sign in', 'signed in', 'login', 'accounts', 'cookies', 'identity', 'same accounts', 'profile', 'link', 'tracking', 'share'],
+    group: SITES,
+    control: { type: 'toggle', key: 'network.tunnel.separateSignIns' }
+  },
+  {
     id: 'route-sites',
     label: 'Sites and apps with their own tunnel setting',
-    help: 'A website you keep on Nym lives in your Nym profile, one you keep on your proxy in your proxy profile, and one you keep off while everything else is on in your direct profile; a tab you send through a tunnel without keeping it for the site shows its sites from the same profiles while the tab lasts. Each profile keeps its cookies and storage apart from your normal browsing. Your extensions run in each profile, each with settings of its own, and the direct profile\'s run only while one of its sites is open. The storage stays when you give the setting up, until you remove it here.',
+    help: 'A website you keep on Nym lives in your Nym profile, one you keep on your proxy in your proxy profile, and one you keep off while everything else is on in your direct profile; a tab you send through a tunnel without keeping it for the site shows its sites from the same profiles while the tab lasts. Each profile keeps its cookies and storage apart from your normal browsing, unless you turn off Keep tunneled sites separate, which shares the cookies. Your extensions run in each profile, each with settings of its own, and the direct profile\'s run only while one of its sites is open. The storage stays when you give the setting up, until you remove it here.',
     keywords: ['tunnel', 'proxy', 'tor', 'sites', 'websites', 'apps', 'storage', 'cookies', 'separate', 'remove', 'sign in'],
     group: SITES,
     control: { type: 'custom', wide: true, render: renderTunnelList }
