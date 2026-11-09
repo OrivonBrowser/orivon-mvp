@@ -196,7 +196,7 @@ export const routeSubsystem: Subsystem = {
       held: heldToNym,
       systemAnswer: async (url) => await systemProxySession().resolveProxy(url),
       check: { set: async (config) => { await systemCheckSession().setProxy(config) }, answer: async (url) => await systemCheckSession().resolveProxy(url) },
-      apply: async () => { await routes.controller.systemChanged() }
+      apply: async () => await routes.controller.systemChanged()
     })
     setMirrorStatusSource(proxyMirror.status)
     setDirectLookupSource(() => routes.everywhere() ? systemMirrorSession() : undefined)
@@ -332,6 +332,8 @@ export const routeSubsystem: Subsystem = {
       defaultKind: routes.defaultKind
     })
     publishRoutes(ctx, routes)
+    // Registered before the first read is awaited: a quit during it must not leave a pass that goes on to set sessions.
+    app.once('will-quit', () => { proxyMirror?.stop() })
     // The first read of the system's settings comes before the sessions are waited for, so the first window finds them copied.
     await proxyMirror.start()
     // Whatever loads next (the person's extensions, the first window) finds the sessions already following the setting.
@@ -339,7 +341,6 @@ export const routeSubsystem: Subsystem = {
     // Its first set waits for the stop its adoption gave it, so it is awaited here as well.
     await mirrorSet
     app.once('will-quit', () => {
-      proxyMirror?.stop()
       void Promise.all([routes.hub.dispose(), temporary.dispose(), deadEnd.close()]).catch((error: unknown) => { console.error('[route] stopping the fronts failed:', error) })
     })
   }

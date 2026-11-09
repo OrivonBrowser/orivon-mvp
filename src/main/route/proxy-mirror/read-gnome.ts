@@ -1,8 +1,8 @@
 // GNOME's proxy settings (`org.gnome.system.proxy`) as `gsettings list-recursively` prints them, turned into what the
 // mirror copies. It follows what Chromium's GSettings reader makes of the same keys: the `http`, `https` and `socks`
 // servers are separate (`use-same-proxy` and each server's `enabled` are not read), a server with an empty host is
-// unset, and a port of 0 is the scheme's default. Only the keys it needs are read, so an `authentication-password`
-// line cannot reach anything. Pure.
+// unset, a port of 0 is the scheme's default, and each `ignore-hosts` entry goes to the bypass-rule parser as it stands. Only the keys
+// it needs are read, so an `authentication-password` line cannot reach anything. Pure.
 
 import type { SystemSettings } from './settings-source.js'
 
@@ -64,11 +64,6 @@ interface Server {
   port?: number | undefined
 }
 
-/** A bare IPv6 literal is bracketed, the way a rule spells it; every other entry is kept as it is. */
-function exceptionRule (entry: string): string {
-  return entry.includes(':') && !entry.includes('[') && !entry.includes('/') && entry.indexOf(':') !== entry.lastIndexOf(':') ? `[${entry}]` : entry
-}
-
 /** `host:port` as `setProxy` reads it, or undefined for a server that cannot be written into a rule: a host with a character of a separator, a port that did not read. */
 function address (host: string, port: number | undefined): string | undefined {
   if (!HOST.test(host) || port === undefined) return undefined
@@ -112,5 +107,5 @@ export function parseGnomeSettings (output: string): SystemSettings {
   if (rules.length === 0) return { kind: 'none' }
   const exceptions = ignore.filter((entry) => entry.trim() !== '')
   if (!exceptions.every((entry) => EXCEPTION.test(entry))) return { kind: 'unsupported' }
-  return { kind: 'manual', proxyRules: rules.join(';'), exceptions: exceptions.map(exceptionRule) }
+  return { kind: 'manual', proxyRules: rules.join(';'), exceptions }
 }
