@@ -198,7 +198,9 @@ the page), [`e2e-embed-local.test.ts`](../../test/capabilities/e2e-embed-local.t
 app's own loopback listener under a local pattern (two labels are two origins, a cookie does not
 cross them, a page is refused while the app holds no listener or another program holds the
 port, a server the test holds on `[::1]` at the app's port is never the one shown, and a shown
-page closes with the app's listener), [`e2e-embed-events.test.ts`](../../test/capabilities/e2e-embed-events.test.ts) drives a shown page's
+page closes with the app's listener), [`e2e-embed-remote.test.ts`](../../test/capabilities/e2e-embed-remote.test.ts) shows an https site under an exact origin that
+the launch maps to a server of the spec (a message the page sends arrives as an `ipc-message` on the element, `getURL()` and
+`getWebContentsId()` answer, and `contentWindow.postMessage` reaches the page), [`e2e-embed-events.test.ts`](../../test/capabilities/e2e-embed-events.test.ts) drives a shown page's
 popups, downloads and a link to an unknown scheme with real input and reads the events on the
 element, [`e2e-http-server.test.ts`](../../test/node-runtime/e2e-http-server.test.ts) runs `http.createServer`
 in a page and answers real requests from outside the browser,
