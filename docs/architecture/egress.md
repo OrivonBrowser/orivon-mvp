@@ -83,6 +83,7 @@ and in tabs opened from it, runs in that tunnel's profile until the tab closes, 
 | `src/main/pages/serve.ts` | The renderer's dev server on loopback, in a source run only | Answering an `orivon://` page in development | Loopback |
 | `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
 | `src/main/route/dead-end.ts` | Listens on a random `127.0.0.1` port, accepts and closes; reads and sends nothing | The place a session is pointed at to stop it (a session made while the whole browser is on the tunnel, one that could not be pointed, the requests made with no session), so a stopped request fails at once and no other listener on this computer is shown a destination name | Loopback |
+| `src/main/route/proxy-mirror/read-kde.ts` | Nothing: uses only `isIPv4` and `isIPv6` | Telling an address from a hostname in KDE's proxy exceptions | Loopback |
 | `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions, and of every other session the runtime creates while the whole browser is on the tunnel: the front, or the dead end (the moment a session is made or switched on, before the front is had); also `app.setProxy` for the requests made with no session | Where a session takes the tunnel; it marks a session as changing from before each `setProxy` until the call ends (`proxy-answers.ts`) | Routed (it makes sessions take it) |
 | `src/main/route/route-subsystem.ts` | Nothing of its own: wires the sessions, `app.setProxy`, the system-proxy session that T20 asks, the system-mirror session that Orivon's direct requests and the lookups about a site set to off use, and the system-check session where a copy of the system's proxy settings is tried (`proxy-mirror/`; it runs `gsettings`, and sets a proxy on the sessions that follow the system only after the check); registers the guard that keeps a name the verifier serves from a proxy the system sets, on every website session | Starting the routes | Routed (it makes the rest take the tunnel) |
 | `src/main/self-update/update-check-runner.ts` | GitHub's releases API | Looking for a newer release | Tunnelled while the whole browser is on it (`ownFetch`): the check goes through the tunnel or does not happen. Not routed otherwise |
@@ -159,11 +160,15 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   two ordinary addresses and up to three the system's exceptions cover; a difference, read again at once, leaves every session
   on `{ mode: 'system' }`. Settings that name a script or detection, cannot be carried exactly or cannot be read stay on it
   too, but a copy already applied outlasts a read that failed, or a check that got no answer, while Chromium's answers for the two
-  ordinary addresses are what they were when it passed. The settings are read every thirty seconds and Chromium's answer asked every two. This runs nothing on other desktops or Windows.
+  ordinary addresses are what they were when it passed. The settings are read every thirty seconds and Chromium's answer asked every two.
+- **A manual proxy in KDE's settings.** The same copy, read from the `kioslaverc` files Chromium reads (`$HOME/.config`, the
+  `XDG_CONFIG_DIRS` below it, or `$KDEHOME/share/config`; a file read of at most a megabyte, three seconds at most, nothing run and
+  nothing logged). Its hostname exceptions are turned into the suffix matches Chromium makes of them, since `setProxy` makes none.
+  Reversed exceptions and environment-variable names stay on `{ mode: 'system' }`.
 - **A manual proxy in macOS's settings.** The same copy, read from `/usr/sbin/scutil --proxy` (run without a shell, three seconds at
   most, its output never logged): the web, secure web and SOCKS servers that are switched on, the SOCKS one as SOCKS5, and the
   exceptions as listed, with `<local>` first when "Exclude simple hostnames" is ticked. A script, even beside a manual proxy, and
-  automatic discovery alone stay on `{ mode: 'system' }`.
+  automatic discovery alone stay on `{ mode: 'system' }`. Nothing is read or run on other desktops or Windows.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
   temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held
@@ -197,7 +202,7 @@ time, by a counter, by load) can send the request to a proxy after the guard was
 name from `CONNECT name.eth:443`; it holds no certificate that would be accepted for it, so it cannot serve a page under the
 name. This is the whole of what the guard leaves open for these schemes, and it needs a script written that way.
 
-**What this leaves.** Behind a proxy that GNOME or KDE settings, Windows or macOS provide, a name the verifier serves does not
+**What this leaves.** Behind a proxy that Windows or macOS settings provide, or KDE settings with reversed exceptions, a name the verifier serves does not
 open while the proxy would carry it, and the sheet says why. Adding the routed suffixes (`*.eth` and the rest) to the proxy's
 exceptions opens them ([`known-limitations.md`](../known-limitations.md)).
 

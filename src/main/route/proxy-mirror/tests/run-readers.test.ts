@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { gsettingsOutput } from './gsettings-output.test-helpers.js'
-import { readerFor, readGnomeSettings, readMacosSettings, runCommand } from '../run-readers.js'
+import { readGnomeSettings, readMacosSettings, runCommand } from '../run-readers.js'
 import { HTTP_AND_HTTPS } from './scutil-output.test-helpers.js'
 
 describe('reading GNOME\'s settings', () => {
@@ -40,14 +40,6 @@ describe('reading macOS\'s settings', () => {
 
   it('is unreadable when the program prints what is no settings', async () => {
     expect(await readMacosSettings(async () => 'garbage')).toEqual({ kind: 'unreadable' })
-  })
-})
-
-describe('choosing the reader', () => {
-  it('has one for the settings of GNOME and of macOS, and none for the others yet', () => {
-    expect(readerFor('gnome')).toBe(readGnomeSettings)
-    expect(readerFor('macos')).toBe(readMacosSettings)
-    expect(readerFor('environment')).toBeUndefined()
   })
 })
 
