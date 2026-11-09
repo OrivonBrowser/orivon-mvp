@@ -78,11 +78,12 @@ describe('search', () => {
     expect(await s.call('history.search', { text: '', maxResults: 1000 }) as unknown[]).toHaveLength(620)
   })
 
-  it('leaves a registered app\'s pages out', async () => {
+  it('lists the pages of a site that holds Orivon permissions like any other', async () => {
     const s = setup()
-    visit(s, 'https://app.example/inbox', 'Inbox')
-    visit(s, 'https://a.test/', 'A')
-    expect((await s.call('history.search', { text: '' }) as Array<{ url: string }>).map((item) => item.url)).toEqual(['https://a.test/'])
+    visit(s, 'https://granted.example/inbox', 'Inbox', NOW - 2000)
+    visit(s, 'https://a.test/', 'A', NOW - 1000)
+    expect((await s.call('history.search', { text: '' }) as Array<{ url: string }>).map((item) => item.url)).toEqual(['https://a.test/', 'https://granted.example/inbox'])
+    expect((await s.call('history.search', { text: 'Inbox' }) as Array<{ url: string }>).map((item) => item.url)).toEqual(['https://granted.example/inbox'])
   })
 
   it('returns what is stored while history is off, and addUrl then does nothing', async () => {
@@ -102,10 +103,10 @@ describe('getVisits', () => {
     expect(await s.call('history.getVisits', { url: 'https://zzz.test/' })).toEqual([])
   })
 
-  it('has none for a registered app\'s address', async () => {
+  it('gives the visit of a granted site\'s address like any other', async () => {
     const s = setup()
-    visit(s, 'https://app.example/inbox')
-    expect(await s.call('history.getVisits', { url: 'https://app.example/inbox' })).toEqual([])
+    visit(s, 'https://granted.example/inbox')
+    expect(await s.call('history.getVisits', { url: 'https://granted.example/inbox' })).toEqual([expect.objectContaining({ transition: 'link', visitTime: NOW })])
   })
 })
 
@@ -119,13 +120,21 @@ describe('addUrl and deleteUrl', () => {
     await expect(s.call('history.deleteUrl', { url: 'https://never.test/' })).resolves.toBeUndefined()
   })
 
-  it('refuses an address that is not a web page, and any address of a registered app', async () => {
+  it('refuses an address that is not a web page', async () => {
     const s = setup()
-    for (const url of ['javascript:1', 'ftp://x.test/', 'orivon://settings', 'junk', 'https://app.example/x']) {
+    for (const url of ['javascript:1', 'ftp://x.test/', 'orivon://settings', 'junk']) {
       await expect(s.call('history.addUrl', { url })).rejects.toThrow('Invalid URL.')
       await expect(s.call('history.deleteUrl', { url })).rejects.toThrow('Invalid URL.')
     }
     await expect(s.call('history.addUrl', {})).rejects.toThrow('Invalid argument')
+  })
+
+  it('adds and removes the address of a granted site like any other', async () => {
+    const s = setup()
+    await s.call('history.addUrl', { url: 'https://granted.example/x', title: 'Granted' })
+    expect((await s.call('history.search', { text: 'Granted' }) as Array<{ url: string }>).map((item) => item.url)).toEqual(['https://granted.example/x'])
+    await s.call('history.deleteUrl', { url: 'https://granted.example/x' })
+    expect(await s.call('history.search', { text: 'Granted' }) as unknown[]).toHaveLength(0)
   })
 })
 
@@ -148,47 +157,33 @@ describe('deleteRange and deleteAll', () => {
     expect(await s.call('history.search', { text: '', startTime: 0 }) as unknown[]).toHaveLength(0)
   })
 
-  it('keeps a registered app\'s pages through both', async () => {
+  it('forgets the pages of a granted site with the rest, through both', async () => {
     const s = setup()
-    visit(s, 'https://app.example/inbox', 'Inbox', NOW - 2000)
+    visit(s, 'https://granted.example/inbox', 'Inbox', NOW - 2000)
     visit(s, 'https://a.test/', 'A', NOW - 1000)
     await s.call('history.deleteRange', { startTime: 0, endTime: NOW })
-    expect(s.service.list().map((page) => page.url)).toEqual(['https://app.example/inbox'])
-    visit(s, 'https://b.test/', 'B', NOW - 500)
+    expect(s.service.list()).toEqual([])
+    visit(s, 'https://granted.example/inbox', 'Inbox', NOW - 500)
+    visit(s, 'https://b.test/', 'B', NOW - 400)
     await s.call('history.deleteAll')
-    expect(s.service.list().map((page) => page.url)).toEqual(['https://app.example/inbox'])
+    expect(s.service.list()).toEqual([])
   })
 })
 
 describe('a delete over a very long history', () => {
-  it('still finds a registered app\'s page beyond fifty thousand rows and keeps it', async () => {
-    const total = 60_000
-    const rows = Array.from({ length: total }, (_unused, index) => ({
-      id: index + 1,
-      url: index === total - 1 ? 'https://app.example/old' : `https://p${String(index)}.test/`,
-      title: 'P',
-      lastVisit: NOW - index,
-      visitCount: 1
-    }))
-    const removeMany = vi.fn()
+  it('is one call to the store and reads no page', async () => {
+    const list = vi.fn(() => [])
     const clear = vi.fn()
     const removeRange = vi.fn()
-    const history = {
-      list: ({ limit = 500, after }: { limit?: number, after?: { lastVisit: number, id: number } } = {}) => {
-        const from = after === undefined || after.id === 0 ? 0 : rows.findIndex((row) => row.id === after.id) + 1
-        return rows.slice(from, from + limit)
-      },
-      listOrdered: () => [], visit: vi.fn(), remove: vi.fn(), removeMany, removeRange, clear, onChange: () => () => {}
-    }
+    const history = { list, listOrdered: () => [], visit: vi.fn(), remove: vi.fn(), removeRange, clear, onChange: () => () => {} }
     const fake = fakeContext({ history: history as never })
     installHistory(fake.ctx, () => NOW)
+    list.mockClear()
     await fake.call('history.deleteAll')
-    expect(clear).not.toHaveBeenCalled()
-    expect(removeRange).not.toHaveBeenCalled()
-    expect(removeMany).toHaveBeenCalledTimes(1)
-    const removed = removeMany.mock.calls[0]?.[0] as number[]
-    expect(removed).toHaveLength(total - 1)
-    expect(removed).not.toContain(total)
+    expect(clear).toHaveBeenCalledTimes(1)
+    await fake.call('history.deleteRange', { startTime: 5, endTime: 9 })
+    expect(removeRange).toHaveBeenCalledWith(5, 9)
+    expect(list).not.toHaveBeenCalled()
   })
 })
 
@@ -221,9 +216,13 @@ describe('events', () => {
     ])
   })
 
-  it('sends nothing for a registered app\'s page', () => {
+  it('sends onVisited and onVisitRemoved for a granted site\'s page like any other', async () => {
     const s = setup()
-    s.service.visit('https://app.example/inbox', 'Inbox')
-    expect(s.events).toEqual([])
+    s.service.visit('https://a.test/', 'A')
+    s.service.visit('https://granted.example/inbox', 'Inbox')
+    expect(s.events.at(-1)).toEqual({ name: 'history.onVisited', args: [expect.objectContaining({ url: 'https://granted.example/inbox' })] })
+    s.events.length = 0
+    await s.call('history.deleteUrl', { url: 'https://granted.example/inbox' })
+    expect(s.events).toEqual([{ name: 'history.onVisitRemoved', args: [{ allHistory: false, urls: ['https://granted.example/inbox'] }] }])
   })
 })
