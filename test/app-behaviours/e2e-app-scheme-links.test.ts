@@ -19,7 +19,7 @@ import { appManifest, grantApp, startAppServer, type AppServer } from './app-beh
 import { runPhase } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion, type QuestionText } from '../support/question-support.js'
-import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
+import { launchShell, QA_TEST_TIMEOUT_MS, visit, visitWithoutPage } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, findViewShowing, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env.ORIVON_UI_SHOTS_DIR
@@ -111,6 +111,17 @@ async function stubOpenExternal (app: ElectronApplication): Promise<void> {
   })
 }
 const openedBySystem = async (app: ElectronApplication): Promise<string[]> => await app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened)
+
+/** A real click on the element of the page at `url`, as input from the main process: it needs no Playwright page, which a macOS runner sometimes never attaches for a tab opened later (test/README.md, Known risk). */
+async function clickIn (app: ElectronApplication, url: string, selector: string): Promise<void> {
+  await app.evaluate(async ({ webContents }, [target, css]) => {
+    const wc = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL() === target)
+    if (wc === undefined) throw new Error(`no webContents at ${target as string}`)
+    const [x, y] = await wc.executeJavaScript(`(() => { const r = document.querySelector(${JSON.stringify(css)}).getBoundingClientRect(); return [Math.round(r.x + r.width / 2), Math.round(r.y + r.height / 2)] })()`) as [number, number]
+    wc.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 })
+    wc.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 })
+  }, [url, selector] as const)
+}
 
 /** The button that opens the link in an app, whatever the panel calls the app's origin. */
 const appButton = (question: QuestionText): string => question.buttons.find((label) => label.startsWith('Open in ')) ?? ''
@@ -287,8 +298,8 @@ it('[app:scheme-app-asks-to-be-default] an app asks to be the default for a sche
       const appTab = (await tabIds(chrome))[0]
       await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('tab.new') })
       expect(await waitFor(async () => (await tabIds(chrome)).length === 2)).toBe(true)
-      const siteView = await visit(app, chrome, `${site.origin}/`)
-      await siteView.click('#first')
+      await visitWithoutPage(app, chrome, `${site.origin}/`)
+      await clickIn(app, `${site.origin}/`, '#first')
       const received = await waitFor(async () => (await linksOf(appPage)).length === 1)
       check('[app:scheme-app-asks-to-be-default] a link now goes to the app with no question, in the tab already on it', received && (await linksOf(appPage))[0] === FIRST && await questionGone(app) && launched() === '' && appTab !== undefined, JSON.stringify(await linksOf(appPage)))
       check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
