@@ -1,15 +1,18 @@
 // A link scheme an app declares in its manifest's `protocols` can open in that app, with the person choosing and the
 // URL delivered to the app's page (catalogue: Links). The scheme is `magnet:`; nothing here names an app. An ordinary
-// loopback website holds the links, and each is a real click or a real `window.open`. NOTHING LAUNCHES: the OS openers
-// (`xdg-open` and its siblings) are stubs on PATH that record their argument, and every question is the panel under
-// the address bar, read and answered by its real buttons.
+// loopback website holds the links, and each is a real click or a real `window.open`. NOTHING LAUNCHES: every question
+// is the panel under the address bar, read and answered by its real buttons, and the system's app is never reached.
+// A clicked link the person sends to the system is launched by Chromium itself: on Linux through `xdg-open` and its
+// siblings, which are stubs on PATH that record their argument. Windows hands it to its shell and macOS to `open`, which
+// no script on PATH can stand in for, so there that answer is Cancel. A page's own `window.open` reaches
+// `shell.openExternal` on every system, replaced by a recorder, so the system's app is chosen and observed everywhere.
 //
 // Set ORIVON_UI_SHOTS_DIR to also write screenshots of the questions and the Settings card in both colour schemes.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-scheme-links.test.ts
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, startAppServer, type AppServer } from './app-behaviour-support.js'
@@ -70,6 +73,9 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
+/** Whether a link launched through Chromium's opener can be observed: only Linux runs a program found on PATH. */
+const OPENERS_ON_PATH = process.platform !== 'win32' && process.platform !== 'darwin'
+
 /** `xdg-open` and its siblings on PATH, recording what they are given and launching nothing. */
 function stubOpeners (): { dir: string, launched: () => string } {
   const dir = mkdtempSync(join(tmpdir(), 'orivon-e2e-openers-'))
@@ -84,7 +90,7 @@ function stubOpeners (): { dir: string, launched: () => string } {
 
 async function launchWithApps (): Promise<{ app: ElectronApplication, chrome: Page, launched: () => string }> {
   const openers = stubOpeners()
-  const { app, chrome } = await launchShell({ env: { PATH: `${openers.dir}:${process.env['PATH'] ?? ''}` } })
+  const { app, chrome } = await launchShell(OPENERS_ON_PATH ? { env: { PATH: `${openers.dir}${delimiter}${process.env['PATH'] ?? ''}` } } : {})
   await stubNativeDialogs(app)
   await grantApp(app, torrent.origin, appManifest('links-torrent', { fs: { quotaBytes: 1024 }, protocols: ['magnet'] }), [{ capability: 'fs', patterns: [] }])
   await grantApp(app, other.origin, appManifest('links-other', { fs: { quotaBytes: 1024 }, protocols: ['mailto'] }), [{ capability: 'fs', patterns: [] }])
@@ -95,6 +101,16 @@ async function launchWithApps (): Promise<{ app: ElectronApplication, chrome: Pa
 const linksOf = async (view: Page): Promise<string[]> => await evaluateRetrying(view, () => (window as unknown as { __links?: string[] }).__links ?? [])
 const settledOf = async (view: Page): Promise<string[]> => await evaluateRetrying(view, () => (window as unknown as { __settled?: string[] }).__settled ?? [])
 const appView = (app: ElectronApplication, chrome: Page): Page | undefined => findViewShowing(app, chrome, `${torrent.origin}/`)
+
+/** Replaces `shell.openExternal`, the call a page's own `window.open` of a link ends in, with a recorder that launches nothing. */
+async function stubOpenExternal (app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ shell }) => {
+    const g = globalThis as unknown as { __opened: string[] }
+    g.__opened = []
+    shell.openExternal = (async (url: string) => { g.__opened.push(url) }) as typeof shell.openExternal
+  })
+}
+const openedBySystem = async (app: ElectronApplication): Promise<string[]> => await app.evaluate(() => (globalThis as unknown as { __opened: string[] }).__opened)
 
 /** The button that opens the link in an app, whatever the panel calls the app's origin. */
 const appButton = (question: QuestionText): string => question.buttons.find((label) => label.startsWith('Open in ')) ?? ''
@@ -149,8 +165,26 @@ it('[app:scheme-link-offers-declared-apps] [app:scheme-link-opens-in-chosen-app]
       await siteView.click('#second')
       const again = await readQuestion(await waitQuestion(app))
       check('[app:scheme-link-opens-in-chosen-app] with no Always chosen, the next link asks again', again.buttons.includes(SYSTEM) && again.detail.includes(SECOND), JSON.stringify(again))
+      if (OPENERS_ON_PATH) {
+        await answerQuestion(app, SYSTEM)
+        check('[app:scheme-link-opens-in-chosen-app] choosing the system\'s app for a clicked link launches it there and the app is sent nothing', await waitFor(() => launched().includes(SECOND)) && (await linksOf(view)).length === 1, launched())
+      } else {
+        await answerQuestion(app, 'Cancel')
+        check('[app:scheme-link-opens-in-chosen-app] cancelling the question for a clicked link sends the app nothing', await waitFor(async () => await questionGone(app)) && (await linksOf(view)).length === 1, JSON.stringify(await linksOf(view)))
+      }
+
+      // A page's own window.open is the same link and the same question; its system choice is seen on every system.
+      await stubOpenExternal(app)
+      const tabsBeforeOpen = (await tabIds(chrome)).length
+      await selectTab(chrome, siteTab)
+      await waitFor(async () => (await evaluateRetrying(siteView, () => document.visibilityState)) === 'visible')
+      await siteView.click('#open')
+      const opening = await readQuestion(await waitQuestion(app))
+      check('[app:scheme-link-opens-in-chosen-app] a window.open of the link asks the same question, with the app beside the system\'s', appButton(opening) !== '' && opening.buttons.includes(SYSTEM) && opening.detail.includes(FOURTH), JSON.stringify(opening))
       await answerQuestion(app, SYSTEM)
-      check('[app:scheme-link-opens-in-chosen-app] choosing the system\'s app launches the link there and the app is sent nothing', await waitFor(() => launched().includes(SECOND)) && (await linksOf(view)).length === 1, launched())
+      check('[app:scheme-link-opens-in-chosen-app] choosing the system\'s app hands exactly that link to the system', await waitFor(async () => (await openedBySystem(app)).length === 1) && (await openedBySystem(app))[0] === FOURTH, JSON.stringify(await openedBySystem(app)))
+      await delay(ABSENCE_SETTLE_MS)
+      check('[app:scheme-link-opens-in-chosen-app] choosing the system\'s app sends the app nothing and opens no tab', (await linksOf(view)).length === 1 && (await openedBySystem(app)).length === 1 && (await tabIds(chrome)).length === tabsBeforeOpen, JSON.stringify({ links: await linksOf(view), opened: await openedBySystem(app) }))
       check('no native message box was opened', (await noNativeDialogs(app)).length === 0)
     })
   } finally {
