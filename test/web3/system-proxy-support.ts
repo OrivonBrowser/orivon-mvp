@@ -124,6 +124,24 @@ export function gnomeScriptProxy (dir: string, scriptUrl: string): { env: Record
   return { env: keyfile.env, write }
 }
 
+/**
+ * A computer whose desktop (KDE's settings) carries the proxy, in a `kioslaverc` under a home of the test's own. Chromium reads
+ * `$HOME/.config/kioslaverc` for KDE 5 and 6 and never `XDG_CONFIG_HOME`, and watches the directory rather than the file, so the
+ * directory exists before the launch. `write` changes the port the way the settings window would (KConfig writes a new file and
+ * renames it over the old), `off` sets no proxy and leaves the servers in the file, as the window does.
+ * `noProxyFor` is the window's list of exceptions: hostnames in it match as suffixes, and `reversed` makes it the only hosts that use the proxy.
+ */
+export function kdeProxy (home: string, port: number, noProxyFor: readonly string[] = ['localhost', '127.0.0.0/8', '::1'], reversed = false): { env: Record<string, string>, write: (port: number) => void, off: () => void } {
+  mkdirSync(join(home, '.config'), { recursive: true })
+  const file = join(home, '.config', 'kioslaverc')
+  const save = (type: number, next: number): void => {
+    writeFileSync(`${file}.tmp`, `[Proxy Settings]\nNoProxyFor=${noProxyFor.join(',')}\nProxy Config Script=\nProxyType=${String(type)}\nReversedException=${String(reversed)}\nftpProxy=\nhttpProxy=http://127.0.0.1 ${String(next)}\nhttpsProxy=http://127.0.0.1 ${String(next)}\nsocksProxy=\n`)
+    renameSync(`${file}.tmp`, file)
+  }
+  save(1, port)
+  return { env: { XDG_CURRENT_DESKTOP: 'KDE', KDE_SESSION_VERSION: '6', HOME: home }, write: (next) => { save(1, next) }, off: () => { save(0, port) } }
+}
+
 export interface ScriptServer {
   readonly url: string
   /** The times a script was asked for. */

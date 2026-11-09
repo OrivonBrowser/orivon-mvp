@@ -9,6 +9,8 @@ A session that follows the system takes the copy through the route controller's 
 |---|---|---|
 | `settings-source.ts` | Which of the computer's settings carry its proxy (GNOME, KDE, Windows, macOS, the environment), picked as Chromium's `system` mode picks them, and the words for what a read comes to (`SystemSettings`) | Durable: pure over the platform and the environment |
 | `read-gnome.ts` | `gsettings list-recursively org.gnome.system.proxy` turned into `SystemSettings`; reads only the keys it needs, so a password in the output reaches nothing | Durable: pure |
+| `read-kde.ts` | The `[Proxy Settings]` section of every `kioslaverc` read, merged and turned into `SystemSettings` the way Chromium's KDE reader makes the same files of them; reads only the keys it needs, so a credential in a server entry reaches nothing | Durable: pure |
+| `read-kde-files.ts` | Finds the `kioslaverc` files where Chromium looks for them (by `KDEHOME`, `HOME`, `XDG_CONFIG_DIRS` and the KDE generation) and opens them: a file read of at most a megabyte, three seconds | Tied to the operating system: it reads files |
 | `run-readers.ts` | Runs `gsettings` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments) | Tied to the operating system: it starts a program |
 | `mirrored-config.ts` | The config for manual settings: the system's rules and exceptions, then `*.suffix` and `*.suffix.` for every routed suffix | Durable: pure |
 | `canaries.ts` | The addresses the copy is checked with: two ordinary sites and up to three the system's exceptions cover | Durable: pure |
@@ -16,7 +18,7 @@ A session that follows the system takes the copy through the route controller's 
 | `mirror-status.ts` | What `orivon://report` and the log say about the mirror: four fixed words | Durable: pure |
 
 **What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), and
-[`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process`.
+[`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process` and `read-kde-files.ts` `node:fs/promises`.
 
 **What it must never import.** The Electron package: `../route-subsystem.ts` supplies the sessions. Nothing here calls `setProxy` or dials
 anything; the sessions it asks are handed in, so a unit test drives all of it against fakes.
@@ -46,6 +48,18 @@ suffix is added in both spellings. A bare IPv6 address in the list is bracketed.
 state that is not settled (`unreadable`, `disagrees`), runs the check again. The 2-second question is asked in process of the session
 that only follows the system: it costs no process and no network for fixed rules.
 
+**Each KDE rule is what Chromium's `kioslaverc` reader makes of the key, measured.** Chromium reads `$HOME/.config/kioslaverc` for KDE 5 and 6,
+the `XDG_CONFIG_DIRS` below it, and `$KDEHOME/share/config` alone when `KDEHOME` is set; it never looks at `XDG_CONFIG_HOME`, though KDE
+writes there, so the reader follows Chromium and not KDE. Without `KDE_SESSION_VERSION` 5 or 6 Chromium takes the desktop for KDE 4 and
+reads `~/.kde` or `~/.kde4`, whichever changed last. The files are merged key by key, the later one winning, and an empty server in a later
+file does not clear an earlier one. A line of 511 bytes or more, and a last line with no newline, are skipped. A server is `host port` or a
+URL: the scheme and the credentials are dropped, and a `socks` server is SOCKS5 unless it says `socks4`. `NoProxyFor` entries are split at
+commas and spaces, and Chromium turns every hostname among them into a suffix match by putting a `*` in front (`corp.test` is
+`*corp.test`, which also matches `xcorp.test`); `setProxy` does not do that to the exceptions it is given, so the reader does, and leaves
+a rule for an address, a block of addresses and `<local>` as it is. No `kioslaverc`, or no type in it, is no proxy (`none`): Chromium then reads the
+environment, which Orivon already keeps the names out of. Reversed exceptions, a type 4 (the servers are names of environment variables)
+and a server or exception that could not be written into a rule are `unsupported`.
+
 **The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`), what the read came to (`manual`,
 `none`, `script`, `detect`, `unsupported`, `unreadable`, `unknown`), whether the sessions are mirrored or on the system's own, and why.
-`gsettings` prints an `authentication-password` line, so no output is logged and the parser has no field a password could reach.
+`gsettings` prints an `authentication-password` line, and a KDE server entry can hold `user:password@`, so no output is logged and neither parser has a field a password could reach.

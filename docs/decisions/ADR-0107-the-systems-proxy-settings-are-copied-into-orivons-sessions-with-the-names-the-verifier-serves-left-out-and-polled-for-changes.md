@@ -95,7 +95,7 @@ commands, so each system's output is a unit fixture.
   behaviour.
 - Provisional until measured: that Chromium's PAC context runs `Function(...)` and reads an accessor `FindProxyForURL`
   (else the script is checked to parse on its own and concatenated); which registry form Windows' call reads when a tool
-  writes only one; the macOS and KDE paths; the poll intervals' cost on Windows. Each is settled by the run the design
+  writes only one; the macOS path; the poll intervals' cost on Windows. Each is settled by the run the design
   names before the pull request that relies on it.
 - Built in four pull requests, the order *provisional* until each lands. The first is the seam and changes no behaviour:
   the controller's `systemConfig` and `systemChanged`, the `orivon-system-mirror` session for Orivon's direct requests, and
