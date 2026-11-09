@@ -3,8 +3,8 @@
 // so does one inside a region the page marks after it loaded or inside an open shadow root. The window's frame
 // belongs to the shell, so a page's drag region never takes a press for a window drag. A frame's own regions
 // never took a press, so the frame checks hold with or without the shell's sheet and guard the invariant.
-// The press is a real pointer on the virtual display: a debugger's click skips the window's hit test, which is
-// where a drag region swallows it.
+// The press is the system's own pointer (native-pointer.ts): a debugger's click skips the window's hit test, which
+// is where a drag region swallows it.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-page-drag-regions.test.ts
 import type { ElectronApplication, Frame, Page } from 'playwright'
@@ -101,13 +101,13 @@ async function declaredRegions (page: Page): Promise<string[]> {
 
 const SHELL_ARGS = (): string[] => [`--host-resolver-rules=MAP ${OTHER_SITE} 127.0.0.1:${new URL(website.origin).port}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`]
 
-// Linux needs the virtual display; Windows and macOS need a hosted runner, because the press takes the pointer. Each
-// test is a launch of its own and uses the window's first tab: a macOS runner sometimes never lets Playwright attach
-// the page of a tab opened later (test/README.md, Known risk), and a page it cannot reach cannot say what it received.
-const canPress = process.platform === 'linux' || realPointerAvailable()
+// Each test is a launch of its own and uses the window's first tab: a macOS runner sometimes never lets Playwright
+// attach the page of a tab opened later (test/README.md, Known risk), and a page it cannot reach cannot say what press
+// it received. The press takes the pointer, so it runs on the virtual display or a hosted runner and nowhere else.
+const NEEDS_POINTER = 'a real press needs the headless runner\'s virtual display on Linux, or a hosted runner on Windows and macOS (test/support/native-pointer.ts)'
 
-it.skipIf(!canPress)('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a drag region of an app\'s page reaches the page', async () => {
-  expect(realPointerAvailable()).toBe(true)
+it('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a drag region of an app\'s page reaches the page', async () => {
+  expect(realPointerAvailable(), NEEDS_POINTER).toBe(true)
   const { app, chrome } = await launchShell({ args: SHELL_ARGS() })
   try {
     await runPhase('page drag regions in an app tab', async (check) => {
@@ -123,8 +123,8 @@ it.skipIf(!canPress)('[app:page-drag-region-never-swallows-a-press] a real press
   }
 }, QA_TEST_TIMEOUT_MS)
 
-it.skipIf(!canPress)('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a drag region of a website, or of a frame in it, reaches the page', async () => {
-  expect(realPointerAvailable()).toBe(true)
+it('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a drag region of a website, or of a frame in it, reaches the page', async () => {
+  expect(realPointerAvailable(), NEEDS_POINTER).toBe(true)
   const { app, chrome } = await launchShell({ args: SHELL_ARGS() })
   try {
     await runPhase('page drag regions on a website', async (check) => {

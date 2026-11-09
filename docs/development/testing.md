@@ -400,7 +400,8 @@ sends the system's own events (move, button down, button up): X11 XTest to the v
 runner on Linux, `mouse_event` through PowerShell on Windows, a CoreGraphics event through `osascript` on macOS.
 A spec calls it where `realPointerAvailable()` holds: the virtual display, or a GitHub-hosted Windows or macOS
 runner, whose desktop belongs to the job. On a person's own Windows or macOS machine the press would take their
-pointer, so the spec skips there. No window manager is needed for hit testing, `e2e-app-page-drag-regions` is the
+pointer, so the spec expects `realPointerAvailable()` and fails there with the reason (a catalogue proof carries
+no `skipIf`). No window manager is needed for hit testing, `e2e-app-page-drag-regions` is the
 worked example. A press that depends on window-manager
 focus needs `openbox` in the virtual display as well (`test/support/with-window-manager.mjs`): write
 a short probe, read the outcome with `popoverShown`, and finish with `assertNoElectronSurvivors`. A
