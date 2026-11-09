@@ -78,7 +78,9 @@ const READ_PAGE = `(async () => {
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
   })
-  const notes = db.transaction('notes').objectStore('notes')
+  const shape = db.transaction('notes').objectStore('notes')
+  const titleUnique = shape.index('by-title').unique
+  const tagMultiEntry = shape.index('by-tag').multiEntry
   const files = await all('files')
   const big = files.find((file) => file.name === 'big.bin')
   const bigBytes = new Uint8Array(await big.blob.arrayBuffer())
@@ -93,8 +95,8 @@ const READ_PAGE = `(async () => {
     stores: Array.from(db.objectStoreNames).sort(),
     noteTitles: (await all('notes')).map((note) => note.title + '@' + note.when.getTime()),
     byTag: (await all('notes', 'by-tag', 'y')).length,
-    titleUnique: notes.index('by-title').unique,
-    tagMultiEntry: notes.index('by-tag').multiEntry,
+    titleUnique,
+    tagMultiEntry,
     fileKeys: await keys('files'),
     blobText: await small.blob.text(),
     blobType: small.blob.type,
@@ -124,6 +126,8 @@ async function seedPartition (app: App, partition: string, origin: string): Prom
       return seeded
     } finally {
       contents.close()
+      // The view is held to the end: Electron destroys a view's page once the view itself is collected.
+      void view
     }
   }, { partition, origin, script: SEED_PAGE })
 }
@@ -134,9 +138,9 @@ async function askPage (app: App, url: string, script: string): Promise<string |
     const newest = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === address).sort((a, b) => b.id - a.id)[0]
     if (newest === undefined) return null
     return await Promise.race([
-      newest.executeJavaScript(code) as Promise<string>,
+      (newest.executeJavaScript(code) as Promise<string>).catch((error: unknown) => `ERR:${String(error)}`),
       new Promise<null>((resolve) => setTimeout(() => { resolve(null) }, 20_000))
-    ]).catch(() => null)
+    ])
   }, { address: url, code: script }).catch(() => null)
 }
 
@@ -208,7 +212,7 @@ it('[app:storage-follows-an-app-into-the-website-session] carries an allowed app
       check('in the session websites run in', await sessionOf(two, `${origin}/`) === 'shared')
 
       const read = await askPage(two, `${origin}/`, READ_PAGE)
-      const found = read === null ? null : JSON.parse(read) as Record<string, unknown>
+      const found = read === null || read.startsWith('ERR:') ? null : JSON.parse(read) as Record<string, unknown>
       check(`the first page reads the database back (${read === null ? 'no answer' : read.slice(0, 600)})`, found !== null)
       check('the script-set cookie arrived', typeof found?.['cookie'] === 'string' && (found['cookie'] as string).includes('carry-js=js-value'))
       check('local storage arrived, the large item whole', found?.['local'] === 'local-value' && found['localLarge'] === 200000)

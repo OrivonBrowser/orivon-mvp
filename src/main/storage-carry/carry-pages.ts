@@ -12,6 +12,9 @@ import type { CookieToSet, OldCookie } from './cookies.js'
 /** The longest one call to a hidden page may take: a page that does not answer in this long has stopped. */
 export const CALL_LIMIT_MS = 120_000
 
+/** The views of the pages that are open. Electron destroys a view's page when the view object is collected, so a page is kept alive by being listed here, not by its `webContents`. */
+const openViews = new Set<WebContentsView>()
+
 const asOld = (cookie: Cookie): OldCookie => ({
   name: cookie.name,
   value: cookie.value,
@@ -48,7 +51,11 @@ export async function openCarryPage (target: Session, origin: string, limitMs: n
     }
   })
   const contents = view.webContents
-  const close = (): void => { if (!contents.isDestroyed()) contents.close() }
+  openViews.add(view)
+  const close = (): void => {
+    openViews.delete(view)
+    if (!contents.isDestroyed()) contents.close()
+  }
   try {
     contents.setAudioMuted(true)
     contents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp')
