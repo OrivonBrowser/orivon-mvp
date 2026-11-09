@@ -46,7 +46,7 @@ import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { beforeAppSessionServes, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { couldRunAsWebsite, hasOwnPartition } from '../shell/app-session.js'
-import { forgetWebsiteWorkers } from '../sessions/website-workers.js'
+import { clearedOriginsIn, clearedOriginsInMemory, prepareWebsiteWorkers } from '../sessions/website-workers.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
 import { ownFetch } from '../route/own-requests.js'
 import { blockOpenTabs } from '../app-setup/block-tabs.js'
@@ -162,9 +162,10 @@ export const appInstallSubsystem: Subsystem = {
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })
-    // An app let in for the first time runs where its website ran: the workers and response caches that page installed go before the tab loads as the app.
+    // An app that runs where its website ran: the workers and response caches that page installed go before the tab loads as the app (`../sessions/website-workers.ts` says when).
+    const clearedWorkers = ctx.privateSession ? clearedOriginsInMemory() : clearedOriginsIn(join(ctx.app.getPath('userData'), 'website-workers-cleared'))
     beforeAppSessionServes(async (_appSession, origin, from) => {
-      if (from === 'verifier' && couldRunAsWebsite(origin)) await forgetWebsiteWorkers(session.defaultSession, origin)
+      if (couldRunAsWebsite(origin)) await prepareWebsiteWorkers(session.defaultSession, origin, from, clearedWorkers)
     })
     // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.

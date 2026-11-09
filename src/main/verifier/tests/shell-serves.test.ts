@@ -58,6 +58,9 @@ describe('what the host is told and asked for', () => {
     expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' }, false)).toBe(true)
     expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image' }, false)).toBe(false)
     expect(isHandedToShell('https://elsewhere.example', own, false)).toBe(false)
+    // The page that started the request decides when the shell stamped one, as the host reads it.
+    expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'cross-site', 'X-Orivon-Partition': 'https://handed.eth' }, false)).toBe(true)
+    expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'same-origin', 'X-Orivon-Partition': 'https://evil.example' }, false)).toBe(false)
     // The shell's own reads are not handed back to it, so they keep the cache.
     expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'none', [OWN_READ_HEADER]: ownReadToken() }, false)).toBe(false)
     // A tunnel profile's request is the shell's only for an app served from its pin.

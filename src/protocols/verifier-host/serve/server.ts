@@ -16,7 +16,8 @@ import type { ProtocolRegistry } from '../../registry.js'
 import { MAX_ASSET_BYTES } from '../../../broker/policy/bundle-hash.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
-import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
+import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER } from '../../../loader/fetch/content-root.js'
+import { namedPartition } from '../../../loader/fetch/own-site-request.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { GatewayOffer } from './error-pages.js'
@@ -72,9 +73,6 @@ function hostOf (req: IncomingMessage, addresses: ProtocolAddresses): string | u
   return host
 }
 
-/** An origin, as the shell names a request's top-level page; nothing else is taken as a partition. */
-const PARTITION = /^[a-z][a-z0-9+.-]*:\/\/[\x21-\x7e]{1,253}$/
-
 /**
  * The cache this request may use, or undefined for none at all:
  * - the one the shell named for the request's top-level page;
@@ -85,8 +83,8 @@ const PARTITION = /^[a-z][a-z0-9+.-]*:\/\/[\x21-\x7e]{1,253}$/
  * - otherwise none: the request is served, and nothing it fetched is kept.
  */
 function partitionOf (req: IncomingMessage, host: string): string | undefined {
-  const named = req.headers[PARTITION_HEADER]
-  if (typeof named === 'string' && PARTITION.test(named)) return named
+  const named = namedPartition(req.headers)
+  if (named !== undefined) return named
   const site = req.headers['sec-fetch-site']
   return site === 'none' || site === 'same-origin' ? `https://${host}` : undefined
 }

@@ -84,6 +84,11 @@ describe('which requests are handed to the shell', () => {
     expect(relay.wants('kept.example', mark('cross-site', 'no-cors', 'image'))).toBe(false)
     expect(relay.wants('kept.example', mark('same-site', 'cors', 'empty'))).toBe(false)
     expect(relay.wants('kept.example', {})).toBe(false)
+    // The page that started the request decides when the shell stamped one: the site's own, even sandboxed, or another's.
+    const stamped = (page: string, site: string): IncomingHttpHeaders => ({ 'x-orivon-partition': page, 'sec-fetch-site': site })
+    expect(relay.wants('kept.example', stamped('https://kept.example', 'cross-site'))).toBe(true)
+    expect(relay.wants('kept.example', stamped('https://evil.example', 'same-origin'))).toBe(false)
+    expect(relay.wants('kept.example', { ...stamped('https://evil.example', 'cross-site'), 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' })).toBe(true)
     expect(relay.wants('kept.example', mark('same-origin'), true)).toBe(false)
     relay.setServed(['https://kept.example'], ['https://kept.example'])
     expect(relay.wants('kept.example', mark('same-origin'), true)).toBe(true)

@@ -21,6 +21,14 @@ export function isRelayable (origin: string): boolean {
   }
 }
 
+function hostOf (origin: string): string | undefined {
+  try {
+    return new URL(origin).hostname
+  } catch {
+    return undefined
+  }
+}
+
 /** The origins the host is to hand to the shell. */
 export function relayableOrigins (): readonly string[] {
   return servedOrigins().filter(isRelayable)
@@ -42,10 +50,12 @@ export function relayHandlerFor (origin: string): AppRequestHandler | undefined 
  * an origin served from its pin. Asked by the session that makes the request, to keep it out of its HTTP cache.
  */
 export function isHandedToShell (origin: string, headers: RequestHeaders, tunnelled: boolean): boolean {
+  const host = hostOf(origin)
+  if (host === undefined) return false
   if (relayHandlerFor(origin) === undefined) return false
   if (requestHeader(headers, OWN_READ_HEADER) === ownReadToken()) return false
   if (tunnelled && !isOriginPinnedSync(origin)) return false
-  return isOwnSiteRequest(headers)
+  return isOwnSiteRequest(headers, host)
 }
 
 /** What the host is started with: the secret that marks a read of the shell's own, and the origins it hands to the shell. */

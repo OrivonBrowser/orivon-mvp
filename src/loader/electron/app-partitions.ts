@@ -35,12 +35,13 @@ export function registerAppOrigin (appSession: Session, origin: string, answer: 
   }
   appSession.protocol.handle(scheme, handler)
   servedPartitions.add(partitionFor(origin))
+  const wasPinned = pinnedPartitions.has(partitionFor(origin))
   if (from === 'pin') pinnedPartitions.add(partitionFor(origin))
   else pinnedPartitions.delete(partitionFor(origin))
   const key = originKey(origin)
   const added = key !== undefined && !servingHandlers.has(key)
   if (key !== undefined) servingHandlers.set(key, handler)
-  if (added) notifyServingChange()
+  if (added || wasPinned !== pinnedPartitions.has(partitionFor(origin))) notifyServingChange()
 }
 
 /**
@@ -97,8 +98,9 @@ export function servedOrigins (): readonly string[] {
 }
 
 /**
- * Calls `listener` whenever an origin starts or stops being served, after the set has changed; not when a served origin's
- * handler is replaced, since the set is the same. Returns the function that stops the calls.
+ * Calls `listener` whenever an origin starts or stops being served, or is served from its pin where it was read live (or the
+ * other way round), after the change; not when a served origin's handler is replaced and nothing the listener could ask
+ * about it differs. Returns the function that stops the calls.
  */
 export function onServingChange (listener: () => void): () => void {
   servingListeners.add(listener)

@@ -253,6 +253,8 @@ in [`../site-settings/`](../site-settings/) that `PopupHost.popupBlocked` asks. 
 another program handles (`mailto:`, `magnet:`) is never opened: `PopupHost.openExternal` puts the same
 question to the person that a click on a link to it raises, and a tab at that address would stay blank.
 
+**A popup to the opener's own origin keeps its opener only from an app's page.** `PopupOpener.appTab` is false when the opener's view was built without the app-tab flag, which is a website's page at an origin that became an app after the page loaded (a first visit's page still open in another tab after Allow). Such a page shares its origin with the popup, so it would script the popup and use its grants: `routePopup` opens the popup as a tab of its own, as it does for another origin.
+
 **`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
 A held grant alone puts no origin in its own partition (`ADR-0044`), and an app that runs as a website has none, so a granted,
 network-served app, such an app and an ordinary site all commonly carry `partition: undefined` -- they
