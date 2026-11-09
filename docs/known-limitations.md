@@ -18,14 +18,20 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   an app that is not routed gets no `orivon.net` sockets and no name lookups, rather than going
   around it. [`architecture/egress.md`](architecture/egress.md) lists every path to the network
   and how each takes the tunnel.
-- **Behind a proxy that your desktop, Windows or macOS sets, `.eth` names and other Web3 addresses open only when
+- **Behind a proxy that KDE, Windows or macOS sets, or one that a script or automatic detection finds, `.eth` names and other Web3 addresses open only when
   the proxy would not carry them.** *Provisional.* A name the verifier serves is answered on this computer, and a
   proxy that carried it would learn the name and could answer it with a page of its own. On Linux with a proxy set
   only by environment variables (`http_proxy` and the like) Orivon keeps these names out of it and they open. A
-  tunnel keeps them out too. Where GNOME or KDE settings, or Windows or macOS settings, give the proxy, a session
+  tunnel keeps them out too. Behind a manual proxy in GNOME's settings (and in the desktops that share them: Unity,
+  Cinnamon, Pantheon, Deepin, UKUI, COSMIC) Orivon copies the proxy's servers and exceptions into the sessions that follow the
+  system, with the names it serves added to the exceptions, so they open and ordinary sites still go through the
+  proxy. The copy is made only when a session of Orivon's own, set to it, answers as Chromium does for the same
+  addresses; a proxy turned on, off or moved is followed within a few seconds, and an edit of the exceptions alone
+  within thirty. Wherever the settings cannot be read or copied exactly, or the check disagrees, the sessions follow
+  the system and the next paragraph applies. Where KDE, Windows or macOS settings, or a script, give the proxy, a session
   that follows the system cannot be told to leave a name out, so Orivon asks the session which proxy it would use
   and refuses the request before it is sent unless the answer is "none"; the tab says whether the proxy would have
-  seen the name or Orivon could not tell. Ordinary sites still go through the proxy. To open the names, add
+  seen the name or Orivon could not tell. Ordinary sites still go through the proxy. To open the names there, add
   `*.eth` and the other suffixes Orivon serves to the proxy's exceptions (the list of hosts that bypass it), turn
   the system proxy off, or turn a tunnel on. A name asked for over plain `http:` is refused whatever the proxy is,
   except the developer names of a run that serves them. A proxy found by a script or by automatic detection is asked
@@ -34,9 +40,9 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   detection on a network with no detection server answers at once, but how long a slow detection server takes on
   Windows and macOS is not measured; a run on a network with one would settle it. A script that answers the same
   host differently from one call to the next can still send an `https` request to a proxy after Orivon was told
-  "none"; the proxy then learns the name but cannot serve a page under it. Reading the system's proxy settings and applying
-  them to these sessions with the names left out is a separate decision: it would stop the sessions following a
-  change of the system's proxy as it happens.
+  "none"; the proxy then learns the name but cannot serve a page under it. A copy follows the system by polling, not as it
+  happens: for about two seconds after a proxy is turned on, ordinary traffic keeps the old setting, and the names are
+  refused meanwhile.
 - **The default secure DNS tells Quad9 the names you open.** Orivon looks site names up at Quad9
   over HTTPS, so the network you are on no longer sees them, and Quad9 does. When Quad9 cannot be
   reached the lookup goes to this computer's own DNS, so a network that blocks Quad9 still loads

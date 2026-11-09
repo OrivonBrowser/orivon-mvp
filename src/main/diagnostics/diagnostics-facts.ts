@@ -5,6 +5,7 @@ import type { X11Reading } from '../graphics/x11-vulkan.js'
 import { SETTINGS } from '../settings/schema.js'
 import type { SettingKey } from '../settings/schema.js'
 import type { RestartCounts } from '../sessions/network-service-restart.js'
+import type { MirrorStatus } from '../route/proxy-mirror/mirror-status.js'
 import { newest } from './crash-records.js'
 import type { CrashKind, CrashRecord } from './crash-records.js'
 import { gpuDevicesOf, gpuFeaturesOf } from './gpu-reading.js'
@@ -125,6 +126,8 @@ export interface DiagnosticsFacts {
     readonly tunnels: { readonly tabs: { readonly nym: number, readonly socks5: number, readonly direct: number } }
     /** How often Chromium's network service ended in this run, and how the latest hold ended: counts and one fixed word. The log ring forgets the lines of an early restart in a long run; this does not. */
     readonly networkService: RestartCounts
+    /** Whether the system's proxy settings are copied into the sessions, and if not why: four fixed words, never an address, a URL or an exception. */
+    readonly systemProxy: MirrorStatus
     readonly extensions: readonly ExtensionReading[]
     readonly appSockets: readonly AppSocketReading[]
     readonly settings: Readonly<Record<string, string | boolean | number>>

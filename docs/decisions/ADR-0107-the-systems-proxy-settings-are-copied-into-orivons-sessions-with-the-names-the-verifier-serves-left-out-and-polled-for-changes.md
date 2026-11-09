@@ -23,6 +23,8 @@ a name is sent.
 
 ## Context
 
+Names Orivon serves are resolved inside the browser, never by the operating system or by a proxy.
+
 A name the verifier serves (`.eth`, any other top-level domain a protocol serves, `.orivon`) is answered on this computer
 through Chromium's `--host-resolver-rules`. A session in `{ mode: 'system' }` asks the system's proxy first, and that mode
 takes no bypass list (`ProxyConfigDictionary::CreateSystem()`), so behind a proxy that GNOME or KDE settings, Windows or
