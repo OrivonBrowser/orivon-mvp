@@ -7,8 +7,10 @@ import type { ElectronApplication } from 'playwright'
  * Nothing resolves except loopback, and a host that ends in a dot is left to whatever resolver would answer it: the
  * hermetic rule `MAP * ~NOTFOUND` would turn a root-dot name into "not found" before any resolver or any rule of Orivon's own
  * saw it, so a leak could not show. `EXCLUDE` cannot be used for this, because it exempts a host from Orivon's rules too.
- * The patterns end in a letter or a hyphen and not in a digit, because Chromium matches a pattern that ends in a digit to
- * a host that ends in a dot (measured: `MAP *0 ~NOTFOUND` rewrites `vitalik.eth.`, `MAP *h ~NOTFOUND` leaves it alone).
+ * The patterns end in a letter or a hyphen and not in a digit, because Chromium tries a pattern that fails on the host again
+ * on `host:port` (`HostMappingRules::RewriteHost`), so a pattern ending in a digit matches a root-dot name asked for on a port
+ * that ends in it: `MAP *0 ~NOTFOUND` rewrote `vitalik.eth.` (measured), by way of `vitalik.eth.:80`, a `dns-prefetch` from
+ * an http page (read in Chromium's source, not measured), while `MAP *h ~NOTFOUND` left it alone.
  */
 export const ALL_BUT_ROOT_DOT_RESOLVER = `--host-resolver-rules=${[...'abcdefghijklmnopqrstuvwxyz-'].map((last) => `MAP *${last} ~NOTFOUND`).join(', ')}, EXCLUDE 127.0.0.1`
 

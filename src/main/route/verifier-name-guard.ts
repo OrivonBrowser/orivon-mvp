@@ -34,9 +34,9 @@ function refusalWords (refusal: NameRefusal): string {
 /** Every scheme a request that can go to a proxy can use. */
 const SCHEMES = ['http', 'https', 'ws', 'wss']
 
-/** Electron's own `{ urls }` filter: each protocol suffix under every scheme, with and without the root dot, which is a host of its own to a match pattern. */
+/** Electron's own `{ urls }` filter: every scheme a proxy can carry, under every host, and `namesVerifierHost` selects. A pattern per suffix would rest on how Electron's matcher treats trailing dots (measured in Electron 44: it ignores any number of them), and this guard must depend neither on that nor on another handler's filter. */
 export function verifierNameFilter (): { readonly urls: string[] } {
-  return { urls: BUILTIN_ADDRESSES.routedSuffixes().flatMap((suffix) => SCHEMES.flatMap((scheme) => [`${scheme}://*.${suffix}/*`, `${scheme}://*.${suffix}./*`])) }
+  return { urls: SCHEMES.map((scheme) => `${scheme}://*/*`) }
 }
 
 /** The host rules that keep the root-dot spelling of a name the verifier serves from a proxy: a bypass rule treats `vitalik.eth.` as a host of its own, which `*.eth` does not match. A name that goes direct is refused by the resolver rules (`../verifier/resolver-rules.ts`). */

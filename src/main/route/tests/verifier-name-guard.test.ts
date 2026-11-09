@@ -22,6 +22,7 @@ describe('which requests name a host the verifier serves', () => {
 
   it('takes the root-dot spelling however many dots end the host, and leaves a host that merely holds a suffix alone', () => {
     for (const url of ['https://vitalik.eth./', 'https://vitalik.eth../', 'https://x.ipfs.orivon./']) expect(namesVerifierHost(url), url).toBe(true)
+    for (const scheme of ['http', 'https', 'ws', 'wss']) for (const dots of ['', '.', '..', '...']) expect(namesVerifierHost(`${scheme}://vitalik.eth${dots}/`), `${scheme} ${dots}`).toBe(true)
     for (const url of ['https://eth./', 'https://vitalik.eth.example.com./', 'https://example.com./']) expect(namesVerifierHost(url), url).toBe(false)
   })
 
@@ -29,13 +30,8 @@ describe('which requests name a host the verifier serves', () => {
     expect(routedBypassRules()).toEqual(['*.eth', '*.eth.', '*.orivon', '*.orivon.'])
   })
 
-  it('names, for Electron\'s filter, each suffix under each scheme with and without the root dot', () => {
-    const { urls } = verifierNameFilter()
-    for (const scheme of ['http', 'https', 'ws', 'wss']) for (const suffix of ['eth', 'orivon']) {
-      expect(urls).toContain(`${scheme}://*.${suffix}/*`)
-      expect(urls).toContain(`${scheme}://*.${suffix}./*`)
-    }
-    expect(urls.every((pattern) => /^wss?:\/\/|^https?:\/\//.test(pattern))).toBe(true)
+  it('hands Electron every request of a scheme a proxy can carry, whatever its host, and leaves the host to the predicate above, so no number of trailing dots depends on a pattern', () => {
+    expect(verifierNameFilter().urls).toEqual(['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'])
   })
 })
 

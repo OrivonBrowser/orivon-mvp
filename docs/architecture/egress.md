@@ -173,7 +173,9 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   (`proxy-mirror/README.md`). A proxy found by detection beside a manual one is copied and left to the check. Nothing is read or run on other desktops or macOS.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
-  temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held
+  temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`: its filter lists the four schemes under
+  every host and `namesVerifierHost` selects, so the guard rests on no other handler's filter and on no matcher's treatment of
+  trailing dots. A session on a tunnel, or held
   shut, is not the system's to answer for and is skipped; a session whose proxy is being set counts as following the system,
   since the tunnel recorded for it may not be the one it has. For a request to a name the verifier serves, the guard:
   1. waits until no change of the session's proxy is under way (ten seconds at most);
@@ -223,7 +225,7 @@ rule is generated from the same list of routed suffixes as the rules for the dot
 | A front, asked for a root-dot name anyway | `front.ts` answers 403 and never asks the route, however many dots the host ends in: no bypass list names more than one, and Chromium keeps `vitalik.eth..` as a host of its own, so a session that sends it to the front would otherwise hand it to the route's far end |
 | A session that follows the system | `namesVerifierHost` names the root-dot spelling too, so the guard above cancels the request while the session's proxy would carry it; a request the proxy answers `DIRECT` for meets the resolver clause, as every one does behind a proxy Orivon copies from the system's settings, whose exceptions carry `*.suffix.` |
 | The verifier host's CCIP-Read fetch | `egress.ts` refuses a CCIP-Read address at a root-dot name (`namesThisComputer`), with or without a proxy and through a tunnel, so neither the system's resolver nor the tunnel's far end is asked |
-| A server address typed in Settings, a manifest's host | Refused as before: a trailing dot is not an address of a server on the internet, and a host with one is not a bare host name |
+| A server address typed in Settings, a manifest's host | Refused: a trailing dot is not an address of a server on the internet, and a host with one is not a bare host name |
 | An app's `orivon.net` | The broker reads the root dot away and asks Chromium's resolver (`chromium-resolver.ts`), which the clause above covers |
 | Orivon's own requests (`request-fetch.ts`, `direct-fetch.ts`, `routed-fetch.ts`, `own-requests.ts`, the loader's reads, a tab icon, the Web3 Score provider) | They go through a session, so the bypass rules and the clause above apply; the ones that ask first whether a proxy would carry a name (`refuseWhenProxySees`) do so for the root-dot spelling too |
 

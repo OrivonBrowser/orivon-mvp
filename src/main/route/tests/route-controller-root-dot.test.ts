@@ -68,7 +68,7 @@ describe('the root-dot spelling of the names the verifier answers for', () => {
     expect(session.bypass).toEqual([`${MACHINE};${ROOT_DOT};*.eth;*.orivon`])
   })
 
-  it('is kept from the requests made with no session while the whole browser is on the tunnel, and they send the dotless names to the front as before', async () => {
+  it('is kept from the requests made with no session while the whole browser is on the tunnel, and they send the dotless names to the front', async () => {
     const configs: RouteProxyConfig[] = []
     const { controller, flip } = setup({ rootDotBypass, sharedBypass: () => '*.eth;*.eth.', setAppProxy: async (config) => { configs.push(config) } })
     flip(true)

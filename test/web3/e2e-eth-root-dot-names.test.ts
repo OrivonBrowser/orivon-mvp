@@ -42,13 +42,20 @@ const MAIN_FRAME_NAMES = [`https://${MARK}main.eth./`, `https://${MARK}main.ipfs
 const NOT_FOUND = 'ERR_NAME_NOT_RESOLVED'
 const CANCELLED = 'ERR_BLOCKED_BY_CLIENT'
 
-/** A page that asks for the root-dot spelling in every way a page can: a picture, a script's `fetch` and WebSocket, and a hint to connect ahead. It retitles itself once its requests have ended. */
+/**
+ * A page that asks for the root-dot spelling in every way a page can: a picture, a script's `fetch` and WebSocket, and a hint
+ * to connect ahead. The name with two dots, which no bypass rule lists, is asked for as a picture, a `fetch`, a `wss:` socket
+ * and a plain `ws:` one. It retitles itself once its requests have ended.
+ */
 const PAGE = `<!doctype html><meta charset="utf-8"><title>asking</title>
 <link rel="preconnect" href="https://${MARK}preconnect.eth."><link rel="dns-prefetch" href="//${MARK}prefetch.eth.">
 <img src="https://${MARK}image.eth./a.png"><img src="https://${MARK}image.ipfs.orivon./a.png"><img src="https://${DOUBLE_MARK}double.eth../a.png">
 <script>
-Promise.allSettled([fetch('https://${MARK}fetch.eth./a'), new Promise((done) => { const socket = new WebSocket('wss://${MARK}socket.eth./'); socket.onclose = socket.onerror = () => { done() } })])
-  .then(() => { document.title = 'rootdot settled' })
+const socketEnds = (address) => new Promise((done) => { const socket = new WebSocket(address); socket.onclose = socket.onerror = () => { done() } })
+Promise.allSettled([
+  fetch('https://${MARK}fetch.eth./a'), socketEnds('wss://${MARK}socket.eth./'),
+  fetch('https://${DOUBLE_MARK}fetch.eth../a'), socketEnds('wss://${DOUBLE_MARK}secure-socket.eth../'), socketEnds('ws://${DOUBLE_MARK}plain-socket.eth../')
+]).then(() => { document.title = 'rootdot settled' })
 </script>`
 
 let scratch = ''
