@@ -190,10 +190,11 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
     return () => { driver.openFromMenu(extensionId, window, tabId) }
   }
 
-  setActionClickInterceptor((extensionId, tab) => {
-    const found = ctx.shell()?.windows.findTab(tab)
-    if (found == null) return false
-    return driver.actionClick(extensionId, found.window, isOrdinaryTab(ctx, tab) ? tab.id : undefined)
+  setActionClickInterceptor((extensionId, tab, base) => {
+    const shellWindows = ctx.shell()?.windows
+    const window = tab !== undefined ? shellWindows?.findTab(tab)?.window : shellWindows?.all().find((candidate) => candidate.window === base)
+    if (window == null) return false
+    return driver.actionClick(extensionId, window, tab !== undefined && isOrdinaryTab(ctx, tab) ? tab.id : undefined)
   })
 
   return {

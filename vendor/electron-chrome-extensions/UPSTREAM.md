@@ -936,6 +936,18 @@ and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of
     was `normal` for every window and `update` handled `state` only, so an extension that keeps one popup
     (`getAll()` for a `popup` with its id, then `update(id, { focused: true })`) never found it and opened a
     new window for each request.
+76. **A toolbar click opens the popup whatever page is in front.** `src/browser/api/browser-action.ts`:
+    `activateClick` no longer needs a tab. When `tabId` names none and no tab of the instance is in front of
+    `ownWindow` (patch 65) -- an Orivon page, or a tab of another session -- the popup opens under that window with
+    no tab: the action's own popup applies, `popupTabId` stays unset and `getOpenPopup` reports tab `-1` to
+    `chrome.runtime.getContexts`. With no popup there is no tab to give `onClicked`, so none is sent; no tab-capture
+    invocation is recorded; `setActionClickInterceptor`'s callback takes `(extensionId, tab | undefined, window)`;
+    and `chrome.action.openPopup()` opens the popup in a window with no active tab instead of returning. With neither a
+    tab nor a live window the click still throws `Unable to get active tab`. `src/browser/store.ts`:
+    `clearActiveTab` also sets `active` to false in the cached details of that window's tabs, so
+    `chrome.tabs.query({ active: true })` finds none, and a tab that takes the front afterwards is the only one.
+    Reason: Chrome opens an action's popup over whatever page is in front, its own pages included; the click threw
+    for a page the instance does not track, and the cache kept the tab behind it active.
 
 Nothing else changed; upstream code is not reformatted.
 

@@ -192,8 +192,12 @@ declare module 'orivon:crx-extensions-browser-action' {
    * (unset: all of them). */
   export function setActionVisibilityCheck (check: (extensionId: string) => boolean): void
   /** UPSTREAM.md patch 46: run once a click is counted, before any popup
-   * opens; true means it was handled elsewhere (no popup, no onClicked). */
-  export function setActionClickInterceptor (intercept: (extensionId: string, tab: Electron.WebContents) => boolean): void
+   * opens; true means it was handled elsewhere (no popup, no onClicked).
+   * Patch 76: `tab` is undefined when no tab of the instance is in front (an Orivon
+   * page, a tab of another session); `window` is the one the click belongs to. */
+  export function setActionClickInterceptor (
+    intercept: (extensionId: string, tab: Electron.WebContents | undefined, window: Electron.BaseWindow | undefined) => boolean
+  ): void
   /** UPSTREAM.md patch 50: builds the right-click menu of a toolbar action;
    * `extensionItems` are the extension's own `contextMenus` entries for it. */
   export function setActionMenuBuilder (
