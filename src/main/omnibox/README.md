@@ -33,8 +33,8 @@ mouse press on a row is taken on the press rather than the click: the field blur
 and the chrome closes the list on blur (after a short wait a refocus cancels).
 
 **Main holds every address.** The page and the chrome send an index and, if they have one, the number of the list
-they saw; an index outside the held list, or a number that is not the current one, does nothing. Nothing a page
-supplies is ever opened.
+they saw; an index outside the held list, or a number that is not the current one, does nothing, and the log says so in
+numbers only (the row, the list it named, the list held). Nothing a page supplies is ever opened.
 
 **Finishing the text is a property of typing, not of the field's value.** Main finishes only when the chrome says
 the text was just typed (a character at the end, after a printable key, no composition), so a filled or pasted

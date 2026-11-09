@@ -114,7 +114,7 @@ describe('a manual proxy', () => {
     expect(mirror.config()).toMatchObject({ mode: 'fixed_servers', proxyRules: 'http=proxy.test:3128;https=proxy.test:3128' })
     expect(mirror.config().proxyBypassRules).toContain('*.corp.test')
     expect(mirror.config().proxyBypassRules).toContain('*.eth')
-    expect(mirror.config().proxyBypassRules).not.toContain('*.eth.')
+    expect(mirror.config().proxyBypassRules).toContain('*.eth.')
     expect(world.applied).toBe(1)
     expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
     mirror.stop()

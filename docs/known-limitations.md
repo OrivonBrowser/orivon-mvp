@@ -32,8 +32,8 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   wrapped copy under the same check. Wherever the settings cannot be read or copied exactly, or the check disagrees, the sessions follow
   the system and the next paragraph applies; KDE's reversed exceptions are one such case, and so are a script that cannot
   be fetched (not at an `http:` or `https:` address, over a megabyte, not answering) and one that answers differently at every
-  question, by the clock or at random. A name written with a dot at the end (`name.eth.`) is refused behind any such proxy,
-  copied or not. Where automatic detection, or a script left to the system, gives the proxy, a session
+  question, by the clock or at random. A name written with a dot at the end (`name.eth.`) is not found behind a copied proxy or script,
+  and is refused behind any other. Where automatic detection, or a script left to the system, gives the proxy, a session
   that follows the system cannot be told to leave a name out, so Orivon asks the session which proxy it would use
   and refuses the request before it is sent unless the answer is "none"; the tab says whether the proxy would have
   seen the name or Orivon could not tell. Ordinary sites still go through the proxy. To open the names there, add

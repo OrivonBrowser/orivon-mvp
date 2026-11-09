@@ -1,7 +1,7 @@
 // The loopback HTTP proxy Chromium is pointed at for a routed app. Chromium cannot authenticate to a SOCKS proxy, and
 // Node already has an HTTP server, so this one turns Chromium's CONNECT and absolute-form requests into
 // `provider.connect(host, port)` on the app's route and does nothing else: no local name resolution, no direct dial,
-// and no answer for a caller that lacks the secret. Electron-free; README.md says why it exists.
+// no root-dot spelling of a name a protocol serves, and no answer for a caller that lacks the secret. Electron-free; README.md says why it exists.
 
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, request as httpRequest } from 'node:http'
@@ -9,6 +9,7 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import type { AddressInfo, Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
 import type { RouteProvider } from '../../broker/route/provider.js'
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 export interface RouteFront {
   readonly port: number
@@ -89,8 +90,9 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     }
   }
 
-  /** The stream to `host:port` through the app's route, or the status line that says why there is none. */
+  /** The stream to `host:port` through the app's route, or the status line that says why there is none. A name a protocol serves, written with a root dot, is never carried: no bypass rule lists every count of dots, and the route's far end must not hear it. */
   async function open (host: string, port: number, signal: AbortSignal): Promise<{ socket: Socket } | { status: string }> {
+    if (host.endsWith('.') && BUILTIN_ADDRESSES.namesServedHost(host)) return { status: '403 Forbidden' }
     const provider = options.provider()
     if (provider === undefined) return { status: '503 Service Unavailable' }
     try {

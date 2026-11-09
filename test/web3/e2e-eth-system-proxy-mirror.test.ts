@@ -19,6 +19,8 @@ import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 import { gnomeProxy, kdeProxy, launchShellOn, macosProxy, ORDINARY, PROXY_SHEET, CANCELLED, refusalLines, report, reportedMirror, resolved, startLoggingProxy, verifierNames, visitReporting, waitForAnswer, windowsAutoDetect, windowsManualProxy } from './system-proxy-support.js'
 import type { LoggingProxy, MacosProxy, Running, WindowsProxyForm } from './system-proxy-support.js'
+import { ALL_BUT_ROOT_DOT_RESOLVER, readNetLog, startNetLog, stopNetLog } from './root-dot-support.js'
+import type { NetLogFacts } from './root-dot-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
 const LINUX = process.platform === 'linux'
@@ -50,7 +52,8 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-const launchShell = async (env: Record<string, string>): Promise<Running> => await launchShellOn(gateway, env)
+/** Under a resolver that hides every name but the root-dot spelling, so a lookup of it would show in the net log. */
+const launchShell = async (env: Record<string, string>): Promise<Running> => await launchShellOn(gateway, env, undefined, ALL_BUT_ROOT_DOT_RESOLVER)
 
 /** The desktop's proxy settings for a launch of its own, pointing at `port`. */
 const desktopProxy = (port: number): ReturnType<typeof gnomeProxy> => gnomeProxy(mkdtempSync(join(scratch, 'desktop-')), port, EXCEPTIONS)
@@ -99,7 +102,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
   let desktop: ProxySettings
   let running: Running
   let reported: Awaited<ReturnType<typeof reportedMirror>>
-  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, exempt: Record<string, string>, local: Record<string, string>, fromMain: string, refusals: string[], rootDotFetch: string, rootDotRefusals: string[] }
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, exempt: Record<string, string>, local: Record<string, string>, fromMain: string, refusals: string[], rootDotFetch: string, rootDotRefusals: string[], rootDotLog: NetLogFacts }
 
   beforeAll(async () => {
     first = await startLoggingProxy()
@@ -115,7 +118,10 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     const fromMain = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth/'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
     const refusals = refusalLines(app)
     // The address bar drops a root dot, so the spelling is asked for by the shell's own fetch, after the refusals above are taken: its refusal is the only one after them.
+    const netLogPath = join(scratch, 'mirror-root-dot-net.json')
+    await startNetLog(app, netLogPath)
     const rootDotFetch = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth./'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
+    await stopNetLog(app)
     facts = {
       ordinary,
       eth,
@@ -127,7 +133,8 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
       fromMain,
       refusals,
       rootDotFetch,
-      rootDotRefusals: refusalLines(app).slice(refusals.length)
+      rootDotRefusals: refusalLines(app).slice(refusals.length),
+      rootDotLog: await readNetLog(netLogPath, 'fixture.eth.')
     }
     reported = await reportedMirror(app, chrome)
     report(`manual proxy, ${computer.name}`, { ...facts, mirror: reported.fact, lines: reported.lines, firstSaw: first.seen.filter((line) => !line.includes('gvt1.com')) })
@@ -155,10 +162,13 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     }
   })
 
-  it('leaves the root-dot spelling of a name on the proxy, where the guard refuses it before the proxy is asked', () => {
-    for (const kind of Object.keys(facts.rootDot)) expect(facts.rootDot[kind], `${kind} session, .eth with the root dot`).toBe(`PROXY 127.0.0.1:${String(first.port)}`)
-    expect(facts.rootDotFetch).toContain(CANCELLED)
-    expect(facts.rootDotRefusals.filter((line) => line.includes('would have carried it'))).toHaveLength(1)
+  it('answers DIRECT for the root-dot spelling of a name, which the resolver then refuses: nothing is resolved outside and the proxy is never asked', () => {
+    for (const kind of Object.keys(facts.rootDot)) expect(facts.rootDot[kind], `${kind} session, .eth with the root dot`).toBe('DIRECT')
+    expect(facts.rootDotFetch).toContain('ERR_NAME_NOT_RESOLVED')
+    expect(facts.rootDotRefusals.filter((line) => line.includes('would have carried it'))).toEqual([])
+    expect(facts.rootDotLog.requests, 'the net log saw the request').toBeGreaterThan(0)
+    expect(facts.rootDotLog.lookups, 'host-resolution events for the name').toEqual([])
+    expect(facts.rootDotLog.tunnelled, 'a proxy asked to tunnel to the name').toEqual([])
     expect(verifierNames(first.seen)).toEqual([])
   })
 
@@ -443,7 +453,7 @@ describe.skipIf(!ON_RUNNER)('a computer whose macOS settings carry a manual prox
   let mac: MacosProxy
   let running: Running
   let reported: Awaited<ReturnType<typeof reportedMirror>>
-  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, listed: Record<string, string>, shipped: Record<string, string>, linkLocal: Record<string, string>, simple: Record<string, string>, fromMain: string, refusals: string[], rootDotFetch: string, rootDotRefusals: string[] }
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, listed: Record<string, string>, shipped: Record<string, string>, linkLocal: Record<string, string>, simple: Record<string, string>, fromMain: string, refusals: string[], rootDotFetch: string, rootDotRefusals: string[], rootDotLog: NetLogFacts }
 
   beforeAll(async () => {
     first = await startLoggingProxy()
@@ -460,7 +470,10 @@ describe.skipIf(!ON_RUNNER)('a computer whose macOS settings carry a manual prox
     const fromMain = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth/'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
     const refusals = refusalLines(app)
     // The address bar drops a root dot, so the spelling is asked for by the shell's own fetch, after the refusals above are taken: its refusal is the only one after them.
+    const netLogPath = join(scratch, 'mirror-macos-root-dot-net.json')
+    await startNetLog(app, netLogPath)
     const rootDotFetch = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth./'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
+    await stopNetLog(app)
     facts = {
       ordinary,
       eth,
@@ -474,7 +487,8 @@ describe.skipIf(!ON_RUNNER)('a computer whose macOS settings carry a manual prox
       fromMain,
       refusals,
       rootDotFetch,
-      rootDotRefusals: refusalLines(app).slice(refusals.length)
+      rootDotRefusals: refusalLines(app).slice(refusals.length),
+      rootDotLog: await readNetLog(netLogPath, 'fixture.eth.')
     }
     reported = await reportedMirror(app, chrome)
     report('manual macOS proxy', { ...facts, mirror: reported.fact, lines: reported.lines, firstSaw: first.seen.filter((line) => !line.includes('gvt1.com')) })
@@ -502,10 +516,13 @@ describe.skipIf(!ON_RUNNER)('a computer whose macOS settings carry a manual prox
     }
   })
 
-  it('leaves the root-dot spelling of a name on the proxy, where the guard refuses it before the proxy is asked', () => {
-    for (const kind of Object.keys(facts.rootDot)) expect(facts.rootDot[kind], `${kind} session, .eth with the root dot`).toBe(`PROXY 127.0.0.1:${String(first.port)}`)
-    expect(facts.rootDotFetch).toContain(CANCELLED)
-    expect(facts.rootDotRefusals.filter((line) => line.includes('would have carried it'))).toHaveLength(1)
+  it('answers DIRECT for the root-dot spelling of a name, which the resolver then refuses: nothing is resolved outside and the proxy is never asked', () => {
+    for (const kind of Object.keys(facts.rootDot)) expect(facts.rootDot[kind], `${kind} session, .eth with the root dot`).toBe('DIRECT')
+    expect(facts.rootDotFetch).toContain('ERR_NAME_NOT_RESOLVED')
+    expect(facts.rootDotRefusals.filter((line) => line.includes('would have carried it'))).toEqual([])
+    expect(facts.rootDotLog.requests, 'the net log saw the request').toBeGreaterThan(0)
+    expect(facts.rootDotLog.lookups, 'host-resolution events for the name').toEqual([])
+    expect(facts.rootDotLog.tunnelled, 'a proxy asked to tunnel to the name').toEqual([])
     expect(verifierNames(first.seen)).toEqual([])
   })
 

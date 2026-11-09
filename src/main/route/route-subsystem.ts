@@ -36,13 +36,12 @@ import type { ProxyMirror } from './proxy-mirror/proxy-mirror.js'
 import { readKdeSettings } from './proxy-mirror/read-kde-files.js'
 import { readGnomeSettings, readMacosSettings, readWindowsSettings } from './proxy-mirror/run-readers.js'
 import { sourceOf } from './proxy-mirror/settings-source.js'
-import { guardOfSession, namesVerifierHost, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
+import { guardOfSession, namesVerifierHost, rootDotBypassRules, routedBypassRules, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
 import { kindOfProfile, profilePartition, profilePartitionFor } from './site-partition.js'
 import { tabChoiceOfContents, tabKindShowing } from './tab-tunnel.js'
 import type { SiteSession } from './site-sessions.js'
-import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { announceWebsiteSession, forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { webRequestOwnerFor, type WebRequestHandlerHandle } from '../sessions/web-request-owner.js'
 import { createTemporaryRoutes, temporarySessionShowing } from './temporary-routes.js'
@@ -114,7 +113,8 @@ export const routeSubsystem: Subsystem = {
         sessionFor: (partition) => session.fromPartition(partition),
         defaultSession: () => session.defaultSession,
         // The names the verifier answers for reach it on this machine; the proxy never sees them.
-        sharedBypass: () => BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`).join(';'),
+        sharedBypass: () => routedBypassRules().join(';'),
+        rootDotBypass: () => rootDotBypassRules().join(';'),
         setAppProxy: async (config) => { await app.setProxy(config) },
         ownProxy: hasOwnProxy,
         followsSystem,
@@ -239,7 +239,7 @@ export const routeSubsystem: Subsystem = {
       prepare: (target, persistable, partition) => { prepareProfileSession(target as unknown as Session, partition, persistable) },
       wake: (target) => wakeProfileSession(target as unknown as Session),
       // The names the verifier answers for reach it on this machine; the proxy never sees them.
-      bypass: () => BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`).join(';'),
+      bypass: () => routedBypassRules().join(';'),
       hold: (held, current) => {
         let handle: WebRequestHandlerHandle | undefined
         const arm = (): void => {

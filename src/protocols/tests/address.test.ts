@@ -36,6 +36,11 @@ describe('ProtocolAddresses', () => {
     for (const host of ['eth', 'orivon', 'example.com', 'eth.example.com', 'orivon.example', 'a..eth', 'vitalik.eth.', `${CID}.ipfs.orivon.`]) expect(addresses.routesToVerifier(host)).toBe(false)
   })
 
+  it('names a host under a routed suffix in every spelling, the root-dot one included, for refusing it', () => {
+    for (const host of ['vitalik.eth', 'Vitalik.ETH.', 'vitalik.eth..', 'a..eth', `${CID}.ipfs.orivon.`, 'ipfs.orivon']) expect(addresses.namesServedHost(host), host).toBe(true)
+    for (const host of ['eth', 'eth.', 'orivon', 'example.com', 'example.com.', 'vitalik.eth.example.com.', 'orivon.example', '']) expect(addresses.namesServedHost(host), host).toBe(false)
+  })
+
   it('reads a host as its namespace and name', () => {
     expect(addresses.servedName('Vitalik.ETH')).toEqual({ namespace: '.eth', name: 'vitalik.eth' })
     expect(addresses.servedName(`${CID}.ipfs.orivon`)).toEqual({ namespace: 'ipfs:', name: CID })
