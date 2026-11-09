@@ -28,7 +28,8 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   proxy. The copy is made only when a session of Orivon's own, set to it, answers as Chromium does for the same
   addresses; a proxy turned on, off or moved is followed within a few seconds, and an edit of the exceptions alone
   within thirty. Wherever the settings cannot be read or copied exactly, or the check disagrees, the sessions follow
-  the system and the next paragraph applies. Where KDE or Windows settings, or a script, give the proxy, a session
+  the system and the next paragraph applies. A name written with a dot at the end (`name.eth.`) is refused behind any such proxy,
+  copied or not. Where KDE or Windows settings, or a script, give the proxy, a session
   that follows the system cannot be told to leave a name out, so Orivon asks the session which proxy it would use
   and refuses the request before it is sent unless the answer is "none"; the tab says whether the proxy would have
   seen the name or Orivon could not tell. Ordinary sites still go through the proxy. To open the names there, add

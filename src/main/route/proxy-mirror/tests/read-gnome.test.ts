@@ -23,7 +23,7 @@ org.gnome.system.proxy.socks port 0
 
 describe('GNOME\'s proxy settings', () => {
   it('are a manual proxy for the schemes that name a host, with the exceptions as listed', () => {
-    expect(parseGnomeSettings(MANUAL)).toEqual({ kind: 'manual', proxyRules: 'http=127.0.0.1:3128;https=127.0.0.1:3128', exceptions: ['localhost', '127.0.0.0/8', '[::1]'] })
+    expect(parseGnomeSettings(MANUAL)).toEqual({ kind: 'manual', proxyRules: 'http=127.0.0.1:3128;https=127.0.0.1:3128', exceptions: ['localhost', '127.0.0.0/8', '::1'] })
   })
 
   it('read use-same-proxy and the HTTP server\'s enabled switch as Chromium does: not at all', () => {
@@ -58,9 +58,15 @@ describe('GNOME\'s proxy settings', () => {
     expect(parseGnomeSettings(gsettingsOutput({ mode: 'manual', http: { host: 'p.test', port: 1 }, ignore: '@as []' }))).toMatchObject({ exceptions: [] })
     expect(parseGnomeSettings(gsettingsOutput({ mode: 'manual', http: { host: 'p.test', port: 1 }, ignore: '[]' }))).toMatchObject({ exceptions: [] })
     expect(parseGnomeSettings(gsettingsOutput({ mode: 'manual', http: { host: 'p.test', port: 1 }, ignore: "['*.corp.test', '.lan', '10.0.0.0/8', '2001:db8::/32', '::1', '[::1]', 'a.test:8080']" }))).toMatchObject({
-      exceptions: ['*.corp.test', '.lan', '10.0.0.0/8', '2001:db8::/32', '[::1]', '[::1]', 'a.test:8080']
+      exceptions: ['*.corp.test', '.lan', '10.0.0.0/8', '2001:db8::/32', '::1', '[::1]', 'a.test:8080']
     })
     expect(parseGnomeSettings(gsettingsOutput({ mode: 'manual', http: { host: 'p.test', port: 1 }, ignore: "['', 'x.test']" }))).toMatchObject({ exceptions: ['x.test'] })
+  })
+
+  it('hand every exception on as the system wrote it, an IPv6 address bare or in brackets, as Chromium\'s reader hands it to the bypass-rule parser', () => {
+    const exceptions = (ignore: string): unknown => (parseGnomeSettings(gsettingsOutput({ mode: 'manual', http: { host: 'p.test', port: 1 }, ignore })) as { exceptions?: string[] }).exceptions
+    expect(exceptions("['::1', 'fe80::1', '2001:db8::/32']")).toEqual(['::1', 'fe80::1', '2001:db8::/32'])
+    expect(exceptions("['[::1]', '[fe80::1]:8080']")).toEqual(['[::1]', '[fe80::1]:8080'])
   })
 
   it('never carry a password, whatever the output holds', () => {

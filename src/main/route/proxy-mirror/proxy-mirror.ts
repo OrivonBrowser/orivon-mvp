@@ -3,7 +3,8 @@
 // every 2 seconds, which shows a proxy turned on, off or moved at once. A copy is applied only after a session of its own,
 // set to it, answers the same as Chromium's session for the same addresses; when it does not, twice running, or when the settings
 // cannot be read or carried, every session stays on `{ mode: 'system' }`, where the guard for the names the verifier serves decides.
-// Electron-free over the calls it is handed.
+// A copy already applied is kept through a read that fails or a check that gets no answer, while Chromium's base answers are what
+// they were when the copy passed its check. Electron-free over the calls it is handed.
 
 import type { SystemProxyConfig } from '../system-follow.js'
 import { within } from '../within.js'
@@ -23,6 +24,11 @@ const CALL_MS = 5_000
 
 const SYSTEM: SystemProxyConfig = { mode: 'system' }
 
+/** What a pass came to: the config the sessions should be set to, or that the copy applied stays as it is. */
+type Decision = { readonly config: SystemProxyConfig, readonly reason: MirrorReason, readonly mode: MirrorStatus['mode'] } | 'kept'
+/** How a copy answered against Chromium's own: the same, otherwise, or a question that got no answer. */
+type Verdict = 'agrees' | 'differs' | 'unanswered'
+
 export interface ProxyMirrorDeps {
   readonly source: SettingsSourceName
   /** Reads the settings, or undefined when this computer's cannot be read yet: the mirror then does nothing at all. Never rejects. */
@@ -33,8 +39,8 @@ export interface ProxyMirrorDeps {
   readonly systemAnswer: (url: string) => Promise<string>
   /** A session of the mirror's own: set to a config to try, then asked. */
   readonly check: { readonly set: (config: SystemProxyConfig) => Promise<void>, readonly answer: (url: string) => Promise<string> }
-  /** `config()` has changed: every session that follows the system takes it. */
-  readonly apply: () => Promise<void>
+  /** `config()` has changed: every session that follows the system takes it. Resolves with whether every one did; the mirror calls it again on its next pass when one did not. */
+  readonly apply: () => Promise<boolean>
   readonly log?: (line: string) => void
 }
 
@@ -56,6 +62,8 @@ const STAY_REASON: Readonly<Record<Exclude<SystemSettings['kind'], 'manual'>, Mi
 export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
   const log = deps.log ?? ((line: string) => { console.info(line) })
   let applied: SystemProxyConfig = SYSTEM
+  /** Whether every session took `applied`; when one did not, the next pass calls `apply` again. */
+  let taken = true
   let status: MirrorStatus = { source: deps.source, mode: 'unknown', state: 'system', reason: deps.held === true ? 'held' : deps.read === undefined ? 'no-reader' : 'starting' }
   /** What the last pass looked at, so a pass that sees the same does nothing. */
   let lastInputs = ''
@@ -77,47 +85,79 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
     return (await Promise.all(BASE_CANARIES.map(async (url) => await ask(deps.systemAnswer, url) ?? 'unanswered'))).join('\n')
   }
 
-  /** Whether a session set to `config` answers as Chromium's own does for the base addresses and the ones the exceptions cover. */
-  async function agrees (config: SystemProxyConfig, exceptions: readonly string[]): Promise<boolean> {
+  /** How a session set to `config` answers beside Chromium's own, for the base addresses and the ones the exceptions cover. A real difference outweighs a question that got no answer. */
+  async function check (config: SystemProxyConfig, exceptions: readonly string[]): Promise<Verdict> {
+    if (stopped) return 'unanswered'
     try {
       await within(deps.check.set(config), CALL_MS, 'the check session was not set')
     } catch {
-      return false
+      return 'unanswered'
     }
-    for (const url of [...BASE_CANARIES, ...exceptionCanaries(exceptions)]) {
-      const [system, copy] = await Promise.all([ask(deps.systemAnswer, url), ask(deps.check.answer, url)])
-      if (system === undefined || system !== copy) return false
-    }
-    return true
+    const urls = [...BASE_CANARIES, ...exceptionCanaries(exceptions)]
+    const pairs = await Promise.all(urls.map(async (url) => await Promise.all([ask(deps.systemAnswer, url), ask(deps.check.answer, url)])))
+    if (pairs.some(([system, copy]) => system !== undefined && copy !== undefined && system !== copy)) return 'differs'
+    return pairs.some(([system, copy]) => system === undefined || copy === undefined) ? 'unanswered' : 'agrees'
   }
 
-  /** What the sessions should be set to for `settings`. A copy that Chromium's answer does not match is tried once more after a fresh read, since the settings may have changed between the read and the question. */
-  async function decide (settings: SystemSettings, read: () => Promise<SystemSettings>): Promise<{ config: SystemProxyConfig, reason: MirrorReason, mode: MirrorStatus['mode'] }> {
+  /**
+   * What the sessions should be set to for `settings`. A copy that Chromium's answer does not match is tried once more after a fresh
+   * read, since the settings may have changed between the read and the question. With `keepable` (a checked copy is applied and
+   * Chromium's base answers have not moved), a read that failed or a check that got no answer decides nothing: the copy stays.
+   */
+  async function decide (settings: SystemSettings, read: () => Promise<SystemSettings>, keepable: boolean): Promise<Decision> {
     let current = settings
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (attempt === 1) current = await read()
+      if (current.kind === 'unreadable' && attempt === 0 && keepable) return 'kept'
       if (current.kind !== 'manual') return { config: SYSTEM, reason: STAY_REASON[current.kind], mode: current.kind }
       const config = mirroredConfig(current)
-      if (config !== undefined && await agrees(config, current.exceptions)) return { config, reason: 'copied', mode: 'manual' }
+      if (config === undefined) continue
+      const verdict = await check(config, current.exceptions)
+      if (verdict === 'agrees') return { config, reason: 'copied', mode: 'manual' }
+      if (verdict === 'unanswered' && attempt === 0 && keepable) return 'kept'
     }
     return { config: SYSTEM, reason: 'disagrees', mode: 'manual' }
   }
 
+  /** Has every session set to `applied`; false when one did not, or the call itself failed. */
+  async function applyOnce (): Promise<boolean> {
+    try {
+      return await deps.apply()
+    } catch (error) {
+      console.error('[route] setting the sessions to the system proxy failed:', error instanceof Error ? error.message : 'unexpected error')
+      return false
+    }
+  }
+
+  /** Calls `apply` again for a config that not every session took. */
+  async function retryApply (): Promise<void> {
+    if (taken || stopped) return
+    taken = await applyOnce()
+  }
+
   async function pass (): Promise<void> {
     const read = deps.read
-    if (read === undefined) return
+    if (read === undefined || stopped) return
     const settings = await read()
     const answers = await sample()
     const inputs = JSON.stringify(settings)
     const settled = status.reason !== 'starting' && status.reason !== 'unreadable' && status.reason !== 'disagrees'
-    if (settled && inputs === lastInputs && answers === lastAnswers) return
+    if (settled && inputs === lastInputs && answers === lastAnswers) {
+      await retryApply()
+      return
+    }
+    const outcome = await decide(settings, read, applied !== SYSTEM && answers === lastAnswers)
+    if (stopped) return
+    if (outcome === 'kept') {
+      await retryApply()
+      return
+    }
     lastInputs = inputs
     lastAnswers = answers
-    const outcome = await decide(settings, read)
     const next: MirrorStatus = { source: deps.source, mode: outcome.mode, state: outcome.config === SYSTEM ? 'system' : 'mirrored', reason: outcome.reason }
-    if (JSON.stringify(outcome.config) !== JSON.stringify(applied)) {
+    if (JSON.stringify(outcome.config) !== JSON.stringify(applied) || !taken) {
       applied = outcome.config
-      await deps.apply()
+      taken = await applyOnce()
     }
     if (JSON.stringify(next) !== JSON.stringify(status)) log(`[route] system proxy: ${next.state === 'mirrored' ? 'copied' : 'left to the system'} (${next.source}, ${next.mode}, ${next.reason})`)
     status = next

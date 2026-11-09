@@ -4,13 +4,11 @@ import { exceptionCanaries } from '../canaries.js'
 import { mirroredConfig, routedBypassRules } from '../mirrored-config.js'
 
 describe('the rules that keep a name the verifier serves from a proxy', () => {
-  it('name every routed suffix, with and without the root dot', () => {
+  it('name every routed suffix as the resolver rules map it, and no root-dot spelling, which they do not match', () => {
     const rules = routedBypassRules()
-    for (const suffix of BUILTIN_ADDRESSES.routedSuffixes()) {
-      expect(rules).toContain(`*.${suffix}`)
-      expect(rules).toContain(`*.${suffix}.`)
-    }
-    expect(rules).toContain('*.eth.')
+    expect(rules).toEqual(BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`))
+    expect(rules).toContain('*.eth')
+    expect(rules.filter((rule) => rule.endsWith('.'))).toEqual([])
   })
 })
 

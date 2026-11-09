@@ -97,7 +97,7 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy', 
   let desktop: ReturnType<typeof gnomeProxy>
   let running: Running
   let reported: Awaited<ReturnType<typeof reportedMirror>>
-  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, exempt: Record<string, string>, fromMain: string, refusals: string[] }
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, exempt: Record<string, string>, fromMain: string, refusals: string[], rootDotFetch: string, rootDotRefusals: string[] }
 
   beforeAll(async () => {
     first = await startLoggingProxy()
@@ -110,6 +110,9 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy', 
     const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the first proxy')
     const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
     const fromMain = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth/'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
+    const refusals = refusalLines(app)
+    // The address bar drops a root dot, so the spelling is asked for by the shell's own fetch, after the refusals above are taken: its refusal is the only one after them.
+    const rootDotFetch = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth./'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
     facts = {
       ordinary,
       eth,
@@ -118,7 +121,9 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy', 
       ordinarySessions: await resolved(app, 'https://ordinary.test/'),
       exempt: await resolved(app, 'http://printer.lan.test/'),
       fromMain,
-      refusals: refusalLines(app)
+      refusals,
+      rootDotFetch,
+      rootDotRefusals: refusalLines(app).slice(refusals.length)
     }
     reported = await reportedMirror(app, chrome)
     report('manual GNOME proxy', { ...facts, mirror: reported.fact, lines: reported.lines, firstSaw: first.seen.filter((line) => !line.includes('gvt1.com')) })
@@ -138,12 +143,18 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy', 
     expect(first.seen.filter((line) => line.startsWith('CONNECT') && !line.includes('gvt1.com'))).toEqual([])
   })
 
-  it('answers DIRECT for a name the verifier serves in every session kind, in both spellings of the name, and the proxy for an ordinary one', () => {
+  it('answers DIRECT for a name the verifier serves in every session kind, and the proxy for an ordinary one', () => {
     for (const kind of Object.keys(facts.eth2)) {
       expect(facts.eth2[kind], `${kind} session, .eth`).toBe('DIRECT')
-      expect(facts.rootDot[kind], `${kind} session, .eth with the root dot`).toBe('DIRECT')
       expect(facts.ordinarySessions[kind], `${kind} session, ordinary`).toBe(`PROXY 127.0.0.1:${String(first.port)}`)
     }
+  })
+
+  it('leaves the root-dot spelling of a name on the proxy, where the guard refuses it before the proxy is asked', () => {
+    for (const kind of Object.keys(facts.rootDot)) expect(facts.rootDot[kind], `${kind} session, .eth with the root dot`).toBe(`PROXY 127.0.0.1:${String(first.port)}`)
+    expect(facts.rootDotFetch).toContain(CANCELLED)
+    expect(facts.rootDotRefusals.filter((line) => line.includes('would have carried it'))).toHaveLength(1)
+    expect(verifierNames(first.seen)).toEqual([])
   })
 
   it('keeps the system\'s own exceptions', () => {
