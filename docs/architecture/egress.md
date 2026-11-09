@@ -165,7 +165,12 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
 - **A manual proxy in KDE's settings.** The same copy, read from the `kioslaverc` files Chromium reads (`$HOME/.config`, the
   `XDG_CONFIG_DIRS` below it, or `$KDEHOME/share/config`; a file read of at most a megabyte, three seconds at most, nothing run and
   nothing logged). Its hostname exceptions are turned into the suffix matches Chromium makes of them, since `setProxy` makes none.
-  Reversed exceptions and environment-variable names stay on `{ mode: 'system' }`. Nothing is read or run on other desktops, Windows or macOS.
+  Reversed exceptions and environment-variable names stay on `{ mode: 'system' }`.
+- **A manual proxy in Windows' settings.** The same, reading the registry with `%SystemRoot%\System32\reg.exe` (three `query` calls
+  run without a shell, three seconds at most, the output never logged): the per-user Internet Settings key, its
+  `DefaultConnectionSettings` blob, and the machine policy `ProxySettingsPerUser`, which makes the settings `unsupported`.
+  `ProxyServer` and `ProxyOverride` are copied as written, `<local>` included, by the rule Chromium's reader follows
+  (`proxy-mirror/README.md`). A proxy found by detection beside a manual one is copied and left to the check. Nothing is read or run on other desktops or macOS.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
   temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held
@@ -199,7 +204,7 @@ time, by a counter, by load) can send the request to a proxy after the guard was
 name from `CONNECT name.eth:443`; it holds no certificate that would be accepted for it, so it cannot serve a page under the
 name. This is the whole of what the guard leaves open for these schemes, and it needs a script written that way.
 
-**What this leaves.** Behind a proxy that Windows or macOS settings provide, or KDE settings with reversed exceptions, a name the verifier serves does not
+**What this leaves.** Behind a proxy that macOS settings provide, or KDE settings with reversed exceptions, a name the verifier serves does not
 open while the proxy would carry it, and the sheet says why. Adding the routed suffixes (`*.eth` and the rest) to the proxy's
 exceptions opens them ([`known-limitations.md`](../known-limitations.md)).
 

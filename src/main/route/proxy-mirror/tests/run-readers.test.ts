@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { gsettingsOutput } from './gsettings-output.test-helpers.js'
-import { readGnomeSettings, runCommand } from '../run-readers.js'
+import { blobHex, connectionBlob, internetSettings, perUserPolicy } from './reg-output.test-helpers.js'
+import { CommandFailed, readGnomeSettings, readWindowsSettings, runCommand } from '../run-readers.js'
 
 describe('reading GNOME\'s settings', () => {
   it('asks gsettings for the proxy schema, recursively, and parses what it prints', async () => {
@@ -32,5 +33,62 @@ describe('running a program', () => {
 
   it('resolves with what the program printed', async () => {
     expect(await runCommand(process.execPath, ['-e', "process.stdout.write('printed')"])).toBe('printed')
+  })
+})
+
+const KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
+
+describe('reading Windows\' settings', () => {
+  /** A `reg` that answers each query from `answers` by its key and value, and fails with the exit code `reg` gives for a missing one when it has no answer. */
+  const registry = (answers: { values?: string, blob?: string, policy?: string }, calls: Array<[string, readonly string[]]> = []) => async (file: string, args: readonly string[]): Promise<string> => {
+    calls.push([file, args])
+    const answer = args[1]?.startsWith('HKLM') === true ? answers.policy : args[2] === '/v' ? answers.blob : answers.values
+    if (answer === undefined) throw new CommandFailed(1)
+    return answer
+  }
+
+  it('asks reg.exe of the system folder for the key, the connection blob and the policy, and parses what it prints', async () => {
+    const calls: Array<[string, readonly string[]]> = []
+    const settings = await readWindowsSettings(registry({ values: internetSettings({ enable: 1, server: 'proxy.test:3128' }), blob: connectionBlob(blobHex(3, 'proxy.test:3128')) }, calls), 'D:\\Win')
+    expect(settings).toMatchObject({ kind: 'manual', proxyRules: 'proxy.test:3128' })
+    expect([...calls].sort()).toEqual([
+      ['D:\\Win\\System32\\reg.exe', ['query', KEY]],
+      ['D:\\Win\\System32\\reg.exe', ['query', `${KEY}\\Connections`, '/v', 'DefaultConnectionSettings']],
+      ['D:\\Win\\System32\\reg.exe', ['query', 'HKLM\\Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\Internet Settings', '/v', 'ProxySettingsPerUser']]
+    ].sort())
+  })
+
+  it('takes a blob or a policy that is not there as none, and the policy as it is when it is', async () => {
+    expect(await readWindowsSettings(registry({ values: internetSettings({ enable: 1, server: 'proxy.test:3128' }) }), 'C:\\Windows')).toMatchObject({ kind: 'manual' })
+    expect(await readWindowsSettings(registry({ values: internetSettings({ enable: 1, server: 'proxy.test:3128' }), policy: perUserPolicy(0) }), 'C:\\Windows')).toEqual({ kind: 'unsupported' })
+  })
+
+  it('is unreadable when the key is not there, when reg.exe fails otherwise, is missing or takes too long', async () => {
+    expect(await readWindowsSettings(registry({}), 'C:\\Windows')).toEqual({ kind: 'unreadable' })
+    for (const failure of [new CommandFailed(5), new CommandFailed(undefined), new Error('anything')]) {
+      expect(await readWindowsSettings(async () => { throw failure }, 'C:\\Windows')).toEqual({ kind: 'unreadable' })
+    }
+    let calls = 0
+    expect(await readWindowsSettings(async () => {
+      calls += 1
+      if (calls === 2) throw new CommandFailed(undefined)
+      return internetSettings({ enable: 1, server: 'proxy.test:3128' })
+    }, 'C:\\Windows')).toEqual({ kind: 'unreadable' })
+  })
+
+  it('looks for reg.exe in C:\\Windows when the environment names no system folder', async () => {
+    const calls: string[] = []
+    await readWindowsSettings(async (file) => { calls.push(file); throw new CommandFailed(1) }, undefined)
+    expect(calls).toEqual(Array(3).fill('C:\\Windows\\System32\\reg.exe'))
+  })
+})
+
+describe('a program that failed', () => {
+  it('carries its exit code, and nothing when it never started', async () => {
+    const exited = await runCommand(process.execPath, ['-e', 'process.exit(3)']).then(() => undefined, (failure: unknown) => failure as CommandFailed)
+    expect(exited).toBeInstanceOf(CommandFailed)
+    expect(exited?.exitCode).toBe(3)
+    const missing = await runCommand('/nonexistent/orivon-settings-program', []).then(() => undefined, (failure: unknown) => failure as CommandFailed)
+    expect(missing?.exitCode).toBeUndefined()
   })
 })
