@@ -14,9 +14,10 @@ const NEVER_RESOLVES = /\.invalid$/i
 /** The longest address a setting holds. */
 export const MAX_ADDRESS_LENGTH = 2048
 
-/** Whether `host` is a name that reaches this computer or Orivon's own verifier: `localhost`, anything under it, and a protocol's host. */
+/** Whether `host` is a name that reaches this computer or Orivon's own verifier: `localhost`, anything under it, and a protocol's host, with or without the root dot. */
 export function namesThisComputer (host: string): boolean {
-  return host === 'localhost' || host.endsWith('.localhost') || BUILTIN_ADDRESSES.routesToVerifier(host)
+  const bare = host.replace(/\.+$/, '')
+  return bare === 'localhost' || bare.endsWith('.localhost') || BUILTIN_ADDRESSES.namesServedHost(host)
 }
 
 /** Whether a server's host, address literal or name, could be on the internet: no loopback, private, link-local or reserved literal, and no name that is this computer's, a local network's, one that never resolves, a single label or a spelling with a trailing dot. A name is judged by its spelling, never by what it resolves to, so one that resolves to a private address is taken (T12). */

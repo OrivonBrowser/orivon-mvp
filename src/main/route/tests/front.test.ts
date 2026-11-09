@@ -164,6 +164,26 @@ describe('CONNECT', () => {
     expect((await connectThrough(f, 'echo.test:443', basic(f))).status).toBe('HTTP/1.1 503 Service Unavailable')
   })
 
+  it('refuses a name a protocol serves written with the root dot, however many, and never asks the route', async () => {
+    const asked: string[] = []
+    const target = await echoServer()
+    const f = await front(providerFor({ 'vitalik.eth:443': target, 'vitalik.eth.:443': target, 'vitalik.eth..:443': target }, asked))
+    for (const name of ['vitalik.eth.', 'vitalik.eth..', 'VITALIK.ETH.', 'abc.ipfs.orivon.']) {
+      expect((await connectThrough(f, `${name}:443`, basic(f))).status, name).toBe('HTTP/1.1 403 Forbidden')
+    }
+    expect(asked).toEqual([])
+    expect((await connectThrough(f, 'vitalik.eth:443', basic(f))).status, 'the name without the dot is the route\'s to carry').toBe('HTTP/1.1 200 Connection Established')
+    expect(asked).toEqual(['vitalik.eth:443'])
+  })
+
+  it('carries a root-dot host that no protocol serves', async () => {
+    const asked: string[] = []
+    const target = await echoServer()
+    const f = await front(providerFor({ 'example.com.:443': target }, asked))
+    expect((await connectThrough(f, 'example.com.:443', basic(f))).status).toBe('HTTP/1.1 200 Connection Established')
+    expect(asked).toEqual(['example.com.:443'])
+  })
+
   it('abandons the route attempt when the client gives up first', async () => {
     let aborted = false
     const slow: RouteProvider = { connect: async (_host, _port, signal) => await new Promise((_resolve, reject) => { signal.addEventListener('abort', () => { aborted = true; reject(new Error('abandoned')) }) }) }
@@ -235,6 +255,15 @@ describe('absolute-form requests', () => {
     for (const path of ['/', '/path', 'https://web.test/', 'ftp://web.test/', 'http://', '*']) {
       const response = await getThrough(f, path, { 'proxy-authorization': basic(f), host: 'web.test' })
       expect(response.status, path).toBe(400)
+    }
+    expect(asked).toEqual([])
+  })
+
+  it('refuses a root-dot name a protocol serves, and never asks the route', async () => {
+    const asked: string[] = []
+    const f = await front(providerFor({}, asked))
+    for (const url of ['http://vitalik.eth./', 'http://vitalik.eth../x', 'http://abc.ipfs.orivon./']) {
+      expect((await getThrough(f, url, { 'proxy-authorization': basic(f) })).status, url).toBe(403)
     }
     expect(asked).toEqual([])
   })
