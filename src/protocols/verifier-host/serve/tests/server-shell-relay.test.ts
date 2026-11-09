@@ -8,7 +8,7 @@ import type { DataGatherer, GatheredFile, MountedSite, NameResolver } from '../.
 import { ProtocolRegistry } from '../../../registry.js'
 import { defineProtocol } from '../../../protocol.js'
 import { ENS } from '../../../ens/descriptor.js'
-import { OWN_READ_HEADER } from '../../../../loader/fetch/content-root.js'
+import { OWN_READ_HEADER, PARTITION_HEADER, ROUTE_HEADER } from '../../../../loader/fetch/content-root.js'
 import type { FromHost, RelayRequest } from '../../protocol.js'
 import { createRunCertificate } from '../certificate.js'
 import { createVerifierServer } from '../server.js'
@@ -63,7 +63,7 @@ interface Reply { status: number, headers: Record<string, string | string[] | un
 async function get (path: string, options: { host?: string, method?: string, headers?: Record<string, string> } = {}): Promise<Reply> {
   const host = options.host ?? 'kept.eth'
   return await new Promise((resolve) => {
-    const req = request({ host: '127.0.0.1', port, path, method: options.method ?? 'GET', servername: host, rejectUnauthorized: false, headers: { host, ...options.headers } }, (res) => {
+    const req = request({ host: '127.0.0.1', port, path, method: options.method ?? 'GET', servername: host, rejectUnauthorized: false, headers: { host, [PARTITION_HEADER]: `https://${host}`, ...options.headers } }, (res) => {
       const chunks: Buffer[] = []
       res.on('data', (chunk: Buffer) => chunks.push(chunk))
       res.on('end', () => { resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }) })
@@ -100,7 +100,39 @@ describe('the loopback server with a shell behind it', () => {
     expect(done.status).toBe(206)
     expect(done.body.toString()).toBe('run')
     expect(done.headers['content-range']).toBe('bytes 0-2/9')
-    expect(done.headers['content-security-policy']).toBe("default-src 'self', treat-as-public-address")
+    expect(done.headers['content-security-policy']).toBe("default-src 'self', treat-as-public-address; frame-ancestors 'self'")
+  })
+
+  it('hands over a request no page started, which the browser marks as its own', async () => {
+    const before = relayed().length
+    const reply = get('/app.js', { headers: { [PARTITION_HEADER]: '', 'sec-fetch-site': 'none' } })
+    await until(() => relayed().length === before + 1, 'the request was relayed')
+    const sent = relayed().at(-1)!
+    relay.receive({ type: 'relay-head', id: sent.id, status: 204, headers: [] })
+    relay.receive({ type: 'relay-end', id: sent.id })
+    expect((await reply).status).toBe(204)
+  })
+
+  it('answers a request of another site\'s page as it always did, so that page cannot tell the app is kept', async () => {
+    const before = relayed().length
+    const reply = await get('/app.js', { headers: { [PARTITION_HEADER]: 'https://evil.example' } })
+    expect(reply.status).toBe(200)
+    expect(reply.body.toString()).toBe('from the verifier')
+    expect(relayed()).toHaveLength(before)
+  })
+
+  it('answers a request of a tunnel profile\'s page itself, so its reads still leave through the tunnel', async () => {
+    const before = relayed().length
+    const reply = await get('/app.js', { headers: { [ROUTE_HEADER]: 'nym' } })
+    expect(reply.status).toBe(200)
+    expect(reply.body.toString()).toBe('from the verifier')
+    expect(relayed()).toHaveLength(before)
+  })
+
+  it('refuses a target that reads as another host before it hands anything over', async () => {
+    const before = relayed().length
+    expect((await get('/\\plain.eth/x')).status).toBe(400)
+    expect(relayed()).toHaveLength(before)
   })
 
   it('hands over a method other than GET and HEAD as well, and lets the shell answer it', async () => {

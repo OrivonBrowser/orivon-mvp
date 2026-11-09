@@ -36,7 +36,7 @@ export interface ShellRelayDeps {
 
 interface Relayed {
   readonly res: ServerResponse
-  readonly publicAddressCsp: string
+  readonly extraCsp: string
   headSent: boolean
   timer: NodeJS.Timeout | undefined
 }
@@ -90,14 +90,14 @@ export class ShellRelay {
     return this.deps.ownReadToken !== undefined && this.served.has(host) && !this.isOwnRead(headers)
   }
 
-  /** Hands `req` to the shell. `publicAddressCsp` goes on the answer as a policy of its own, whatever policy the shell's answer carries. */
-  relay (req: IncomingMessage, res: ServerResponse, target: URL, publicAddressCsp: string): void {
+  /** Hands `req` to the shell. `extraCsp` goes on the answer as a policy of its own, whatever policy the shell's answer carries: what every answer this server writes says of where it came from and who may frame it. */
+  relay (req: IncomingMessage, res: ServerResponse, target: URL, extraCsp: string): void {
     if (this.open.size >= (this.deps.limit ?? MAX_RELAYS)) {
       res.writeHead(503, { 'content-type': 'text/plain', 'cache-control': 'no-store', 'retry-after': '1' }).end('the verifier is relaying too many requests to the shell right now')
       return
     }
     const id = this.nextId++
-    const state: Relayed = { res, publicAddressCsp, headSent: false, timer: undefined }
+    const state: Relayed = { res, extraCsp, headSent: false, timer: undefined }
     this.open.set(id, state)
     // The client left, or the answer is complete: only the first leaves the shell something to stop.
     res.once('close', () => {
@@ -147,7 +147,7 @@ export class ShellRelay {
     for (const [name, value] of headers) {
       if (!NOT_RELAYED_RESPONSE.has(name.toLowerCase())) flat.push(name, value)
     }
-    flat.push('content-security-policy', state.publicAddressCsp)
+    flat.push('content-security-policy', state.extraCsp)
     try {
       state.res.writeHead(status, flat)
     } catch (error) {

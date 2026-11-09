@@ -175,11 +175,14 @@ describe('what is sent of the Response', () => {
 })
 
 describe('when the handler cannot answer', () => {
-  it('says so, once, when it throws', async () => {
-    const { responder, of } = harness({ [ORIGIN]: async () => { throw new Error('the pin is gone') } })
+  it('says so, once, when it throws, and keeps what failed to itself', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { responder, of } = harness({ [ORIGIN]: async () => { throw new Error('ENOENT: /home/someone/pins/the-pin') } })
     responder.receive(request(1))
     await until(() => types(of(1)).length > 0, 'an error was sent')
-    expect(of(1)).toEqual([{ type: 'relay-error', id: 1, message: 'the pin is gone' }])
+    expect(of(1)).toEqual([{ type: 'relay-error', id: 1, message: 'the shell could not answer' }])
+    expect(log).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ message: 'ENOENT: /home/someone/pins/the-pin' }))
+    log.mockRestore()
   })
 
   it('says so when it ends the request with a network error, which is a failed load and not a page', async () => {
@@ -190,12 +193,52 @@ describe('when the handler cannot answer', () => {
   })
 
   it('says so when its body fails after the head', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
     const failing = new ReadableStream<Uint8Array>({ start (controller) { controller.enqueue(bytes(4)); controller.error(new Error('the file ended early')) } })
     const { responder, of } = harness({ [ORIGIN]: async () => new Response(failing) })
     responder.receive(request(1))
     await until(() => types(of(1)).includes('relay-error'), 'an error was sent')
     expect(types(of(1))[0]).toBe('relay-head')
-    expect(of(1).at(-1)).toMatchObject({ type: 'relay-error', message: 'the file ended early' })
+    expect(of(1).at(-1)).toMatchObject({ type: 'relay-error', message: 'the shell could not answer' })
+    log.mockRestore()
+  })
+
+  it('cancels the body of an answer it could not send a head for, and of one that is a network error', async () => {
+    const quiet = bodyOf([bytes(10)])
+    const refused = harness({ [ORIGIN]: async () => new Response(quiet.stream) }, false)
+    refused.responder.receive(request(1))
+    await until(() => quiet.cancelled(), 'the body was cancelled')
+    const broken = bodyOf([bytes(10)])
+    const { responder, of } = harness({ [ORIGIN]: async () => Object.defineProperty(new Response(broken.stream), 'type', { value: 'error' }) })
+    responder.receive(request(1))
+    await until(() => types(of(1)).length > 0 && broken.cancelled(), 'the body was cancelled')
+    expect(types(of(1))).toEqual(['relay-error'])
+  })
+
+  it('answers a request number again once the host stopped it, though the handler of the first has not returned', async () => {
+    let held = 0
+    const { responder, of } = harness({ [ORIGIN]: async (given) => {
+      held += 1
+      if (held === 1) return await new Promise<Response>(() => {})
+      return new Response(new URL(given.url).pathname)
+    } })
+    responder.receive(request(1))
+    await until(() => held === 1, 'the first was handed to its handler')
+    responder.receive({ type: 'relay-abort', id: 1 })
+    responder.receive(request(1, { url: `${ORIGIN}/second.js` }))
+    await until(() => types(of(1)).includes('relay-end'), 'the second was answered')
+    expect(of(1).find((message) => message.type === 'relay-body')).toMatchObject({ chunk: new TextEncoder().encode('/second.js') })
+  })
+
+  it('says so, and leaves the first alone, when a number still in use comes again', async () => {
+    let release: ((response: Response) => void) | undefined
+    const { responder, of } = harness({ [ORIGIN]: async () => await new Promise<Response>((resolve) => { release = resolve }) })
+    responder.receive(request(1))
+    await until(() => release !== undefined, 'the first was handed to its handler')
+    responder.receive(request(1))
+    expect(of(1)).toEqual([{ type: 'relay-error', id: 1, message: 'the host reused a request number still in use' }])
+    release?.(new Response('late'))
+    await until(() => types(of(1)).includes('relay-end'), 'the first still ended')
   })
 
   it('sends nothing for an answer whose request was stopped meanwhile, and cancels its body', async () => {

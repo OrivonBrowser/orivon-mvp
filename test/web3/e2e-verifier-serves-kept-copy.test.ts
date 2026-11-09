@@ -116,7 +116,7 @@ it('answers a request of the shared session for an allowed app from the pinned c
       await waitFor(async () => { script = await fetchShared(second, `${origin}/app.js`); return script.status === 200 && script.text === SCRIPT }, 40_000)
       check(`the shared session reads the pinned bytes of a file (${JSON.stringify(script)})`, script.status === 200 && script.text === SCRIPT)
       check('the answer carries the app\'s own policy', script.csp?.includes("default-src 'self'") === true)
-      check('and says it came from the public internet, as every answer of this server does', script.csp?.includes('treat-as-public-address') === true)
+      check('and says it came from the public internet and may be framed only by itself, as every answer of this server does', script.csp?.includes('treat-as-public-address') === true && script.csp.includes("frame-ancestors 'self'"))
       const part = await fetchShared(second, `${origin}/app.js`, { range: 'bytes=0-7' })
       check(`a range is answered as the handler answers it (${JSON.stringify(part)})`, part.status === 206 && part.text === SCRIPT.slice(0, 8) && part.range === `bytes 0-7/${String(SCRIPT.length)}`)
       const head = await fetchShared(second, `${origin}/app.js`, { method: 'HEAD' })

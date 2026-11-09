@@ -105,10 +105,22 @@ function isNavigation (req: IncomingMessage): boolean {
 function pathOf (target: string | undefined, host: string): URL | undefined {
   if (target === undefined || !target.startsWith('/') || target.startsWith('//')) return undefined
   try {
-    return new URL(target, `https://${host}`)
+    const url = new URL(target, `https://${host}`)
+    // `/\other.eth/x` reads as another host to a URL parser: the address stays the request's own host.
+    return url.host === host ? url : undefined
   } catch {
     return undefined
   }
+}
+
+/**
+ * Whether a request belongs to the host's own site: its page is that site's (or no page started it), and it is not a
+ * tunnel profile's. Only such a request is the shell's to answer. Another site's page is answered as it always was, so no
+ * page can time an allowed app's host and learn it is installed (A256), and a tunnel profile's read still leaves
+ * through its tunnel.
+ */
+function belongsToOwnSite (req: IncomingMessage, host: string): boolean {
+  return partitionOf(req, host) === `https://${host}` && routeOf(req) === 'direct'
 }
 
 /**
@@ -321,11 +333,11 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
     return
   }
-  // A host the shell serves from a copy it keeps is the shell's to answer, with the very handler that app's partition uses, whatever the method: nothing below looks at the request.
-  if (shell?.wants(host, req.headers) === true) {
+  // A host the shell serves from a copy it keeps is the shell's to answer for its own site, with the very handler that app's partition uses, whatever the method: nothing below looks at the request.
+  if (shell?.wants(host, req.headers) === true && belongsToOwnSite(req, host)) {
     const target = pathOf(req.url, host)
     if (target === undefined) res.writeHead(400, { 'content-type': 'text/plain' }).end('not a path this server serves')
-    else shell.relay(req, res, target, PUBLIC_ADDRESS_CSP)
+    else shell.relay(req, res, target, SERVED_CONTENT_CSP)
     return
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') {

@@ -67,6 +67,8 @@ export class ShellResponder {
   private stop (id: number): void {
     const state = this.answering.get(id)
     if (state === undefined) return
+    // Forgotten at once, not when a handler that ignores the signal returns: the host numbers its requests afresh each start, and a hung handler holds no place among those it may be asked for.
+    this.answering.delete(id)
     state.abort.abort()
     state.wake?.()
     // A handler's body may never end on its own: cancelling it is what lets the read waiting on it return.
@@ -75,7 +77,10 @@ export class ShellResponder {
 
   private async answer (message: RelayRequest): Promise<void> {
     const { id } = message
-    if (this.answering.has(id)) return
+    if (this.answering.has(id)) {
+      this.deps.send({ type: 'relay-error', id, message: 'the host reused a request number still in use' })
+      return
+    }
     if (this.answering.size >= MAX_RELAYS) {
       this.deps.send({ type: 'relay-error', id, message: 'the shell is answering too many relayed requests' })
       return
@@ -90,9 +95,11 @@ export class ShellResponder {
       }
       await this.stream(id, state, response)
     } catch (error) {
-      if (!state.abort.signal.aborted) this.deps.send({ type: 'relay-error', id, message: error instanceof Error ? error.message : String(error) })
+      // What failed stays here: the host is a less trusted process, and its log reaches bug reports.
+      console.error('[verifier] a relayed request failed in the shell:', error)
+      if (!state.abort.signal.aborted) this.deps.send({ type: 'relay-error', id, message: 'the shell could not answer' })
     } finally {
-      this.answering.delete(id)
+      if (this.answering.get(id) === state) this.answering.delete(id)
     }
   }
 
@@ -128,9 +135,13 @@ export class ShellResponder {
     // A handler that ends a request with a network error (`Response.error()`) means the load fails, not that a page was found.
     if (response.type === 'error' || response.status < 200 || response.status > 599) {
       this.deps.send({ type: 'relay-error', id, message: 'the handler ended the request with a network error' })
+      void response.body?.cancel().catch(() => {})
       return
     }
-    if (!this.deps.send({ type: 'relay-head', id, status: response.status, headers: [...response.headers] })) return
+    if (!this.deps.send({ type: 'relay-head', id, status: response.status, headers: [...response.headers] })) {
+      void response.body?.cancel().catch(() => {})
+      return
+    }
     const reader = response.body?.getReader()
     if (reader === undefined) {
       this.deps.send({ type: 'relay-end', id })

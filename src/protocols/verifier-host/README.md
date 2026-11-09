@@ -61,7 +61,7 @@ service is still asked for an IPNS record after the node, unless the lookup serv
 carries the key of the mount's partition (`partition-key.ts`; header `x-orivon-partition`) and no other source sees it. A block the node could not give is asked for again after the node's own memory of it has passed (`../ipfs/README.md`); a test build can name a fixture endpoint as the node and shorten that wait (`HostConfig.ipfsNode.retryWaitMs`).
 
 **A host the shell serves from a copy it keeps is not served from here at all.** An allowed app is answered by the handler its partition uses, in main; for a
-shared session to get the same answer, [`serve/shell-relay.ts`](serve/shell-relay.ts) hands such a request to main over this port (`relay-request`, answered by `relay-head`, `relay-body`, `relay-end` or `relay-error`; `relay-wrote` and `relay-abort`
+shared session to get the same answer, [`serve/shell-relay.ts`](serve/shell-relay.ts) hands such a request of the host's own site to main over this port (`relay-request`, answered by `relay-head`, `relay-body`, `relay-end` or `relay-error`; `relay-wrote` and `relay-abort`
 the other way) and writes what comes back. The hosts it does this for are `HostConfig.shell.origins` and then each `shell-serves` message; the request of the shell's own that must reach this server's mounts carries the secret in `HostConfig.shell.ownReadToken`
 (`x-orivon-own-read`). Nothing of such a request reaches a mount, the light client or a gateway, so it is answered with all of them gone. The design is in [`serve/README.md`](serve/README.md) and [`../../main/verifier/README.md`](../../main/verifier/README.md).
 
