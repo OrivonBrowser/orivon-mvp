@@ -2,9 +2,10 @@
 // as far as the person chose; the browser's stored site data and cache cannot
 // be limited by time, so they are all or nothing. A cache-served app's own
 // storage is kept apart, in its own session, so it is only cleared when
-// asked for by name; a granted-without-install app has no session of its
-// own and its storage is ordinary site data instead (README.md's Design
-// notes).
+// asked for by name; an allowed app that runs where websites run keeps it
+// in their sessions, and is told from them by origin; a granted-without-
+// install app has no session of its own and its storage is ordinary site
+// data instead (README.md's Design notes).
 import type { Session } from 'electron'
 import type { HistoryService } from '../history/history-service.js'
 import type { ZoomStore } from '../zoom/zoom-store.js'
@@ -43,6 +44,8 @@ export interface ClearDeps {
   readonly siteSessions?: () => ReadonlyArray<Pick<Session, 'clearData' | 'clearStorageData'>>
   /** The session of each app that holds permissions. */
   readonly appSessions: () => Promise<ReadonlyArray<Pick<Session, 'clearData'>>>
+  /** The origins of the allowed apps that run where websites run: their storage sits in the websites' sessions, and is the app's data, never the websites'. */
+  readonly appOrigins?: () => readonly string[]
   /** The network each `.eth` name was last found on: a record of the names visited, forgotten with the cache and with all history. */
   readonly forgetNameSchemes: () => Promise<void>
   /** What the IPFS node and the verifier host kept about the sites they served (blocks, Swarm chunks): deleted with the cache and with all history. */
@@ -79,11 +82,18 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
   else if (request.history !== 'none') await attempt('history', () => { deps.history.removeRange(deps.now() - RANGE_MS[request.history as 'hour' | 'day' | 'week'], deps.now()) })
   if (request.siteData) {
     await attempt('siteData', async () => {
-      await deps.websites.clearData({ dataTypes: [...SITE_DATA] })
+      // An allowed app's own origin is spared: that is App data's to clear. The Cache API cannot be told by origin, so it goes for the whole session.
+      const apps = [...(deps.appOrigins?.() ?? [])]
+      const spared = apps.length === 0 ? {} : { excludeOrigins: apps }
+      await deps.websites.clearData({ dataTypes: [...SITE_DATA], ...spared })
       // What a site keeps through the Cache API: `clearData` files it under the HTTP cache, which is a choice of its own.
       await deps.websites.clearStorageData({ storages: ['cachestorage'] })
-      for (const other of [...(deps.localFiles?.() ?? []), ...(deps.siteSessions?.() ?? [])]) {
+      for (const other of deps.localFiles?.() ?? []) {
         await other.clearData({ dataTypes: [...SITE_DATA] })
+        await other.clearStorageData({ storages: ['cachestorage'] })
+      }
+      for (const other of deps.siteSessions?.() ?? []) {
+        await other.clearData({ dataTypes: [...SITE_DATA], ...spared })
         await other.clearStorageData({ storages: ['cachestorage'] })
       }
     })
@@ -102,6 +112,13 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
   if (request.appData) {
     await attempt('appData', async () => {
       for (const session of await deps.appSessions()) await session.clearData()
+      // An app that runs where websites run left its data in their sessions, under its origin: the shared one and each profile's.
+      const apps = [...(deps.appOrigins?.() ?? [])]
+      if (apps.length === 0) return
+      for (const where of [deps.websites, ...(deps.siteSessions?.() ?? [])]) {
+        await where.clearData({ origins: apps })
+        for (const origin of apps) await where.clearStorageData({ origin, storages: ['cachestorage'] })
+      }
     })
   }
   return { ok: failed.length === 0, failed }

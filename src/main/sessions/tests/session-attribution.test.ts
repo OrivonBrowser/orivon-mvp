@@ -48,6 +48,7 @@ const { sessionAttributionSubsystem } = await import('../session-attribution.js'
 const { session } = await import('electron')
 const { setTabTunnelSource } = await import('../../route/tab-tunnel.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
+const { profilePartitionFor } = await import('../../route/site-partition.js')
 
 const APP = 'https://app.example'
 const OTHER = 'https://other.example'
@@ -249,21 +250,23 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
     expect(attributed(wc, KEPT)).toBe(true)
   })
 
-  it('attributes in the app\'s own partition, and not in the default session, while the shared session would send the app differently from its own route', () => {
+  it('attributes in the profile session of the app\'s tunnel entry, and not in the default session, as for a website', () => {
     served.add(KEPT)
-    setSiteRoutes({ profileFor: () => undefined, sharedLikeItsOwn: () => false })
+    setSiteRoutes({ profileFor: (origin) => origin === KEPT ? 'nym' : undefined })
     const { attributed } = attributionRig()
 
-    expect(attributed(fakeWebContents(keptOldPartition).wc, KEPT)).toBe(true)
+    expect(attributed(fakeWebContents(session.fromPartition(profilePartitionFor('nym', KEPT))).wc, KEPT)).toBe(true)
     expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, KEPT)).toBe(false)
+    expect(attributed(fakeWebContents(keptOldPartition).wc, KEPT)).toBe(false)
   })
 
-  it('is not changed by the tunnel choice of the tab the document is in', () => {
+  it('follows the tunnel choice of the tab the document is in, as a website does', () => {
     served.add(KEPT)
+    setSiteRoutes({ profileFor: () => undefined })
     setTabTunnelSource({ choiceOfContents: () => 'nym', kindShowing: () => undefined })
     const { attributed } = attributionRig()
-    expect(attributed(Object.assign(fakeWebContents(DEFAULT_SESSION).wc, { id: 7 }), KEPT)).toBe(true)
-    expect(attributed(Object.assign(fakeWebContents(session.fromPartition('persist:tunnel-profile')).wc, { id: 7 }), KEPT)).toBe(false)
+    expect(attributed(Object.assign(fakeWebContents(DEFAULT_SESSION).wc, { id: 7 }), KEPT)).toBe(false)
+    expect(attributed(Object.assign(fakeWebContents(session.fromPartition('persist:tunnel-profile')).wc, { id: 7 }), KEPT)).toBe(true)
     setTabTunnelSource(undefined)
   })
 })

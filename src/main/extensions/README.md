@@ -279,18 +279,19 @@ The extension's hidden offscreen document is never navigated.
 **[`site-reach.ts`](site-reach.ts) returns none for an app that runs in a partition of its own,
 without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
 including a site that holds grants, with its page menu entries, command keys, side panel,
-`webRequest` and `declarativeNetRequest` rules and `chrome.tabCapture`, and an allowed Web3 site runs in the session websites
-run in (`../shell/app-session.ts`), so they reach it as they reach any website. The one exception
-`GRANTED_APPS_CLAUSE` (`../../broker/policy/extension-manifest.ts`) carries is an app that runs
-in a session of its own: a plain `https` host or a loopback address the shell serves from a kept
-copy, and an app whose own tunnel entry the shared session does not follow. No content script, request,
-menu entry, tab API or side panel of an extension reaches such an app, and a named command key reaches an
-extension with no tab. Only history is shared, since it is the person's one list for every session:
-`chrome.history` and `chrome.topSites` list that app's pages. Naming extensions
-on such an origin's site-info popup or grant prompt would say something false, so this file
-matches that exception exactly rather than letting its own answer drift from what the install
-prompt and the extensions page already say. The check is an injected predicate (`runsApart`,
-real implementation `hasOwnPartition` in `../shell/app-session.ts`), so this file stays pure
+`webRequest` and `declarativeNetRequest` rules and `chrome.tabCapture`, and an allowed Web3 site
+runs in the session websites run in (`../shell/app-session.ts`), so they reach it as they reach any
+website; one with a tunnel entry of its own runs in that entry's profile session, as a website does, and the
+extensions loaded there reach it. An app that runs in a partition of its own (a plain `https` host or a
+loopback address the shell serves from a kept copy) has a session that no extension reaches: no content
+script, request, menu entry, tab API or side panel, and a named command key reaches an extension with no tab.
+Only history is shared, since it is the person's one list for every session: `chrome.history` and
+`chrome.topSites` list that app's pages. `GRANTED_APPS_CLAUSE`
+(`../../broker/policy/extension-manifest.ts`) carries the one exception: "except an app that runs in a
+session of its own". Naming extensions on such an origin's site-info popup or grant prompt would say
+something false, so this file matches that exception exactly rather than letting its own answer drift from
+what the install prompt and the extensions page already say. The check is an injected predicate
+(`runsApart`, real implementation `hasOwnPartition` in `../shell/app-session.ts`), so this file stays pure
 and testable against a fake, the same shape
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts)'s
 `SiteTrustSources` already uses it in.

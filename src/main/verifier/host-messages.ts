@@ -6,7 +6,7 @@
 // or a 'reply's `value` as the `SiteProvenance`/`LightClientState` its
 // request's kind promises -- merely because `protocol.ts` says it is one.
 
-import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
+import { BLOCK_ROOT_PATTERN, isHeaderPairs } from '../../protocols/verifier-host/protocol.js'
 import type { FromHost, HostReplies, HostRequest, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentPointer, ContentRoot, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { DdocReport, Refusal } from '../../protocols/resolution/providers.js'
@@ -111,12 +111,6 @@ function isLightClientState (value: unknown): value is LightClientState {
 /** The most the host may hand the shell in one request: its HTTP parser already bounds a request, and main does not rely on that. */
 const MAX_METHOD = 32
 const MAX_RELAYED_URL = 16 * 1024
-const MAX_RELAYED_HEADERS = 256
-const MAX_RELAYED_HEADER_BYTES = 16 * 1024
-
-function isHeaderPairs (value: unknown): value is ReadonlyArray<readonly [string, string]> {
-  return Array.isArray(value) && value.length <= MAX_RELAYED_HEADERS && value.every((pair) => Array.isArray(pair) && pair.length === 2 && typeof pair[0] === 'string' && typeof pair[1] === 'string' && pair[0].length + pair[1].length <= MAX_RELAYED_HEADER_BYTES)
-}
 
 /** A top-level-domain name in the spelling `servedName` reads it as, and a scheme some built-in protocol serves. */
 function isNameScheme (host: unknown, scheme: unknown): boolean {

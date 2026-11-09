@@ -2,12 +2,13 @@ import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
 import type { Net, Session } from 'electron'
 import { describe, expect, it, vi } from 'vitest'
+import { OWN_READ_HEADER } from '../../../loader/fetch/content-root.js'
 import { setRouteChallengeSource } from '../lookup-session.js'
 import { fetchThroughRoute } from '../routed-fetch.js'
 
 const SESSION = { name: 'route' } as unknown as Session
 
-interface FakeRequest extends EventEmitter { end: () => void, abort: () => void }
+interface FakeRequest extends EventEmitter { end: () => void, abort: () => void, setHeader: (name: string, value: string) => void, headers: Record<string, string> }
 
 function fakeNet (act: (request: FakeRequest) => void): { net: Pick<Net, 'request'>, options: unknown[] } {
   const options: unknown[] = []
@@ -17,6 +18,8 @@ function fakeNet (act: (request: FakeRequest) => void): { net: Pick<Net, 'reques
       const request = new EventEmitter() as FakeRequest
       request.end = () => { queueMicrotask(() => { act(request) }) }
       request.abort = () => { request.emit('error', new Error('aborted')) }
+      request.headers = {}
+      request.setHeader = (name, value) => { request.headers[name.toLowerCase()] = value }
       return request
     }
   } as unknown as Pick<Net, 'request'>
@@ -40,6 +43,17 @@ describe('a request made by main through an app\'s route', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('application/json')
     expect(await response.json()).toEqual({ ok: true })
+  })
+
+  it('marks a read of a host the verifier serves as the shell\'s own, and a read of any other host not at all', async () => {
+    const seen: Array<Record<string, string>> = []
+    const { net } = fakeNet((request) => { seen.push(request.headers); request.emit('response', answer(200, '{}')) })
+
+    await fetchThroughRoute(net, SESSION, 'https://score.eth/x.json', new AbortController().signal)
+    await fetchThroughRoute(net, SESSION, 'https://score.example/x.json', new AbortController().signal)
+
+    expect(seen[0]?.[OWN_READ_HEADER]).toMatch(/^[0-9a-f]{48}$/)
+    expect(seen[1]?.[OWN_READ_HEADER]).toBeUndefined()
   })
 
   it('answers the front\'s proxy challenge itself, which the application\'s login event never sees for a request without web contents', async () => {

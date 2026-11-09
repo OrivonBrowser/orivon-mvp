@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { originOfUrl, requestPartition, withoutHttpCache, withPartition, withRoute } from '../partition.js'
+import { originOf, requestPartition, withoutHttpCache, withPartition, withRoute } from '../partition.js'
 
 describe('requestPartition', () => {
   it('gives a top-level navigation the partition of the page it opens', () => {
@@ -19,11 +19,11 @@ describe('requestPartition', () => {
   })
 })
 
-describe('originOfUrl', () => {
+describe('originOf', () => {
   it('is the origin of an address, and undefined for one with none', () => {
-    expect(originOfUrl('https://app.ipfs.orivon/a/b.js?x=1')).toBe('https://app.ipfs.orivon')
-    expect(originOfUrl('data:text/plain,hello')).toBeUndefined()
-    expect(originOfUrl('not a url')).toBeUndefined()
+    expect(originOf('https://app.ipfs.orivon/a/b.js?x=1')).toBe('https://app.ipfs.orivon')
+    expect(originOf('data:text/plain,hello')).toBeUndefined()
+    expect(originOf('not a url')).toBeUndefined()
   })
 })
 

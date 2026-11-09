@@ -6,7 +6,7 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginPinnedSync: (origin: string) => pinned.has(origin)
 }))
 
-const { appSessionPartition, hasOwnPartition, needsNoVerifierHost, runsAsWebsite } = await import('../app-session.js')
+const { appSessionPartition, hasOwnPartition, isWebsitePageOfApp, needsNoVerifierHost, runsAsWebsite } = await import('../app-session.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
 const { partitionFor } = await import('../../../broker/grants/origin-hash.js')
 
@@ -36,21 +36,12 @@ describe('where an app served from a copy Orivon keeps runs', () => {
     expect(appSessionPartition(origin)).toBe(partitionFor(origin))
   })
 
-  it('is a partition of its own while the shared session would send the app differently from its own route', () => {
+  it('is where websites run whatever tunnel entry the site has: its session is the profile of the entry, as a website\'s', () => {
     served.add(NAMED)
-    setSiteRoutes({ profileFor: () => undefined, sharedLikeItsOwn: (origin) => origin !== NAMED })
-    expect(runsAsWebsite(NAMED)).toBe(false)
-    expect(hasOwnPartition(NAMED)).toBe(true)
-    expect(appSessionPartition(NAMED)).toBe(partitionFor(NAMED))
-  })
-
-  it('follows the route as it changes', () => {
-    served.add(NAMED)
-    let like = true
-    setSiteRoutes({ profileFor: () => undefined, sharedLikeItsOwn: () => like })
+    setSiteRoutes({ profileFor: (origin) => origin === NAMED ? 'nym' : undefined })
+    expect(runsAsWebsite(NAMED)).toBe(true)
+    expect(hasOwnPartition(NAMED)).toBe(false)
     expect(appSessionPartition(NAMED)).toBeUndefined()
-    like = false
-    expect(appSessionPartition(NAMED)).toBe(partitionFor(NAMED))
   })
 })
 
@@ -75,5 +66,21 @@ describe('which allowed apps keep the verifier host awake', () => {
     expect(needsNoVerifierHost(PLAIN)).toBe(false)
     pinned.add(PLAIN)
     expect(needsNoVerifierHost(PLAIN)).toBe(true)
+  })
+})
+
+describe('a website\'s page that was open when its origin became an app', () => {
+  it('is a page without the app-tab flag at an origin that runs where websites run', () => {
+    served.add(NAMED)
+    expect(isWebsitePageOfApp(`${NAMED}/page`, false)).toBe(true)
+  })
+
+  it('is not the page of a view that has the flag, nor a page at an origin the shell does not serve, nor a granted network page with a partition of its own', () => {
+    served.add(NAMED)
+    served.add(PLAIN)
+    expect(isWebsitePageOfApp(`${NAMED}/page`, true)).toBe(false)
+    expect(isWebsitePageOfApp('https://news.example/', false)).toBe(false)
+    expect(isWebsitePageOfApp(`${PLAIN}/`, false)).toBe(false)
+    expect(isWebsitePageOfApp('about:blank', false)).toBe(false)
   })
 })

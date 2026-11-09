@@ -6,7 +6,8 @@
 //
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-allowed-app.test.ts
-import { existsSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { afterAll, expect, it } from 'vitest'
 import type { Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
@@ -24,17 +25,17 @@ const files = (name: string, id: string): Record<string, string> => ({
   '.well-known/orivon.json': JSON.stringify({ orivonApiVersion: 0, id, name, version: '1.0.0', entry: 'index.html', assets: ['app.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } })
 })
 
-/** The newest page at `url`: whether the content-marker extension's content script ran in it, and which session it is in. */
-async function extensionFacts (app: Awaited<ReturnType<typeof launchElectron>>, url: string): Promise<{ marker: string | null, sharedSession: boolean } | null> {
-  return await app.evaluate(async ({ session, webContents }, address) => {
+/** The newest page at `url`: whether the content-marker extension's content script ran in it, whether it is in the shared session, and whether it is in the session `partition` names. */
+async function extensionFacts (app: Awaited<ReturnType<typeof launchElectron>>, url: string, partition = 'persist:direct-profile'): Promise<{ marker: string | null, sharedSession: boolean, inPartition: boolean } | null> {
+  return await app.evaluate(async ({ session, webContents }, [address, named]) => {
     const newest = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.getURL() === address).sort((a, b) => b.id - a.id)[0]
     if (newest === undefined) return null
     const marker = await Promise.race([
       newest.executeJavaScript('document.documentElement.dataset.orivonExtensionMarker ?? null') as Promise<string | null>,
       new Promise<null>((resolve) => setTimeout(() => { resolve(null) }, 2_500))
     ]).catch(() => null)
-    return { marker, sharedSession: newest.session === session.defaultSession }
-  }, url).catch(() => null)
+    return { marker, sharedSession: newest.session === session.defaultSession, inPartition: newest.session === session.fromPartition(named as string) }
+  }, [url, partition] as const).catch(() => null)
 }
 
 /** Marks the newest page at `url`, so a later read can tell a reloaded page from this one. */
@@ -129,6 +130,50 @@ it('[app:extensions-reach-an-allowed-site] runs the extensions\' content scripts
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       if (gatewayOpen) await gateway.close()
+    }
+  })
+}, TEST_TIMEOUT_MS)
+
+it('[app:extensions-reach-an-allowed-site] runs an allowed site with a tunnel entry of its own in the session of that entry, as a website, and the extensions copy there reaches it', async () => {
+  await runPhase('extensions on an allowed site with a tunnel entry', async (check) => {
+    const gateway = await startFixtureGateway({ allowed: await withDeclaredTree(files('Allowed tunnelled site', 'extensions.allowed.entry')) })
+    let app: Awaited<ReturnType<typeof launchElectron>> | undefined
+    try {
+      const root = gateway.roots['allowed']!
+      // A name, as a person reaches a site: the entry is the name's own.
+      const origin = 'https://entry.eth'
+      app = await launchElectron({
+        appPath: '.',
+        args: [HERMETIC_RESOLVER],
+        sandbox: true,
+        env: { ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'entry.eth': `ipfs://${root}` }), ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_BACKGROUND_PIN_DELAY_MS: '600000' },
+        seedProfile: async (dir) => {
+          seedExtensions(dir, ['content-marker'])
+          // The site has an entry of its own that keeps it off the tunnel the rest of the browser follows: a website's session apart from the shared one.
+          writeFileSync(join(dir, 'routes.json'), JSON.stringify({ version: 1, profiles: 1, kinds: 1, origins: [], via: {}, off: [origin], apart: [], apartProxy: [], apartDirect: [] }))
+        }
+      })
+      const running = app
+      await stubNativeDialogs(running)
+      const listening = await waitFor(async () => await running.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
+      if (!listening) throw new Error('the verifier host never reported listening')
+      await waitFor(() => running.windows().length >= 2)
+      const chrome = findChrome(running)
+      await waitForAddressBarStable(chrome)
+
+      await clickAddressBarRetrying(chrome, 'entry.eth')
+      await waitQuestion(running, 60_000)
+      await answerQuestion(running, 'Grant all')
+      let facts = null as PageFacts | null
+      await waitFor(async () => { facts = await pageAt(running, `${origin}/`); return facts?.ran === 'ran' && facts.hasProcess }, 60_000)
+      check(`the tab reloaded with its grants (${JSON.stringify(facts)})`, facts?.ran === 'ran' && facts.hasProcess)
+
+      let reached = null as Awaited<ReturnType<typeof extensionFacts>>
+      const ran = await waitFor(async () => { reached = await extensionFacts(running, `${origin}/`); return reached?.marker === 'ran' }, 30_000)
+      check(`the content script of the extensions copy in that session ran on the site (${JSON.stringify(reached)})`, ran && reached?.inPartition === true && reached.sharedSession === false)
+    } finally {
+      if (app !== undefined) await closeElectronApp(app)
+      await gateway.close()
     }
   })
 }, TEST_TIMEOUT_MS)

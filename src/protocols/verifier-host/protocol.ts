@@ -44,6 +44,15 @@ export interface NodeNotice { readonly type: 'node', readonly node: string, read
 /** Headers as the pairs they were sent in, so one sent twice stays twice. */
 export type HeaderPairs = ReadonlyArray<readonly [string, string]>
 
+/** The most header pairs one relayed head or request may carry, and the most bytes one pair may: both sides check the other's message against them. */
+export const MAX_RELAYED_HEADERS = 256
+export const MAX_RELAYED_HEADER_BYTES = 16 * 1024
+
+/** Whether `value` is a list of at most `MAX_RELAYED_HEADERS` name and value pairs of strings, none longer than `MAX_RELAYED_HEADER_BYTES`. */
+export function isHeaderPairs (value: unknown): value is HeaderPairs {
+  return Array.isArray(value) && value.length <= MAX_RELAYED_HEADERS && value.every((pair) => Array.isArray(pair) && pair.length === 2 && typeof pair[0] === 'string' && typeof pair[1] === 'string' && pair[0].length + pair[1].length <= MAX_RELAYED_HEADER_BYTES)
+}
+
 /** The largest piece of a body the shell sends in one message. */
 export const RELAY_CHUNK_BYTES = 128 * 1024
 /** The bytes the shell may have sent that the host has not yet said it wrote to the socket, per request: a file larger than this never piles up in the host. */
@@ -66,8 +75,10 @@ export type RelayToHost =
   | { readonly type: 'relay-end', readonly id: number }
   | { readonly type: 'relay-error', readonly id: number, readonly message: string }
 
-/** The origins the shell serves from a copy it keeps, whole each time. A request for one of their hosts is handed to the shell. */
-/** The origins the shell serves, and those of them it serves from a pin (a tunnel profile's request is handed over only for these). */
+/**
+ * The origins the shell serves from a copy it keeps, whole each time: a request for one of their hosts is handed to the shell.
+ * `pinned` are those of them it serves from a pin, the only ones a tunnel profile's request is handed over for.
+ */
 export interface ShellServes { readonly type: 'shell-serves', readonly origins: readonly string[], readonly pinned?: readonly string[] }
 
 export interface HostConfig {

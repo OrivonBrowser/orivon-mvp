@@ -1,7 +1,7 @@
 // What an allowed app that runs in the shared session must not inherit from the website its origin was before: the
 // workers and response caches that website installed, which the shell's check never saw. It reaches a session's storage
 // through the one call it needs, so a unit test needs no Electron, and it keeps one empty file per origin it has cleared.
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { originHash } from '../../broker/grants/origin-hash.js'
 
@@ -14,6 +14,8 @@ export interface WorkerStorage {
 export interface ClearedOrigins {
   has: (origin: string) => boolean
   add: (origin: string) => void
+  /** The origin stopped being served: whatever a website installs from now on is the website's, and the next serving clears it again. */
+  forget: (origin: string) => void
 }
 
 /**
@@ -26,14 +28,15 @@ export async function forgetWebsiteWorkers (target: WorkerStorage, origin: strin
 }
 
 /**
- * Run before an app that runs in the shared session is served, `from` its pin or live. Served live, the app was a website
- * there a moment ago (a first visit), so its workers go every time. Served from its pin at a start, they go once: an app
- * that moved to the shared session from a partition of its own finds the website's workers there already, and the app's
- * own, registered after, are left alone from then on.
+ * Run before an app that runs as a website is served, `from` its pin or live, with every session the website may have run in
+ * (`targets`: the shared one, the profile its entry names, any profile it has storage in). Served live, the app was a website
+ * a moment ago (a first visit), so its workers go every time. Served from its pin at a start, they go once, and again after
+ * the origin stops being served (`ClearedOrigins.forget`): an app that moved to these sessions from a partition of its own finds
+ * the website's workers there already, and the app's own, registered after, are left alone from then on.
  */
-export async function prepareWebsiteWorkers (target: WorkerStorage, origin: string, from: 'pin' | 'verifier', cleared: ClearedOrigins): Promise<void> {
+export async function prepareWebsiteWorkers (targets: readonly WorkerStorage[], origin: string, from: 'pin' | 'verifier', cleared: ClearedOrigins): Promise<void> {
   if (from === 'pin' && cleared.has(origin)) return
-  await forgetWebsiteWorkers(target, origin)
+  for (const target of targets) await forgetWebsiteWorkers(target, origin)
   cleared.add(origin)
 }
 
@@ -49,6 +52,14 @@ export function clearedOriginsIn (directory: string): ClearedOrigins {
       } catch {
         // Nothing to do: serving the app does not wait on a file.
       }
+    },
+    forget: (origin) => {
+      // A mark that stays only means the next serving from the pin clears nothing it should have: so it is the one failure that is told.
+      try {
+        rmSync(join(directory, originHash(origin)), { force: true })
+      } catch (error) {
+        console.error('[sessions] could not forget that a website\'s workers were cleared:', error)
+      }
     }
   }
 }
@@ -56,5 +67,5 @@ export function clearedOriginsIn (directory: string): ClearedOrigins {
 /** The cleared origins of a session that keeps nothing on disk. */
 export function clearedOriginsInMemory (): ClearedOrigins {
   const cleared = new Set<string>()
-  return { has: (origin) => cleared.has(origin), add: (origin) => { cleared.add(origin) } }
+  return { has: (origin) => cleared.has(origin), add: (origin) => { cleared.add(origin) }, forget: (origin) => { cleared.delete(origin) } }
 }

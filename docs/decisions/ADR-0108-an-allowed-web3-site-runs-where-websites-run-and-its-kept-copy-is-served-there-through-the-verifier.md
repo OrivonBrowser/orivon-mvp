@@ -30,10 +30,14 @@ refused every `orivon.*` call.
 An app on any other origin (a plain `https` host, a loopback address) keeps its own partition, *provisionally*: its
 requests never reach the verifier, so nothing outside a partition of its own can serve its kept copy or check its files.
 Serving those hosts on the network path too (for example, by sending them to the verifier at start) would settle it.
-So does an app with a route of its own, a tunnel entry or an entry that is off while the browser is on a tunnel: the
-app's own reads leave by its own route, so the shared session cannot send the app as its own route would. It keeps its
-partition until the shared session and the app's route agree. A tab's own tunnel choice does not apply to an installed
-app, as before.
+
+An allowed web3 site has a website's tunnel session and a website's tunnel identity, with no exception: the owner's rule is
+that behaviour is equal and consistent across web3 sites. With a tunnel entry of its own it runs in the profile session of
+that entry, apart from the shared one as any website with that entry does, and the copy of each extension in that session
+reaches it; with none it follows the browser-wide default and shares the shared identity. A tab's own tunnel choice applies
+to it as to a website. The route code (`route-hub.ts`'s `identityOf`, the controller, the leaving-route and tunnel-button
+rules) therefore treats an origin that runs as a website as a website, and only an app with a partition of its own as an
+app.
 
 For a request of a tunnel profile (a website tab with a tunnel of its own, whose page links to the app), the verifier
 hands the request to the shell only when the app is served from its pin, since then no byte leaves; while the app is only
@@ -53,7 +57,9 @@ across, that's what extensions are about", and "A Web3site is still a Website, f
 seamlessly as any other web3site." ADR-0044 already chose one extension instance on every page, granted apps included;
 ADR-0075 then put every allowed published app in a partition of its own from the first visit, where no extension is
 loaded, so the two contradicted each other. The owner also asked that installed apps keep opening at once and offline,
-which only the kept copy gives.
+which only the kept copy gives. On the tunnel an allowed site goes through: "Behavior should be equal and consistent
+across Web3sites, that's the rule to stick."
+
 
 ## Alternatives considered
 
@@ -109,8 +115,29 @@ session where the extensions are.
 - Extensions can block, redirect and record an allowed site, as on any website. A redirect can replace the site's code
   with an extension's while the site holds Orivon permissions; telling safe extensions from unsafe ones is a job for
   Web3 Score providers, later.
-- A plain `https` or loopback app, and an app with a route of its own, still run apart from the extensions (provisional,
-  above).
+- There is no per-app tunnel identity for an allowed web3 site: it has a website's. A person who wants such a site on a
+  tunnel of its own gives it an entry, as for any website, and it moves to that entry's profile session with its
+  extensions; a site with no entry follows the browser-wide default. Only a plain `https` or loopback app, which keeps a
+  partition of its own (provisional, above), has an identity of its own and runs apart from the extensions.
+- Clear browsing data keeps the two apart: "Cookies and site data" clears the websites' sessions with an allowed site's
+  origin excluded, "App data" clears that origin there. The Cache API cannot be told by origin, so the first empties it
+  for every origin of the session; it is a cache the app fills again.
+- A child host (`src/main/children/`) of such an app stays on the app's own partition, where the app's handler refuses a
+  third party the app holds no grant for; the shared session has no such handler.
+- A form POST into the app, and a redirect into it, are not stopped before the app's first request to give the view the
+  app-tab flag (a re-issue is a GET and would drop the body, and a redirect's method is not visible); the view is rebuilt
+  once the page has committed. Only a navigation the page reported as a plain GET is stopped and re-issued.
+- The website workers marker is removed whenever the origin stops being served, and the workers are cleared in every
+  session the website ran in (the shared one, the profile of its entry, a profile it has storage in), so a worker a
+  website registered between a block and a reinstall never answers for the app. A failure to clear them stops the app
+  from being served and says so in its own words.
+- The relay rule rests on `Sec-Fetch-*` being visible to the shell's web-request hook with the values the server receives
+  (`e2e-website-page-never-becomes-the-app` keeps that measured), so the shell decides on the same headers the host
+  does, the stamp included, and bypasses the HTTP cache for exactly what the host relays; a page cached before Allow
+  never commits as the app after Back. `treat-as-public-address` stays on a relayed answer: it puts a page of the app in the address space a website at the
+  same host is in, which is also the one a page served by a protocol handler (the partition) was in, so reaching a
+  loopback or private address differs for neither; the specs of an app reading its own files, its own listener and an
+  embedded local page pass with it.
 
 ## Reversibility
 

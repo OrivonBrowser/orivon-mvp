@@ -21,14 +21,6 @@ export function isRelayable (origin: string): boolean {
   }
 }
 
-function hostOf (origin: string): string | undefined {
-  try {
-    return new URL(origin).hostname
-  } catch {
-    return undefined
-  }
-}
-
 /** The origins the host is to hand to the shell. */
 export function relayableOrigins (): readonly string[] {
   return servedOrigins().filter(isRelayable)
@@ -45,17 +37,23 @@ export function relayHandlerFor (origin: string): AppRequestHandler | undefined 
 }
 
 /**
- * Whether the host hands this request for `origin` to the shell, as `ShellRelay.wants` decides it: the shell serves the origin, the
+ * Whether the host hands the request for `url` to the shell, as `ShellRelay.wants` decides it: the shell serves the origin, the
  * request is not a read of the shell's own, the browser made it for the site, and a tunnel profile's request (`tunnelled`) is for
- * an origin served from its pin. Asked by the session that makes the request, to keep it out of its HTTP cache.
+ * an origin served from its pin. Asked by the session that makes the request, with the headers it is about to send (the partition
+ * stamp among them), to keep it out of its HTTP cache.
  */
-export function isHandedToShell (origin: string, headers: RequestHeaders, tunnelled: boolean): boolean {
-  const host = hostOf(origin)
-  if (host === undefined) return false
+export function isHandedToShell (url: string, headers: RequestHeaders, tunnelled: boolean): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return false
+  }
+  const origin = parsed.origin
   if (relayHandlerFor(origin) === undefined) return false
   if (requestHeader(headers, OWN_READ_HEADER) === ownReadToken()) return false
   if (tunnelled && !isOriginPinnedSync(origin)) return false
-  return isOwnSiteRequest(headers, host)
+  return isOwnSiteRequest(headers, parsed.hostname)
 }
 
 /** What the host is started with: the secret that marks a read of the shell's own, and the origins it hands to the shell. */

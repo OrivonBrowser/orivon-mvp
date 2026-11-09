@@ -18,6 +18,8 @@ interface NavigateEventLike {
   readonly destination: { readonly url: string, readonly sameDocument: boolean }
   /** Absent where the engine does not name the source; null for a navigation no element started. */
   readonly sourceElement?: Element | null
+  /** The form data a navigation submits (a POST), or null for one that sends none. */
+  readonly formData?: FormData | null
 }
 
 interface NavigationLike {
@@ -82,6 +84,6 @@ export function installNavigationSource (): void {
   navigation.addEventListener('navigate', (event) => {
     // A script can build a NavigateEvent of its own and dispatch it; only the browser's say what started a navigation. A move inside the document is no navigation to another session.
     if (!event.isTrusted || event.destination.sameDocument) return
-    ipcRenderer.send(NAVIGATION_NOTE_CHANNEL, { href: document.URL, documentUrl, metaPolicies: metaPolicies(), destination: event.destination.url, source: describe(event) })
+    ipcRenderer.send(NAVIGATION_NOTE_CHANNEL, { href: document.URL, documentUrl, metaPolicies: metaPolicies(), destination: event.destination.url, source: describe(event), post: event.formData !== null && event.formData !== undefined })
   })
 }
