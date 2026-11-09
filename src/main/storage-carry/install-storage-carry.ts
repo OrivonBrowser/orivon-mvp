@@ -11,7 +11,9 @@ import { originFromUrl } from '../../broker/policy/origin.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { onServingChange, servedOrigins } from '../../loader/electron/app-partitions.js'
 import type { Subsystem } from '../registry.js'
+import { ensureSiteSession, sitePartitionForOrigin } from '../route/site-routes.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { runsAsWebsite } from '../shell/app-session.js'
 import { CarryGate } from './carry-gate.js'
 import type { CarryDue, CarryEnd } from './carry-gate.js'
@@ -45,9 +47,12 @@ export interface StorageCarryOptions {
   readonly eagerDelayMs?: number
 }
 
-/** The session a website at `origin` runs in, which is where the app's storage goes. */
-function websiteSessionFor (_origin: string): Session {
-  return session.defaultSession
+/** The session a website at `origin` runs in by its own entry, which is where the app's storage goes: the shared one, or the profile of the tunnel the origin has an entry for. */
+function websiteSessionFor (origin: string): Session {
+  const partition = sitePartitionForOrigin(origin)
+  if (partition === undefined) return session.defaultSession
+  ensureSiteSession(partition, false)
+  return session.fromPartition(partition)
 }
 
 export function installStorageCarry (options: StorageCarryOptions): CarryGate {
@@ -118,12 +123,14 @@ export function installStorageCarry (options: StorageCarryOptions): CarryGate {
   })
 
   const served = isOriginServedFromCacheSync
-  const target = session.defaultSession
-  webRequestOwnerFor(target).onBeforeRequest(1, { urls: ['https://*/*'], types: ['mainFrame'] }, (url) => holdsRequest({ url, resourceType: 'mainFrame' }, served), async (details, current) => {
-    if (!holdsRequest(details, served)) return current
-    const origin = originFromUrl(details.url)
-    if (origin !== null) await gate.ready(origin)
-    return current
+  // A page of the app waits in whichever website session it runs in: the shared one, or a tunnel profile's.
+  forEachWebsiteSession((website) => {
+    webRequestOwnerFor(website).onBeforeRequest(1, { urls: ['https://*/*'], types: ['mainFrame'] }, (url) => holdsRequest({ url, resourceType: 'mainFrame' }, served), async (details, current) => {
+      if (!holdsRequest(details, served)) return current
+      const origin = originFromUrl(details.url)
+      if (origin !== null) await gate.ready(origin)
+      return current
+    })
   })
 
   let passes = 0

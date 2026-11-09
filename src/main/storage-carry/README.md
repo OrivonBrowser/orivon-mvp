@@ -43,6 +43,12 @@ database or item of an earlier visit survives next to the app's, and no worker o
 written over the cookies of the same name, domain and path and go last. A carry that cannot finish clears what it wrote, closes the
 hidden pages before it does, and ends as failed with the reason; one that succeeds twice leaves the same session behind.
 
+**The target is the session a website at the origin runs in by its own entry.** That is the shared session, or the profile session of the
+tunnel the origin has an entry for (`../route/site-routes.ts`'s `sitePartitionForOrigin`; the app runs there as a website does, ADR-0108), and the
+hold is installed on every website session (`../sessions/website-sessions.ts`'s `forEachWebsiteSession`). An origin that keeps a
+partition of its own is not carried: `due` asks `runsAsWebsite`, which `hasOwnPartition` negates. A tab's own tunnel choice puts the site in
+another session; nothing is carried into that one.
+
 **Every moved app is carried soon after launch, one at a time, and a page waits for its app's carry to end.** The background
 carries begin `EAGER_DELAY_MS` after launch (*provisional*), so the start of the browser comes first, and walk the origins the
 shell serves; an origin that does not run as a website yet is looked at again every 30 s for ten minutes, and again whenever the
