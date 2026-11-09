@@ -390,11 +390,19 @@ it('splits from the right-click menu of a tab behind the one in front, and lays 
   }
 }, TEST_TIMEOUT_MS)
 
-/** A picture of a page that is behind the one in front. Playwright asks the page for a frame it is not drawing, which keeps the page laid out at the size it had until its view is next told its size; the picture itself may never arrive, so the wait is short and its failure no matter. */
+/** Asks for a picture of the viewport of a page that is behind the one in front, from the main process: it needs no Playwright page, which a macOS runner sometimes never attaches for a tab opened later (test/README.md, Known risk). It sends the commands Playwright's screenshot sends, with a clip. The page has no frame to draw, so the request stays outstanding and keeps it laid out at the size it had until its view is next told its size; the debugger stays attached for that reason, and the page goes with the window. The picture itself may never arrive, so the wait is short and its failure no matter. */
 async function pictureOfHiddenPage (app: ElectronApplication, part: string): Promise<void> {
-  const page = app.windows().find((candidate) => candidate.url().includes(part))
-  if (page === undefined) throw new Error(`no page for ${part}`)
-  await page.screenshot({ timeout: 1500 }).catch(() => undefined)
+  await app.evaluate(async ({ webContents }, target) => {
+    const wc = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL().includes(target))
+    if (wc === undefined) throw new Error(`no page for ${target}`)
+    if (!wc.debugger.isAttached()) wc.debugger.attach('1.3')
+    const picture = async (): Promise<void> => {
+      const { visualViewport: view } = await wc.debugger.sendCommand('Page.getLayoutMetrics') as { visualViewport: { pageX: number, pageY: number, clientWidth: number, clientHeight: number, scale: number } }
+      const clip = { x: view.pageX, y: view.pageY, width: Math.ceil(view.clientWidth), height: Math.ceil(view.clientHeight), scale: view.scale }
+      await wc.debugger.sendCommand('Page.captureScreenshot', { format: 'png', clip, captureBeyondViewport: false })
+    }
+    await Promise.race([picture().catch(() => undefined), new Promise((resolve) => setTimeout(resolve, 1500))])
+  }, part)
 }
 
 it('lays a page out at its pane when it was captured behind the one in front and is split in from the menu', async () => {
