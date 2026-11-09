@@ -11,8 +11,8 @@ Orivon reads the proxy settings of the computer itself (the Windows registry, `s
 KDE's `kioslaverc`, and the environment's `auto_proxy`), in the same order and with the same desktop detection as
 Chromium's `system` mode, and applies the result with `session.setProxy` to every session that would otherwise follow the
 system. A manual proxy becomes `fixed_servers` with the system's own rules and exceptions plus every routed suffix
-(`BUILTIN_ADDRESSES.routedSuffixes()`). A proxy script the system names by URL is fetched by Orivon, direct, and embedded in
-a `data:` PAC of Orivon's own that answers `DIRECT` for the routed suffixes before the system's script runs. The applied
+(`BUILTIN_ADDRESSES.routedSuffixes()`) as `*.suffix`, the spelling the resolver rules map to the verifier. A proxy script
+the system names by URL is fetched by Orivon, direct, and embedded in a `data:` PAC of Orivon's own that answers `DIRECT` for the routed suffixes before the system's script runs. The applied
 config is accepted only while Chromium's own answer, asked of a session that stays on `{ mode: 'system' }`, agrees with it
 for a set of ordinary canary URLs; when it does not, and for whatever cannot be copied (automatic detection on its own, KDE
 reversed exceptions, a setting that cannot be read, a script that cannot be fetched), the sessions stay on
@@ -22,6 +22,8 @@ script every 30 minutes or when its URL changes (provisional numbers). The guard
 a name is sent.
 
 ## Context
+
+Names Orivon serves are resolved inside the browser, never by the operating system or by a proxy.
 
 A name the verifier serves (`.eth`, any other top-level domain a protocol serves, `.orivon`) is answered on this computer
 through Chromium's `--host-resolver-rules`. A session in `{ mode: 'system' }` asks the system's proxy first, and that mode
@@ -87,8 +89,10 @@ commands, so each system's output is a unit fixture.
   never overwritten. `app.setProxy` stays on `{ mode: 'system' }`.
 - Orivon's direct requests and lookups move from the T20 session to a mirrored session of their own
   (`orivon-system-mirror`).
-- What still refuses a name: automatic detection that finds a script, KDE reversed exceptions, Windows per-machine
-  policy, an active dial-up or VPN connection with settings of its own, a script that answers at random, a script that
+- The exceptions carry both spellings of a name the verifier serves, `*.eth` and `*.eth.`: the resolver rules refuse the
+  root-dot spelling (`MAP *.eth. ~NOTFOUND`), so a name the proxy does not carry goes direct and fails as not found, and no
+  resolver or proxy is asked for it.
+- What still refuses a name: automatic detection that finds a script, KDE reversed exceptions, Windows per-machine policy, an active dial-up or VPN connection with settings of its own, a script that answers at random, a script that
   cannot be fetched. `docs/known-limitations.md`, T90, T84, T20 and the egress section on these names change with the
   behaviour.
 - Provisional until measured: that Chromium's PAC context runs `Function(...)` and reads an accessor `FindProxyForURL`

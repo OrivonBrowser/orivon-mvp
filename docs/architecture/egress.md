@@ -84,7 +84,7 @@ and in tabs opened from it, runs in that tunnel's profile until the tab closes, 
 | `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
 | `src/main/route/dead-end.ts` | Listens on a random `127.0.0.1` port, accepts and closes; reads and sends nothing | The place a session is pointed at to stop it (a session made while the whole browser is on the tunnel, one that could not be pointed, the requests made with no session), so a stopped request fails at once and no other listener on this computer is shown a destination name | Loopback |
 | `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions, and of every other session the runtime creates while the whole browser is on the tunnel: the front, or the dead end (the moment a session is made or switched on, before the front is had); also `app.setProxy` for the requests made with no session | Where a session takes the tunnel; it marks a session as changing from before each `setProxy` until the call ends (`proxy-answers.ts`) | Routed (it makes sessions take it) |
-| `src/main/route/route-subsystem.ts` | Nothing of its own: wires the sessions, `app.setProxy`, the system-proxy session that T20 asks and the system-mirror session that Orivon's direct requests and the lookups about a site set to off use; registers the guard that keeps a name the verifier serves from a proxy the system sets, on every website session | Starting the routes | Routed (it makes the rest take the tunnel) |
+| `src/main/route/route-subsystem.ts` | Nothing of its own: wires the sessions, `app.setProxy`, the system-proxy session that T20 asks, the system-mirror session that Orivon's direct requests and the lookups about a site set to off use, and the system-check session where a copy of the system's proxy settings is tried (`proxy-mirror/`; it runs `gsettings`, and sets a proxy on the sessions that follow the system only after the check); registers the guard that keeps a name the verifier serves from a proxy the system sets, on every website session | Starting the routes | Routed (it makes the rest take the tunnel) |
 | `src/main/self-update/update-check-runner.ts` | GitHub's releases API | Looking for a newer release | Tunnelled while the whole browser is on it (`ownFetch`): the check goes through the tunnel or does not happen. Not routed otherwise |
 | `src/main/sessions/web-context-host.ts` | Nothing from the session: its proxy is a port nothing listens on | A web context answers `https` itself (through `reach`), refuses `http` and WebSocket | Takes the app's route through `reach`; the session's proxy only confines it |
 | `src/main/settings/proxy-checks.ts` | Nothing: uses only `isIPv6` | Reading a SOCKS5 address | Loopback |
@@ -143,7 +143,7 @@ session are given the root-dot spelling alone (below), and send the name itself 
 tunnel and not the system's proxy. A session that follows the system's proxy cannot
 be given a bypass list (`{ mode: 'system' }` takes none), so the proxy would be asked to carry `CONNECT name.eth:443`, would
 learn the name, and could answer a plain `http://name.eth/` with a page of its own that loads under the `.eth` address (the
-HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse). Two things keep the names from it
+HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse). Three things keep the names from it
 ([T90](security-model.md)):
 
 - **A proxy of the environment (Linux, no desktop proxy setting).** Before Chromium starts, `src/main/verifier/no-proxy.ts`
@@ -151,6 +151,16 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   resolves those names direct. A program Orivon starts inherits the variable, including one opened with `openExternal` or
   `openPath`, and asks no proxy about these names either. A proxy found with a script (`auto_proxy`) is not exempted this
   way; the guard below covers it.
+- **A manual proxy in GNOME's settings (and the desktops that share them).** `src/main/route/proxy-mirror/` reads the settings
+  (`gsettings list-recursively org.gnome.system.proxy`, run without a shell, three seconds at most, its output never logged) and
+  sets every session that would follow the system to the same servers and exceptions, plus `*.suffix` for every
+  routed suffix in both spellings (`*.eth` and `*.eth.`), so Chromium resolves those names direct, and the root-dot spelling
+  (`name.eth.`) fails there as not found, because the resolver rules refuse it. A copy reaches a session only after `orivon-system-check`, a session of the
+  mirror's own set to it, answers as `orivon-system-proxy` (Chromium's own answer, never leaving `{ mode: 'system' }`) does for
+  two ordinary addresses and up to three the system's exceptions cover; a difference, read again at once, leaves every session
+  on `{ mode: 'system' }`. Settings that name a script or detection, cannot be carried exactly or cannot be read stay on it
+  too, but a copy already applied outlasts a read that failed, or a check that got no answer, while Chromium's answers for the two
+  ordinary addresses are what they were when it passed. The settings are read every thirty seconds and Chromium's answer asked every two. This runs nothing on other desktops, Windows or macOS.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
   temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held
@@ -201,7 +211,7 @@ rule is generated from the same list of routed suffixes as the rules for the dot
 | Any name Chromium would resolve itself, from any session, process or code path | The `--host-resolver-rules` switch ends with `MAP *.suffix. ~NOTFOUND` and `MAP *.suffix..* ~NOTFOUND` for every routed suffix (`resolver-rules.ts`), after the rules already given, as for onion names; the second finds a host with more than one trailing dot, an empty label no valid name has. Neither matches the dotless spelling, which keeps `MAP *.suffix` to the verifier. This is the floor under the rows below |
 | A session pointed at a front, and the requests made with no session while the whole browser is on a tunnel | The bypass rules carry `*.suffix.` (`rootDotBypass`, and `sharedBypass` and a website's `bypass` in both spellings: `route-subsystem.ts`, `route-controller.ts`), so the name goes direct and fails as not found. An app's routed session, a temporary routed tab and the requests made with no session carry the root-dot spelling alone |
 | A front, asked for a root-dot name anyway | `front.ts` answers 403 and never asks the route, however many dots the host ends in: no bypass list names more than one, and Chromium keeps `vitalik.eth..` as a host of its own, so a session that sends it to the front would otherwise hand it to the route's far end |
-| A session that follows the system | `namesVerifierHost` names the root-dot spelling too, so the guard above cancels the request while the session's proxy would carry it; a request the proxy answers `DIRECT` for meets the resolver clause |
+| A session that follows the system | `namesVerifierHost` names the root-dot spelling too, so the guard above cancels the request while the session's proxy would carry it; a request the proxy answers `DIRECT` for meets the resolver clause, as every one does behind a proxy copied from GNOME's settings, whose exceptions carry `*.suffix.` |
 | The verifier host's CCIP-Read fetch | `egress.ts` refuses a CCIP-Read address at a root-dot name (`namesThisComputer`), with or without a proxy and through a tunnel, so neither the system's resolver nor the tunnel's far end is asked |
 | A server address typed in Settings, a manifest's host | Refused as before: a trailing dot is not an address of a server on the internet, and a host with one is not a bare host name |
 | An app's `orivon.net` | The broker reads the root dot away and asks Chromium's resolver (`chromium-resolver.ts`), which the clause above covers |

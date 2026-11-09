@@ -29,6 +29,11 @@ import { onionRefused } from './onion-guard.js'
 import { loadRefusals } from './load-refusals.js'
 import { trackProxySet } from './proxy-answers.js'
 import { createDirectFetch } from './direct-fetch.js'
+import { setMirrorStatusSource } from './proxy-mirror/mirror-status.js'
+import { createProxyMirror } from './proxy-mirror/proxy-mirror.js'
+import type { ProxyMirror } from './proxy-mirror/proxy-mirror.js'
+import { readGnomeSettings } from './proxy-mirror/run-readers.js'
+import { sourceOf } from './proxy-mirror/settings-source.js'
 import { guardOfSession, namesVerifierHost, rootDotBypassRules, routedBypassRules, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
@@ -82,6 +87,8 @@ export const routeSubsystem: Subsystem = {
     // Before any session is made: the folder a session opens is moved first, and the choice is not guessed when the settings cannot be read.
     migrateRouteKinds(store, () => moveNymProfileToProxy(userData), settingsFileProblem(join(userData, 'settings.json')) === undefined)
     const isolationSecret = profileIsolationSecret(userData)
+    // Set below, once the sessions it asks exist; until then, and wherever the system's settings cannot be copied, a session that follows the system is on its own config.
+    let proxyMirror: ProxyMirror | undefined
     const routes = createRouteService({
       store,
       isolationSecret,
@@ -110,6 +117,7 @@ export const routeSubsystem: Subsystem = {
         ownProxy: hasOwnProxy,
         followsSystem,
         deadEnd: deadEndRule,
+        systemConfig: () => proxyMirror?.config() ?? { mode: 'system' },
         embedPartition: embedPartitionFor,
         allContents: () => webContents.getAllWebContents(),
         onContentsCreated: (listener) => { app.on('web-contents-created', (_event, contents) => { listener(contents) }) },
@@ -170,6 +178,27 @@ export const routeSubsystem: Subsystem = {
       }
       return mirrorSession
     }
+    // The copy of the system's settings is tried on a session of its own before any other takes it, and Chromium's answer for the same addresses is asked of the one above.
+    let checkSession: Session | undefined
+    const systemCheckSession = (): Session => {
+      if (checkSession === undefined) {
+        const made = session.fromPartition('orivon-system-check')
+        checkSession = made
+        markOwnProxy(made)
+        markFollowsSystem(made)
+      }
+      return checkSession
+    }
+    const source = sourceOf(process.platform, process.env)
+    proxyMirror = createProxyMirror({
+      source,
+      read: source === 'gnome' ? readGnomeSettings : undefined,
+      held: heldToNym,
+      systemAnswer: async (url) => await systemProxySession().resolveProxy(url),
+      check: { set: async (config) => { await systemCheckSession().setProxy(config) }, answer: async (url) => await systemCheckSession().resolveProxy(url) },
+      apply: async () => await routes.controller.systemChanged()
+    })
+    setMirrorStatusSource(proxyMirror.status)
     setDirectLookupSource(() => routes.everywhere() ? systemMirrorSession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createDirectFetch(net, systemMirrorSession())
@@ -303,6 +332,10 @@ export const routeSubsystem: Subsystem = {
       defaultKind: routes.defaultKind
     })
     publishRoutes(ctx, routes)
+    // Registered before the first read is awaited: a quit during it must not leave a pass that goes on to set sessions.
+    app.once('will-quit', () => { proxyMirror?.stop() })
+    // The first read of the system's settings comes before the sessions are waited for, so the first window finds them copied.
+    await proxyMirror.start()
     // Whatever loads next (the person's extensions, the first window) finds the sessions already following the setting.
     await routes.controller.settled()
     // Its first set waits for the stop its adoption gave it, so it is awaited here as well.

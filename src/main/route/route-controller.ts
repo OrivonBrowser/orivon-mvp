@@ -97,8 +97,8 @@ export interface RouteController {
    * either); undefined for a session that is not pointed at anything, whose requests follow the system.
    */
   tunnelOf: (session: object) => TunnelKind | 'held' | undefined
-  /** `systemConfig` now answers differently: every session that follows the system is set to it, except one on a front or the dead end, which takes it when it leaves. Resolves when the sets ended. */
-  systemChanged: () => Promise<void>
+  /** `systemConfig` now answers differently: every session that follows the system is set to it, except one on a front or the dead end, which takes it when it leaves. Resolves when the sets ended, with whether every one did so cleanly; the next call sets again a session that did not. */
+  systemChanged: () => Promise<boolean>
   /** A session that sets a proxy of its own and follows `systemConfig` all the time is set to it now and at every `systemChanged`, and never pointed at a front. */
   mirrorSystem: (session: RouteSession) => Promise<void>
   /** Points the shared identity once at start: its sessions, and the requests made with no session. Nothing while the browser-wide setting is off. */
@@ -407,7 +407,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     // The session that follows the system is stopped for an instant when it is made (before its maker has marked it), but it sends as the system does, so it is never reported as held.
     tunnelOf: (session) => deps.followsSystem?.(session as RouteSession) === true ? undefined : pointedVia.get(session as RouteSession) ?? (deps.ownProxy?.(session as RouteSession) === true ? 'held' : undefined),
     // A routed origin's sessions are on its front, or being stopped and pointed at it.
-    systemChanged: async () => { await follow.changed([...known].filter(([origin]) => !hub.isRouted(origin)).flatMap(([, sessions]) => [...sessions.keys()])) },
+    systemChanged: async () => await follow.changed([...known].filter(([origin]) => !hub.isRouted(origin)).flatMap(([, sessions]) => [...sessions.keys()])),
     mirrorSystem: async (session) => {
       await follow.mirror(session)
       // The stop its adoption put it under while the browser was on the tunnel is over: it sets its own proxy.
