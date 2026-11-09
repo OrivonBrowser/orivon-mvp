@@ -110,11 +110,13 @@ function unlisted (devices: readonly GpuDevice[] | undefined): WebGpuState {
   return result('unavailable', 'gpu-not-listed', `WebGPU is off because Chromium gave ${gave}. On Linux it does that for every card and driver not on its list.`)
 }
 
-/** Whether pages are drawn on the processor: Chromium blocks WebGPU there, on Windows too. A Windows computer whose only
- * device is Microsoft's Basic Render Driver (WARP) reports `gpu_compositing` as `disabled_software` and `webgpu` as
- * `unavailable_software`, and a page gets no adapter from it. */
+/** Whether pages are drawn on the processor: Chromium blocks WebGPU there. On Windows only Chromium's own status for
+ * WebGPU counts: compositing can fall back to the processor (a blocklisted driver, a remote session) while WebGPU
+ * still works, and a device list cannot tell a software renderer from a card Dawn accepts. A computer whose only
+ * device is Microsoft's Basic Render Driver (WARP) reports `webgpu` as `unavailable_software`. */
 function drawsInSoftware (inputs: WebGpuInputs): boolean {
   const { features, devices } = inputs
+  if (inputs.platform === 'win32') return isSoftware(features['webgpu'])
   if (isSoftware(features['gpu_compositing']) || isSoftware(features['webgpu'])) return true
   return devices !== undefined && devices.every(isSoftwareDevice)
 }

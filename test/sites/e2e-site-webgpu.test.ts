@@ -3,11 +3,13 @@
 // graphics card behind it: Chromium gives no adapter there, so the question is the one that turns the graphics mode on
 // and offers a restart, which is most of what the spec drives: the question, the grant (the setting turned on, the allow
 // kept, the page told it has no adapter, the offer to start again), the block, an origin that holds grants, which is
-// not asked, and a private window, which is not asked to restart. Restart Orivon is never pressed. The mode and its
-// restart exist on an X11 session only, so those tests run on Linux alone; the others run on every system and expect
-// what that system does: a Mac gives an adapter and asks for it, and a computer with no graphics card that is not on
-// X11 (GitHub's Windows runner) gives none and asks nobody. The path with an adapter to give on a Linux computer that
-// has a card is run by test/page/e2e-webgpu-x11.test.ts. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
+// not asked, and a private window, which is not asked to restart. Restart Orivon is never pressed.
+//
+// The mode and its restart exist on an X11 session only. Their tests are the row `webgpu-grant-restarts-on-x11` and run
+// on Linux alone (the app-behaviours guard reads their gate as it is spelled). The others run on every system and
+// expect what that system does: a Mac gives an adapter and asks for it, and a computer with no graphics card that is
+// not on X11 (GitHub's Windows runner) gives none and asks nobody. The path with an adapter to give on a Linux computer
+// that has a card is run by test/page/e2e-webgpu-x11.test.ts. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
 import { mkdirSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -184,6 +186,22 @@ it('[app:webgpu-asked-per-site] asks a website that wants WebGPU wherever the an
     await expectNoPrompt(app)
     const kept = asked ? { webgpu: 'block' } : undefined
     expect(await waitFor(() => JSON.stringify(siteAnswers(dir, origins.b)) === JSON.stringify(kept))).toBe(true)
+
+    // Where Chromium has an adapter to give, a grant keeps it for the site: the page gets it, the answer is kept, and
+    // the site is not asked again. (On X11 a grant turns the graphics mode on instead, which the next test drives.)
+    if (!X11 && asked) {
+      const view = await visit(app, chrome, `${origins.a}/`)
+      await view.click('#gpu')
+      const prompt = await waitAsk(app)
+      expect(await textOf(prompt, '.origin')).toEqual([origins.a])
+      await press(prompt, 'Grant WebGPU')
+      expect(await result(view)).toBe('adapter')
+      expect(await waitFor(() => JSON.stringify(siteAnswers(dir, origins.a)) === JSON.stringify({ webgpu: 'allow' }))).toBe(true)
+      await clear(view)
+      await view.click('#gpu')
+      expect(await result(view)).toBe('adapter')
+      await expectNoPrompt(app)
+    }
     expect(settingOf(dir)).not.toBe(true)
 
     expect(await dialogsAsked(app)).toEqual([])
@@ -193,7 +211,7 @@ it('[app:webgpu-asked-per-site] asks a website that wants WebGPU wherever the an
   }
 }, E2E_TIMEOUT_MS)
 
-it.skipIf(!X11)('turns the graphics mode on and offers a restart when a website is granted WebGPU, and offers nothing more after Later', async () => {
+it.skipIf(process.platform !== 'linux')('[app:webgpu-grant-restarts-on-x11] turns the graphics mode on and offers a restart when a website is granted WebGPU, and offers nothing more after Later', async () => {
   const { app, chrome } = await launchShell()
   try {
     await stubDialogs(app)
@@ -286,7 +304,7 @@ it('[app:webgpu-asked-per-site] asks nothing in a private window unless Chromium
   }
 }, E2E_TIMEOUT_MS)
 
-it.skipIf(!X11)('says the tabs and windows open again when Orivon continues where it left off, and still never presses Restart Orivon', async () => {
+it.skipIf(process.platform !== 'linux')('[app:webgpu-grant-restarts-on-x11] says the tabs and windows open again when Orivon continues where it left off, and still never presses Restart Orivon', async () => {
   const continuing = async (dir: string): Promise<void> => {
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'startup.mode': 'continue' } }))
@@ -312,7 +330,7 @@ it.skipIf(!X11)('says the tabs and windows open again when Orivon continues wher
   }
 }, E2E_TIMEOUT_MS)
 
-it.skipIf(!X11)('says nothing of this page opening again when its tab carries a tunnel choice of its own, which a launch tab would lose', async () => {
+it.skipIf(process.platform !== 'linux')('[app:webgpu-grant-restarts-on-x11] says nothing of this page opening again when its tab carries a tunnel choice of its own, which a launch tab would lose', async () => {
   const { app, chrome } = await launchShell()
   try {
     await visit(app, chrome, `${origins.a}/`)
@@ -337,7 +355,7 @@ it.skipIf(!X11)('says nothing of this page opening again when its tab carries a 
   }
 }, E2E_TIMEOUT_MS)
 
-it.skipIf(!X11)('keeps the restart offer up through a press on the address bar\'s chip and the site\'s own pages, lists WebGPU on the chip after one, and ends the offer when the tab goes to another site', async () => {
+it.skipIf(process.platform !== 'linux')('[app:webgpu-grant-restarts-on-x11] keeps the restart offer up through a press on the address bar\'s chip and the site\'s own pages, lists WebGPU on the chip after one, and ends the offer when the tab goes to another site', async () => {
   const { app, chrome } = await launchShell()
   try {
     const view = await visit(app, chrome, `${origins.a}/`)

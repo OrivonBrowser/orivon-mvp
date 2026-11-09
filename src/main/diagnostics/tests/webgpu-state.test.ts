@@ -202,6 +202,15 @@ describe('webGpuState', () => {
       expect(webGpuState(windows([warp], { features, adapter: { kind: 'adapter' } })).state).toBe('available')
     })
 
+    it('does not say pages are drawn on the processor on Windows from compositing alone or from an empty device list, since WebGPU can work with either', () => {
+      const nvidia = device({ vendorId: 0x10de, driverVersion: '31.0.15.4601' })
+      const compositing = { webgpu: 'enabled', gpu_compositing: 'disabled_software' }
+      expect(webGpuState(windows([nvidia], { features: compositing, adapter: undefined }))).toMatchObject({ state: 'unknown', reason: 'unknown' })
+      expect(webGpuState(windows([nvidia], { features: compositing })).reason).toBe('no-adapter')
+      expect(webGpuState(windows([], { adapter: undefined })).reason).toBe('unknown')
+      expect(webGpuState(windows([], { features: compositing })).reason).toBe('no-adapter')
+    })
+
     it('does not call Microsoft\'s software renderer a missing graphics card on Windows', () => {
       const warp = device({ vendorId: 0x1414, driverVersion: '10.0.26100.1' })
       expect(webGpuState(windows([warp], { adapter: undefined })).state).toBe('unknown')
