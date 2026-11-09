@@ -1,12 +1,11 @@
 // Wires the carry into the browser: the first page of a moved app, in the session websites run in, waits at the web-request
-// owner until the app's old storage has been carried (`carry-gate.ts`), and the outcome is recorded in the profile so that it
-// never runs twice (`marker.ts`).
+// owner until the app's old storage has been carried (`carry-gate.ts`), and the outcome is recorded in the profile so that a carry
+// that finished is not made again (`marker.ts`).
 
 import { session } from 'electron'
 import { join } from 'node:path'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { isCarryPageUrl } from '../../loader/electron/carry-page.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import type { Subsystem } from '../registry.js'
 import { webRequestOwnerFor } from '../sessions/web-request-owner.js'
@@ -15,6 +14,7 @@ import { CarryGate } from './carry-gate.js'
 import type { CarryDue } from './carry-gate.js'
 import { cookieJarOf, openCarryPage } from './carry-pages.js'
 import { carryStorage } from './carry-runner.js'
+import { holdsRequest } from './hold-rule.js'
 import { MARKER_FILE, needsCarry, readMarker, withOutcome, writeMarker } from './marker.js'
 import type { CarryMarker } from './marker.js'
 import { oldPartitionDirectory, storageKindsOnDisk, storageNotCarried } from './old-data.js'
@@ -68,13 +68,9 @@ export function installStorageCarry (options: StorageCarryOptions): CarryGate {
     onBound: (origin) => { console.warn(`[carry] ${origin}: its page loads before the carry has ended; nothing it makes meanwhile is replaced`) }
   })
 
-  // A main-frame page of a served origin: a subresource or a frame of another site is never the app's first load.
-  const holds = (url: string): boolean => {
-    if (isCarryPageUrl(url)) return false
-    const origin = originFromUrl(url)
-    return origin !== null && isOriginServedFromCacheSync(origin)
-  }
-  webRequestOwnerFor(target).onBeforeRequest(1, { urls: ['https://*/*'], types: ['mainFrame'] }, holds, async (details, current) => {
+  const served = isOriginServedFromCacheSync
+  webRequestOwnerFor(target).onBeforeRequest(1, { urls: ['https://*/*'], types: ['mainFrame'] }, (url) => holdsRequest({ url, resourceType: 'mainFrame' }, served), async (details, current) => {
+    if (!holdsRequest(details, served)) return current
     const origin = originFromUrl(details.url)
     if (origin !== null) await gate.ready(origin)
     return current

@@ -11,6 +11,7 @@ session websites run in, for an app that now runs there ([`../shell/app-session.
 | `carry-gate.ts` | Pure: starts the carry at the first page of an origin, holds every page of it until the carry ends or a bound passes |
 | `carry-runner.ts` | One origin's carry over two `CarrySide`s (a cookie jar and a hidden page each): cookies, then local storage, then databases; never throws |
 | `page-code.ts` | The script that runs in the two hidden pages: the value encoding and the IndexedDB, local storage and cookie-free reads and writes, as one string of plain JavaScript |
+| `hold-rule.ts` | Pure: which request the hold applies to (a main-frame page of a served origin, not the empty document) |
 | `carry-pages.ts` | The Electron half: a hidden view no window holds, at the shell's empty document ([`../../loader/electron/carry-page.ts`](../../loader/electron/carry-page.ts)), and a cookie jar over a session |
 | `cookies.ts` | Pure: a cookie of the old partition as a cookie to set, and whether the target holds it |
 | `marker.ts` | Pure, apart from reading and writing the file: which origins were carried, tried and failed, with the report |
@@ -38,6 +39,12 @@ verifier host the carry needs (the write goes through the relay, below) is the o
 web-request owner for the carry to end, up to `CARRY_HOLD_MS`; the carry goes on after that, and because it replaces nothing
 (next note) a page that has already made its own cookie, item or database loses nothing and the carry reports what it
 left alone. The alternative, carrying every moved origin at start, would wake the verifier host for apps that stay closed.
+
+**The hold decides the kind of request itself.** The web-request owner registers one Electron listener per event with the union of
+every handler's filter, and offers a handler every request whose URL its `matches` accepts, whatever type its own filter named. A hold
+that waited on any request to a served origin made the shell's own reads of that origin wait too, and the verifier answered some
+of them itself instead of handing them to the shell. `hold-rule.ts` takes the request type as an argument and the handler returns
+every request that is not a main-frame page at once.
 
 **Nothing in the website session is replaced.** A cookie, a local storage item or a database that the target holds is kept,
 so a carry that is cut short, or that runs after the app has loaded once, is safe to run again. That is why a carry whose
