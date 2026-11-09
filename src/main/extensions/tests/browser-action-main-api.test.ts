@@ -84,12 +84,14 @@ describe('activateFromMain', () => {
   it('stops after the invocation is counted when the interceptor handles the click', () => {
     const tab = { id: 7 }
     const ctx = fakeCtx(tab)
+    const window = { id: 3 }
+    ctx.store.tabToWindow.set(tab, window)
     const api = new BrowserActionAPI(ctx)
     withActions(api)
     const intercept = vi.fn(() => true)
     setActionClickInterceptor(intercept)
     api.activateFromMain(B, tab as never, ANCHOR)
-    expect(intercept).toHaveBeenCalledWith(B, tab)
+    expect(intercept).toHaveBeenCalledWith(B, tab, window)
     expect(recorder).toHaveBeenCalledWith(B, tab)
     expect(ctx.router.sendEvent).not.toHaveBeenCalled()
   })
