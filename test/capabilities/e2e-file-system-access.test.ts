@@ -14,11 +14,12 @@
 // the same check handler with the same details a picked one does, so the
 // drop exercises the gate itself; only the dialog is left out.
 //
-// Hermetic: one throwaway server on loopback and one temp directory.
+// Hermetic: one throwaway server on loopback and one throwaway directory, made inside the checkout and not in
+// `os.tmpdir()`: Chromium refuses a dropped folder under a system or application-data folder (on Windows the
+// temporary folder is under AppData), and the page's getAsFileSystemHandle() then never settles.
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { HERMETIC_RESOLVER, evaluateRetrying } from '../support/smoke-helpers.mjs'
@@ -65,7 +66,9 @@ it('lets an ordinary website read and write a file the person handed it, and ref
   await runPhase('file-system-access', async (check) => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     let server: Server | undefined
-    const dir = mkdtempSync(join(tmpdir(), 'orivon-fsa-e2e-'))
+    const scratch = join(process.cwd(), 'qa-artifacts', 'scratch')
+    mkdirSync(scratch, { recursive: true })
+    const dir = mkdtempSync(join(scratch, 'orivon-fsa-e2e-'))
     const file = join(dir, 'export.txt')
     const folder = join(dir, 'folder')
     const inner = join(folder, 'inner.txt')
