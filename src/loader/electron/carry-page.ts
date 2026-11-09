@@ -9,11 +9,17 @@ const TOKEN = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(18)), 
 /** The path of the empty document. */
 export const CARRY_PAGE_PATH = `/.well-known/orivon/storage-carry-${TOKEN}`
 
-const EMPTY_DOCUMENT = '<!doctype html><html><head><meta charset="utf-8"><title></title></head><body></body></html>'
+/** The name of the meta element that tells a page which carry it belongs to. */
+export const CARRY_NONCE_META = 'orivon-storage-carry'
 
-/** The address of the empty document at `origin`. */
-export function carryPageUrl (origin: string): string {
-  return `${new URL(origin).origin}${CARRY_PAGE_PATH}`
+const NONCE = /^[0-9a-f]{16,64}$/
+
+const documentFor = (nonce: string | null): string =>
+  `<!doctype html><html><head><meta charset="utf-8"><title></title>${nonce === null ? '' : `<meta name="${CARRY_NONCE_META}" content="${nonce}">`}</head><body></body></html>`
+
+/** The address of the empty document at `origin` for the carry `nonce` names: the document repeats the nonce, which is how the shell knows a page it opened is its own. */
+export function carryPageUrl (origin: string, nonce: string): string {
+  return `${new URL(origin).origin}${CARRY_PAGE_PATH}?n=${encodeURIComponent(nonce)}`
 }
 
 /** Whether `url` is the empty document of some origin. */
@@ -29,6 +35,7 @@ export function isCarryPageUrl (url: string): boolean {
 export function answeringCarryPage (handler: (request: Request) => Promise<Response>): (request: Request) => Promise<Response> {
   return async (request) => {
     if (request.method !== 'GET' || !isCarryPageUrl(request.url)) return await handler(request)
-    return new Response(EMPTY_DOCUMENT, { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } })
+    const asked = new URL(request.url).searchParams.get('n')
+    return new Response(documentFor(asked !== null && NONCE.test(asked) ? asked : null), { status: 200, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } })
   }
 }

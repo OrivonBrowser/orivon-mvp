@@ -3,9 +3,11 @@
 
 export interface Counts {
   carried: number
-  /** Left as the website session already had it. */
+  /** Left out on purpose: a cookie that had expired or belongs to another site. */
   skipped: number
   failed: number
+  /** Carried with some of what it held missing: a database with a record that could not be moved. Never counted as carried. */
+  partial: number
 }
 
 export interface CarryReport {
@@ -23,7 +25,7 @@ export interface CarryReport {
 /** The longest list of problems one report keeps: a store of a million unreadable records must not write a million lines. */
 export const MAX_PROBLEMS = 25
 
-const counts = (): Counts => ({ carried: 0, skipped: 0, failed: 0 })
+const counts = (): Counts => ({ carried: 0, skipped: 0, failed: 0, partial: 0 })
 
 export function newReport (): CarryReport {
   return { cookies: counts(), localStorage: counts(), databases: counts(), records: counts(), notCarried: [], problems: [], problemsLeftOut: 0 }
@@ -37,6 +39,6 @@ export function addProblem (report: CarryReport, text: string): void {
 
 /** The whole outcome in one line. */
 export function summarize (report: CarryReport): string {
-  const part = (label: string, c: Counts): string => `${String(c.carried)} ${label}${c.skipped > 0 ? ` (${String(c.skipped)} left as they were)` : ''}${c.failed > 0 ? ` (${String(c.failed)} failed)` : ''}`
+  const part = (label: string, c: Counts): string => `${String(c.carried)} ${label}${c.skipped > 0 ? ` (${String(c.skipped)} left out)` : ''}${c.partial > 0 ? ` (${String(c.partial)} partial)` : ''}${c.failed > 0 ? ` (${String(c.failed)} failed)` : ''}`
   return [part('cookies', report.cookies), part('local storage items', report.localStorage), part('databases', report.databases), part('database records', report.records)].join(', ')
 }

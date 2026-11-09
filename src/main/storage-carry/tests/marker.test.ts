@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { MARKER_FILE, MAX_ATTEMPTS, needsCarry, parseMarker, readMarker, serializeMarker, withOutcome, writeMarker } from '../marker.js'
+import { MARKER_FILE, MAX_ATTEMPTS, needsCarry, parseMarker, readMarker, serializeMarker, withFinal, withOutcome, writeMarker } from '../marker.js'
 import { newReport } from '../report.js'
 
 const ORIGIN = 'https://wiki.eth'
@@ -21,13 +21,33 @@ describe('which origins still need the carry', () => {
     expect(needsCarry(withOutcome({}, ORIGIN, { status: 'carried', report }, NOW), ORIGIN)).toBe(false)
   })
 
-  it('tries again an origin whose pages could not be reached, until its attempts are used', () => {
+  it('tries again an origin whose carry failed with no page of the app let through, until its attempts are used', () => {
     let marker = {}
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       expect(needsCarry(marker, ORIGIN), `before attempt ${String(attempt)}`).toBe(true)
       marker = withOutcome(marker, ORIGIN, { status: 'failed', reason: 'no page', report: newReport() }, NOW)
     }
     expect(needsCarry(marker, ORIGIN)).toBe(false)
+  })
+
+  it('never tries again a failed carry once a page of the app was let through, whatever attempts are left', () => {
+    const failed = withOutcome({}, ORIGIN, { status: 'failed', reason: 'a page stopped', report: newReport() }, NOW)
+    expect(needsCarry(failed, ORIGIN)).toBe(true)
+    const final = withFinal(failed, ORIGIN)
+    expect(final[ORIGIN]).toMatchObject({ status: 'failed', final: true, attempts: 1 })
+    expect(needsCarry(final, ORIGIN)).toBe(false)
+  })
+
+  it('records a carry that failed with a page waiting as final from the start', () => {
+    const marker = withOutcome({}, ORIGIN, { status: 'failed', reason: 'ran past its limit', report: newReport(), final: true }, NOW)
+    expect(marker[ORIGIN]?.final).toBe(true)
+    expect(needsCarry(marker, ORIGIN)).toBe(false)
+  })
+
+  it('marks only a failed row final: a carried row and an unknown origin are left as they are', () => {
+    const carried = withOutcome({}, ORIGIN, { status: 'carried', report: newReport() }, NOW)
+    expect(withFinal(carried, ORIGIN)).toBe(carried)
+    expect(withFinal({}, ORIGIN)).toEqual({})
   })
 
   it('keeps one row per origin', () => {
@@ -51,23 +71,23 @@ describe('the file', () => {
     ['text that is not JSON', 'not json'],
     ['another version', JSON.stringify({ version: 99, origins: { [ORIGIN]: { status: 'carried', at: 'x', attempts: 1 } } })],
     ['origins that are not an object', JSON.stringify({ version: 1, origins: [] })]
-  ])('says nothing was recorded for %s, since a carry that runs again overwrites nothing', (_what, text) => {
-    expect(needsCarry(parseMarker(text), ORIGIN)).toBe(true)
+  ])('is no record for %s, so the carry does nothing rather than replace what the website session holds', (_what, text) => {
+    expect(parseMarker(text)).toBeUndefined()
   })
 
   it('drops a row that is not a row and keeps the others', () => {
     const text = JSON.stringify({ version: 1, origins: { 'https://bad.eth': { status: 'done' }, [ORIGIN]: { status: 'carried', at: 'x', attempts: 1 } } })
-    expect(Object.keys(parseMarker(text))).toEqual([ORIGIN])
+    expect(Object.keys(parseMarker(text) ?? {})).toEqual([ORIGIN])
   })
 
-  it('is read from disk, and a missing file is an empty record', () => {
+  it('is read from disk; a missing file is an empty record and an unreadable one is no record', () => {
     const dir = mkdtempSync(join(tmpdir(), 'carry-marker-'))
     dirs.push(dir)
     const path = join(dir, MARKER_FILE)
     expect(readMarker(path)).toEqual({})
     writeMarker(path, withOutcome({}, ORIGIN, { status: 'carried', report: newReport() }, NOW))
-    expect(needsCarry(readMarker(path), ORIGIN)).toBe(false)
+    expect(needsCarry(readMarker(path) ?? {}, ORIGIN)).toBe(false)
     writeFileSync(path, '{')
-    expect(readMarker(path)).toEqual({})
+    expect(readMarker(path)).toBeUndefined()
   })
 })

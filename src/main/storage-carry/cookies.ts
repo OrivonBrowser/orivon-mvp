@@ -1,5 +1,5 @@
-// A cookie of the old partition as a cookie of the website session: every attribute it had, and nothing the target
-// already holds replaced.
+// A cookie of the old partition as a cookie of the website session: every attribute it had. Only the app's own cookies are
+// carried: the partition also held the cookies of every site the app embedded or called.
 
 /** The part of Electron's `Cookie` the carry reads. */
 export interface OldCookie {
@@ -56,8 +56,14 @@ export function planCookie (cookie: OldCookie, nowSeconds: number): CookiePlan {
   }
 }
 
-/** Whether `held` is the cookie `wanted` would replace: the same name, domain and path. */
-export function sameCookie (held: OldCookie, wanted: CookieToSet): boolean {
-  const wantedDomain = (wanted.domain ?? new URL(wanted.url).hostname).replace(/^\./, '')
-  return held.name === wanted.name && (held.domain ?? '').replace(/^\./, '') === wantedDomain && (held.path ?? '/') === wanted.path
+/**
+ * Whether the cookie is one the app at `host` set or could read: host-only on that very host, or a domain cookie whose domain
+ * is the host or a parent of it. A cookie of a third party (an embed, a tracker, a sign-in provider the app called) is not.
+ */
+export function cookieBelongsToHost (cookie: OldCookie, host: string): boolean {
+  const domain = (cookie.domain ?? '').replace(/^\./, '').toLowerCase()
+  const own = host.toLowerCase()
+  if (domain === '') return false
+  if (cookie.hostOnly === true) return domain === own
+  return own === domain || own.endsWith(`.${domain}`)
 }

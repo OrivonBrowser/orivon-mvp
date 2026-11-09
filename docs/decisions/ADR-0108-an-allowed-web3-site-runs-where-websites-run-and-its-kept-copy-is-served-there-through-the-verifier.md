@@ -84,13 +84,19 @@ session where the extensions are.
 - A block empties and closes the site's pages in every session they are in.
 - The extensions' install prompt, the grant prompt and the site-info popover name the extensions that reach an allowed
   web3 site, as they do for any website.
-- What such an app stored in its own partition stays there, and a copy is made in the shared session once per origin,
-  before the app's first page loads there. Cookies (with their attributes), local storage and IndexedDB (each database at
-  its version, with its stores, indexes and records) are copied. The page waits for the copy up to 45 seconds and loads
-  after that with the copy still running. Nothing the shared session already holds is replaced. Service workers, Cache
-  Storage and the private file system are not copied, and the app makes them again. A cookie or database that cannot be
-  copied is named in the log and the rest still copy; a copy that fails is tried again at later starts, three times at
-  most. A file in the profile records each origin copied or failed, and why.
+- What such an app stored in its own partition stays there, and a copy is made in the shared session once per origin: the
+  app's own cookies (with their attributes; not the cookies of the sites it embedded or called), its local storage, and its
+  IndexedDB (each database at its version, with its stores, indexes and records; keys that cannot be exported and
+  Blobs included). The copy replaces what the shared session holds for the origin, all or nothing: when the old partition
+  holds nothing for the origin, nothing changes; otherwise the session's local storage, databases, service workers and
+  Cache Storage for the origin are cleared first, and a copy that cannot finish clears what it wrote. Every moved app is
+  copied in the background soon after a start, one at a time, and the app's first page waits for its copy to end, however
+  long that takes, up to one deadline per origin (ten minutes, *provisional*); past it the copy stops, clears what it wrote,
+  and the page loads. Service workers, Cache Storage and the private file system are not copied, and the app makes them
+  again. A cookie, record or database that cannot be copied is named in the log, which a report from `orivon://report`
+  carries, and a database with a record missing is marked partial. A copy that failed before any page of the app loaded is
+  tried again at later starts, three times at most; one whose failure let a page load is final, since that page may have
+  written. A file in the profile records each origin copied or failed, and why.
 - The verifier must be running for an allowed web3 site to open, as for every web3 site. A tab of such an app keeps the
   host awake, a request for its host waits until the host listens, and the shell sends the host the hosts it serves
   before any held request is let go, on a start and on a restart alike.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { planCookie, sameCookie } from '../cookies.js'
+import { cookieBelongsToHost, planCookie } from '../cookies.js'
 import type { OldCookie } from '../cookies.js'
 
 const NOW = 1_800_000_000
@@ -35,13 +35,34 @@ describe('planning one cookie', () => {
   })
 })
 
-describe('whether a cookie is the one that would be replaced', () => {
-  const wanted = (plan: ReturnType<typeof planCookie>) => { if (plan.kind !== 'set') throw new Error('skipped'); return plan.cookie }
+describe('whether a cookie belongs to the app', () => {
+  const host = 'bafy.ipfs.orivon'
 
-  it('is the same name, domain and path, with or without the leading dot', () => {
-    expect(sameCookie({ ...base, domain: '.wiki.eth', hostOnly: false }, wanted(planCookie(base, NOW)))).toBe(true)
-    expect(sameCookie({ ...base, name: 'other' }, wanted(planCookie(base, NOW)))).toBe(false)
-    expect(sameCookie({ ...base, path: '/x' }, wanted(planCookie(base, NOW)))).toBe(false)
-    expect(sameCookie({ ...base, domain: 'api.wiki.eth' }, wanted(planCookie(base, NOW)))).toBe(false)
+  it('is the app\'s when it is host-only on the app\'s own host, whatever the case', () => {
+    expect(cookieBelongsToHost({ ...base, domain: host, hostOnly: true }, host)).toBe(true)
+    expect(cookieBelongsToHost({ ...base, domain: 'BAFY.ipfs.orivon', hostOnly: true }, host)).toBe(true)
+  })
+
+  it('is the app\'s when it is a domain cookie of the host or of a parent of it', () => {
+    expect(cookieBelongsToHost({ ...base, domain: `.${host}`, hostOnly: false }, host)).toBe(true)
+    expect(cookieBelongsToHost({ ...base, domain: '.ipfs.orivon', hostOnly: false }, host)).toBe(true)
+    expect(cookieBelongsToHost({ ...base, domain: 'orivon', hostOnly: false }, host)).toBe(true)
+  })
+
+  it('is not the app\'s when it belongs to another site: a tracker, an embed, a sign-in provider', () => {
+    for (const domain of ['.google.com', 'accounts.google.com', 'tracker.example', '.evil.orivon']) {
+      expect(cookieBelongsToHost({ ...base, domain, hostOnly: domain === 'accounts.google.com' }, host)).toBe(false)
+    }
+  })
+
+  it('is not the app\'s when it is host-only on a sibling or a child of the host', () => {
+    expect(cookieBelongsToHost({ ...base, domain: 'other.ipfs.orivon', hostOnly: true }, host)).toBe(false)
+    expect(cookieBelongsToHost({ ...base, domain: `www.${host}`, hostOnly: true }, host)).toBe(false)
+  })
+
+  it('is not the app\'s when a domain cookie is for a longer name that merely ends the same way, or has no domain', () => {
+    expect(cookieBelongsToHost({ ...base, domain: 'xipfs.orivon', hostOnly: false }, host)).toBe(false)
+    const { domain: _domain, ...bare } = base
+    expect(cookieBelongsToHost(bare, host)).toBe(false)
   })
 })

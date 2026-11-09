@@ -58,12 +58,23 @@ describe('the handler each served origin is answered with', () => {
   it('answers the shell\'s empty document for itself and hands every other path to the app\'s handler', async () => {
     registerAppOrigin(fakeSession(), 'https://carried.example', answering('the app'), 'verifier')
     const handler = servingHandlerFor('https://carried.example')!
-    const empty = await handler(new Request(carryPageUrl('https://carried.example')))
+    const nonce = 'ab'.repeat(16)
+    const empty = await handler(new Request(carryPageUrl('https://carried.example', nonce)))
     expect(empty.status).toBe(200)
     expect(empty.headers.get('content-type')).toContain('text/html')
-    expect(await empty.text()).not.toContain('the app')
+    const body = await empty.text()
+    expect(body).not.toContain('the app')
+    expect(body).toContain(`<meta name="orivon-storage-carry" content="${nonce}">`)
     expect(await (await handler(new Request('https://carried.example/.well-known/orivon/storage-carry-guessed'))).text()).toBe('the app')
-    expect(await (await handler(new Request(carryPageUrl('https://carried.example'), { method: 'POST', body: 'x' }))).text()).toBe('the app')
+    expect(await (await handler(new Request(carryPageUrl('https://carried.example', nonce), { method: 'POST', body: 'x' }))).text()).toBe('the app')
+  })
+
+  it('repeats only a nonce of the shape the shell makes, so that the document cannot be made to carry markup', async () => {
+    registerAppOrigin(fakeSession(), 'https://carried.example', answering('the app'), 'verifier')
+    const handler = servingHandlerFor('https://carried.example')!
+    const hostile = await (await handler(new Request(`${carryPageUrl('https://carried.example', 'ab'.repeat(16))}&x=1`.replace(/n=[^&]*/, 'n=%22%3E%3Cscript%3E')))).text()
+    expect(hostile).not.toContain('<script')
+    expect(hostile).not.toContain('orivon-storage-carry')
   })
 })
 

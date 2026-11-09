@@ -1,180 +1,103 @@
-// The script the shell runs in the two hidden pages the storage carry opens (`carry-session.ts`): one in the session the
-// app used to run in, which reads, and one in the session websites run in, which writes. It is a string of plain
-// JavaScript, not a function of this file, because a bundler is free to rename and wrap a function that
-// `toString()` would then hand to a page; `tests/page-code.test.ts` runs the very same text against a fake
-// IndexedDB. See README.md's Design notes for what is carried and how a value is encoded.
+// The script the shell runs in the two hidden pages the storage carry opens (`carry-pages.ts`): one in the session the app
+// used to run in, which reads, and one in the session websites run in, which writes. It is a string of plain JavaScript, not a
+// function of this file, because a bundler is free to rename and wrap a function that `toString()` would then hand to a page;
+// `tests/page-code.test.ts` runs the very same text against a fake IndexedDB. See README.md's Design notes for what is carried.
 //
-// Every entry point returns a JSON string. `executeJavaScript` would convert an object or a buffer on its own and
-// stop at the first value it cannot (a Blob, a Date inside a Map); a string is the one result it never changes.
+// Records travel from the reading page to the writing page over a message port, by structured clone, so keys, dates, binary
+// data, maps, sets, shared objects and cycles arrive as they were. Every entry point returns a JSON string, because
+// `executeJavaScript` would convert an object on its own and stop at the first value it cannot.
 
-export const CARRY_PAGE_CODE = String.raw`(function () {
+import { STORAGE_CARRY_PORT_MESSAGE } from '../channels.js'
+
+/** What the preload posts to the page, with the port, so that only a page that holds this carry's nonce takes it. */
+export function portMessageFor (nonce: string): string {
+  return `${STORAGE_CARRY_PORT_MESSAGE}${nonce}`
+}
+
+/** The name the script installs itself under: it ends in the nonce, which no page can have defined. */
+export function carryGlobalName (nonce: string): string {
+  return `__orivonCarry${nonce}`
+}
+
+/** The script text that calls `method` of the installed script, its arguments passed as one string literal that `JSON.parse` reads: a key named `__proto__` in them is data, never a prototype. */
+export function callCode (nonce: string, method: string, args?: unknown): string {
+  return `${carryGlobalName(nonce)}.${method}(${args === undefined ? '' : `JSON.parse(${JSON.stringify(JSON.stringify(args))})`})`
+}
+
+export function carryPageCode (nonce: string): string {
+  return CARRY_PAGE_CODE.replace('__NONCE__', () => JSON.stringify(nonce)).replace('__PORT_MESSAGE_PREFIX__', () => JSON.stringify(STORAGE_CARRY_PORT_MESSAGE))
+}
+
+const CARRY_PAGE_CODE = String.raw`(function (nonce) {
   'use strict'
   var root = globalThis
-  if (root.__orivonCarry !== undefined) return 'ready'
+  var NAME = '__orivonCarry' + nonce
+  if (root[NAME] !== undefined) return 'taken'
 
   var MAX_VALUE_BYTES = 96 * 1024 * 1024
   var BATCH_WEIGHT = 1536 * 1024
   var BATCH_RECORDS = 200
-  var TYPED = { Int8Array: Int8Array, Uint8Array: Uint8Array, Uint8ClampedArray: Uint8ClampedArray, Int16Array: Int16Array, Uint16Array: Uint16Array, Int32Array: Int32Array, Uint32Array: Uint32Array, Float32Array: Float32Array, Float64Array: Float64Array, BigInt64Array: BigInt64Array, BigUint64Array: BigUint64Array }
-  var ERRORS = { Error: Error, EvalError: EvalError, RangeError: RangeError, ReferenceError: ReferenceError, SyntaxError: SyntaxError, TypeError: TypeError, URIError: URIError }
-
-  function toBase64 (bytesLike) {
-    var bytes = bytesLike instanceof Uint8Array ? bytesLike : new Uint8Array(bytesLike)
-    var out = ''
-    for (var i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000))
-    return btoa(out)
-  }
-
-  function fromBase64 (text) {
-    var raw = atob(text)
-    var bytes = new Uint8Array(raw.length)
-    for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
-    return bytes
-  }
+  var PORT_WAIT_MS = 30000
+  var BATCH_WAIT_MS = 100000
+  var PORT_MESSAGE = __PORT_MESSAGE_PREFIX__ + nonce
 
   function messageOf (error) {
     return error !== null && typeof error === 'object' && typeof error.message === 'string' ? error.message : String(error)
   }
 
-  function tooLarge (bytes) {
-    if (bytes > MAX_VALUE_BYTES) throw new Error('a value of ' + bytes + ' bytes is too large to carry')
+  var port = null
+  var portWaiters = []
+  var inbox = new Map()
+  var inboxWaiters = new Map()
+
+  root.addEventListener('message', function (event) {
+    if (event.data !== PORT_MESSAGE || port !== null || !event.ports || event.ports.length === 0) return
+    port = event.ports[0]
+    port.onmessage = function (message) {
+      var data = message.data
+      var waiter = inboxWaiters.get(data.id)
+      if (waiter !== undefined) {
+        inboxWaiters.delete(data.id)
+        waiter(data)
+      } else {
+        inbox.set(data.id, data)
+      }
+    }
+    portWaiters.splice(0).forEach(function (resolve) { resolve() })
+  })
+
+  function connect () {
+    if (port !== null) return Promise.resolve('connected')
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { reject(new Error('the port to the other page never came')) }, PORT_WAIT_MS)
+      portWaiters.push(function () { clearTimeout(timer); resolve('connected') })
+    })
   }
 
-  function algorithmOf (algorithm) {
-    var out = { name: algorithm.name }
-    if (typeof algorithm.namedCurve === 'string') out.namedCurve = algorithm.namedCurve
-    if (algorithm.hash !== undefined) out.hash = typeof algorithm.hash === 'string' ? algorithm.hash : algorithm.hash.name
-    return out
+  function takeBatch (id) {
+    if (inbox.has(id)) {
+      var kept = inbox.get(id)
+      inbox.delete(id)
+      return Promise.resolve(kept)
+    }
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () { inboxWaiters.delete(id); reject(new Error('the batch never came from the other page')) }, BATCH_WAIT_MS)
+      inboxWaiters.set(id, function (data) { clearTimeout(timer); resolve(data) })
+    })
   }
 
-  /** A structured-clone value as JSON. A key named $t is the mark of a tagged value, so a plain object that has one is wrapped. */
-  async function encode (value, ancestors) {
-    if (value === null) return null
-    var kind = typeof value
-    if (kind === 'string' || kind === 'boolean') return value
-    if (kind === 'number') {
-      if (Number.isFinite(value) && !Object.is(value, -0)) return value
-      return { $t: 'num', v: Object.is(value, -0) ? '-0' : String(value) }
-    }
-    if (kind === 'undefined') return { $t: 'undef' }
-    if (kind === 'bigint') return { $t: 'bigint', v: value.toString() }
-    if (kind !== 'object') throw new Error('a ' + kind + ' cannot be stored')
-    if (ancestors.has(value)) throw new Error('a value that contains itself')
-    if (value instanceof Date) return { $t: 'date', v: Number.isNaN(value.getTime()) ? null : value.getTime() }
-    if (value instanceof RegExp) return { $t: 'regexp', source: value.source, flags: value.flags }
-    if (value instanceof ArrayBuffer) {
-      tooLarge(value.byteLength)
-      return { $t: 'buffer', b: toBase64(value) }
-    }
-    if (ArrayBuffer.isView(value)) {
-      var viewName = value instanceof DataView ? 'DataView' : value.constructor.name
-      if (viewName !== 'DataView' && !Object.prototype.hasOwnProperty.call(TYPED, viewName)) throw new Error('an unsupported ' + viewName)
-      tooLarge(value.byteLength)
-      return { $t: 'view', ctor: viewName, b: toBase64(new Uint8Array(value.buffer, value.byteOffset, value.byteLength)) }
-    }
-    if (typeof Blob !== 'undefined' && value instanceof Blob) {
-      tooLarge(value.size)
-      var data = toBase64(await value.arrayBuffer())
-      if (typeof File !== 'undefined' && value instanceof File) return { $t: 'file', name: value.name, type: value.type, modified: value.lastModified, b: data }
-      return { $t: 'blob', type: value.type, b: data }
-    }
-    if (typeof CryptoKey !== 'undefined' && value instanceof CryptoKey) {
-      if (!value.extractable) throw new Error('a key that is not extractable cannot be read')
-      return { $t: 'key', jwk: await root.crypto.subtle.exportKey('jwk', value), algorithm: algorithmOf(value.algorithm), usages: Array.from(value.usages) }
-    }
-    ancestors.add(value)
-    try {
-      if (value instanceof Map) {
-        var entries = []
-        for (var pair of value) entries.push([await encode(pair[0], ancestors), await encode(pair[1], ancestors)])
-        return { $t: 'map', e: entries }
-      }
-      if (value instanceof Set) {
-        var members = []
-        for (var member of value) members.push(await encode(member, ancestors))
-        return { $t: 'set', v: members }
-      }
-      if (Array.isArray(value)) {
-        var items = new Array(value.length)
-        for (var i = 0; i < value.length; i++) items[i] = await encode(value[i], ancestors)
-        return items
-      }
-      if (value instanceof Error) return { $t: 'error', name: value.name, message: value.message }
-      var proto = Object.getPrototypeOf(value)
-      if (proto !== Object.prototype && proto !== null) throw new Error('an unsupported ' + Object.prototype.toString.call(value))
-      var out = Object.create(null)
-      var names = Object.keys(value)
-      for (var j = 0; j < names.length; j++) out[names[j]] = await encode(value[names[j]], ancestors)
-      return Object.prototype.hasOwnProperty.call(out, '$t') ? { $t: 'object', v: out } : out
-    } finally {
-      ancestors.delete(value)
-    }
-  }
-
-  function define (target, name, value) {
-    Object.defineProperty(target, name, { value: value, enumerable: true, writable: true, configurable: true })
-  }
-
-  async function decodeProperties (node) {
-    var out = {}
-    var names = Object.keys(node)
-    for (var i = 0; i < names.length; i++) define(out, names[i], await decode(node[names[i]]))
-    return out
-  }
-
-  /** The inverse of encode. */
-  async function decode (node) {
-    if (node === null || typeof node !== 'object') return node
-    if (Array.isArray(node)) {
-      var items = new Array(node.length)
-      for (var i = 0; i < node.length; i++) items[i] = await decode(node[i])
-      return items
-    }
-    switch (node.$t) {
-      case undefined: return await decodeProperties(node)
-      case 'object': return await decodeProperties(node.v)
-      case 'num': return node.v === '-0' ? -0 : Number(node.v)
-      case 'undef': return undefined
-      case 'bigint': return BigInt(node.v)
-      case 'date': return new Date(node.v === null ? NaN : node.v)
-      case 'regexp': return new RegExp(node.source, node.flags)
-      case 'buffer': return fromBase64(node.b).buffer
-      case 'view': {
-        var bytes = fromBase64(node.b)
-        return node.ctor === 'DataView' ? new DataView(bytes.buffer) : new TYPED[node.ctor](bytes.buffer)
-      }
-      case 'blob': return new Blob([fromBase64(node.b)], { type: node.type })
-      case 'file': return new File([fromBase64(node.b)], node.name, { type: node.type, lastModified: node.modified })
-      case 'key': return await root.crypto.subtle.importKey('jwk', node.jwk, node.algorithm, true, node.usages)
-      case 'map': {
-        var map = new Map()
-        for (var e = 0; e < node.e.length; e++) map.set(await decode(node.e[e][0]), await decode(node.e[e][1]))
-        return map
-      }
-      case 'set': {
-        var set = new Set()
-        for (var m = 0; m < node.v.length; m++) set.add(await decode(node.v[m]))
-        return set
-      }
-      case 'error': {
-        var Kind = Object.prototype.hasOwnProperty.call(ERRORS, node.name) ? ERRORS[node.name] : Error
-        return new Kind(node.message)
-      }
-      default: throw new Error('an unknown kind of value: ' + String(node.$t))
-    }
-  }
-
-  /** About how many bytes a value's JSON will take: enough to cut a batch, not a measurement. */
-  function weigh (value, depth) {
+  /** About how many bytes a value takes: enough to cut a batch, not a measurement. Cycles and shared objects count once. */
+  function weigh (value, seen) {
     if (value === null || value === undefined) return 4
     if (typeof value === 'string') return value.length
     if (typeof value !== 'object') return 16
     if (typeof Blob !== 'undefined' && value instanceof Blob) return value.size
     if (value instanceof ArrayBuffer || ArrayBuffer.isView(value)) return value.byteLength
-    if (depth > 6) return 64
+    if (seen.has(value)) return 0
+    seen.add(value)
     var total = 16
-    var members = value instanceof Map || value instanceof Set ? Array.from(value).slice(0, 2000) : Array.isArray(value) ? value.slice(0, 2000) : Object.values(value).slice(0, 2000)
-    for (var i = 0; i < members.length; i++) total += 8 + weigh(Array.isArray(members[i]) && (value instanceof Map) ? members[i][1] : members[i], depth + 1)
+    var members = value instanceof Map ? Array.from(value).flat() : value instanceof Set ? Array.from(value) : Array.isArray(value) ? value : Object.values(value)
+    for (var i = 0; i < members.length && i < 5000; i++) total += 8 + weigh(members[i], seen)
     return total
   }
 
@@ -187,6 +110,7 @@ export const CARRY_PAGE_CODE = String.raw`(function () {
 
   var reading = new Map()
   var writing = new Map()
+  var cursors = new Map()
 
   function openExisting (name) {
     return new Promise(function (resolve, reject) {
@@ -238,11 +162,16 @@ export const CARRY_PAGE_CODE = String.raw`(function () {
     return JSON.stringify(out)
   }
 
-  async function readBatch (args) {
+  /** Reads the next batch of a store and posts it over the port: the keys and values never pass through the shell. */
+  async function sendBatch (args) {
+    if (port === null) throw new Error('the reading page has no port')
     var db = await connection(args.db)
-    var after = args.after === undefined ? undefined : await decode(args.after)
-    var range = after === undefined ? undefined : IDBKeyRange.lowerBound(after, true)
+    var cursorId = args.db + '\u0000' + args.store
+    if (args.restart === true) cursors.delete(cursorId)
+    var state = cursors.get(cursorId) || { has: false, key: undefined }
+    var range = state.has ? IDBKeyRange.lowerBound(state.key, true) : undefined
     var rows = []
+    var weights = []
     var weight = 0
     var done = true
     await new Promise(function (resolve, reject) {
@@ -252,28 +181,89 @@ export const CARRY_PAGE_CODE = String.raw`(function () {
         var cursor = req.result
         if (cursor === null) { resolve(); return }
         rows.push({ key: cursor.primaryKey, value: cursor.value })
-        weight += weigh(cursor.value, 0)
+        var own = weigh(cursor.value, new Set())
+        weights.push(own)
+        weight += own
         if (weight >= BATCH_WEIGHT || rows.length >= BATCH_RECORDS) { done = false; resolve(); return }
         cursor.continue()
       }
     })
-    var records = []
-    var problems = []
-    for (var i = 0; i < rows.length; i++) {
-      try {
-        records.push({ k: await encode(rows[i].key, new Set()), v: await encode(rows[i].value, new Set()) })
-      } catch (error) {
-        problems.push('record ' + (args.offset + i + 1) + ': ' + messageOf(error))
-      }
+    if (rows.length > 0) {
+      state.has = true
+      state.key = rows[rows.length - 1].key
     }
-    var last = rows.length === 0 ? undefined : await encode(rows[rows.length - 1].key, new Set())
-    return JSON.stringify({ records: records, read: rows.length, next: last, done: done, problems: problems })
+    cursors.set(cursorId, state)
+    var skipped = []
+    var sendable = []
+    rows.forEach(function (row, i) {
+      if (weights[i] > MAX_VALUE_BYTES) skipped.push('record ' + (args.offset + i + 1) + ': a value of ' + weights[i] + ' bytes is too large to carry')
+      else sendable.push({ row: row, position: args.offset + i + 1 })
+    })
+    var records = sendable.map(function (entry) { return entry.row })
+    try {
+      port.postMessage({ id: args.id, records: records })
+    } catch (error) {
+      // One record cannot be cloned (a handle, say): find which, and send the rest.
+      var good = []
+      sendable.forEach(function (entry) {
+        try {
+          structuredClone(entry.row)
+          good.push(entry.row)
+        } catch (cloneError) {
+          skipped.push('record ' + entry.position + ': ' + messageOf(cloneError))
+        }
+      })
+      port.postMessage({ id: args.id, records: good })
+    }
+    return JSON.stringify({ read: rows.length, done: done, skipped: skipped })
   }
 
-  async function writeSchema(spec) {
-    var existing = (await indexedDB.databases()).some(function (info) { return info.name === spec.name })
-    if (existing) return JSON.stringify({ status: 'exists' })
+  /** The value with every Blob and File in it rebuilt from its bytes: a blob of the other session cannot be stored in this one. */
+  async function rebuild (value, memo) {
+    if (value === null || typeof value !== 'object') return value
+    if (memo.has(value)) return memo.get(value)
+    if (typeof Blob !== 'undefined' && value instanceof Blob) {
+      var bytes = await value.arrayBuffer()
+      var copy = typeof File !== 'undefined' && value instanceof File
+        ? new File([bytes], value.name, { type: value.type, lastModified: value.lastModified })
+        : new Blob([bytes], { type: value.type })
+      memo.set(value, copy)
+      return copy
+    }
+    if (value instanceof ArrayBuffer || ArrayBuffer.isView(value) || value instanceof Date || value instanceof RegExp || value instanceof Error) return value
+    if (typeof CryptoKey !== 'undefined' && value instanceof CryptoKey) return value
+    memo.set(value, value)
+    if (value instanceof Map) {
+      var entries = Array.from(value)
+      value.clear()
+      for (var e = 0; e < entries.length; e++) value.set(await rebuild(entries[e][0], memo), await rebuild(entries[e][1], memo))
+    } else if (value instanceof Set) {
+      var members = Array.from(value)
+      value.clear()
+      for (var m = 0; m < members.length; m++) value.add(await rebuild(members[m], memo))
+    } else if (Array.isArray(value)) {
+      for (var i = 0; i < value.length; i++) value[i] = await rebuild(value[i], memo)
+    } else {
+      var names = Object.keys(value)
+      for (var j = 0; j < names.length; j++) {
+        Object.defineProperty(value, names[j], { value: await rebuild(value[names[j]], memo), enumerable: true, writable: true, configurable: true })
+      }
+    }
+    return value
+  }
+
+  function deleteDatabase (name) {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.deleteDatabase(name)
+      req.onsuccess = function () { resolve() }
+      req.onerror = function () { reject(req.error) }
+      req.onblocked = function () { reject(new Error('the database is blocked')) }
+    })
+  }
+
+  async function writeSchema (spec) {
     try {
+      await deleteDatabase(spec.name)
       var opened = await new Promise(function (resolve, reject) {
         var req = indexedDB.open(spec.name, spec.version)
         req.onupgradeneeded = function () {
@@ -297,58 +287,64 @@ export const CARRY_PAGE_CODE = String.raw`(function () {
     }
   }
 
+  /** Takes the batch the reading page posted under args.id and stores it. A record counts as written only when its transaction completed. */
   async function writeBatch (args) {
     var db = writing.get(args.db)
     if (db === undefined) throw new Error('the database was not made by the carry')
+    var batch = await takeBatch(args.id)
     var problems = []
     var ready = []
-    for (var i = 0; i < args.records.length; i++) {
+    var memo = new Map()
+    for (var i = 0; i < batch.records.length; i++) {
       try {
-        ready.push({ key: await decode(args.records[i].k), value: await decode(args.records[i].v), position: args.offset + i + 1 })
+        ready.push({ key: batch.records[i].key, value: await rebuild(batch.records[i].value, memo) })
       } catch (error) {
         problems.push('record ' + (args.offset + i + 1) + ': ' + messageOf(error))
       }
     }
-    var written = 0
-    await new Promise(function (resolve) {
+    var accepted = 0
+    var aborted = await new Promise(function (resolve) {
       var tx = db.transaction(args.store, 'readwrite')
       var store = tx.objectStore(args.store)
-      tx.oncomplete = function () { resolve() }
-      tx.onabort = function () { problems.push('the batch was not stored: ' + messageOf(tx.error)); resolve() }
-      ready.forEach(function (row) {
+      tx.oncomplete = function () { resolve(null) }
+      tx.onabort = function () { resolve(messageOf(tx.error)) }
+      ready.forEach(function (row, position) {
         try {
           var req = store.keyPath === null ? store.put(row.value, row.key) : store.put(row.value)
-          req.onsuccess = function () { written += 1 }
+          req.onsuccess = function () { accepted += 1 }
           req.onerror = function (event) {
             event.preventDefault()
             event.stopPropagation()
-            problems.push('record ' + row.position + ': ' + messageOf(req.error))
+            problems.push('record ' + (args.offset + position + 1) + ': ' + messageOf(req.error))
           }
         } catch (error) {
-          problems.push('record ' + row.position + ': ' + messageOf(error))
+          problems.push('record ' + (args.offset + position + 1) + ': ' + messageOf(error))
         }
       })
-      if (ready.length === 0) resolve()
+      if (ready.length === 0) resolve(null)
     })
-    return JSON.stringify({ written: written, problems: problems })
+    if (aborted !== null) return JSON.stringify({ written: 0, problems: problems, aborted: aborted })
+    return JSON.stringify({ written: accepted, problems: problems })
   }
 
   async function dropDatabase (name) {
     var kept = writing.get(name)
     if (kept !== undefined) kept.close()
     writing.delete(name)
-    await new Promise(function (resolve) {
-      var req = indexedDB.deleteDatabase(name)
-      req.onsuccess = req.onerror = req.onblocked = function () { resolve() }
-    })
+    try { await deleteDatabase(name) } catch (error) { /* the clearing of the session removes what stays */ }
     return 'dropped'
   }
 
   function closeAll () {
+    if (port !== null) {
+      port.close()
+      port = null
+    }
     reading.forEach(function (db) { db.close() })
     writing.forEach(function (db) { db.close() })
     reading.clear()
     writing.clear()
+    cursors.clear()
     return 'closed'
   }
 
@@ -363,20 +359,19 @@ export const CARRY_PAGE_CODE = String.raw`(function () {
 
   function writeLocalStorage (entries) {
     var carried = 0
-    var skipped = 0
     var problems = []
-    entries.forEach(function (entry) {
+    entries.forEach(function (entry, position) {
       try {
-        if (localStorage.getItem(entry[0]) !== null) { skipped += 1; return }
         localStorage.setItem(entry[0], entry[1])
         carried += 1
       } catch (error) {
-        problems.push('item ' + (carried + skipped + problems.length + 1) + ': ' + messageOf(error))
+        problems.push('item ' + (position + 1) + ': ' + messageOf(error))
       }
     })
-    return JSON.stringify({ carried: carried, skipped: skipped, problems: problems })
+    return JSON.stringify({ carried: carried, problems: problems })
   }
 
-  root.__orivonCarry = { readDatabases: readDatabases, readBatch: readBatch, writeSchema: writeSchema, writeBatch: writeBatch, dropDatabase: dropDatabase, closeAll: closeAll, readLocalStorage: readLocalStorage, writeLocalStorage: writeLocalStorage, encode: encode, decode: decode }
+  var api = { connect: connect, readDatabases: readDatabases, sendBatch: sendBatch, writeSchema: writeSchema, writeBatch: writeBatch, dropDatabase: dropDatabase, closeAll: closeAll, readLocalStorage: readLocalStorage, writeLocalStorage: writeLocalStorage }
+  Object.defineProperty(root, NAME, { value: api, enumerable: false, writable: false, configurable: false })
   return 'ready'
-})()`
+})(__NONCE__)`

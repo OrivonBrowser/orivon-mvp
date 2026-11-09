@@ -1,7 +1,10 @@
 // An app the person allowed before it ran in the session websites run in kept its logins, local storage and databases in a
 // partition of its own. Two launches on one profile: the first allows the app and puts that state in the partition, as the
-// earlier version left it; the second opens the app, which now runs in the shared session, and its first page finds every
-// cookie, item and database there. The record in the profile says the origin was carried, and the partition keeps its data.
+// earlier version left it (and the shared session holds an older database and item of the same names, as a visit as a
+// website would have left); the second launch carries the partition into the shared session in the background, replacing
+// what was there, and the app's first page finds every cookie, item and database of the partition, including a key that
+// cannot be exported and still signs. A cookie of another site in the partition is not carried. The record in the profile
+// says the origin was carried, and the partition keeps its data.
 //
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-loading/e2e-app-storage-carry.test.ts
@@ -49,12 +52,15 @@ const SEED_PAGE = `(async () => {
       notes.createIndex('by-tag', 'tags', { multiEntry: true })
       created.createObjectStore('files', { autoIncrement: true })
       created.createObjectStore('bulk', { keyPath: 'n' })
+      created.createObjectStore('vault', { keyPath: 'id' })
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
   })
+  const key = await crypto.subtle.generateKey({ name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
   await new Promise((resolve, reject) => {
-    const tx = db.transaction(['notes', 'files', 'bulk'], 'readwrite')
+    const tx = db.transaction(['notes', 'files', 'bulk', 'vault'], 'readwrite')
+    tx.objectStore('vault').put({ id: 1, key })
     tx.objectStore('notes').put({ id: 1, title: 'First', tags: ['x', 'y'], when: new Date(1700000000000) })
     tx.objectStore('notes').put({ id: 2, title: 'Second', tags: ['y'], when: new Date(1700000001000) })
     const big = new Uint8Array(1500000)
@@ -70,6 +76,23 @@ const SEED_PAGE = `(async () => {
   const worker = registration.installing || registration.waiting || registration.active
   if (worker.state !== 'activated') await new Promise((resolve) => { worker.addEventListener('statechange', () => { if (worker.state === 'activated') resolve() }) })
   return 'seeded:' + worker.state
+})()`
+
+/** What a visit to the site as a website would have left in the shared session: an older database and an item the partition also holds, and an item and a database it does not. */
+const WEBSITE_ERA_PAGE = `(async () => {
+  localStorage.setItem('carry-local', 'website-era')
+  localStorage.setItem('website-only', 'x')
+  for (const [name, store] of [['carry-db', 'own'], ['website-db', 'rows']]) {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open(name, 1)
+      request.onupgradeneeded = () => { request.result.createObjectStore(store) }
+      request.onsuccess = () => resolve(request.result)
+      request.onerror = () => reject(request.error)
+    })
+    await new Promise((resolve, reject) => { const tx = db.transaction(store, 'readwrite'); tx.objectStore(store).put('website row', 'k'); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error) })
+    db.close()
+  }
+  return 'website-era'
 })()`
 
 /** What the app's first page finds in its own storage, as JSON. */
@@ -99,7 +122,14 @@ const READ_PAGE = `(async () => {
   let bigCorrupt = 0
   for (let i = 0; i < bigBytes.length; i++) if (bigBytes[i] !== (i * 31) % 251) bigCorrupt++
   const small = files.find((file) => file.name === 'a.txt')
+  const vault = (await all('vault'))[0]
+  const signed = await crypto.subtle.sign('HMAC', vault.key, new Uint8Array([1, 2, 3]))
+  const databases = (await indexedDB.databases()).map((info) => info.name).sort()
   return JSON.stringify({
+    databases,
+    websiteOnly: localStorage.getItem('website-only'),
+    keyExtractable: vault.key.extractable,
+    signatureBytes: signed.byteLength,
     cookie: document.cookie,
     local: localStorage.getItem('carry-local'),
     localLarge: (localStorage.getItem('carry-local-large') || '').length,
@@ -132,6 +162,7 @@ async function seedPartition (app: App, partition: string, origin: string): Prom
       contents.setAudioMuted(true)
       await contents.loadURL(`${at}/index.html`)
       const seeded = await contents.executeJavaScript(script) as string
+      await old.cookies.set({ url: 'https://tracker.example/', name: 'carry-tracker', value: 'tracker-value', secure: true, sameSite: 'no_restriction', expirationDate: Math.floor(Date.now() / 1000) + 86_400 })
       await old.cookies.set({ url: `${at}/`, name: 'carry-http-only', value: 'http-only-value', secure: true, httpOnly: true, sameSite: 'strict', expirationDate: Math.floor(Date.now() / 1000) + 86_400 })
       await old.cookies.flushStore()
       await old.flushStorageData()
@@ -206,6 +237,7 @@ it('[app:storage-follows-an-app-into-the-website-session] carries an allowed app
       check('the app is pinned', await waitFor(() => existsSync(pinPath(userData, origin)), 60_000))
       check('a partition with nothing in it leaves no record', !existsSync(join(userData, 'carried-app-storage.json')) || !(JSON.parse(readFileSync(join(userData, 'carried-app-storage.json'), 'utf8')) as { origins: Record<string, unknown> }).origins[origin])
 
+      check('the shared session holds what a visit as a website would have left', await askPage(one, `${origin}/`, WEBSITE_ERA_PAGE) === 'website-era')
       check('the earlier version\'s state and a worker that answers every navigation are put in the partition', await seedPartition(one, partition, origin) === 'seeded:activated')
       await closeElectronApp(one, APP_CLOSE_RACE_MS, { keepProfile: true })
       first = undefined
@@ -217,6 +249,9 @@ it('[app:storage-follows-an-app-into-the-website-session] carries an allowed app
       await waitFor(() => two.windows().length >= 2)
       const chromeTwo = findChrome(two)
       await waitForAddressBarStable(chromeTwo)
+      const recordPath = join(profile, 'carried-app-storage.json')
+      const carriedInBackground = await waitFor(() => existsSync(recordPath) && (JSON.parse(readFileSync(recordPath, 'utf8')) as { origins: Record<string, { status: string }> }).origins[origin]?.status === 'carried', 60_000)
+      check('the carry ends in the background, before the app is opened', carriedInBackground)
       await clickAddressBarRetrying(chromeTwo, `ipfs://${root}`)
       let again = null as PageFacts | null
       await waitFor(async () => { again = await pageAt(two, `${origin}/`); return again?.ran === 'ran' && again.hasProcess }, 90_000)
@@ -228,14 +263,18 @@ it('[app:storage-follows-an-app-into-the-website-session] carries an allowed app
       check(`the first page reads the database back (${read === null ? 'no answer' : read.slice(0, 600)})`, found !== null)
       check('the script-set cookie arrived', typeof found?.['cookie'] === 'string' && (found['cookie'] as string).includes('carry-js=js-value'))
       check('local storage arrived, the large item whole', found?.['local'] === 'local-value' && found['localLarge'] === 200000)
-      check('the database arrived at its version with its stores', found?.['version'] === 4 && JSON.stringify(found['stores']) === JSON.stringify(['bulk', 'files', 'notes']))
+      check('the database arrived at its version with its stores', found?.['version'] === 4 && JSON.stringify(found['stores']) === JSON.stringify(['bulk', 'files', 'notes', 'vault']))
       check('the notes arrived with their dates and both indexes', JSON.stringify(found?.['noteTitles']) === JSON.stringify(['First@1700000000000', 'Second@1700000001000']) && found?.['byTag'] === 2 && found['titleUnique'] === true && found['tagMultiEntry'] === true)
       check('an auto-increment store kept its keys', JSON.stringify(found?.['fileKeys']) === JSON.stringify([1, 2]))
       check('a Blob, its type, a typed array, a map and a set arrived', found?.['blobText'] === 'blob-bytes' && found['blobType'] === 'text/plain' && JSON.stringify(found['smallBytes']) === JSON.stringify([1, 2, 3]) && JSON.stringify(found['map']) === JSON.stringify([1, 2]))
       check('a Blob of a million and a half bytes arrived byte for byte', found?.['bigSize'] === 1_500_000 && found['bigType'] === 'application/octet-stream' && found['bigCorrupt'] === 0)
       check('a store of more records than one batch arrived whole', found?.['bulk'] === 450 && found['bulkLast'] === 'row 449 '.length + 1500)
+      check('a key that cannot be exported arrived, still cannot, and still signs', found?.['keyExtractable'] === false && found['signatureBytes'] === 32)
+      check(`what the shared session held under the same names was replaced, and what the partition lacks is gone (${JSON.stringify(found?.['databases'])})`, found?.['local'] === 'local-value' && found['websiteOnly'] === null && JSON.stringify(found['databases']) === JSON.stringify(['carry-db']))
 
       const hidden = await two.evaluate(async ({ session }, { at }) => (await session.defaultSession.cookies.get({ url: `${at}/`, name: 'carry-http-only' })).map((cookie) => ({ value: cookie.value, httpOnly: cookie.httpOnly, secure: cookie.secure, sameSite: cookie.sameSite, hostOnly: cookie.hostOnly })), { at: origin })
+      const strangers = await two.evaluate(async ({ session }) => (await session.defaultSession.cookies.get({ name: 'carry-tracker' })).length)
+      check('a cookie of another site in the partition was not carried', strangers === 0)
       check(`the http-only cookie arrived with its attributes (${JSON.stringify(hidden)})`, hidden.length === 1 && hidden[0]?.value === 'http-only-value' && hidden[0].httpOnly === true && hidden[0].secure === true && hidden[0].sameSite === 'strict' && hidden[0].hostOnly === true)
 
       const kept = await two.evaluate(async ({ session }, { name, at }) => ({
@@ -244,9 +283,9 @@ it('[app:storage-follows-an-app-into-the-website-session] carries an allowed app
       }), { name: partition, at: origin })
       check(`the partition keeps its data (${JSON.stringify(kept)})`, kept.stillThere === 1 && kept.cookies.includes('carry-js'))
 
-      const record = JSON.parse(readFileSync(join(profile, 'carried-app-storage.json'), 'utf8')) as { origins: Record<string, { status: string, attempts: number, report: { cookies: { carried: number }, localStorage: { carried: number }, databases: { carried: number }, records: { carried: number, failed: number }, problems: string[] } }> }
+      const record = JSON.parse(readFileSync(recordPath, 'utf8')) as { origins: Record<string, { status: string, attempts: number, report: { cookies: { carried: number, skipped: number }, localStorage: { carried: number }, databases: { carried: number }, records: { carried: number, failed: number }, problems: string[] } }> }
       const row = record.origins[origin]
-      check(`the profile records the origin as carried (${JSON.stringify(row)})`, row?.status === 'carried' && row.attempts === 1 && row.report.cookies.carried === 2 && row.report.localStorage.carried === 2 && row.report.databases.carried === 1 && row.report.records.carried === 454 && row.report.records.failed === 0 && row.report.problems.length === 0)
+      check(`the profile records the origin as carried (${JSON.stringify(row)})`, row?.status === 'carried' && row.attempts === 1 && row.report.cookies.carried === 2 && row.report.cookies.skipped === 1 && row.report.localStorage.carried === 2 && row.report.databases.carried === 1 && row.report.records.carried === 455 && row.report.records.failed === 0 && row.report.problems.length === 0)
     } finally {
       if (first !== undefined) await closeElectronApp(first)
       if (second !== undefined) await closeElectronApp(second)

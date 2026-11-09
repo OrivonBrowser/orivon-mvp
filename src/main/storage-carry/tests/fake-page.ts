@@ -3,6 +3,7 @@
 import { webcrypto } from 'node:crypto'
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb'
 import type { CarryPage } from '../carry-runner.js'
+import { carryGlobalName, portMessageFor } from '../page-code.js'
 
 export class FakeLocalStorage {
   private readonly items = new Map<string, string>()
@@ -10,22 +11,24 @@ export class FakeLocalStorage {
   key (index: number): string | null { return [...this.items.keys()][index] ?? null }
   getItem (name: string): string | null { return this.items.get(name) ?? null }
   setItem (name: string, value: string): void { this.items.set(name, value) }
-}
-
-export interface Codec {
-  encode: (value: unknown, ancestors: Set<unknown>) => Promise<unknown>
-  decode: (node: unknown) => Promise<unknown>
+  clear (): void { this.items.clear() }
 }
 
 export interface FakePage extends CarryPage {
   readonly indexedDB: IDBFactory
   readonly localStorage: FakeLocalStorage
-  /** The script's own encoder and decoder, once the script has run in the page. */
-  readonly codec: Codec
   closed: boolean
+  /** The nonce the shell opened the page with: the message that carries a port names it. */
+  nonce: string
+  /** The ports given to the page so far. */
+  readonly given: unknown[]
+  /** Defines a global before the script runs, as a page that got there first would. */
+  predefine: (name: string, value: unknown) => void
 }
 
-export function fakePage (): FakePage {
+/** A page whose script is installed for `nonce`, which the test passes to `carryPageCode` as well. */
+export function fakePage (nonce = 'ab'.repeat(16)): FakePage {
+  const listeners: Array<(event: { data: unknown, ports: unknown[] }) => void> = []
   const scope: Record<string, unknown> = {
     indexedDB: new IDBFactory(),
     IDBKeyRange,
@@ -34,16 +37,26 @@ export function fakePage (): FakePage {
     CryptoKey: (globalThis as { CryptoKey?: unknown }).CryptoKey,
     Blob,
     File,
-    btoa,
-    atob
+    addEventListener: (type: string, listener: (event: { data: unknown, ports: unknown[] }) => void) => { if (type === 'message') listeners.push(listener) }
   }
   scope['globalThis'] = scope
   const page = {
+    nonce,
     closed: false,
+    given: [] as unknown[],
     indexedDB: scope['indexedDB'] as IDBFactory,
     localStorage: scope['localStorage'] as FakeLocalStorage,
-    get codec (): Codec { return scope['__orivonCarry'] as Codec },
-    close: () => { page.closed = true },
+    predefine: (name: string, value: unknown) => { scope[name] = value },
+    // Closing a page ends its connections and its port, as the page's death does.
+    close: () => {
+      page.closed = true
+      const installed = scope[carryGlobalName(page.nonce)] as { closeAll?: () => void } | undefined
+      installed?.closeAll?.()
+    },
+    give: async (port: unknown) => {
+      page.given.push(port)
+      for (const listener of listeners) listener({ data: portMessageFor(page.nonce), ports: [port] })
+    },
     run: async (code: string): Promise<string> => {
       // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
       const evaluate = new Function('scope', `with (scope) { return (${code}) }`) as (scope: Record<string, unknown>) => unknown

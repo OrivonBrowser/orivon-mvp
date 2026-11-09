@@ -38,7 +38,7 @@ how the same handler answers a request for the origin made anywhere else, which 
 **`registerAppOrigin` wraps the handler it is given in `answeringCarryPage`, so the one registry answers the carry page.** The storage carry
 ([`../../main/storage-carry/`](../../main/storage-carry/README.md)) must put a hidden page at an app's origin in two sessions, the partition the app
 used to run in and the shared one, and the shell may add no second route to either. The wrapped handler answers GET of one path, which holds a
-secret chosen at random per process, with an empty document, and every other request as the app's handler does. Both the partition's
+secret chosen at random per process, with an empty document that repeats the nonce of the query (a nonce of the shape the shell makes, else none), and every other request as the app's handler does. Both the partition's
 `protocol.handle` and the record the verifier relay reads hold the wrapped handler, so the page is answered wherever the origin is served.
 
 **When the cached bundle fails verification, nothing is served, and the next visit reinstalls
