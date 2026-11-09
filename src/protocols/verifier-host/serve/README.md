@@ -3,7 +3,7 @@
 **What lives here.** [`server.ts`](server.ts), the loopback TLS server that answers every host a
 protocol serves (a `.eth` name, `<name>.<scheme>.orivon`, and each scheme's endpoint
 `<scheme>.orivon`); its per-run self-signed certificate ([`certificate.ts`](certificate.ts)); the
-per-host mount cache ([`sites.ts`](sites.ts)); [`buffer-budget.ts`](buffer-budget.ts), the bytes it holds whole before sending them; [`retry.ts`](retry.ts), which reads a file again before the page is told it is missing; [`route-of.ts`](route-of.ts), which says which route a request travels (the tunnel the shell marked it with, or direct) and how patient it is; [`error-pages.ts`](error-pages.ts); and [`gateway-offer.ts`](gateway-offer.ts), which decides when an error page offers "Load through public gateways" and what following that link does (`../gateway-consent.ts` holds the yes, for one load).
+per-host mount cache ([`sites.ts`](sites.ts)); [`buffer-budget.ts`](buffer-budget.ts), the bytes it holds whole before sending them; [`retry.ts`](retry.ts), which reads a file again before the page is told it is missing; [`shell-relay.ts`](shell-relay.ts), which hands a request for a host the shell serves from a copy it keeps to the shell and writes its answer back; [`route-of.ts`](route-of.ts), which says which route a request travels (the tunnel the shell marked it with, or direct) and how patient it is; [`error-pages.ts`](error-pages.ts); and [`gateway-offer.ts`](gateway-offer.ts), which decides when an error page offers "Load through public gateways" and what following that link does (`../gateway-consent.ts` holds the yes, for one load).
 
 **What it depends on.** [`../../registry.ts`](../../registry.ts) and
 [`../../address.ts`](../../address.ts), [`../protocol.ts`](../protocol.ts),
@@ -26,6 +26,17 @@ section Alternatives considered and its two amendments. Each limit is explained 
 **The certificate is DER-encoded here** ([`certificate.ts`](certificate.ts)), about sixty lines
 over `node:crypto`; Chromium accepts it by fingerprint alone. `@peculiar/x509` would need a
 process-global `reflect-metadata` polyfill, in the process that holds every untrusted parser.
+
+**A host the shell serves from a copy it keeps is the shell's to answer, whatever the request** ([`shell-relay.ts`](shell-relay.ts), [`../../../main/verifier/README.md`](../../../main/verifier/README.md)
+has the shell's half). `handle` asks the relay right after it has found the host to be one a protocol serves, before the method, the leaf, the mount or anything else of the server's own is looked at: the host is in the set main last sent
+(`ToHost` `shell-serves`; `HostConfig.shell.origins` at the start), and the request does not carry `x-orivon-own-read` with the run's secret (`HostConfig.shell.ownReadToken`, compared in constant time).
+With no secret configured nothing is relayed, because a request could not be told from the shell's own read and a live-served handler would be sent back its own. A relayed request is posted as `relay-request` (id, method,
+address, headers as pairs, without `host`, the connection's own headers, a body's `content-length` and the mark), and nothing of a request body is carried. The shell's `relay-head`, `relay-body` and `relay-end` are written to the
+socket as given, status and headers and bytes; the headers that belong to a connection (`connection`, `keep-alive`, `transfer-encoding`, `upgrade`, `te`, `trailer`, `proxy-connection`) are the one thing left out, and `treat-as-public-address` is added as a
+`content-security-policy` of its own, as it is to every answer this server writes, so a page served from loopback never gains a local page's reach (A252) whatever policy the shell's answer carries. After each piece the socket took, the relay posts
+`relay-wrote` with its length: that is what lets the shell send more, so what waits in the host is never more than the window (`RELAY_WINDOW_BYTES`), however large the file or slow the client. `res`
+closing before the answer ended posts `relay-abort`. A head that is not a status of 200 to 599 with header pairs, a body that is not bytes, an end before a head, or no word from the shell for `RELAY_IDLE_MS` (progress on the socket counts as a word) cuts the
+client's connection and posts `relay-abort`; a `relay-error` cuts it with nothing posted, since the shell already stopped. More than `MAX_RELAYS` requests at once are answered `503`.
 
 **A request may name the leaf it expects, and then the file is checked before a byte is sent**
 ([`leaf-check.ts`](leaf-check.ts), [`ADR-0075`](../../../../docs/decisions/ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md)).

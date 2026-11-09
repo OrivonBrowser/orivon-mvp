@@ -25,6 +25,7 @@ import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
 import { BufferBudget, MAX_BUFFERED_BYTES } from './buffer-budget.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
+import type { ShellRelay } from './shell-relay.js'
 import { paceOf, routeOf } from './route-of.js'
 import type { ServeRoutes } from './route-of.js'
 import { FILE_RETRIES, readWithRetries } from './retry.js'
@@ -314,10 +315,17 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
   }
 }
 
-async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
+async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, consent: GatewayConsent, shell: ShellRelay | undefined, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
+    return
+  }
+  // A host the shell serves from a copy it keeps is the shell's to answer, with the very handler that app's partition uses, whatever the method: nothing below looks at the request.
+  if (shell?.wants(host, req.headers) === true) {
+    const target = pathOf(req.url, host)
+    if (target === undefined) res.writeHead(400, { 'content-type': 'text/plain' }).end('not a path this server serves')
+    else shell.relay(req, res, target, PUBLIC_ADDRESS_CSP)
     return
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -420,13 +428,13 @@ interface ReadPlan {
 }
 
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: () => DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: () => DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent(), shell?: ShellRelay): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
-    handle(registry, sites, routes, consent, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
+    handle(registry, sites, routes, consent, shell, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

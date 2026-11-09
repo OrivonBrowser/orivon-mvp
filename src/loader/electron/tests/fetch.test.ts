@@ -14,14 +14,16 @@ vi.mock('electron', () => ({
 
 const { net, session } = await import('electron')
 const { setOwnRequests } = await import('../../../main/route/own-requests.js')
+const { OWN_READ_HEADER } = await import('../../fetch/content-root.js')
+const { ownReadToken } = await import('../../fetch/own-read.js')
 const { MAX_REDIRECTS, electronFetch, fetchFromVerifier, netFetch, redirectRefusal } = await import('../fetch.js')
 
 const requestMock = vi.mocked(net.request)
 const resolveHostMock = vi.mocked(net.resolveHost)
 
 /** A ClientRequest double: `hops` redirect targets, announced in turn once `end()` is called, then a 200 whose body is `body`. */
-function fakeRequest (hops: readonly string[], body = 'ok'): EventEmitter & { followRedirect: ReturnType<typeof vi.fn>, abort: ReturnType<typeof vi.fn>, end: () => void } {
-  const request = Object.assign(new EventEmitter(), { followRedirect: vi.fn(), abort: vi.fn(), end: () => {} })
+function fakeRequest (hops: readonly string[], body = 'ok'): EventEmitter & { followRedirect: ReturnType<typeof vi.fn>, abort: ReturnType<typeof vi.fn>, setHeader: ReturnType<typeof vi.fn>, end: () => void } {
+  const request = Object.assign(new EventEmitter(), { followRedirect: vi.fn(), abort: vi.fn(), setHeader: vi.fn(), end: () => {} })
   request.end = () => {
     queueMicrotask(() => {
       for (const target of hops) {
@@ -187,6 +189,21 @@ describe('netFetch, for a name the verifier serves', () => {
     await netFetch('https://example.com/a.js', new AbortController().signal)
     expect(resolveProxyMock).not.toHaveBeenCalled()
   })
+
+  it('carries the mark of the shell\'s own reads, with the headers it was given, and sends the mark to no other host', async () => {
+    resolveProxyMock.mockResolvedValue('DIRECT')
+    const sent = fakeRequest([])
+    requestMock.mockReturnValue(sent as never)
+    await netFetch('https://ok.eth/a.js', new AbortController().signal, { 'x-orivon-content-root': 'bafy' })
+    expect(sent.setHeader).toHaveBeenCalledWith('x-orivon-content-root', 'bafy')
+    expect(sent.setHeader).toHaveBeenCalledWith(OWN_READ_HEADER, ownReadToken())
+
+    const other = fakeRequest([])
+    requestMock.mockReturnValue(other as never)
+    await netFetch('https://example.com/a.js', new AbortController().signal, { accept: '*/*' })
+    expect(other.setHeader).toHaveBeenCalledTimes(1)
+    expect(other.setHeader).not.toHaveBeenCalledWith(OWN_READ_HEADER, expect.anything())
+  })
 })
 
 describe('fetchFromVerifier, for a name the verifier serves', () => {
@@ -207,5 +224,12 @@ describe('fetchFromVerifier, for a name the verifier serves', () => {
     fetchMock.mockResolvedValue(new Response('ok'))
     await fetchFromVerifier('https://app.eth/index.html', init())
     expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('carries the mark of the shell\'s own reads beside the headers it was given, so the verifier\'s server never hands it back to this handler', async () => {
+    resolveProxyMock.mockResolvedValue('DIRECT')
+    fetchMock.mockResolvedValue(new Response('ok'))
+    await fetchFromVerifier('https://app.eth/index.html', { ...init(), headers: { 'x-orivon-expect-leaf': 'sha256:abc' } })
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { 'x-orivon-expect-leaf': 'sha256:abc', [OWN_READ_HEADER]: ownReadToken() } })
   })
 })

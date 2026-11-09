@@ -2,7 +2,7 @@
 
 **What lives here.** `fetch.ts` (`Fetch` over Electron `net`, with the redirect rule; while the whole browser is on the tunnel it resolves no name here and signs in to the tunnel's front), `request-fetch.ts` (a `fetch` over `net.request` that answers a proxy's challenge itself, which `net.fetch` cannot do for a request without web contents),
 `resolve.ts` (DNS through `net.resolveHost`), `serve.ts` (registers `protocol.handle` and
-`restorePinnedServing`), `app-partitions.ts` (which origins have a session of their own, and the preparers that finish
+`restorePinnedServing`), `app-partitions.ts` (which origins have a session of their own, the handler each is answered with, and the preparers that finish
 a session before an app is served from it) and `reach-route.ts` (the route of an app's third-party reach, supplied by
 main).
 
@@ -25,6 +25,12 @@ Why re-registering a handler is idempotent, why `restorePinnedServing` runs at s
 the CSP is read from the live grant ledger on every request (so a revoke narrows the very next
 response, and nothing reads grants from disk, A158) are documented in [`serve.ts`](serve.ts), on
 `registerAppOrigin`, `restorePinnedServing` and `liveGrantedPatternsFor`.
+
+**The handler an origin is answered with is kept beside its partition.** `registerAppOrigin` records `origin -> handler`
+(`servingHandlerFor`, `servedOrigins`) and `retireAppOrigin` removes it, and `onServingChange` calls its listener when an origin starts or stops
+being served (not when its handler is replaced in place, since the set is the same). The partition is where the app's own page runs; the record is
+how the same handler answers a request for the origin made anywhere else, which [`../../main/verifier/README.md`](../../main/verifier/README.md) describes.
+`fetch.ts` marks every read of a host the verifier serves as the shell's own (`../fetch/own-read.ts`), so a live-served handler's read of the verifier is never answered by a handler.
 
 **When the cached bundle fails verification, nothing is served, and the next visit reinstalls
 it.** A handler that denied every request would stop the page loading, so its hint would never

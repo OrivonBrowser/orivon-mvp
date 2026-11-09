@@ -21,6 +21,7 @@ import type { Resolver } from '../../broker/policy/connect.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
 import { isOnionHost } from '../../broker/route/onion.js'
 import { electronResolveHost } from '../../loader/electron/resolve.js'
+import { asOwnRead } from '../../loader/fetch/own-read.js'
 import { FaviconCache } from './favicon-cache.js'
 import { MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 import { faviconTimeoutMs } from './favicon-timeout.js'
@@ -227,6 +228,8 @@ async function requestOnce (url: string, signal: AbortSignal, session: Session |
       resolve(value)
     }
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used }) })
+    // An icon is read from the verifier, as it is for any page it serves, never answered by the app's own handler.
+    for (const [name, value] of Object.entries(asOwnRead(url))) request.setHeader(name, value)
     // settle() BEFORE abort(), not after: aborting a request that is still
     // in flight can itself emit 'error' synchronously (the same way a real
     // cancelled request does), and the settled guard means whichever call

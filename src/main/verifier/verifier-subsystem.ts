@@ -57,6 +57,10 @@ import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 import { configureNodeRoute, ethereumOutsideTunnel, nodesMayServeTunnelSites, nodesRunThroughTunnel } from './node-route.js'
 import { forgetNodeData as forgetNodes } from './forget-node-data.js'
+import { ownReadToken } from '../../loader/fetch/own-read.js'
+import { onServingChange } from '../../loader/electron/app-partitions.js'
+import { ShellResponder } from './shell-responder.js'
+import { relayHandlerFor, relayableOrigins } from './shell-serves.js'
 
 /** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
 const MOUNT_GRACE_MS = 5_000
@@ -254,7 +258,8 @@ async function hostConfig (): Promise<HostConfig> {
     ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice(), ...(seam?.ipfsNode?.retryWaitMs !== undefined && { retryWaitMs: seam.ipfsNode.retryWaitMs }) } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(swarmChunks !== undefined && { swarmChunks }),
-    ...(seam === undefined ? {} : { fixtures: seam.fixtures })
+    ...(seam === undefined ? {} : { fixtures: seam.fixtures }),
+    shell: { ownReadToken: ownReadToken(), origins: relayableOrigins() }
   }
 }
 
@@ -402,6 +407,8 @@ export const verifierSubsystem: Subsystem = {
           hostDown = undefined
           hostAsleep = false
           noteVerifierListening(true)
+          // Before the held requests are let go: an origin served between the host's configuration and now is then in its set too.
+          host.send({ type: 'shell-serves', origins: relayableOrigins() })
           listeningGate.listening()
           changed()
         },
@@ -438,6 +445,8 @@ export const verifierSubsystem: Subsystem = {
           if (verifierStore().saveNameScheme(name, scheme)) announceNameSchemeChange()
         },
         nodeTraffic: (name, active, bytes) => { ledger.record(name, active, bytes) },
+        relay: (message) => { responder.receive(message) },
+        abandoned: () => { responder.abortAll() },
         nodeWanted: (name) => {
           const node = NODES.get(name)
           if (node === undefined) return
@@ -452,6 +461,10 @@ export const verifierSubsystem: Subsystem = {
       }
     })
     supervisor = host
+    // A request for a host the shell serves from a copy it keeps, handed over by the host, is answered with that app's own handler.
+    const responder = new ShellResponder({ send: (message) => host.send(message), handlerFor: relayHandlerFor })
+    // The host holds the set it was started with, and hears of every change after.
+    onServingChange(() => { host.send({ type: 'shell-serves', origins: relayableOrigins() }) })
     /** Tells the host what a node is doing; it holds a mount that reads from the node on the answer. */
     function tellHost (name: string, node: LocalNodeSubsystem): void {
       const state = node.state()

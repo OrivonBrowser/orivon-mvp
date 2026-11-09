@@ -30,6 +30,13 @@ export const EXPECT_LEAF_HEADER = 'x-orivon-expect-leaf'
 export const PARTITION_HEADER = 'x-orivon-partition'
 
 /**
+ * Set by the main process on a read it makes of a host the verifier serves, for its own purposes (`own-read.ts`): the
+ * value is a secret chosen at random for the run, and a request that carries it is answered by the verifier and never handed to the
+ * shell's handler for that host, which may be the very code making the read.
+ */
+export const OWN_READ_HEADER = 'x-orivon-own-read'
+
+/**
  * Set to `tunnel` on every request a website session of the tunnel profile makes to the verifier, and stripped from
  * every other: the verifier then reads and proves the name through the tunnel and nowhere else.
  */

@@ -41,6 +41,34 @@ export interface NodeWanted { readonly type: 'node-wanted', readonly node: strin
 /** What main says the local node `node` is doing, as its answer to `node-wanted` and whenever it changes. */
 export interface NodeNotice { readonly type: 'node', readonly node: string, readonly state: LocalNodeState['state'], readonly reason?: string }
 
+/** Headers as the pairs they were sent in, so one sent twice stays twice. */
+export type HeaderPairs = ReadonlyArray<readonly [string, string]>
+
+/** The largest piece of a body the shell sends in one message. */
+export const RELAY_CHUNK_BYTES = 128 * 1024
+/** The bytes the shell may have sent that the host has not yet said it wrote to the socket, per request: a file larger than this never piles up in the host. */
+export const RELAY_WINDOW_BYTES = 512 * 1024
+/** The requests handed to the shell that are unanswered at once, on either side; a further one is refused. */
+export const MAX_RELAYS = 256
+
+/** A request for a host the shell serves from a copy it keeps, as the host read it. The shell answers it with `relay-head`, `relay-body` and `relay-end`, or `relay-error`. */
+export interface RelayRequest { readonly type: 'relay-request', readonly id: number, readonly method: string, readonly url: string, readonly headers: HeaderPairs }
+/** The client of request `id` left: the shell stops answering it. */
+export interface RelayAbort { readonly type: 'relay-abort', readonly id: number }
+/** The socket took `bytes` more of request `id`'s body: the shell may send that much more. */
+export interface RelayWrote { readonly type: 'relay-wrote', readonly id: number, readonly bytes: number }
+export type RelayFromHost = RelayRequest | RelayAbort | RelayWrote
+
+/** The shell's answer to a request it was handed: the head, then the body in pieces of at most `RELAY_CHUNK_BYTES`, then the end; or an error, which fails the client's load. */
+export type RelayToHost =
+  | { readonly type: 'relay-head', readonly id: number, readonly status: number, readonly headers: HeaderPairs }
+  | { readonly type: 'relay-body', readonly id: number, readonly chunk: Uint8Array }
+  | { readonly type: 'relay-end', readonly id: number }
+  | { readonly type: 'relay-error', readonly id: number, readonly message: string }
+
+/** The origins the shell serves from a copy it keeps, whole each time. A request for one of their hosts is handed to the shell. */
+export interface ShellServes { readonly type: 'shell-serves', readonly origins: readonly string[] }
+
 export interface HostConfig {
   readonly port: number
   /** Undefined when the light client does not run: every `.eth` name then fails closed. */
@@ -121,6 +149,12 @@ export interface HostConfig {
   readonly ethereumOutside?: boolean
   /** Test builds only: `.eth` names mapped to content with no light client. */
   readonly fixtures?: Readonly<Record<string, string>>
+  /**
+   * The hosts the shell answers for from a copy it keeps, and the secret by which a read of the shell's own is told from a page's
+   * (`loader/fetch/own-read.ts`). `origins` is the set as of this start; `shell-serves` replaces it while the host runs. Absent, no
+   * request is handed to the shell.
+   */
+  readonly shell?: { readonly ownReadToken: string, readonly origins: readonly string[] }
 }
 
 export type LightClientState =
@@ -166,6 +200,8 @@ export type ToHost =
   | NodeNotice
   /** The person changed whether IPFS may ask a lookup service: from the next IPNS lookup, a name service is asked or not. */
   | { readonly type: 'ipfs-lookup', readonly allowed: boolean }
+  | ShellServes
+  | RelayToHost
 
 export type FromHost =
   | { readonly type: 'listening', readonly fingerprint: string }
@@ -182,3 +218,4 @@ export type FromHost =
   | { readonly type: 'node-traffic', readonly node: string, readonly active: number, readonly bytes: number }
   /** A top-level-domain name was mounted from content of the protocol serving `scheme`, so the shell can show `<scheme>://<host>`. */
   | { readonly type: 'name-scheme', readonly host: string, readonly scheme: string }
+  | RelayFromHost

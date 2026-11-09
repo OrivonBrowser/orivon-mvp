@@ -8,6 +8,7 @@ import type { RequestHeaders } from '../fetch/budget.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { servedByVerifier } from '../fetch/verifier-origin.js'
+import { asOwnRead } from '../fetch/own-read.js'
 import { answerRouteChallenge } from '../../main/route/lookup-session.js'
 import { ownDirectSession, ownRequestsSettled, ownRouteFor, ownSiteSession } from '../../main/route/own-requests.js'
 import { namesVerifierHost, refuseWhenProxySees } from '../../main/route/verifier-name-guard.js'
@@ -153,7 +154,7 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
   return await new Promise<FetchResponse>((resolve, reject) => {
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used as Session }) })
     request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
-    for (const [name, value] of Object.entries(headers ?? {})) request.setHeader(name, value)
+    for (const [name, value] of Object.entries(asOwnRead(url, headers))) request.setHeader(name, value)
     let hops = 0
     let settled = false
     const fail = (error: Error): void => {
@@ -189,5 +190,5 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
 export async function fetchFromVerifier (url: string, init: { readonly method: string, readonly headers: Record<string, string>, readonly signal: AbortSignal }): Promise<Response> {
   const { net } = await import('electron')
   if (namesVerifierHost(url)) await refuseWhenProxySees((await import('electron')).session.defaultSession, url)
-  return await net.fetch(url, { method: init.method, headers: init.headers, signal: init.signal, redirect: 'error', credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true })
+  return await net.fetch(url, { method: init.method, headers: asOwnRead(url, init.headers), signal: init.signal, redirect: 'error', credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true })
 }

@@ -11,6 +11,7 @@ import { StallClock } from '../../protocols/gateways/stall.js'
 import { directLookupSession, lookupSessionFor } from '../route/lookup-session.js'
 import { mainRoutePace } from '../route/main-pace.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
+import { asOwnRead } from '../../loader/fetch/own-read.js'
 import { ownFetch, ownRequestsTunnelled } from '../route/own-requests.js'
 import { fetchThroughRoute } from '../route/routed-fetch.js'
 import { namesVerifierHost, refuseWhenProxySees } from '../route/verifier-name-guard.js'
@@ -246,7 +247,9 @@ export async function netFetchJson (url: string, origin?: string): Promise<Fetch
     // A provider the verifier serves is read on this computer; a proxy that would carry the request is never asked about it.
     const ordinary = async (target: string, options?: RequestInit): Promise<Response> => {
       if (namesVerifierHost(target)) await refuseWhenProxySees(direct ?? (await import('electron')).session.defaultSession, target)
-      return direct !== undefined ? await direct.fetch(target, options) : await net.fetch(target, options)
+      // Read from the verifier, as the provider's name is, never answered by the handler of an app that happens to be served at that name.
+      const sent = { ...options, headers: asOwnRead(target, Object.fromEntries(new Headers(options?.headers))) }
+      return direct !== undefined ? await direct.fetch(target, sent) : await net.fetch(target, sent)
     }
     const response = routed !== undefined ? await fetchThroughRoute(net, routed, url, init.signal) : origin === undefined ? await ownFetch(ordinary)(url, init) : await ordinary(url, init)
     clock.progress()

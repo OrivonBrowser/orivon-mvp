@@ -33,6 +33,10 @@ export function registerAppOrigin (appSession: Session, origin: string, handler:
   servedPartitions.add(partitionFor(origin))
   if (from === 'pin') pinnedPartitions.add(partitionFor(origin))
   else pinnedPartitions.delete(partitionFor(origin))
+  const key = originKey(origin)
+  const added = key !== undefined && !servingHandlers.has(key)
+  if (key !== undefined) servingHandlers.set(key, handler)
+  if (added) notifyServingChange()
 }
 
 /**
@@ -46,6 +50,55 @@ export function retireAppOrigin (appSession: Session, origin: string): void {
   appSession.protocol.handle(scheme, async () => new Response('Orivon: this app was stopped', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
   servedPartitions.delete(partitionFor(origin))
   pinnedPartitions.delete(partitionFor(origin))
+  const key = originKey(origin)
+  if (key !== undefined && servingHandlers.delete(key)) notifyServingChange()
+}
+
+/**
+ * The handler each served origin is answered with, the very one its partition's protocol handler is. A request for the origin
+ * made anywhere else (the verifier's loopback server, for a shared session) is answered by this same handler, so the answer is
+ * the same wherever the page runs. Keyed by the origin as the URL parser spells it. An entry leaves with `retireAppOrigin`.
+ */
+const servingHandlers = new Map<string, AppRequestHandler>()
+const servingListeners = new Set<() => void>()
+
+function originKey (origin: string): string | undefined {
+  try {
+    return new URL(origin).origin
+  } catch {
+    return undefined
+  }
+}
+
+function notifyServingChange (): void {
+  for (const listener of [...servingListeners]) {
+    // One listener's failure is its own: the others still hear of the change.
+    try {
+      listener()
+    } catch (error) {
+      console.error('[loader] a listener of the origins served failed:', error)
+    }
+  }
+}
+
+/** The handler that answers for `origin` now, or undefined when the shell serves nothing there. */
+export function servingHandlerFor (origin: string): AppRequestHandler | undefined {
+  const key = originKey(origin)
+  return key === undefined ? undefined : servingHandlers.get(key)
+}
+
+/** Every origin the shell serves now, as the URL parser spells it. */
+export function servedOrigins (): readonly string[] {
+  return [...servingHandlers.keys()]
+}
+
+/**
+ * Calls `listener` whenever an origin starts or stops being served, after the set has changed; not when a served origin's
+ * handler is replaced, since the set is the same. Returns the function that stops the calls.
+ */
+export function onServingChange (listener: () => void): () => void {
+  servingListeners.add(listener)
+  return () => { servingListeners.delete(listener) }
 }
 
 /** The sessions `registerAppOrigin` has served an origin from, and who wants to hear of each. */

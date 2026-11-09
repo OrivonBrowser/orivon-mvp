@@ -392,3 +392,48 @@ describe('HostSupervisor', () => {
     })
   })
 })
+
+describe('HostSupervisor, for the requests the host hands the shell', () => {
+  function relaying (): { supervisor: HostSupervisor, hosts: FakeHost[], heard: unknown[], abandoned: { count: number } } {
+    const hosts: FakeHost[] = []
+    const heard: unknown[] = []
+    const abandoned = { count: 0 }
+    const supervisor = new HostSupervisor({
+      fork: () => { const h = new FakeHost(); hosts.push(h); return h },
+      config: () => CONFIG,
+      events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {}, nameScheme: () => {}, relay: (message) => heard.push(message), abandoned: () => { abandoned.count += 1 } }
+    })
+    return { supervisor, hosts, heard, abandoned }
+  }
+
+  it('passes on a request, an abort and an acknowledgement, and drops one that is malformed', () => {
+    const { supervisor, hosts, heard } = relaying()
+    supervisor.start()
+    const request = { type: 'relay-request', id: 1, method: 'GET', url: 'https://kept.example/app.js', headers: [['range', 'bytes=0-1']] }
+    hosts[0]?.answer(request)
+    hosts[0]?.answer({ type: 'relay-wrote', id: 1, bytes: 10 })
+    hosts[0]?.answer({ type: 'relay-abort', id: 1 })
+    hosts[0]?.answer({ type: 'relay-request', id: 'one', method: 'GET', url: 'https://kept.example/', headers: [] })
+    expect(heard).toEqual([request, { type: 'relay-wrote', id: 1, bytes: 10 }, { type: 'relay-abort', id: 1 }])
+  })
+
+  it('says the requests it passed on are waiting for nothing when the host exits, and when it is put to sleep', () => {
+    const { supervisor, hosts, abandoned } = relaying()
+    supervisor.start()
+    hosts[0]?.crash(1)
+    expect(abandoned.count).toBe(1)
+    supervisor.stop()
+    const second = relaying()
+    second.supervisor.start()
+    second.supervisor.idle()
+    expect(second.abandoned.count).toBe(1)
+  })
+
+  it('posts the shell\'s answers and the set of hosts it serves to the running host, and to no host when none runs', () => {
+    const { supervisor, hosts } = relaying()
+    expect(supervisor.send({ type: 'relay-end', id: 1 })).toBe(false)
+    supervisor.start()
+    expect(supervisor.send({ type: 'shell-serves', origins: ['https://kept.example'] })).toBe(true)
+    expect(hosts[0]?.sent.at(-1)).toEqual({ type: 'shell-serves', origins: ['https://kept.example'] })
+  })
+})

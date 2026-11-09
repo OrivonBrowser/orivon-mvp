@@ -5,7 +5,7 @@
 certificate check each session applies, starting and restarting the verifier host (and what a request waits for until it listens)
 ([`../../protocols/verifier-host/`](../../protocols/verifier-host/)), the light client's
 checkpoint ([`ADR-0031`](../../../docs/decisions/ADR-0031-helios-is-the-light-client.md)) and its renewal at run time from two beacon servers that agree ([`ADR-0092`](../../../docs/decisions/ADR-0092-when-no-checkpoint-is-recent-enough-two-beacon-servers-that-agree-supply-one.md)), what the
-host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, and the
+host verified between runs (IPNS sequences, Swarm feed indexes, and the address scheme each `.eth` name's content was last found under), the per-site partition stamp, the gateway proxy check, the answers to the requests the host hands the shell for a host the shell serves from a copy it keeps ([`shell-responder.ts`](shell-responder.ts), [`shell-serves.ts`](shell-serves.ts)), and the
 wording of the status and a name's evidence for Settings and the site-info popover, and the light client's failures and syncs as lines of the main process's log, where a bug report finds them. Every line a host prints (the verifier host, a local node's host) reaches that log too: the hosts are forked through [`../diagnostics/host-fork.ts`](../diagnostics/host-fork.ts).
 Which Ethereum servers the light client asks is decided here: Orivon's ([`endpoints.ts`](endpoints.ts)), or the ones the person named in Settings > Web3 ([`eth-servers.ts`](eth-servers.ts) reads the three settings; [`eth-servers-source.ts`](eth-servers-source.ts) remembers what the running host was started with, so only a change to the servers restarts it; [`light-client-config.ts`](light-client-config.ts) builds the light client's part of the host's configuration from them, and the one log line that says the person's servers are asked).
 The person can switch the light client off in Settings or from the Available networks popup (`web3.lightClient`, read at each
@@ -22,6 +22,7 @@ import `electron`; the rest are `<name>.ts` decisions ([`../README.md`](../READM
 [`../../broker/`](../../broker/) (`grants/node-ledger-storage.ts`'s atomic write,
 `policy/pin.ts`), [`../../loader/fetch/`](../../loader/fetch/) (`verifier-origin.ts`,
 `content-root.ts`), [`../../trust/website-level.ts`](../../trust/website-level.ts),
+[`../../loader/electron/app-partitions.ts`](../../loader/electron/app-partitions.ts) (the handler each served origin is answered with, and the hearing of that set changing), [`../../loader/fetch/own-read.ts`](../../loader/fetch/own-read.ts) (the secret that marks the shell's own reads), [`../../loader/serve/serve.ts`](../../loader/serve/serve.ts) (the handler's type),
 [`../sessions/web-request-owner.ts`](../sessions/web-request-owner.ts), [`../sessions/network-service-runner.ts`](../sessions/network-service-runner.ts) (`network-service-reapply.ts` registers the certificate check and the host's sleep there, to be sent again when Chromium's network service restarts), [`../auth/note-certificate.ts`](../auth/note-certificate.ts) (told which certificate each connection presented, from the verify proc), the top-level
 `registry.ts`, `node:fs`, `node:fs/promises`, `node:net`, `node:path`, and `multiformats` (`cid`,
 `bases/base36`) for the same IPNS-key shape check `ipfs/ipns.ts` applies, never that file itself
@@ -112,6 +113,22 @@ ends that run. With the light client switched off, or in a private session, whos
 end, nothing starts at launch. The partition stamp and the listening gate
 stay registered on the default session whatever the host is doing: they are also what keeps `net.fetch` from crashing a
 session that holds an extension's network permission ([`../extensions/README.md`](../extensions/README.md)).
+
+**A request for a host the shell serves from a copy it keeps is answered by the shell, with the handler its partition uses.** An allowed app is served
+by a handler (its pinned files, or the verifier read live under a check: [`../../loader/electron/README.md`](../../loader/electron/README.md)), and
+`app-partitions.ts` keeps `origin -> handler`. The host is told which of those origins it answers at all (`shell-serves.ts`'s `relayableOrigins`: `https:`, the default port, a host a
+protocol serves): in its configuration as it starts (`HostConfig.shell`), by a `shell-serves` message holding the whole set on every change and when the host reports it listens
+(before the held requests are let go), so a restart or a change in the gap loses nothing. A request of any session for such a host reaches the host's server through the resolver rules, which hands it to main as a
+`relay-request` ([`../../protocols/verifier-host/serve/README.md`](../../protocols/verifier-host/serve/README.md)); [`shell-responder.ts`](shell-responder.ts) builds a `Request` from it (method,
+address, headers; no body), calls `servingHandlerFor(origin)` with the origin of the address, and sends the `Response` back as a `relay-head`, the body in pieces of at most
+`RELAY_CHUNK_BYTES` (each a buffer of its own, because a view would be cloned with the whole buffer behind it) and a `relay-end`. A `Response.error()`, a handler that throws and a body that fails after its head
+are a `relay-error`, which fails the client's load; an origin the shell no longer serves is answered `404` as the retired partition's refusal is. The window: at most `RELAY_WINDOW_BYTES` are sent that the host has not
+reported written (`relay-wrote`, sent when the socket took a piece), per request, so a large file waits in the handler's own stream and never in the host's memory; a piece larger than what is left of the window waits for it to empty rather than
+for ever. A `relay-abort` (the client left) aborts the `Request`'s signal and cancels the handler's body; `HostSupervisor`'s `abandoned` event does the same for every request when the host exits or sleeps. At most
+`MAX_RELAYS` requests are answered at once. **A loop is cut by a secret that a page cannot send.** A handler that reads from the verifier (a live-served app) makes its reads with `loader/fetch/own-read.ts`'s mark, `x-orivon-own-read`, whose value is a
+random secret of this run that only main and the host it starts hold (`HostConfig.shell.ownReadToken`); the host never hands a request carrying it to the shell. `netFetch` (every install, update check and live-served read) and `fetchFromVerifier` add it, as do the
+favicon fetch and the Web3 Score provider reads (`../browsing/`), so a read main makes about a site is answered by the verifier whether or not an app is served at that name. The mark is added to a request for a host a protocol serves and to no other, so the secret reaches no server
+but the verifier's. The `expect-leaf` and `content-root` headers cannot do this job: a live read carries the first only for a file the declared tree lists and the second only once the version is known, and a page can send either.
 
 **A request to a host the verifier serves waits until the host listens.** The host forks, reads its config and binds, so a
 request that finds it asleep would reach a closed port and leave the tab on the connection-refused page, for good.

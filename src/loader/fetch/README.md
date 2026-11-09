@@ -4,7 +4,7 @@
 fetch and the bounded pool), `budget.ts` (the `Fetch` type, byte cap and idle deadline),
 `install-origin.ts` (T12/A46's public-unicast guard), `verifier-origin.ts` (the hosts a protocol
 serves, exempt from that guard and given a longer idle deadline), `content-root.ts` (the root-CID
-request header), `update-check.ts` (the update-check interval and conditional-request validators),
+request header, and the other headers shared with the verifier), `own-read.ts` (the secret that marks the main process's own reads of a host the verifier serves, so the verifier never hands one to the handler of an app served at that name), `update-check.ts` (the update-check interval and conditional-request validators),
 `undeclared-assets.ts` (warning about subresources the manifest doesn't declare), `read-order.ts` (the order the declared files are downloaded in) and
 `manifest-at-root.ts` (the manifest of the content a root CID names, and nothing else of the bundle; a 404 means "no manifest" only when it echoes that root in the root header, because a name pointing at no content answers 404 too).
 
