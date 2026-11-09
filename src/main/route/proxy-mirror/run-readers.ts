@@ -4,6 +4,7 @@
 import { execFile } from 'node:child_process'
 import { win32 } from 'node:path'
 import { parseGnomeSettings } from './read-gnome.js'
+import { parseMacosSettings } from './read-macos.js'
 import { parseWindowsSettings } from './read-windows.js'
 import type { SystemSettings } from './settings-source.js'
 
@@ -61,6 +62,15 @@ export async function readWindowsSettings (run: CommandRunner = runCommand, syst
       registryQuery(run, reg, SETTINGS_POLICY, 'ProxySettingsPerUser')
     ])
     return parseWindowsSettings({ values, blob, policy })
+  } catch {
+    return { kind: 'unreadable' }
+  }
+}
+
+/** macOS's proxy settings; `unreadable` when `scutil` fails or prints nothing it can read. */
+export async function readMacosSettings (run: CommandRunner = runCommand): Promise<SystemSettings> {
+  try {
+    return parseMacosSettings(await run('/usr/sbin/scutil', ['--proxy']))
   } catch {
     return { kind: 'unreadable' }
   }
