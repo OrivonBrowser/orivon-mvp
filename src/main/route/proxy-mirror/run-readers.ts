@@ -41,7 +41,7 @@ export async function readGnomeSettings (run: CommandRunner = runCommand): Promi
 const INTERNET_SETTINGS = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
 const SETTINGS_POLICY = 'HKLM\\Software\\Policies\\Microsoft\\Windows\\CurrentVersion\\Internet Settings'
 
-/** One `reg query`: what it printed, or undefined when `reg` says the key or value is not there (exit code 1). Any other failure rejects. */
+/** One `reg query`: what it printed, or undefined when `reg` exits with 1, as it does for a key or value that is not there (and for any other error it reports). A program that cannot start or takes too long rejects. */
 async function registryQuery (run: CommandRunner, reg: string, key: string, value?: string): Promise<string | undefined> {
   try {
     return await run(reg, value === undefined ? ['query', key] : ['query', key, '/v', value])

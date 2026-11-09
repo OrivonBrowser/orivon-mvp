@@ -56,8 +56,9 @@ detection server); beside a manual proxy it changes nothing here, since the manu
 and `ProxyOverride` pass as written, because `setProxy` reads them with the parser that reads them in `system` mode, and the override list is
 split at the separators Chromium's Windows reader splits it at (`;`, `,` and white space), so no entry holds one. The machine policy that
 makes the settings per machine (`ProxySettingsPerUser` 0) is `unsupported`; a blob cut short or of a layout this reader does not know is
-too, and a blob of no bytes is no blob. `reg.exe` exits with 1 for a key or value that is not there and with anything else, or not at all,
-for a failure, so only the first is read as nothing set.
+too, and a blob of no bytes is no blob. `reg.exe` exits with 1 for every error it reports, a key or value that is not there among them, so
+a query that exits with 1 reads as nothing set (for the Internet Settings key itself, which always exists, that is `unreadable`); a query that
+takes too long or cannot start is `unreadable` whichever it was, and the canary check judges what the rest comes to.
 
 **An unchanged read does nothing.** The settings and Chromium's two base answers are compared with the last pass; only a difference, or a
 state that is not settled (`unreadable`, `disagrees`), runs the check again. The 2-second question is asked in process of the session

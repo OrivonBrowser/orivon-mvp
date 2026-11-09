@@ -198,7 +198,7 @@ function ieBlob (flags: number, proxy = '', bypass = ''): number[] {
 function setIeBlob (bytes: readonly number[] | null): void {
   powershell(bytes === null
     ? `Remove-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -ErrorAction SilentlyContinue`
-    : `New-Item -Path '${IE_CONNECTIONS}' -Force | Out-Null; Set-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -Value ([byte[]](${bytes.join(',')})) -Type Binary`)
+    : `if (-not (Test-Path '${IE_CONNECTIONS}')) { New-Item -Path '${IE_CONNECTIONS}' | Out-Null }; Set-ItemProperty -Path '${IE_CONNECTIONS}' -Name DefaultConnectionSettings -Value ([byte[]](${bytes.join(',')})) -Type Binary`)
 }
 
 /** Remembers the Windows proxy settings of the user running this, in both forms, and returns what puts them back. */
