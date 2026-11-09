@@ -58,13 +58,29 @@ describe('hearing of the origins served changing', () => {
     const stop = onServingChange(() => { heard += 1 })
     registerAppOrigin(session, 'https://heard.example', answering('one'), 'verifier')
     expect(heard).toBe(1)
-    registerAppOrigin(session, 'https://heard.example', answering('two'))
+    registerAppOrigin(session, 'https://heard.example', answering('two'), 'verifier')
     expect(heard).toBe(1)
+    registerAppOrigin(session, 'https://heard.example', answering('pinned'))
+    registerAppOrigin(session, 'https://heard.example', answering('pinned again'))
     retireAppOrigin(session, 'https://heard.example')
-    expect(heard).toBe(2)
+    expect(heard).toBe(3)
     stop()
     registerAppOrigin(session, 'https://heard.example', answering('three'))
+    expect(heard).toBe(3)
+  })
+
+  it('calls the listener when an origin read live is served from its pin, and when a pinned one is read live again, since the host asks which', async () => {
+    const session = fakeSession()
+    let heard = 0
+    const stop = onServingChange(() => { heard += 1 })
+    registerAppOrigin(session, 'https://switching.example', answering('live'), 'verifier')
+    expect(heard).toBe(1)
+    registerAppOrigin(session, 'https://switching.example', answering('pinned'))
     expect(heard).toBe(2)
+    registerAppOrigin(session, 'https://switching.example', answering('live again'), 'verifier')
+    expect(heard).toBe(3)
+    stop()
+    retireAppOrigin(session, 'https://switching.example')
   })
 
   it('has the set already changed when the listener is called', async () => {

@@ -20,6 +20,7 @@ import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js
 import type { Resolver } from '../../broker/policy/connect.js'
 import { isLoopbackHost } from '../../broker/policy/origin.js'
 import { isOnionHost } from '../../broker/route/onion.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { electronResolveHost } from '../../loader/electron/resolve.js'
 import { asOwnRead } from '../../loader/fetch/own-read.js'
 import { FaviconCache } from './favicon-cache.js'
@@ -200,7 +201,7 @@ type HopResult = { kind: 'ok', bytes: Uint8Array } | { kind: 'redirect', locatio
  * attacker-controlled favicon host must not turn a visited page into an
  * unhandled rejection at the caller.
  */
-async function requestOnce (url: string, signal: AbortSignal, session: Session | undefined): Promise<HopResult> {
+async function requestOnce (url: string, signal: AbortSignal, session: Session | undefined, answeredByShell: boolean): Promise<HopResult> {
   const { net } = await import('electron')
   // With no route and the whole browser on the tunnel, the default session is the tunnel's: a site set to off is looked up about on the system's proxy.
   const used = session ?? directLookupSession()
@@ -228,8 +229,8 @@ async function requestOnce (url: string, signal: AbortSignal, session: Session |
       resolve(value)
     }
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used }) })
-    // An icon is read from the verifier, as it is for any page it serves, never answered by the app's own handler.
-    for (const [name, value] of Object.entries(asOwnRead(url))) request.setHeader(name, value)
+    // An icon is read from the verifier, as it is for any page it serves, unless the shell keeps the page's own site: the handler of that copy answers it, in the shared session as in a partition of its own.
+    if (!answeredByShell) for (const [name, value] of Object.entries(asOwnRead(url))) request.setHeader(name, value)
     // settle() BEFORE abort(), not after: aborting a request that is still
     // in flight can itself emit 'error' synchronously (the same way a real
     // cancelled request does), and the settled guard means whichever call
@@ -272,6 +273,15 @@ async function routeNow (lookup: RouteLookup | undefined): Promise<Session | und
   }
 }
 
+function isPageOwnOrigin (url: string, pageUrl: string): boolean {
+  try {
+    const origin = new URL(url).origin
+    return origin !== 'null' && origin === new URL(pageUrl).origin
+  } catch {
+    return false
+  }
+}
+
 /** The session a hop is asked through: the page's own for its own origin, which answers an installed app from its
  * pin, as it answers the page; the default one for any other host, whose request an app's session would refuse
  * unless the app holds a grant for it. A routed app's other hosts go through the session of its route
@@ -302,7 +312,7 @@ async function fetchUnchecked (url: string, pageUrl: string, pageSession: Sessio
       if (route === null) return null
       // The first hop was cleared by the caller, as routed or not: it is judged again only when the route changed since.
       if ((hop > 0 || (route !== undefined) !== clearedAsRouted) && !(await isSafeFaviconUrl(current, pageUrl, electronResolveHost, { routed: route !== undefined }))) return null
-      const result = await requestOnce(current, controller.signal, sessionForHop(current, pageUrl, pageSession, route))
+      const result = await requestOnce(current, controller.signal, sessionForHop(current, pageUrl, pageSession, route), isPageOwnOrigin(current, pageUrl) && isOriginServedFromCacheSync(new URL(current).origin))
       if (result.kind === 'failed') return null
       if (result.kind === 'ok') return toDataUrl(result.bytes)
       if (hop === MAX_FAVICON_REDIRECTS) return null

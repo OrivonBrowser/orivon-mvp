@@ -428,7 +428,7 @@ export function wireView (id: string, record: TabRecord): void {
     openExternal: (url) => { void askExternalLink(wc, url).then((allowed) => { if (allowed) return shell.openExternal(url) }).catch(() => {}) },
     leaveFor: (url, from) => leaveForOpen(record, from.url, url, from.partition),
     chooseLeave: async (leave) => await chooseLeave(wc, leave)
-  }, () => ({ url: wc.getURL(), partition: record.partition })))
+  }, () => ({ url: wc.getURL(), partition: record.partition, appTab: appTabViews.has(record.view) })))
   wireTabSignals(id, record)
 }
 

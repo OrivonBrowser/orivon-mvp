@@ -106,7 +106,7 @@ export class ShellRelay {
   wants (host: string, headers: IncomingHttpHeaders, tunnelled = false): boolean {
     if (this.deps.ownReadToken === undefined || !this.served.has(host) || this.isOwnRead(headers)) return false
     if (tunnelled && !this.pinned.has(host)) return false
-    return isOwnSiteRequest(headers)
+    return isOwnSiteRequest(headers, host)
   }
 
   /** Hands `req` to the shell. `extraCsp` goes on the answer as a policy of its own, whatever policy the shell's answer carries: what every answer this server writes says of where it came from and who may frame it. */

@@ -17,9 +17,11 @@ An allowed app whose host Orivon's protocols serve (a `.eth` name, an IPFS or Sw
 default session. It never gets a partition of its own. Its files still
 come from its kept copy, or checked live while the copy is being made: the verifier host hands the requests that are the
 site's own to the main process, which answers with the same handler a partition had. A request is the site's own when
-the browser marked it `Sec-Fetch-Site` `same-origin` or `none`, or when it is a top-level navigation from any site, so a
-link from another site opens the kept copy. Another site's image, script or frame keeps the verifier's plain path: the
-timing of its answer must not tell a page that an app is kept. Chromium sets these headers and a page cannot forge them. The person's extensions
+the top-level page the shell stamped on it is the site's, or, with no page behind it, when the browser marked it
+`Sec-Fetch-Site` `same-origin` or `none`, or when it is a top-level navigation from any site, so a link from another site
+opens the kept copy. Another site's page asking for the host keeps the verifier's plain path, whatever its request is
+marked: the timing of the answer must not tell a page that an app is kept. A page can change neither the stamp nor the
+Fetch Metadata. The person's extensions
 run on it as on any other website, one instance with one set of data, and Orivon keeps none of them off it: content scripts,
 the toolbar popup, menu entries, shortcuts, the side panel, history and search, network requests and tab capture all
 reach an allowed site. What still stands between an extension and the site's grants is ADR-0045: extension code is
@@ -89,8 +91,11 @@ session where the extensions are.
   host awake, a request for its host waits until the host listens, and the shell sends the host the hosts it serves
   before any held request is let go, on a start and on a restart alike.
 - A request the host relays never touches the shared session's HTTP cache, so bytes a website cached at the same address
-  cannot answer the app's request. The service workers and Cache Storage the origin held as a website are removed the
-  first time the app is served live there, because they would run code nothing checked.
+  cannot answer the app's request. The service workers and Cache Storage the origin held as a website are removed each
+  time the app is served live there, and once at a start for an app served from its pin (one that moved from a partition of
+  its own finds them in the shared session), because they would run code nothing checked.
+- A website's page that was open when its origin became an app keeps no `window.opener` link to a popup it opens to the
+  same origin: the popup opens as a tab of its own, since the page would otherwise script the popup and use its grants.
 - Extensions can block, redirect and record an allowed site, as on any website. A redirect can replace the site's code
   with an extension's while the site holds Orivon permissions; telling safe extensions from unsafe ones is a job for
   Web3 Score providers, later.

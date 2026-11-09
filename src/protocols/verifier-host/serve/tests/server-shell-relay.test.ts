@@ -133,9 +133,16 @@ describe('the loopback server with a shell behind it', () => {
     expect((await reply).status).toBe(204)
   })
 
-  it('hands over what the site\'s own frame asks for under another site\'s page, which the browser marks same-origin', async () => {
+  it('answers what the site\'s own frame asks for under another site\'s page as it always did, whatever the browser marks it', async () => {
     const before = relayed().length
-    const reply = get('/app.js', { headers: { [PARTITION_HEADER]: 'https://evil.example', 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' } })
+    const script = await get('/app.js', { headers: { [PARTITION_HEADER]: 'https://evil.example', 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' } })
+    expect(script.body.toString()).toBe('from the verifier')
+    expect(relayed()).toHaveLength(before)
+  })
+
+  it('hands over what a sandboxed frame of the site asks for, which the browser marks cross-site but the site\'s own page started', async () => {
+    const before = relayed().length
+    const reply = get('/app.js', { headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' } })
     await until(() => relayed().length === before + 1, 'the request was relayed')
     const sent = relayed().at(-1)!
     relay.receive({ type: 'relay-head', id: sent.id, status: 204, headers: [] })
