@@ -16,23 +16,23 @@ export interface SilentListener {
 const POSIX_SCRIPT = "const s = require('node:net').createServer(); s.listen({ port: 0, host: '127.0.0.1', backlog: 1 }, () => console.log(s.address().port))"
 
 /** SO_CONDITIONAL_ACCEPT: the stack answers a connection only once the program accepts it. */
-export function windowsScript (conditional: boolean): string {
+export function windowsScript (conditional: boolean, backlog: number): string {
   return [
     '$ErrorActionPreference = "Stop"',
     '$listener = [System.Net.Sockets.Socket]::new([System.Net.Sockets.AddressFamily]::InterNetwork, [System.Net.Sockets.SocketType]::Stream, [System.Net.Sockets.ProtocolType]::Tcp)',
     '$listener.Bind([System.Net.IPEndPoint]::new([System.Net.IPAddress]::Loopback, 0))',
     conditional ? '$listener.SetSocketOption([System.Net.Sockets.SocketOptionLevel]::Socket, [System.Net.Sockets.SocketOptionName]0x3002, 1)' : '',
-    '$listener.Listen(1)',
+    `$listener.Listen(${String(backlog)})`,
     '[Console]::Out.WriteLine(([System.Net.IPEndPoint]$listener.LocalEndPoint).Port)',
     '[Console]::Out.Flush()',
     'Start-Sleep -Seconds 3600'
   ].join('\n')
 }
 
-export async function spawnListener (platform: NodeJS.Platform, conditional = true): Promise<SilentListener> {
+export async function spawnListener (platform: NodeJS.Platform, conditional = true, backlog = 1): Promise<SilentListener> {
   const windows = platform === 'win32'
   const child: ChildProcess = windows
-    ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(windowsScript(conditional), 'utf16le').toString('base64')], { stdio: ['ignore', 'pipe', 'pipe'] })
+    ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(windowsScript(conditional, backlog), 'utf16le').toString('base64')], { stdio: ['ignore', 'pipe', 'pipe'] })
     : spawn(process.execPath, ['-e', POSIX_SCRIPT], { stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } })
   let stderr = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString() })
