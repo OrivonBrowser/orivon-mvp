@@ -75,7 +75,11 @@ async function allowApp (running: Running, root: string, title: string): Promise
   await answerQuestion(running, 'Grant all')
   const entered = await waitForTab(chrome, { address: `ipfs://${root}/`, title }, 60_000)
   expect(entered.ok).toBe(true)
-  await waitFor(async () => (await pageAt(running, `https://${root}.ipfs.orivon/`))?.ran === 'ran', 60_000)
+  // The first visit's page ran the script as a website before the question was answered, so `ran` alone says nothing of the answer: the page that has Node globals is the app tab, which loads once the shell serves the app.
+  await waitFor(async () => {
+    const facts = await pageAt(running, `https://${root}.ipfs.orivon/`)
+    return facts?.ran === 'ran' && facts.hasProcess
+  }, 60_000)
   return { userData }
 }
 
