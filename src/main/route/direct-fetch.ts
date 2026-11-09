@@ -1,6 +1,6 @@
 // The `fetch` of Orivon's own requests that leave on the system's proxy (a website set to off while the whole browser is on the
-// tunnel, the lookups about one): made in the session that only follows the system, and refused first for a name the verifier
-// serves that this session's proxy would carry.
+// tunnel, the lookups about one): made in the session that follows the system as the controller sets it, and refused first for a name
+// the verifier serves that this session's proxy would carry.
 
 import type { Net, Session } from 'electron'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
