@@ -10,7 +10,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, beforeEach, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
-import { waitForStartPageLoaded } from '../support/e2e-helpers.js'
+import { startPagesHeld, waitForStartPageLoaded } from '../support/e2e-helpers.js'
 import { html, launchShell, startServer } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, activeTabInfo, delay, popoverShown, tabIds, waitFor } from '../support/smoke-helpers.mjs'
@@ -93,9 +93,10 @@ async function loadInTab (app: App, chrome: Page, address: string): Promise<void
 
 async function openTab (app: App, chrome: Page): Promise<void> {
   const before = (await tabIds(chrome)).length
+  const held = await startPagesHeld(app)
   await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('tab.new') })
   expect(await waitFor(async () => (await tabIds(chrome)).length === before + 1)).toBe(true)
-  expect(await waitForStartPageLoaded(app)).toBe(true)
+  expect(await waitForStartPageLoaded(app, held)).toBe(true)
 }
 
 async function openSettings (app: App, chrome: Page): Promise<Page> {

@@ -89,9 +89,10 @@ commands, so each system's output is a unit fixture.
   never overwritten. `app.setProxy` stays on `{ mode: 'system' }`.
 - Orivon's direct requests and lookups move from the T20 session to a mirrored session of their own
   (`orivon-system-mirror`).
-- What still refuses a name: the root-dot spelling of a name (`name.eth.`), which the resolver rules do not map to the
-  verifier and so is given no exception (a rule that sent it direct would have Chromium resolve the name itself);
-  automatic detection that finds a script, KDE reversed exceptions, Windows per-machine policy, an active dial-up or VPN connection with settings of its own, a script that answers at random, a script that
+- The exceptions carry both spellings of a name the verifier serves, `*.eth` and `*.eth.`: the resolver rules refuse the
+  root-dot spelling (`MAP *.eth. ~NOTFOUND`), so a name the proxy does not carry goes direct and fails as not found, and no
+  resolver or proxy is asked for it.
+- What still refuses a name: automatic detection that finds a script, KDE reversed exceptions, Windows per-machine policy, an active dial-up or VPN connection with settings of its own, a script that answers at random, a script that
   cannot be fetched. `docs/known-limitations.md`, T90, T84, T20 and the egress section on these names change with the
   behaviour.
 - Provisional until measured: that Chromium's PAC context runs `Function(...)` and reads an accessor `FindProxyForURL`

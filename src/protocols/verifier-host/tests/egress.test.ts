@@ -104,7 +104,7 @@ describe('guardedCcipRequest', () => {
   it('refuses http, loopback, private ranges and a name that resolves to one, without requesting', async () => {
     const fetch = recordingDirect(() => json({ data: '0xfeed' }))
     const dns = { 'rebind.example': ['93.184.216.34', '127.0.0.1'], 'lan.example': ['192.168.1.10'] }
-    for (const url of ['http://gateway.example/{data}', 'https://127.0.0.1/{data}', 'https://[::1]/{data}', 'https://10.0.0.1/{data}', 'https://169.254.169.254/{data}', 'https://rebind.example/{data}', 'https://lan.example/{data}', 'https://localhost/{data}', 'https://other.eth/{data}', 'https://user:pw@gateway.example/{data}']) {
+    for (const url of ['http://gateway.example/{data}', 'https://127.0.0.1/{data}', 'https://[::1]/{data}', 'https://10.0.0.1/{data}', 'https://169.254.169.254/{data}', 'https://rebind.example/{data}', 'https://lan.example/{data}', 'https://localhost/{data}', 'https://other.eth/{data}', 'https://other.eth./{data}', 'https://user:pw@gateway.example/{data}']) {
       await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, deps(fetch, dns))).rejects.toThrow(/no offchain gateway answered/)
     }
     expect(fetch.calls).toEqual([])
@@ -115,6 +115,17 @@ describe('guardedCcipRequest', () => {
     const asked: string[] = []
     const resolving: CcipDeps = { directFetch: fetch, fetch: NO_FETCH, resolveHost: async (host) => { asked.push(host); return ['93.184.216.34'] }, direct: true }
     await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://abc.onion/{data}'] }, resolving)).rejects.toThrow(/no offchain gateway answered/)
+    expect(asked).toEqual([])
+    expect(fetch.calls).toEqual([])
+  })
+
+  it('refuses the root-dot spelling of a name a protocol serves without resolving it, as it refuses the name', async () => {
+    const fetch = recordingDirect(() => json({ data: '0xfeed' }))
+    const asked: string[] = []
+    const resolving: CcipDeps = { directFetch: fetch, fetch: NO_FETCH, resolveHost: async (host) => { asked.push(host); return ['93.184.216.34'] }, direct: true }
+    for (const url of ['https://vitalik.eth./{data}', 'https://VITALIK.ETH./{data}', 'https://bafy.ipfs.orivon./{data}', 'https://vitalik.eth../{data}', 'https://localhost./{data}', 'https://x.localhost./{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, resolving), url).rejects.toThrow(/no offchain gateway answered/)
+    }
     expect(asked).toEqual([])
     expect(fetch.calls).toEqual([])
   })
@@ -174,6 +185,15 @@ describe('guardedCcipRequest, with a proxy configured (direct: false)', () => {
     expect(fetch.calls).toEqual([])
   })
 
+  it('refuses the root-dot spelling of a name a protocol serves, which the proxy would otherwise be asked to carry', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    const dns = { 'vitalik.eth.': ['93.184.216.34'], 'bafy.ipfs.orivon.': ['93.184.216.34'] }
+    for (const url of ['https://vitalik.eth./{data}', 'https://bafy.ipfs.orivon./{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, proxiedDeps(fetch, dns)), url).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
+  })
+
   it('still follows a same-origin redirect and refuses a cross-origin one', async () => {
     const same = recording((url) => url.endsWith('/a') ? new Response(null, { status: 302, headers: { location: '/b' } }) : json({ data: '0xbeef' }))
     expect(await guardedCcipRequest({ data: DATA, sender: SENDER, urls: ['https://gateway.example/a'] }, proxiedDeps(same))).toBe('0xbeef')
@@ -194,6 +214,14 @@ describe('guardedCcipRequest, through the tunnel (farEnd)', () => {
   it('still refuses http, a non-443 port, an address that is not public and a name of this computer, without fetching', async () => {
     const fetch = recording(() => json({ data: '0xfeed' }))
     for (const url of ['http://gateway.example/{data}', 'https://93.184.216.34:6379/{data}', 'https://127.0.0.1/{data}', 'https://localhost/{data}', 'https://x.localhost/{data}']) {
+      await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
+    }
+    expect(fetch.calls).toEqual([])
+  })
+
+  it('refuses the root-dot spelling of a name a protocol serves, which the far end would resolve and so learn', async () => {
+    const fetch = recording(() => json({ data: '0xfeed' }))
+    for (const url of ['https://vitalik.eth./{data}', 'https://bafy.ipfs.orivon./{data}', 'https://vitalik.eth/{data}']) {
       await expect(guardedCcipRequest({ data: DATA, sender: SENDER, urls: [url] }, tunnelled(fetch)), url).rejects.toThrow(/no offchain gateway answered/)
     }
     expect(fetch.calls).toEqual([])
@@ -222,7 +250,7 @@ describe('isInternetHost', () => {
   })
 
   it('refuses every spelling of this computer or a local network, and a name no public server answers to', () => {
-    const refused = ['localhost', 'localhost.', 'foo.localhost', '127.0.0.1', '[::1]', '[::ffff:7f00:1]', '[::ffff:c0a8:114]', '192.168.1.20', '10.0.0.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '[fe80::1]', 'nas.local', 'printer.home.arpa', 'router', 'vitalik.eth', 'eth.drpc.org.']
+    const refused = ['localhost', 'localhost.', 'foo.localhost', '127.0.0.1', '[::1]', '[::ffff:7f00:1]', '[::ffff:c0a8:114]', '192.168.1.20', '10.0.0.1', '169.254.169.254', '0.0.0.0', '100.64.0.1', '[fe80::1]', 'nas.local', 'printer.home.arpa', 'router', 'vitalik.eth', 'vitalik.eth.', 'eth.drpc.org.']
     for (const host of refused) expect(isInternetHost(host), host).toBe(false)
   })
 })
