@@ -5,6 +5,7 @@
 import type { Session } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import type { AppRequestHandler } from '../serve/serve.js'
+import { answeringCarryPage } from './carry-page.js'
 
 /**
  * Registers `handler` as `origin`'s own scheme's handler on `appSession`.
@@ -20,7 +21,10 @@ import type { AppRequestHandler } from '../serve/serve.js'
  * answers with whatever `handler` the caller just built from the freshly
  * re-verified pin, never a stale one left over from before the update.
  */
-export function registerAppOrigin (appSession: Session, origin: string, handler: AppRequestHandler, from: 'pin' | 'verifier' = 'pin'): void {
+export function registerAppOrigin (appSession: Session, origin: string, answer: AppRequestHandler, from: 'pin' | 'verifier' = 'pin'): void {
+  // The empty document the shell's storage carry loads (carry-page.ts) is answered here, in the one place the partition's handler and
+  // the relayed answer both come from, and reaches the app's own handler never.
+  const handler = answeringCarryPage(answer)
   if (!appSessions.has(appSession)) {
     appSessions.add(appSession)
     for (const listener of [...appSessionListeners]) listener(appSession)

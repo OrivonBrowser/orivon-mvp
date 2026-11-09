@@ -39,7 +39,7 @@ describe('what the host is told and asked for', () => {
     registerAppOrigin(session, 'https://ordinary.example', async () => new Response('other'))
     expect(relayableOrigins()).toContain('https://relayed.eth')
     expect(relayableOrigins()).not.toContain('https://ordinary.example')
-    expect(relayHandlerFor('https://relayed.eth')).toBe(handler)
+    expect(await (await relayHandlerFor('https://relayed.eth')!(new Request('https://relayed.eth/'))).text()).toBe('kept')
     expect(relayHandlerFor('https://ordinary.example')).toBeUndefined()
     retireAppOrigin(session, 'https://relayed.eth')
     retireAppOrigin(session, 'https://ordinary.example')

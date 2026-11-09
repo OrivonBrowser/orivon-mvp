@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Session } from 'electron'
 import type { AppRequestHandler } from '../../serve/serve.js'
 import { onServingChange, registerAppOrigin, retireAppOrigin, servedOrigins, servingHandlerFor } from '../app-partitions.js'
+import { carryPageUrl } from '../carry-page.js'
 
 // The handler each origin is answered with, kept beside the partition sets: the verifier's server hands a request of
 // the shared session for such an origin to it.
@@ -19,13 +20,18 @@ function fakeSession (): Session {
 
 const answering = (text: string): AppRequestHandler => async () => new Response(text)
 
+/** What the handler registered for `origin` answers a page of the app with. */
+async function answerFor (origin: string): Promise<string | undefined> {
+  const handler = servingHandlerFor(origin)
+  return handler === undefined ? undefined : await (await handler(new Request(`${new URL(origin).origin}/index.html`))).text()
+}
+
 describe('the handler each served origin is answered with', () => {
   it('is found by the origin once registered, whichever way the origin is spelled', async () => {
-    const handler = answering('first')
-    registerAppOrigin(fakeSession(), 'https://kept.example', handler)
-    expect(servingHandlerFor('https://kept.example')).toBe(handler)
-    expect(servingHandlerFor('https://KEPT.example')).toBe(handler)
-    expect(servingHandlerFor('https://kept.example:443')).toBe(handler)
+    registerAppOrigin(fakeSession(), 'https://kept.example', answering('first'))
+    expect(await answerFor('https://kept.example')).toBe('first')
+    expect(await answerFor('https://KEPT.example')).toBe('first')
+    expect(await answerFor('https://kept.example:443')).toBe('first')
     expect(servedOrigins()).toContain('https://kept.example')
     expect(servingHandlerFor('https://other.example')).toBeUndefined()
     expect(servingHandlerFor('not an origin')).toBeUndefined()
@@ -35,7 +41,7 @@ describe('the handler each served origin is answered with', () => {
     registerAppOrigin(fakeSession(), 'https://replaced.example', answering('from the verifier'), 'verifier')
     const pinned = answering('from the pin')
     registerAppOrigin(fakeSession(), 'https://replaced.example', pinned)
-    expect(servingHandlerFor('https://replaced.example')).toBe(pinned)
+    expect(await answerFor('https://replaced.example')).toBe('from the pin')
     expect(servedOrigins().filter((origin) => origin === 'https://replaced.example')).toHaveLength(1)
   })
 
@@ -45,9 +51,19 @@ describe('the handler each served origin is answered with', () => {
     retireAppOrigin(session, 'https://ending.example')
     expect(servingHandlerFor('https://ending.example')).toBeUndefined()
     expect(servedOrigins()).not.toContain('https://ending.example')
-    const again = answering('again')
-    registerAppOrigin(session, 'https://ending.example', again, 'verifier')
-    expect(servingHandlerFor('https://ending.example')).toBe(again)
+    registerAppOrigin(session, 'https://ending.example', answering('again'), 'verifier')
+    expect(await answerFor('https://ending.example')).toBe('again')
+  })
+
+  it('answers the shell\'s empty document for itself and hands every other path to the app\'s handler', async () => {
+    registerAppOrigin(fakeSession(), 'https://carried.example', answering('the app'), 'verifier')
+    const handler = servingHandlerFor('https://carried.example')!
+    const empty = await handler(new Request(carryPageUrl('https://carried.example')))
+    expect(empty.status).toBe(200)
+    expect(empty.headers.get('content-type')).toContain('text/html')
+    expect(await empty.text()).not.toContain('the app')
+    expect(await (await handler(new Request('https://carried.example/.well-known/orivon/storage-carry-guessed'))).text()).toBe('the app')
+    expect(await (await handler(new Request(carryPageUrl('https://carried.example'), { method: 'POST', body: 'x' }))).text()).toBe('the app')
   })
 })
 

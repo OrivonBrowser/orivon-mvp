@@ -99,6 +99,7 @@
     { "prefix": "src/main/session-restore", "run": ["window", "tabs"] },
     { "prefix": "src/main/scheme-routing", "run": ["@core", "sites"] },
     { "prefix": "src/main/sessions", "run": ["@core"] },
+    { "prefix": "src/main/storage-carry", "run": ["@core"] },
     { "prefix": "src/main/sessions/network-service*", "run": ["@core", "web3", "sites", "capabilities"] },
     { "prefix": "src/main/settings", "run": ["shell-pages", "app-behaviours"] },
     { "prefix": "src/main/shell", "run": ["tabs", "toolbar", "window", "page", "shell-pages"] },
