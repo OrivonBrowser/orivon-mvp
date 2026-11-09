@@ -304,7 +304,7 @@ const MAX_LISTED_HOSTS = 5
  * there: shared by the install prompt's Web3 line and the extensions page's
  * "where it runs" line so the two never drift apart.
  */
-export const GRANTED_APPS_CLAUSE = 'apps you have given permissions to, except an app running from its pinned copy'
+export const GRANTED_APPS_CLAUSE = 'apps you have given permissions to, except an app that runs in a session of its own'
 export const GRANTS_STAY_WITH_APPS = 'Orivon keeps its code from using the permissions you have given those apps.'
 
 /**

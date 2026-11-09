@@ -20,12 +20,13 @@ interface NavigationEvent {
 }
 
 /**
- * A link or redirect into an address Orivon serves from its cache loads that address in the
+ * A link or redirect into an app that has a partition of its own loads that address in the
  * partition the tab is in until `did-navigate` swaps it, and for that moment a document can
  * commit from the network, so a name that moved would show its new content before anyone
  * accepted it. This stops the navigation before it starts and loads the address in its own
  * partition, where the pinned files answer (ADR-0056). Typed addresses already do the same
- * (`./tab-navigation.ts`).
+ * (`./tab-navigation.ts`). An app the verifier hands to the shell needs none of this: every
+ * session's request for it is answered by the app's own handler.
  *
  * A move INTO a session of its own is made here. A move to the shared session still swaps at
  * `did-navigate`, where nothing of the app's is exposed to the page it reaches, unless the tab's session

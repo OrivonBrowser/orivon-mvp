@@ -300,7 +300,7 @@ export interface FirstVisitOptions {
   readonly deps: FirstVisitDeps
   /** True for an origin the first visit never applies to: a local file, a loopback or developer origin, anything not https. */
   readonly untouched: (origin: string) => boolean
-  /** The origin runs in a partition of its own, served from its pin or from the verifier. */
+  /** The shell serves the origin, from its pin or from the verifier. */
   readonly servedFromCache: (origin: string) => boolean
 }
 

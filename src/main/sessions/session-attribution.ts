@@ -6,8 +6,9 @@
 // loader's bundle-cache state (isOriginServedFromCacheSync), and
 // src/broker/ must never import src/loader/ (../../broker/README.md).
 // ../shell/tab-partition.ts's partitionForTab already decides the same thing
-// for a navigating tab (a cache-served origin's own partition, the default
-// session for every other origin, granted or not: ADR-0044); this reuses it
+// for a navigating tab (a cache-served origin's own partition or, for a host
+// the verifier hands to the shell, the default session; the default session
+// for every other origin, granted or not: ADR-0044); this reuses it
 // rather than re-deriving the rule a second time.
 //
 // Why attribution is decided at a document's own commit, never re-decided
@@ -21,12 +22,14 @@ import { tabChoiceOfContents } from '../route/tab-tunnel.js'
 import { isChildHostFor } from '../children/child-host.js'
 import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
 import { localPartitionFor } from '../local-files/partition.js'
-import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { runsAsWebsite } from '../shell/app-session.js'
 
 interface AttributionRecord {
   readonly origin: string | null
   readonly attributed: boolean
+  /** Whether the shell served the origin from a copy it keeps when this document committed: before that, the document came from the network. */
+  readonly servedAtCommit: boolean
 }
 
 /**
@@ -72,10 +75,16 @@ export const sessionAttributionSubsystem: Subsystem = {
         const origin = isolationKeyFromUrl(url)
         attributionRecords.set(wc, {
           origin,
-          attributed: origin !== null && wc.session === expectedSession(origin, wc)
+          attributed: origin !== null && wc.session === expectedSession(origin, wc),
+          servedAtCommit: origin !== null && isOriginServedFromCacheSync(origin)
         })
       })
     })
+
+    const committedBeforeServed = (wc: WebContents, origin: string): boolean => {
+      const record = attributionRecords.get(wc)
+      return record !== undefined && record.origin === origin && !record.servedAtCommit
+    }
 
     publishSenderAttributed(ctx, (sender, origin) => {
       const wc = sender as WebContents
@@ -90,11 +99,16 @@ export const sessionAttributionSubsystem: Subsystem = {
       // An app's own child host (ADR-0046) runs in a session of its own by design.
       if (isChildHostFor(wc, origin)) return true
       // Cache-served origins are checked LIVE and STRICTLY, never through a
-      // record: a pinned app's own bundle is only ever intercepted inside
-      // its own partition (ADR-0007), so a document attributed to it must
-      // run there at every call, not merely at whatever moment it committed.
+      // record: the session they run in is the one `partitionForTab` names at
+      // this call. An app on a partition of its own is only ever intercepted
+      // there (ADR-0007). An app the verifier hands to the shell runs in the
+      // default session and is never attributed in the partition it had
+      // before, but its document must also have been answered by the shell:
+      // one that committed before the app was served came from the network,
+      // and the grants the app holds now do not reach it (README.md's Design notes).
       if (isOriginServedFromCacheSync(origin)) {
-        return wc.session === session.fromPartition(partitionFor(origin))
+        if (runsAsWebsite(origin) && committedBeforeServed(wc, origin)) return false
+        return wc.session === expectedSession(origin, wc)
       }
       const record = attributionRecords.get(wc)
       if (record !== undefined && record.origin === origin) return record.attributed

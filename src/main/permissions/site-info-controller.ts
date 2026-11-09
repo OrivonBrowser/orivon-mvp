@@ -69,6 +69,8 @@ export interface SiteTrustSources {
   readonly isOriginServedFromCacheSync: (origin: string) => boolean
   /** Whether the origin's files are served from its pin; an app served from the verifier before its pin lands is in its own partition but not delivered from a cache. Defaults to `isOriginServedFromCacheSync`. */
   readonly isOriginPinnedSync?: (origin: string) => boolean
+  /** Whether the origin is an app that runs in a partition of its own, which the person's extensions do not reach: an app the shell serves in the shared session is reached as any website is. Defaults to `isOriginServedFromCacheSync`. */
+  readonly hasOwnPartition?: (origin: string) => boolean
   readonly pinCoverageFor: (origin: string) => PinCoverageEvidence | undefined
   /** How a `.eth` name led to this origin's content; undefined for any other origin. */
   readonly nameEvidenceFor: (origin: string, pin: PinRecord | null, servedFromCache: boolean) => Promise<NameEvidence | undefined>
@@ -164,7 +166,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   async function extensionsFor (origin: string): Promise<readonly string[]> {
     const extensions: ExtensionLister | undefined = ctx.extensions
     if (extensions === undefined) return []
-    return await extensionNamesForOrigin(extensions, origin, trustSources.isOriginServedFromCacheSync)
+    return await extensionNamesForOrigin(extensions, origin, trustSources.hasOwnPartition ?? trustSources.isOriginServedFromCacheSync)
   }
 
   /** The offer pending for `origin`, in the words the popover shows. */

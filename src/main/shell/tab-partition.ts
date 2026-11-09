@@ -2,10 +2,10 @@
 // flag: the two facts a navigation can change, decided from the target URL alone.
 // Split out of tab-view.ts, which re-exports every name here.
 import type { WebContentsView } from 'electron'
-import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '../local-files/partition.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { appSessionPartition } from './app-session.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
 import { sitePartitionForTab } from '../route/site-routes.js'
@@ -19,12 +19,17 @@ export const APP_TAB_FLAG = '--orivon-app-tab'
 /** Which Electron session `target` must run in: its own isolated partition,
  * or undefined for the shell's shared default session.
  *
- * ONLY a cache-served origin gets its own partition. ADR-0007 intercepts a
- * cached bundle with `protocol.handle`, scoped to one session, so an origin
- * served from cache whose tab sat on the default session could not load at
- * all; nothing there answers its scheme. This reads the registry
- * `registerAppOrigin` itself writes -- deciding it from a different one
- * makes a served app unreachable.
+ * An allowed app runs where a website at its origin runs, the shared session,
+ * when the shell can serve its kept copy there: the verifier hands every
+ * request for a host a protocol serves to the shell, which answers with the
+ * app's own handler (`../verifier/shell-serves.ts`), and the person's
+ * extensions are loaded in that session (`./app-session.ts` says when).
+ * Any other served origin (a plain https host, a loopback address, an app
+ * whose own tunnel entry the shared session does not follow) gets a
+ * partition of its own: ADR-0007 intercepts a cached bundle with
+ * `protocol.handle`, scoped to one session, and nothing else answers its
+ * scheme. This reads the registry `registerAppOrigin` itself writes --
+ * deciding it from a different one makes a served app unreachable.
  *
  * A held grant, on its own, is not isolated: a Chrome extension runs as one
  * instance across every page, granted or not, so a granted app shares the
@@ -36,9 +41,9 @@ export const APP_TAB_FLAG = '--orivon-app-tab'
  * the shared one before (`localPartitionFor`).
  *
  * A website whose tunnel state differs from the browser's default runs in a session of its own
- * (`../route/site-partition.ts`), which an installed app never needs: its own partition is already apart.
- * A tab with a tunnel choice puts every website it opens in that choice's profile (`../route/tab-tunnel.ts`), so
- * every caller that decides a session for a tab passes the tab's choice (`partitionForTab`).
+ * (`../route/site-partition.ts`), which an installed app never needs: its own route decides its session, and a tab's tunnel
+ * choice does not apply to it. A tab with a tunnel choice puts every website it opens in that choice's profile
+ * (`../route/tab-tunnel.ts`), so every caller that decides a session for a tab passes the tab's choice (`partitionForTab`).
  *
  * `originFromUrl` derives an origin only for `http:`/`https:`, so a
  * `chrome-extension:` target always answers undefined: tabs.ts's
@@ -49,8 +54,9 @@ export function partitionForTab (target: string, choice: TabTunnelChoice | undef
   if (local !== undefined) return local
   const origin = originFromUrl(target)
   if (origin === null) return undefined
+  if (isOriginServedFromCacheSync(origin)) return appSessionPartition(origin)
   // A website whose tunnel state differs from the browser's default keeps its storage apart from the shared session.
-  return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : sitePartitionForTab(origin, choice)
+  return sitePartitionForTab(origin, choice)
 }
 
 /** `partitionForTab` for a caller with no tab: the session an address gets from its own entry alone. */
@@ -134,8 +140,9 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
 /** Whether `target` needs the app-tab flag `view` does not already carry, or vice
  * versa -- a partition follows CACHE-SERVING (`partitionForTarget`) but this flag
  * follows REGISTRATION (`isRegisteredSync`), so a navigation between a registered
- * app that is not cache-served and an ordinary site can cross this without the
- * partition ever changing. Undefined for a target with no derivable origin, same as
+ * app that shares the session websites run in (a granted network-served app, an allowed
+ * Web3 site) and an ordinary site, or the first load of an app as the app after its
+ * visit as a website, crosses this without the partition ever changing. Undefined for a target with no derivable origin, same as
  * `partitionChanged` -- a rejected navigation must not read as a flag change either. */
 export function appTabFlagChanged (target: string, view: WebContentsView, broker: Broker | undefined): boolean {
   if (originFromUrl(target) === null) return false

@@ -278,16 +278,19 @@ extension is removed, or within a few seconds after it is loaded again, is navig
 extension is back: the failure can be reported after the reload ended, when the tab held no URL yet.
 The extension's hidden offscreen document is never navigated.
 
-**[`site-reach.ts`](site-reach.ts) returns none for an origin served from its pinned cache,
+**[`site-reach.ts`](site-reach.ts) returns none for an app that runs in a partition of its own,
 without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
-including a granted app -- but `GRANTED_APPS_CLAUSE`
-(`../../broker/policy/extension-manifest.ts`) already carries the one exception: "except an app
-running from its pinned copy". Naming extensions on such an origin's site-info popup or grant
-prompt would say something false, so this file matches that exception exactly rather than
-letting its own answer drift from what the install prompt and the extensions page already say.
-The check is an injected predicate (`isOriginServedFromCacheSync`, real implementation in
-`../../loader/electron/serve.ts`), so this file stays pure and testable against a fake, the same
-shape [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts)'s
+including a granted app, and an allowed Web3 site runs in the session websites run in
+(`../shell/app-session.ts`), so they reach it as they reach any website. The one exception
+`GRANTED_APPS_CLAUSE` (`../../broker/policy/extension-manifest.ts`) carries is an app that runs
+in a session of its own: a plain `https` host or a loopback address the shell serves from a kept
+copy, and an app whose own tunnel entry the shared session does not follow. Naming extensions
+on such an origin's site-info popup or grant prompt would say something false, so this file
+matches that exception exactly rather than letting its own answer drift from what the install
+prompt and the extensions page already say. The check is an injected predicate (`runsApart`,
+real implementation `hasOwnPartition` in `../shell/app-session.ts`), so this file stays pure
+and testable against a fake, the same shape
+[`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts)'s
 `SiteTrustSources` already uses it in.
 
 **Why `loadableManifest` (`../../broker/policy/extension-manifest.ts`) strips `webRequest*`,

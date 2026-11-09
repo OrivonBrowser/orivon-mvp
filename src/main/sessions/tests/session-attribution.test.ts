@@ -180,6 +180,94 @@ describe('senderAttributed -- a network-served origin belongs in the default ses
   })
 })
 
+describe('senderAttributed -- an app the verifier hands to the shell runs in the default session, as a website does', () => {
+  // A host a protocol serves: the shared session reaches the app's handler through the verifier, so no partition of its own.
+  const KEPT = 'https://kept.eth'
+  const keptOldPartition = session.fromPartition(partitionFor(originFromUrl(KEPT) as string))
+  afterEach(() => { served.delete(KEPT); setSiteRoutes(undefined) })
+
+  it('attributes a document committed in the default session while the shell serves the app', () => {
+    served.add(KEPT)
+    const { attributed, register } = attributionRig()
+    const { wc, commit } = fakeWebContents(DEFAULT_SESSION)
+    register(wc)
+    commit(KEPT)
+
+    expect(attributed(wc, KEPT)).toBe(true)
+  })
+
+  it('attributes it live, with no commit record', () => {
+    served.add(KEPT)
+    const { attributed } = attributionRig()
+
+    expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, KEPT)).toBe(true)
+  })
+
+  it('never attributes a document in the app\'s old partition, with a record or without', () => {
+    served.add(KEPT)
+    const { attributed, register } = attributionRig()
+    expect(attributed(fakeWebContents(keptOldPartition).wc, KEPT)).toBe(false)
+
+    const { wc, commit } = fakeWebContents(keptOldPartition)
+    register(wc)
+    commit(KEPT)
+    expect(attributed(wc, KEPT)).toBe(false)
+  })
+
+  it('never trusts a stale record: a document that leaves the default session without navigating is denied', () => {
+    served.add(KEPT)
+    const { attributed, register } = attributionRig()
+    const { wc, commit } = fakeWebContents(DEFAULT_SESSION)
+    register(wc)
+    commit(KEPT)
+    wc.session = session.fromPartition('isolated-context')
+
+    expect(attributed(wc, KEPT)).toBe(false)
+  })
+
+  it('denies a document that committed before the shell served the app, until it commits again', () => {
+    const { attributed, register } = attributionRig()
+    const { wc, commit } = fakeWebContents(DEFAULT_SESSION)
+    register(wc)
+    commit(KEPT) // the first visit: an ordinary website, answered by the verifier
+    served.add(KEPT) // Allow
+
+    expect(attributed(wc, KEPT)).toBe(false)
+
+    commit(KEPT) // the reload the allowed app is entered with
+    expect(attributed(wc, KEPT)).toBe(true)
+  })
+
+  it('stays attributed after the shell stops serving the app, until it next navigates', () => {
+    served.add(KEPT)
+    const { attributed, register } = attributionRig()
+    const { wc, commit } = fakeWebContents(DEFAULT_SESSION)
+    register(wc)
+    commit(KEPT)
+
+    served.delete(KEPT)
+    expect(attributed(wc, KEPT)).toBe(true)
+  })
+
+  it('attributes in the app\'s own partition, and not in the default session, while the shared session would send the app differently from its own route', () => {
+    served.add(KEPT)
+    setSiteRoutes({ profileFor: () => undefined, sharedLikeItsOwn: () => false })
+    const { attributed } = attributionRig()
+
+    expect(attributed(fakeWebContents(keptOldPartition).wc, KEPT)).toBe(true)
+    expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, KEPT)).toBe(false)
+  })
+
+  it('is not changed by the tunnel choice of the tab the document is in', () => {
+    served.add(KEPT)
+    setTabTunnelSource({ choiceOfContents: () => 'nym', kindShowing: () => undefined })
+    const { attributed } = attributionRig()
+    expect(attributed(Object.assign(fakeWebContents(DEFAULT_SESSION).wc, { id: 7 }), KEPT)).toBe(true)
+    expect(attributed(Object.assign(fakeWebContents(session.fromPartition('persist:tunnel-profile')).wc, { id: 7 }), KEPT)).toBe(false)
+    setTabTunnelSource(undefined)
+  })
+})
+
 describe('senderAttributed -- a local file belongs in the session localPartitionFor names, checked live', () => {
   const FILE = 'file:///home/u/app/index.html'
   const SIBLING = 'file:///home/u/app/other.html'

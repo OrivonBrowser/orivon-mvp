@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { allowedTabChoice, ensureSiteSession, mustLeaveSession, keepSiteApart, sessionRoutesLike, setSiteRoutes, setSiteSessionEnsurer, siteProfileOf, sitePartitionForOrigin, sitePartitionForTab } from '../site-routes.js'
+import { allowedTabChoice, ensureSiteSession, mustLeaveSession, keepSiteApart, sessionRoutesLike, setSiteRoutes, sharedSessionRoutesLike, setSiteSessionEnsurer, siteProfileOf, sitePartitionForOrigin, sitePartitionForTab } from '../site-routes.js'
 import type { Profile } from '../site-partition.js'
 
 const SITE = 'https://news.example'
@@ -226,5 +226,21 @@ describe('whether a session sends a page as its own would', () => {
     setSiteRoutes({ profileFor: () => undefined, sentLikeItsOwn: like })
     expect(sessionRoutesLike('persist:direct-profile', `${SITE}/page`)).toBe(false)
     expect(like).toHaveBeenCalledWith('persist:direct-profile', SITE)
+  })
+})
+
+describe('whether the shared session sends an app as its own route would', () => {
+  it('is yes while nothing is known, so a start-up or a test keeps an app out of no session', () => {
+    expect(sharedSessionRoutesLike(SITE)).toBe(true)
+    setSiteRoutes({ profileFor: () => undefined })
+    expect(sharedSessionRoutesLike(SITE)).toBe(true)
+  })
+
+  it('asks what main knows for the origin', () => {
+    const like = vi.fn((origin: string) => origin === SITE)
+    setSiteRoutes({ profileFor: () => undefined, sharedLikeItsOwn: like })
+    expect(sharedSessionRoutesLike(SITE)).toBe(true)
+    expect(sharedSessionRoutesLike('https://other.example')).toBe(false)
+    expect(like).toHaveBeenCalledWith(SITE)
   })
 })
