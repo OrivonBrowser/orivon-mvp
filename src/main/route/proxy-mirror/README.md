@@ -9,14 +9,17 @@ A session that follows the system takes the copy through the route controller's 
 |---|---|---|
 | `settings-source.ts` | Which of the computer's settings carry its proxy (GNOME, KDE, Windows, macOS, the environment), picked as Chromium's `system` mode picks them, and the words for what a read comes to (`SystemSettings`) | Durable: pure over the platform and the environment |
 | `read-gnome.ts` | `gsettings list-recursively org.gnome.system.proxy` turned into `SystemSettings`; reads only the keys it needs, so a password in the output reaches nothing | Durable: pure |
-| `run-readers.ts` | Runs `gsettings` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments) | Tied to the operating system: it starts a program |
+| `read-kde.ts` | The `[Proxy Settings]` section of every `kioslaverc` read, merged and turned into `SystemSettings` the way Chromium's KDE reader makes the same files of them; reads only the keys it needs, so a credential in a server entry reaches nothing | Durable: pure |
+| `read-kde-files.ts` | Finds the `kioslaverc` files where Chromium looks for them (by `KDEHOME`, `HOME`, `XDG_CONFIG_DIRS` and the KDE generation) and opens them: a file read of at most a megabyte, three seconds | Tied to the operating system: it reads files |
+| `read-windows.ts` | `reg query` of the per-user Internet Settings key, its connection blob and the machine policy turned into `SystemSettings`, by the rule Chromium's reader follows; reads only the values it needs | Durable: pure |
+| `run-readers.ts` | Runs `gsettings` and `reg.exe` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments) | Tied to the operating system: it starts a program |
 | `mirrored-config.ts` | The config for manual settings: the system's rules and exceptions, then `*.suffix` for every routed suffix | Durable: pure |
 | `canaries.ts` | The addresses the copy is checked with: two ordinary sites and up to three the system's exceptions cover | Durable: pure |
 | `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, checks a copy before applying it, sets the sessions again until each has taken it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, carry or check (a copy already applied outlasts a failed read or a check with no answer) | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
 | `mirror-status.ts` | What `orivon://report` and the log say about the mirror: four fixed words | Durable: pure |
 
 **What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), and
-[`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process`.
+[`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process` and `node:path`, and `read-kde-files.ts` `node:fs/promises`.
 
 **What it must never import.** The Electron package: `../route-subsystem.ts` supplies the sessions. Nothing here calls `setProxy` or dials
 anything; the sessions it asks are handed in, so a unit test drives all of it against fakes.
@@ -59,10 +62,41 @@ rules (`MAP *.eth`) do not map that spelling to the verifier either, so no rule 
 Chromium resolve the name itself and let it leave this computer. It stays on the proxy, where the guard refuses it. An IPv6 address in the
 list is passed as the system wrote it, since Chromium's own reader hands each entry to the same bypass-rule parser as it stands.
 
+**Windows keeps the proxy in two forms, and Chromium reads them by a rule that is neither one alone, measured.** The values under
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` (`ProxyEnable`, `ProxyServer`, `ProxyOverride`, `AutoConfigURL`,
+`AutoDetect`) are what most tools write; the `DefaultConnectionSettings` blob under its `Connections` key (flags 1 direct, 2 proxy, 4 script,
+8 detect, then the three strings) is what Internet Options writes beside them. The values are the manual proxy's when `ProxyEnable` is on (with
+no `ProxyServer` that is no proxy), or off beside a `ProxyServer` (no proxy, whatever the blob holds); without a `ProxyEnable` value, or with
+one that is off and no `ProxyServer`, the blob is, and a `ProxyServer` value alone is ignored. A script comes from the `AutoConfigURL` value or
+from a blob with flag 4 and an address, and wins over a
+manual proxy in both forms; a blob address under flag 1 is not used. A running session follows a change of either form at its next question.
+Detection is reported from the `AutoDetect` value or the blob's flag 8, which of them Windows honours was not measured (the runners have no
+detection server); beside a manual proxy it changes nothing here, since the manual part is copied and the canary check judges it. `ProxyServer`
+and `ProxyOverride` pass as written, because `setProxy` reads them with the parser that reads them in `system` mode, and the override list is
+split at the separators Chromium's Windows reader splits it at (`;`, `,` and white space), so no entry holds one. The machine policy that
+makes the settings per machine (`ProxySettingsPerUser` 0) is `unsupported`; a blob cut short or of a layout this reader does not know is
+too, and a blob of no bytes is no blob. `reg.exe` exits with 1 for every error it reports, a key or value that is not there among them, so
+a query that exits with 1 reads as nothing set (for the Internet Settings key itself, which always exists, that is `unreadable`); a query that
+takes too long or cannot start is `unreadable` whichever it was, and the canary check judges what the rest comes to. A read starts three `reg.exe`
+processes at once (about 26 ms of wall time and 14 ms of CPU each on a GitHub Windows runner), and the 30-second reads with the 2-second question
+cost 0.6% of one core in all of Orivon's processes together over twenty minutes.
+
 **An unchanged read does nothing.** The settings and Chromium's two base answers are compared with the last pass; only a difference, or a
 state that is not settled (`unreadable`, `disagrees`), runs the check again. The 2-second question is asked in process of the session
 that only follows the system: it costs no process and no network for fixed rules.
 
-**The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`), what the read came to (`manual`,
+**Each KDE rule is what Chromium's `kioslaverc` reader makes of the key, measured.** Chromium reads `$HOME/.config/kioslaverc` for KDE 5 and 6,
+the `XDG_CONFIG_DIRS` below it, and `$KDEHOME/share/config` alone when `KDEHOME` is set; it never looks at `XDG_CONFIG_HOME`, though KDE
+writes there, so the reader follows Chromium and not KDE. Without `KDE_SESSION_VERSION` 5 or 6 Chromium takes the desktop for KDE 4 and
+reads `~/.kde` or `~/.kde4`, whichever changed last. The files are merged key by key, the later one winning, and an empty server in a later
+file does not clear an earlier one. A line of 511 bytes or more, and a last line with no newline, are skipped. A server is `host port` or a
+URL: the scheme and the credentials are dropped, and a `socks` server is SOCKS5 unless it says `socks4`. `NoProxyFor` entries are split at
+commas and spaces, and Chromium turns every hostname among them into a suffix match by putting a `*` in front (`corp.test` is
+`*corp.test`, which also matches `xcorp.test`); `setProxy` does not do that to the exceptions it is given, so the reader does, and leaves
+a rule for an address, a block of addresses and `<local>` as it is. No `kioslaverc`, or no type in it, is no proxy (`none`): Chromium then reads the
+environment, which Orivon already keeps the names out of. Reversed exceptions, a type 4 (the servers are names of environment variables)
+and a server or exception that could not be written into a rule are `unsupported`.
+
+**The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`, `kde`, `windows`), what the read came to (`manual`,
 `none`, `script`, `detect`, `unsupported`, `unreadable`, `unknown`), whether the sessions are mirrored or on the system's own, and why.
-`gsettings` prints an `authentication-password` line, so no output is logged and the parser has no field a password could reach.
+`gsettings` prints an `authentication-password` line, and a KDE server entry can hold `user:password@`, so no output is logged and neither parser has a field a password could reach.
