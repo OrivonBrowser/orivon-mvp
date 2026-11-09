@@ -14,11 +14,12 @@
 // the same check handler with the same details a picked one does, so the
 // drop exercises the gate itself; only the dialog is left out.
 //
-// Hermetic: one throwaway server on loopback and one temp directory.
+// Hermetic: one throwaway server on loopback and one throwaway directory, made inside the checkout and not in
+// `os.tmpdir()`: a folder dropped from under AppData, where Windows keeps the temporary folder, is never handed to
+// the page (getAsFileSystemHandle() does not settle), so the spec would stop before it reaches what it checks.
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { HERMETIC_RESOLVER, evaluateRetrying } from '../support/smoke-helpers.mjs'
@@ -38,17 +39,21 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>${TITLE}</title>
 <div id="drop" style="position:fixed;inset:0"></div>
 <script>
   window.__dropped = undefined
+  window.__droppedError = undefined
+  window.__trail = []
   const zone = document.getElementById('drop')
+  for (const type of ['dragenter', 'dragover', 'dragleave', 'drop']) zone.addEventListener(type, () => { window.__trail.push(type) })
   zone.addEventListener('dragover', (e) => e.preventDefault())
   zone.addEventListener('drop', (e) => {
     e.preventDefault()
     const pending = [...e.dataTransfer.items].map((item) => item.getAsFileSystemHandle())
-    Promise.all(pending).then((handles) => { window.__dropped = handles })
+    window.__trail.push('asked for ' + pending.length)
+    Promise.all(pending).then((handles) => { window.__dropped = handles }, (e) => { window.__droppedError = e.name + ': ' + e.message })
   })
 </script>
 </body>`
 
-interface DropWindow { __dropped: FileSystemHandle[] | undefined }
+interface DropWindow { __dropped: FileSystemHandle[] | undefined, __droppedError: string | undefined, __trail: string[] }
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
@@ -61,7 +66,9 @@ it('lets an ordinary website read and write a file the person handed it, and ref
   await runPhase('file-system-access', async (check) => {
     let app: Awaited<ReturnType<typeof launchElectron>> | undefined
     let server: Server | undefined
-    const dir = mkdtempSync(join(tmpdir(), 'orivon-fsa-e2e-'))
+    const scratch = join(process.cwd(), 'qa-artifacts', 'scratch')
+    mkdirSync(scratch, { recursive: true })
+    const dir = mkdtempSync(join(scratch, 'orivon-fsa-e2e-'))
     const file = join(dir, 'export.txt')
     const folder = join(dir, 'folder')
     const inner = join(folder, 'inner.txt')
@@ -82,12 +89,19 @@ it('lets an ordinary website read and write a file the person handed it, and ref
 
       /** Drops `path` onto the page the way a person dragging it from a file manager would. */
       async function drop (path: string): Promise<string> {
-        await view.evaluate(() => { (window as unknown as DropWindow).__dropped = undefined })
+        await view.evaluate(() => {
+          (window as unknown as DropWindow).__dropped = undefined
+          ;(window as unknown as DropWindow).__droppedError = undefined
+          ;(window as unknown as DropWindow).__trail = []
+        })
         const data = { items: [], files: [path], dragOperationsMask: 1 }
         for (const type of ['dragEnter', 'dragOver', 'drop'] as const) {
           await cdp.send('Input.dispatchDragEvent', { type, x: 100, y: 100, data })
         }
-        await view.waitForFunction(() => (window as unknown as DropWindow).__dropped !== undefined)
+        const answered = await view.waitForFunction(() => (window as unknown as DropWindow).__dropped !== undefined || (window as unknown as DropWindow).__droppedError !== undefined).then(() => true, () => false)
+        if (!answered) throw new Error(`the page was handed no handle for ${path}; it saw: ${JSON.stringify(await view.evaluate(() => (window as unknown as DropWindow).__trail))}`)
+        const refused = await view.evaluate(() => (window as unknown as DropWindow).__droppedError)
+        if (refused !== undefined) throw new Error(`the page was refused a handle for ${path}: ${refused}`)
         return await evaluateRetrying(view, () => (window as unknown as DropWindow).__dropped?.map((h) => h.kind).join(','))
       }
 

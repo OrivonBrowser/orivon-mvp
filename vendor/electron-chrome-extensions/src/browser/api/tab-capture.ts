@@ -14,12 +14,9 @@
 // session.defaultSession` (its own `tabCreated` doc). An `orivon://` page or
 // another extension's page were never added, so a non-default session is
 // already unreachable here; the explicit session check below is
-// belt-and-suspenders documentation of that fact, not new work. A granted
-// app's own tab is a SEPARATE refusal: ADR-0044 moved a granted, network-
-// served app into this SAME default session, so it passes the session
-// check -- `setTabCaptureAppRefusalCheck` (extension-host.ts) is the actual
-// gate for it, the same `broker.app.hasGrantsSync` predicate
-// shell-services.ts's own DevTools prompt uses for the identical question.
+// belt-and-suspenders documentation of that fact, not new work. A granted,
+// network-served app's tab is in that same session (ADR-0044) and is
+// captured like any other site's.
 import type { ExtensionContext } from '../context'
 import type { ExtensionEvent } from '../router'
 import type { OffscreenAPI } from './offscreen'
@@ -37,15 +34,9 @@ const NOT_INVOKED_MESSAGE =
 /**
  * A capturable target is an ordinary web page, never a
  * `chrome-extension://` page. MEASURED: `ctx.store` (this file's own header)
- * tracks every `wc.session === session.defaultSession` tab, and ADR-0044
- * put a granted app's own `chrome-extension://`-hosted... no -- put a
- * granted app's tab in that SAME session, which is what
- * `setTabCaptureAppRefusalCheck` exists to refuse; a DIFFERENT extension's
- * own page (its popup opened as a tab, its options page, another
- * extension's offscreen document) is ALSO tracked there and is NOT a
- * granted app, so `gAppRefusalCheck` alone lets it through --
- * `devtools-app-origin.ts`'s own `appOrigin` returns null for a
- * `chrome-extension://` page, and `hasGrantsSync(null)` is never true.
+ * tracks every `wc.session === session.defaultSession` tab, so a DIFFERENT
+ * extension's own page (its popup opened as a tab, its options page,
+ * another extension's offscreen document) is tracked there too.
  * DECIDED: refuse every non-`http(s)` target outright, the caller's OWN
  * `chrome-extension://<self>/` pages included, rather than carving out an
  * exception for them -- real Chrome's own tabCapture is documented and used
@@ -61,20 +52,6 @@ type InvocationCheck = (extensionId: string, tabId: number) => boolean
 let gInvocationCheck: InvocationCheck | undefined
 export function setTabCaptureInvocationCheck (check: InvocationCheck): void {
   gInvocationCheck = check
-}
-
-/** True when `tab` must be refused outright -- a granted app's own tab
- * (this file's own header). Unset, every tab the store tracks is eligible,
- * which is correct for a session with no granted apps in it at all (a unit
- * test's fake store, for instance). Consulted twice per capture:
- * once here at mint time, and again on the captured tab's own
- * `did-navigate` (`recheckCaptureStillAllowed`) -- a tab minted while
- * ungranted can navigate to a granted app's origin mid-capture, and a mint
- * check alone would never notice. */
-type AppRefusalCheck = (tab: Electron.WebContents) => boolean
-let gAppRefusalCheck: AppRefusalCheck | undefined
-export function setTabCaptureAppRefusalCheck (check: AppRefusalCheck): void {
-  gAppRefusalCheck = check
 }
 
 /** Called once per successful `getMediaStreamId`, so `permission-gate.ts`'s
@@ -210,10 +187,6 @@ export class TabCaptureAPI {
       // still live).
       throw new Error('tabCapture.getMediaStreamId: refused -- Cannot capture a tab with an active stream.')
     }
-    if (gAppRefusalCheck?.(targetTab) === true) {
-      throw new Error('tabCapture.getMediaStreamId: refused -- the target tab belongs to a granted app.')
-    }
-
     if (gInvocationCheck?.(extensionId, targetTabId) !== true) {
       throw new Error(NOT_INVOKED_MESSAGE)
     }
@@ -291,7 +264,7 @@ export class TabCaptureAPI {
       // `did-navigate` fires only for a main-frame navigation (Electron's
       // own docs), which is exactly the scope this re-check needs -- an
       // iframe inside the captured page navigating elsewhere is not the tab
-      // "becoming a different page" the granted-app/http(s) refusal cares
+      // "becoming a different page" the http(s) refusal cares
       // about.
       tab.on('did-navigate', onNavigate)
     }
@@ -313,15 +286,13 @@ export class TabCaptureAPI {
   }
 
   /** Re-run at the captured tab's own `did-navigate`: a tab that
-   * was an ordinary page at mint time can navigate to a granted app's
-   * origin, or (defensively) to a non-http(s) URL, without ever closing --
-   * `getMediaStreamId`'s own checks only ever ran once, at mint. Ends every
-   * extension's capture of this tab the moment either check newly refuses,
-   * the same way a real tab-close would. */
+   * was an ordinary page at mint time can navigate to a non-http(s) URL
+   * without ever closing -- `getMediaStreamId`'s own check only ever ran
+   * once, at mint. Ends every extension's capture of this tab the moment
+   * the check newly refuses, the same way a real tab-close would. */
   private recheckCaptureStillAllowed (tab: Electron.WebContents): void {
     if (tab.isDestroyed()) return
-    const refused = gAppRefusalCheck?.(tab) === true || !isHttpOrHttpsUrl(tab.getURL())
-    if (!refused) return
+    if (isHttpOrHttpsUrl(tab.getURL())) return
     const record = this.capturedTabs.get(tab)
     if (!record) return
     for (const extensionId of Array.from(record.capturedBy)) this.endCapture(extensionId, tab, record.tabId)

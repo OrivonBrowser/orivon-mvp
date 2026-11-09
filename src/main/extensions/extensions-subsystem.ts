@@ -179,7 +179,7 @@ export const extensionsSubsystem: Subsystem = {
         whenClosed: (tabId, run) => { webContents.fromId(tabId)?.once('destroyed', run) }
       }
     })
-    const commandKeys = installExtensionCommands({ ctx, prefs, userDataPath })
+    const commandKeys = installExtensionCommands({ prefs, userDataPath })
     provideCommandKeys(commandKeys)
 
     // Decided at boot, before any file of the profile was opened: an existing profile keeps what it has.

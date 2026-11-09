@@ -25,8 +25,11 @@ frames and worker reach a handler, never a web page, a content script or another
 the router never runs; an event `<name>.<x>` reaches a listener only when `ctx.held` says it holds
 the permission (`extension-event-filter.ts`'s `EVENT_GATES` adds per-event rules).
 
-**Apps stay out of every answer.** `ctx.isAppOrigin(url)` is true for the origin of a registered
-app; a data API leaves such URLs, tabs and storage out of its answers and events.
+**A site that holds Orivon permissions is a website to a data API.** `ctx.visibleTab(contents)` is the one rule for a
+tab an extension can see: a tab a library instance tracks (`isVisibleExtensionTab` in `../extension-host.ts`) that is not
+an Orivon page. `search`, `sidePanel` and the command keys use it; no module asks whether an origin holds grants. A tab
+in a session with no extensions, such as an app run from its pinned copy, is no tab to any of them. History is the
+person's one list for every session, so `history` and `topSites` list that app's pages with the rest.
 
 **`chrome.sidePanel`** is registered by [`../side-panel-runner.ts`](../side-panel-runner.ts) (`sidePanelApi`, listed in
 `api-registry.ts`): its context call builds the driver that runs the panel, so the module needs no `electron` value of
@@ -38,5 +41,6 @@ its own.
 visible), `bookmarks-diff.ts` (the store's change event carries no detail, so a snapshot is kept
 and compared on each change), `bookmarks-quota.ts` (Chrome's write quota) and `history-shape.ts`
 (items, the search window, the events derived from the newest 200 pages). `ctx.onShell` is how a
-module that watches a store waits for the first window. A registered app's pages are in no
-history answer or event, and an extension can add or delete none.
+module that watches a store waits for the first window. A page of a site that holds permissions is
+in the history answers and events like any other, and an extension may add or delete it by address
+like any other.

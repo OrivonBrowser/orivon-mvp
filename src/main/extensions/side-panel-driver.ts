@@ -55,7 +55,7 @@ export interface PanelDriverDeps {
   readonly options: SidePanelOptions
   readonly windows: () => readonly ShellWindow[]
   readonly hostOf: (window: ShellWindow) => PanelHostLike | undefined
-  /** The tab in front, as an extension names it; undefined when there is none or it is not an ordinary web tab (an app, an Orivon page). */
+  /** The tab in front, as an extension names it; undefined when there is none or it is not an ordinary web tab (an Orivon page). */
   readonly frontTab: (window: ShellWindow) => number | undefined
   /** Ids of the loaded extensions that hold `sidePanel`. */
   readonly candidates: () => readonly string[]
