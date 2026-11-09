@@ -109,16 +109,16 @@ it('prepareWindow sets the size the window keeps even when called the moment the
 }, QA_TEST_TIMEOUT_MS)
 
 /** The Settings page draws all its rows again whenever one of its parts reports (the tunnel, the profiles, the sites), and a redraw drops the scroll and detaches the row. So the row is scrolled to once the page has been quiet for half a second, from the page itself, which holds no element across a redraw. */
-async function scrollToTunnelRow (settings: Page): Promise<void> {
-  await settings.evaluate(async () => {
+async function scrollToTunnelRow (settings: Page, rowId = 'row-route-kind'): Promise<void> {
+  await settings.evaluate(async (id) => {
     await new Promise<void>((resolve) => {
       let timer = setTimeout(done, 500)
       const watching = new MutationObserver(() => { clearTimeout(timer); timer = setTimeout(done, 500) })
       function done (): void { watching.disconnect(); resolve() }
       watching.observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true })
     })
-    ;(document.getElementById('row-route-kind') as (HTMLElement & { scrollIntoViewIfNeeded?: () => void }) | null)?.scrollIntoViewIfNeeded?.()
-  })
+    ;(document.getElementById(id) as (HTMLElement & { scrollIntoViewIfNeeded?: () => void }) | null)?.scrollIntoViewIfNeeded?.()
+  }, rowId)
 }
 
 for (const scheme of SCHEMES) {
@@ -325,6 +325,12 @@ for (const scheme of SCHEMES) {
         await state(check, app, `settings-tunnel-address-${scheme}`, {
           expected: 'The "Default tunnel" row shows "Your own SOCKS5 address"; every other row is still there, Nym\'s and the proxy\'s, because a site or app can use either whichever is the default; the "Test your proxy" Test button is greyed out while the address is empty.',
           action: 'Chose "Your own SOCKS5 address" in the default tunnel row.'
+        })
+        await scrollToTunnelRow(settings, 'row-route-separate-sign-ins')
+        check('the sign-ins row is on by default, so tunneled sites stay separate', await settings.locator('#row-route-separate-sign-ins input[type=checkbox]').isChecked())
+        await state(check, app, `settings-tunnel-sign-ins-${scheme}`, {
+          expected: 'In the "Sites and apps" group of orivon://settings/tunnels, a row "Keep tunneled sites separate" with a switch that is on, and under the label help text that says sites in a tunnel get their own sign-ins, that turning it off keeps the same accounts in tunneled tabs, and that turning it back on clears the cookies of the tunnel profiles. The row sits above the "Sites and apps with their own tunnel setting" row; nothing is cut off or overlapping.',
+          action: 'Scrolled Settings > Tunnels to the Keep tunneled sites separate row.'
         })
       })
     } finally {
