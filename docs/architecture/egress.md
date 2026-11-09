@@ -170,7 +170,11 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   run without a shell, three seconds at most, the output never logged): the per-user Internet Settings key, its
   `DefaultConnectionSettings` blob, and the machine policy `ProxySettingsPerUser`, which makes the settings `unsupported`.
   `ProxyServer` and `ProxyOverride` are copied as written, `<local>` included, by the rule Chromium's reader follows
-  (`proxy-mirror/README.md`). A proxy found by detection beside a manual one is copied and left to the check. Nothing is read or run on other desktops or macOS.
+  (`proxy-mirror/README.md`). A proxy found by detection beside a manual one is copied and left to the check.
+- **A manual proxy in macOS's settings.** The same copy, read from `/usr/sbin/scutil --proxy` (run without a shell, three seconds at
+  most, its output never logged): the web, secure web and SOCKS servers that are switched on, the SOCKS one as SOCKS5, and the
+  exceptions as listed, with `<local>` first when "Exclude simple hostnames" is ticked. A script, even beside a manual proxy, and
+  automatic discovery alone stay on `{ mode: 'system' }`. Nothing is read or run on other desktops.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
   temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`: its filter lists the four schemes under

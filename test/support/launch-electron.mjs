@@ -19,13 +19,14 @@
 // .claude/skills/orivon-electron/SKILL.md for the full incident writeup.
 import { _electron as electron } from 'playwright'
 import { realpathSync, rmSync } from 'node:fs'
-import { mkdtemp, readdir, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { attachCollectors, holdEvidence } from './qa-evidence.mjs'
 import { CHROME_READY_TIMEOUT_MS, waitForChromeDrawn, waitForChromeReady, waitForChromeView } from './smoke-helpers.mjs'
 import { seedDefaultBrowserAskNotDue, seedNoScoreProvider, seedTheme } from './profile-seeds.mjs'
 import { noFocusDefault, SILENT_AUDIO_ENV, SILENT_AUDIO_SWITCH, visibleDesktopRefusal } from './launch-env.mjs'
+import { canonicalPath, processesUnder, readProcessTable } from './process-table.mjs'
 
 export { noFocusDefault, visibleDesktopRefusal }
 
@@ -456,60 +457,25 @@ export function mainOutput (app) {
   return MAIN_OUTPUT.get(app)?.() ?? ''
 }
 
-/** Root of the OS process-info pseudo-filesystem, overridable so a unit
- * test can point the tree-walk and exe-resolution logic below at a fixture
- * directory instead of the real, Linux-only /proc. */
-const DEFAULT_PROC_ROOT = '/proc'
-
-async function readPpid (pid, procRoot) {
-  try {
-    const status = await readFile(join(procRoot, String(pid), 'status'), 'utf8')
-    const match = /^PPid:\s*(\d+)/m.exec(status)
-    return match?.[1] === undefined ? undefined : Number(match[1])
-  } catch {
-    return undefined
-  }
-}
-
 /**
  * Every pid in `rootPid`'s own process subtree, `rootPid` itself included --
- * read fresh from procRoot rather than trusted from what launchElectron
- * originally spawned, because Electron forks its own GPU/zygote/renderer
- * helper processes well after launch, none of which exist yet at launch
- * time to record.
+ * read fresh from the system's process table (./process-table.mjs) rather
+ * than trusted from what launchElectron originally spawned, because Electron
+ * forks its own GPU/zygote/renderer helper processes well after launch, none
+ * of which exist yet at launch time to record.
  *
- * Degrades to `[rootPid]` alone when procRoot cannot be listed at all (a
- * non-Linux host, or a fixture path in a test) -- still lets the caller act
- * on the one pid it definitely holds a handle to, rather than throwing.
+ * Degrades to `[rootPid]` alone when the table cannot be read at all (an
+ * unsupported system, or a fixture path in a test) -- still lets the caller
+ * act on the one pid it definitely holds a handle to, rather than throwing.
  *
  * @param {number | undefined} rootPid
- * @param {{ procRoot?: string }} [options]
+ * @param {import('./process-table.mjs').TableOptions} [options]
  * @returns {Promise<number[]>}
  */
-export async function collectProcessTree (rootPid, { procRoot = DEFAULT_PROC_ROOT } = {}) {
+export async function collectProcessTree (rootPid, options = {}) {
   if (rootPid === undefined) return []
-  let entries
-  try {
-    entries = await readdir(procRoot)
-  } catch {
-    return [rootPid]
-  }
-  const pids = entries.filter((entry) => /^\d+$/.test(entry)).map(Number)
-  const ppidOf = new Map(await Promise.all(pids.map(async (pid) => [pid, await readPpid(pid, procRoot)])))
-  // A fixpoint, not a single pass keyed on readdir's order: /proc lists pids
-  // in no guaranteed order, so a child can appear before the parent that
-  // would have qualified it on the first pass.
-  const tree = new Set([rootPid])
-  for (let grew = true; grew;) {
-    grew = false
-    for (const [pid, ppid] of ppidOf) {
-      if (ppid !== undefined && tree.has(ppid) && !tree.has(pid)) {
-        tree.add(pid)
-        grew = true
-      }
-    }
-  }
-  return [...tree]
+  const table = await readProcessTable(options)
+  return table === undefined ? [rootPid] : processesUnder(table, rootPid)
 }
 
 /**
@@ -518,11 +484,11 @@ export async function collectProcessTree (rootPid, { procRoot = DEFAULT_PROC_ROO
  * "nothing survives", not "every individual kill call succeeded".
  *
  * @param {number | undefined} rootPid
- * @param {{ procRoot?: string, signal?: NodeJS.Signals }} [options]
+ * @param {import('./process-table.mjs').TableOptions & { signal?: NodeJS.Signals }} [options]
  * @returns {Promise<number[]>} The pids this call attempted to kill.
  */
-export async function killProcessTree (rootPid, { procRoot = DEFAULT_PROC_ROOT, signal = 'SIGKILL' } = {}) {
-  const pids = await collectProcessTree(rootPid, { procRoot })
+export async function killProcessTree (rootPid, { signal = 'SIGKILL', ...tableOptions } = {}) {
+  const pids = await collectProcessTree(rootPid, tableOptions)
   for (const pid of pids) {
     try {
       process.kill(pid, signal)
@@ -567,8 +533,8 @@ export async function waitForPidExit (pid, timeoutMs = 5_000) {
 
 /**
  * The real path of the binary backing a running pid, or undefined if it
- * cannot be read (the process already exited, or -- on a non-Linux host --
- * procRoot does not exist at all).
+ * cannot be read (the process already exited, or the system's process table
+ * cannot be read at all).
  *
  * Resolving this, rather than trusting a command-line string, is the whole
  * point (.claude/unattended-run-protocol.md, the survivor-check
@@ -578,15 +544,12 @@ export async function waitForPidExit (pid, timeoutMs = 5_000) {
  * leak that was never there.
  *
  * @param {number} pid
- * @param {{ procRoot?: string }} [options]
+ * @param {import('./process-table.mjs').TableOptions} [options]
  * @returns {Promise<string | undefined>}
  */
-export async function resolveExePath (pid, { procRoot = DEFAULT_PROC_ROOT } = {}) {
-  try {
-    return await realpath(join(procRoot, String(pid), 'exe'))
-  } catch {
-    return undefined
-  }
+export async function resolveExePath (pid, options = {}) {
+  const exe = (await readProcessTable(options))?.get(pid)?.exe
+  return exe === undefined ? undefined : await canonicalPath(exe)
 }
 
 let electronBinaryRealPath
@@ -594,39 +557,37 @@ let electronBinaryRealPath
 async function getElectronBinaryRealPath () {
   if (electronBinaryRealPath === undefined) {
     const { default: electronPath } = await import('electron')
-    electronBinaryRealPath = await realpath(electronPath)
+    electronBinaryRealPath = await canonicalPath(electronPath)
   }
   return electronBinaryRealPath
 }
 
 /**
  * Which of `pids` are still a real, live Electron process -- decided by
- * resolving /proc/<pid>/exe and comparing it to THIS install's actual
- * Electron binary (the same one `import('electron')` resolves to), never by
- * matching a command-line string (resolveExePath's own header explains why
- * that trap matters).
+ * the binary each one runs (the system's process table, ./process-table.mjs)
+ * compared with THIS install's actual Electron binary (the same one
+ * `import('electron')` resolves to), never by matching a command-line
+ * string (resolveExePath's own header explains why that trap matters).
  *
- * Returns `[]` without checking anything on a host with no /proc, logging
- * why -- there is no reliable way to answer this question there, and a
- * caller silently guessing would be worse than one told plainly "not
- * checked on this platform" (this repo's CI and dev machine are both
- * Linux, so this is a graceful degrade for portability, not a gap here).
+ * Returns `[]` without checking anything when the process table cannot be
+ * read, logging why: a caller silently guessing would be worse than one
+ * told plainly "not checked on this platform".
  *
  * @param {number[]} pids
- * @param {{ procRoot?: string }} [options]
+ * @param {import('./process-table.mjs').TableOptions} [options]
  * @returns {Promise<number[]>}
  */
-export async function findLiveElectronPids (pids, { procRoot = DEFAULT_PROC_ROOT } = {}) {
-  try {
-    await readdir(procRoot)
-  } catch {
-    console.error(`[survivor-check] ${procRoot} is not readable on this platform -- skipping (Linux-only check)`)
+export async function findLiveElectronPids (pids, options = {}) {
+  const table = await readProcessTable(options)
+  if (table === undefined) {
+    console.error('[survivor-check] the process table cannot be read here -- skipping')
     return []
   }
   const electronPath = await getElectronBinaryRealPath()
   const survivors = []
   for (const pid of pids) {
-    if ((await resolveExePath(pid, { procRoot })) === electronPath) survivors.push(pid)
+    const exe = table.get(pid)?.exe
+    if (exe !== undefined && (await canonicalPath(exe)) === electronPath) survivors.push(pid)
   }
   return survivors
 }
