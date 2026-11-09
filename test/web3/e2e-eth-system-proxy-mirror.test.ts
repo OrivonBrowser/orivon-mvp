@@ -12,12 +12,12 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { ElectronApplication, Page } from 'playwright'
+import type { ElectronApplication } from 'playwright'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
-import { gnomeProxy, kdeProxy, launchShellOn, macosProxy, ORDINARY, PROXY_SHEET, CANCELLED, refusalLines, report, resolved, startLoggingProxy, verifierNames, visitReporting, windowsAutoDetect, windowsManualProxy } from './system-proxy-support.js'
+import { gnomeProxy, kdeProxy, launchShellOn, macosProxy, ORDINARY, PROXY_SHEET, CANCELLED, refusalLines, report, reportedMirror, resolved, startLoggingProxy, verifierNames, visitReporting, waitForAnswer, windowsAutoDetect, windowsManualProxy } from './system-proxy-support.js'
 import type { LoggingProxy, MacosProxy, Running, WindowsProxyForm } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
@@ -77,41 +77,10 @@ const COMPUTERS: ReadonlyArray<{ readonly name: string, readonly source: string,
   { name: 'Windows settings, with detection on beside the proxy,', source: 'windows', applies: WINDOWS, set: (port) => windowsProxy('both', port, true) }
 ]
 
-interface SystemProxyFact { readonly source: string, readonly mode: string, readonly state: string, readonly reason: string }
-
-/** Opens `orivon://report` and reads the mirror's fact, the log lines it wrote and the whole preview text, once main has built the preview. The log is read from the report because the lines a launch prints first reach a test's capture of the output only by chance. */
-async function reportedMirror (app: ElectronApplication, chrome: Page): Promise<{ fact: SystemProxyFact | undefined, lines: string[], text: string }> {
-  await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('report.open') })
-  expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://report') && !w.isClosed()))).toBe(true)
-  const page = app.windows().find((w) => w.url().startsWith('orivon://report') && !w.isClosed()) as Page
-  await page.waitForSelector('#report-what')
-  let text = ''
-  let fact: SystemProxyFact | undefined
-  let lines: string[] = []
-  await waitFor(async () => {
-    text = await page.locator('#report-preview').textContent() ?? ''
-    try {
-      const shown = JSON.parse(text === '' ? '{}' : text) as { log?: string[] | null, diagnostics?: { browser?: { systemProxy?: SystemProxyFact } } }
-      fact = shown.diagnostics?.browser?.systemProxy
-      lines = (shown.log ?? []).filter((line) => line.includes('[route] system proxy:')).map((line) => line.slice(line.indexOf('[route]')))
-    } catch { fact = undefined }
-    return fact !== undefined
-  }, 15_000)
-  return { fact, lines, text }
-}
-
 /** Waits until the sessions carry a copy of the proxy at `port`: the proxy answers for an ordinary name and the verifier for a .eth name. Chromium follows a proxy turned on by itself before that, and the guard refuses a name meanwhile. */
 async function waitForCopy (app: ElectronApplication, port: number): Promise<void> {
   await waitForAnswer(app, 'https://ordinary.test/', new RegExp(`^PROXY 127\\.0\\.0\\.1:${String(port)}$`))
   await waitForAnswer(app, 'https://fixture.eth/', /^DIRECT$/)
-}
-
-/** Waits until the default session answers `url` as `expected` says, which is how a change of the copy shows. A change is followed within a few seconds (the question to Chromium is asked every 2 s; the settings are read every 30 s), so the bound is far under the read's. */
-async function waitForAnswer (app: ElectronApplication, url: string, expected: RegExp, timeoutMs = 15_000): Promise<string> {
-  let last = ''
-  const settled = await waitFor(async () => { last = (await resolved(app, url))['default'] ?? ''; return expected.test(last) }, timeoutMs)
-  if (!settled) throw new Error(`the default session still answers ${last} for ${url}`)
-  return last
 }
 
 /** Waits until every session kind answers `url` as `expected` says. A partition is made the first time it is named and its proxy is set a moment later (the guard waits for that), so the facts about the profiles are read once each has taken the copy. */

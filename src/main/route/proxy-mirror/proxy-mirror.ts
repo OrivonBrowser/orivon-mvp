@@ -4,12 +4,13 @@
 // set to it, answers the same as Chromium's session for the same addresses; when it does not, twice running, or when the settings
 // cannot be read or carried, every session stays on `{ mode: 'system' }`, where the guard for the names the verifier serves decides.
 // A copy already applied is kept through a read that fails or a check that gets no answer, while Chromium's base answers are what
-// they were when the copy passed its check. Electron-free over the calls it is handed.
+// they were when the copy passed its check. A script the system names is fetched, wrapped and copied the same way. Electron-free
+// over the calls it is handed.
 
 import type { SystemProxyConfig } from '../system-follow.js'
 import { within } from '../within.js'
 import { BASE_CANARIES, exceptionCanaries } from './canaries.js'
-import { mirroredConfig } from './mirrored-config.js'
+import { mirroredConfig, mirroredScriptConfig } from './mirrored-config.js'
 import type { MirrorReason, MirrorStatus } from './mirror-status.js'
 import type { SettingsSourceName, SystemSettings } from './settings-source.js'
 
@@ -17,10 +18,18 @@ import type { SettingsSourceName, SystemSettings } from './settings-source.js'
 export const ANSWER_EVERY_MS = 2_000
 /** How often the settings are read. Provisional: an edit of the exceptions alone is followed after about this long. */
 export const READ_EVERY_MS = 30_000
+/** How long a change in Chromium's answers alone, with the settings the same, starts no read after one did. */
+export const ANSWERS_QUIET_MS = 2 * READ_EVERY_MS
 /** How long the first read and check may hold the start of the browser. */
 export const START_BOUND_MS = 6_000
 /** How long one question to a session, or one set of the check session, may take. */
 const CALL_MS = 5_000
+/** How long a fetched script is used before it is fetched again: Chromium notices an edit of a script at the same address very late, if ever. */
+export const SCRIPT_EVERY_MS = 30 * 60_000
+/** The least time between two fetches that a change in Chromium's answers, or a failed fetch, starts. */
+export const SCRIPT_RECHECK_MS = 20_000
+/** How long a fetch of the script may hold a pass. */
+const SCRIPT_CALL_MS = 35_000
 
 const SYSTEM: SystemProxyConfig = { mode: 'system' }
 
@@ -35,6 +44,10 @@ export interface ProxyMirrorDeps {
   readonly read: (() => Promise<SystemSettings>) | undefined
   /** Nothing follows the system (a window held to a tunnel). */
   readonly held?: boolean
+  /** The text of the proxy script at `url`, fetched direct; rejects when it cannot be. Without it, a script stays with the system. */
+  readonly fetchScript?: (url: string) => Promise<string>
+  /** Makes Chromium's own session read its settings and its script again, so that it answers for the script as it is now. */
+  readonly reloadSystem?: () => Promise<void>
   /** Chromium's own answer for the address, from a session that stays on `{ mode: 'system' }`. */
   readonly systemAnswer: (url: string) => Promise<string>
   /** A session of the mirror's own: set to a config to try, then asked. */
@@ -55,8 +68,8 @@ export interface ProxyMirror {
   stop: () => void
 }
 
-const STAY_REASON: Readonly<Record<Exclude<SystemSettings['kind'], 'manual'>, MirrorReason>> = {
-  none: 'no-proxy', script: 'script', detect: 'detect', unsupported: 'unsupported', unreadable: 'unreadable'
+const STAY_REASON: Readonly<Record<Exclude<SystemSettings['kind'], 'manual' | 'script'>, MirrorReason>> = {
+  none: 'no-proxy', detect: 'detect', unsupported: 'unsupported', unreadable: 'unreadable'
 }
 
 export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
@@ -68,6 +81,15 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
   /** What the last pass looked at, so a pass that sees the same does nothing. */
   let lastInputs = ''
   let lastAnswers = ''
+  /** The script the settings name, as last fetched. A failed fetch keeps the text for the same address. */
+  let script: { readonly url: string, readonly text: string, readonly fetchedAt: number, readonly tried: number } | undefined
+  /** Moves whenever the text of the script changes, so that the pass sees a new script as a new input. */
+  let scriptVersion = 0
+  /** Until then a change in Chromium's answers alone starts no read: a script that answers by the clock or at random changes them at every question, and each read of the settings spawns a process. */
+  let answersQuietUntil = 0
+  /** What the pass now running did with the script, so that it fetches and reloads once and not again for the same difference. */
+  let passFetched = false
+  let passReloaded = false
   let running: Promise<void> | undefined
   let queued = false
   let stopped = false
@@ -109,14 +131,71 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       if (attempt === 1) current = await read()
       if (current.kind === 'unreadable' && attempt === 0 && keepable) return 'kept'
-      if (current.kind !== 'manual') return { config: SYSTEM, reason: STAY_REASON[current.kind], mode: current.kind }
-      const config = mirroredConfig(current)
-      if (config === undefined) continue
-      const verdict = await check(config, current.exceptions)
-      if (verdict === 'agrees') return { config, reason: 'copied', mode: 'manual' }
+      if (current.kind !== 'manual' && current.kind !== 'script') return { config: SYSTEM, reason: STAY_REASON[current.kind], mode: current.kind }
+      // A difference that stays means Chromium's session may hold another text than the fetch did: it is made to read the script again.
+      if (current.kind === 'script' && attempt === 1) {
+        if (!passFetched && !passReloaded) await updateScript(current.url, true)
+        if (!passReloaded) await reloadSystem()
+      }
+      const config = current.kind === 'manual' ? mirroredConfig(current) : scriptConfig(current.url)
+      if (config === undefined) {
+        if (current.kind === 'script') return { config: SYSTEM, reason: 'unfetched', mode: 'script' }
+        continue
+      }
+      const verdict = await check(config, current.kind === 'manual' ? current.exceptions : [])
+      if (verdict === 'agrees') return { config, reason: 'copied', mode: current.kind }
       if (verdict === 'unanswered' && attempt === 0 && keepable) return 'kept'
     }
-    return { config: SYSTEM, reason: 'disagrees', mode: 'manual' }
+    return { config: SYSTEM, reason: 'disagrees', mode: settings.kind === 'script' ? 'script' : 'manual' }
+  }
+
+  /** The config for the script fetched from `url`, or undefined when none was fetched. */
+  function scriptConfig (url: string): SystemProxyConfig | undefined {
+    return script?.url === url ? mirroredScriptConfig(script.text) : undefined
+  }
+
+  /**
+   * Fetches the script at `url` when it is due: for a new address, once its text is older than half an hour, when Chromium's answers
+   * moved (an edit it noticed), when a fetch failed, or when `force` says so. A fetch that fails keeps the text for the same address.
+   * When the text changed, Chromium's own session is made to read its script again, since it would not notice the edit for a long
+   * time and the check would find the copy different. Resolves with whether it did.
+   */
+  async function updateScript (url: string, force: boolean, answersMoved = false): Promise<boolean> {
+    const fetchScript = deps.fetchScript
+    const held = script?.url === url ? script : undefined
+    const now = Date.now()
+    if (fetchScript === undefined) return false
+    const due = held === undefined || force || now - held.fetchedAt >= SCRIPT_EVERY_MS || ((answersMoved || held.tried > held.fetchedAt) && now - held.tried >= SCRIPT_RECHECK_MS)
+    if (!due) return false
+    let text: string | undefined
+    passFetched = true
+    try {
+      text = await within(fetchScript(url), SCRIPT_CALL_MS, 'the proxy script took too long')
+    } catch {
+      text = undefined
+    }
+    if (stopped) return false
+    if (text === undefined) {
+      script = held === undefined ? undefined : { ...held, tried: now }
+      return false
+    }
+    script = { url, text, fetchedAt: now, tried: now }
+    if (text === held?.text) return false
+    scriptVersion += 1
+    return held !== undefined && await reloadSystem()
+  }
+
+  /** Makes Chromium's own session read its script again. Resolves with whether it did. */
+  async function reloadSystem (): Promise<boolean> {
+    const reload = deps.reloadSystem
+    if (reload === undefined || stopped) return false
+    passReloaded = true
+    try {
+      await within(reload(), CALL_MS, 'Chromium did not read its script again')
+      return true
+    } catch {
+      return false
+    }
   }
 
   /** Has every session set to `applied`; false when one did not, or the call itself failed. */
@@ -138,9 +217,16 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
   async function pass (): Promise<void> {
     const read = deps.read
     if (read === undefined || stopped) return
+    passFetched = false
+    passReloaded = false
     const settings = await read()
-    const answers = await sample()
-    const inputs = JSON.stringify(settings)
+    let answers = await sample()
+    if (settings.kind === 'script') {
+      if (await updateScript(settings.url, false, answers !== lastAnswers)) answers = await sample()
+    } else if (settings.kind !== 'unreadable') {
+      script = undefined
+    }
+    const inputs = JSON.stringify([settings, scriptVersion])
     const settled = status.reason !== 'starting' && status.reason !== 'unreadable' && status.reason !== 'disagrees'
     if (settled && inputs === lastInputs && answers === lastAnswers) {
       await retryApply()
@@ -152,6 +238,7 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
       await retryApply()
       return
     }
+    answersQuietUntil = inputs === lastInputs && answers !== lastAnswers ? Date.now() + ANSWERS_QUIET_MS : 0
     lastInputs = inputs
     lastAnswers = answers
     const next: MirrorStatus = { source: deps.source, mode: outcome.mode, state: outcome.config === SYSTEM ? 'system' : 'mirrored', reason: outcome.reason }
@@ -186,7 +273,7 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
   async function tick (): Promise<void> {
     if (running !== undefined || stopped) return
     const answers = await sample()
-    if (answers !== lastAnswers && running === undefined && !stopped) await refresh()
+    if (answers !== lastAnswers && running === undefined && !stopped && Date.now() >= answersQuietUntil) await refresh()
   }
 
   return {

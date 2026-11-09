@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { BUILTIN_ADDRESSES } from '../../../../protocols/builtin.js'
 import { exceptionCanaries } from '../canaries.js'
-import { mirroredConfig, routedBypassRules } from '../mirrored-config.js'
+import { mirroredConfig, mirroredScriptConfig, routedBypassRules } from '../mirrored-config.js'
+import { runPac } from './pac-vm.test-helpers.js'
 
 describe('the rules that keep a name the verifier serves from a proxy', () => {
   it('name every routed suffix as the resolver rules map it, and no root-dot spelling, which they do not match', () => {
@@ -22,8 +23,43 @@ describe('the mirrored config', () => {
     expect(mirroredConfig({ kind: 'manual', proxyRules: 'http=proxy.test:3128', exceptions: [] })?.proxyBypassRules).toBe(routedBypassRules().join(';'))
   })
 
-  it.each(['none', 'script', 'detect', 'unsupported', 'unreadable'] as const)('is nothing for settings that are %s, so the sessions stay on the system\'s own', (kind) => {
+  it.each(['none', 'detect', 'unsupported', 'unreadable'] as const)('is nothing for settings that are %s, so the sessions stay on the system\'s own', (kind) => {
     expect(mirroredConfig({ kind })).toBeUndefined()
+  })
+
+  it('is nothing for a script, whose config is made from its text once it is fetched', () => {
+    expect(mirroredConfig({ kind: 'script', url: 'http://wpad.test/proxy.pac' })).toBeUndefined()
+  })
+})
+
+describe('the mirrored config of a proxy script', () => {
+  const SCRIPT = 'function FindProxyForURL(url, host) { return "PROXY proxy.test:3128" }'
+
+  /** The text of the script a session is set to, from its `data:` address. */
+  function sourceOf (pacScript: string | undefined): string {
+    const [head, body] = (pacScript ?? '').split(',')
+    expect(head).toBe('data:application/x-ns-proxy-autoconfig;base64')
+    return Buffer.from(body ?? '', 'base64').toString('latin1')
+  }
+
+  it('is a script of Orivon\'s own, set by its data address and not by the address the system names', () => {
+    const config = mirroredScriptConfig(SCRIPT)
+    expect(config.mode).toBe('pac_script')
+    expect(Object.keys(config).sort()).toEqual(['mode', 'pacScript'])
+    expect(sourceOf(config.pacScript)).not.toBe(SCRIPT)
+  })
+
+  it('gives the system\'s answer for an ordinary name and DIRECT for every name the verifier serves, with or without a root dot', () => {
+    const { answer } = runPac(sourceOf(mirroredScriptConfig(SCRIPT).pacScript))
+    expect(answer('https://ordinary.test/')).toBe('PROXY proxy.test:3128')
+    for (const suffix of BUILTIN_ADDRESSES.routedSuffixes()) {
+      for (const dots of ['', '.', '..']) expect(answer(`https://name.${suffix}${dots}/`)).toBe('DIRECT')
+    }
+  })
+
+  it('names the same suffixes as the rules for a manual proxy', () => {
+    const { answer } = runPac(sourceOf(mirroredScriptConfig(SCRIPT).pacScript))
+    for (const rule of routedBypassRules()) expect(answer(`https://name${rule.slice(1)}/`)).toBe('DIRECT')
   })
 })
 

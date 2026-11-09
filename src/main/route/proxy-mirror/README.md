@@ -14,16 +14,19 @@ A session that follows the system takes the copy through the route controller's 
 | `read-kde-files.ts` | Finds the `kioslaverc` files where Chromium looks for them (by `KDEHOME`, `HOME`, `XDG_CONFIG_DIRS` and the KDE generation) and opens them: a file read of at most a megabyte, three seconds | Tied to the operating system: it reads files |
 | `read-windows.ts` | `reg query` of the per-user Internet Settings key, its connection blob and the machine policy turned into `SystemSettings`, by the rule Chromium's reader follows; reads only the values it needs | Durable: pure |
 | `run-readers.ts` | Runs `gsettings`, `reg.exe` and `/usr/sbin/scutil` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments) | Tied to the operating system: it starts a program |
-| `mirrored-config.ts` | The config for manual settings: the system's rules and exceptions, then `*.suffix` for every routed suffix | Durable: pure |
+| `mirrored-config.ts` | The config for manual settings (the system's rules and exceptions, then `*.suffix` for every routed suffix) and for a script (its wrapped text as a `data:` address) | Durable: pure |
+| `pac-wrapper.ts` | The system's proxy script made into a script of Orivon's own that answers `DIRECT` for every routed name before the system's text runs, and runs that text where it cannot reach what decides it | Durable: pure text, which Chromium's PAC context runs |
+| `pac-fetch.ts` | Fetches the text of the script the system names, direct, with no cookies or credentials, at most a megabyte and 30 seconds, decoded as Chromium decodes it | Tied to Electron: it makes a session of its own and asks it |
 | `canaries.ts` | The addresses the copy is checked with: two ordinary sites and up to three the system's exceptions cover | Durable: pure |
-| `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, checks a copy before applying it, sets the sessions again until each has taken it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, carry or check (a copy already applied outlasts a failed read or a check with no answer) | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
+| `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, fetches the script the settings name when it is due, checks a copy before applying it, sets the sessions again until each has taken it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, fetch, carry or check (a copy already applied outlasts a failed read or a check with no answer) | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
 | `mirror-status.ts` | What `orivon://report` and the log say about the mirror: four fixed words | Durable: pure |
 
 **What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), and
 [`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process` and `node:path`, and `read-kde-files.ts` `node:fs/promises`.
 
-**What it must never import.** The Electron package: `../route-subsystem.ts` supplies the sessions. Nothing here calls `setProxy` or dials
-anything; the sessions it asks are handed in, so a unit test drives all of it against fakes.
+**What it must never import.** An Electron value (a type is fine): `../route-subsystem.ts` supplies the sessions. Nothing here calls `setProxy` on a
+session that carries traffic, and the one thing that makes a request is `pac-fetch.ts`, to the address of the script the system names; the sessions
+and the fetch are handed in, so a unit test drives all of it against fakes.
 
 **Owner stream.** `broker`.
 
@@ -51,9 +54,44 @@ new does only that.
 **A pass that ends after `stop()` applies nothing.** The check session is not set either, and the route subsystem registers the stop
 before it waits for the first read.
 
-**Settings that are not a manual proxy are not copied.** No proxy (`none`, or `manual` with no server named) stays on `{ mode: 'system' }`:
+**Settings that are neither a manual proxy nor a script are not copied.** No proxy (`none`, or `manual` with no server named) stays on `{ mode: 'system' }`:
 it is the same answer, and a proxy turned on is followed by Chromium itself until the next pass applies the copy, with the guard refusing a
-name meanwhile. A script and automatic detection stay on it too; each is reported by its own word (`script`, `detect`).
+name meanwhile. Automatic detection stays on it too, reported by its own word (`detect`). A script that could not be fetched (`unfetched`:
+the fetch failed, or the address is not `http:` or `https:`) and one whose copy does not answer as Chromium's session does (`disagrees`) stay on it as well.
+
+**A system script is copied by wrapping its text, and the wrapper is what keeps a routed name off the script's proxy.** `pac-wrapper.ts` builds
+a script of Orivon's own and hands it to the sessions as a `data:` address. The system's text sits in it as one string of printable ASCII (each
+other UTF-16 unit is a `\uXXXX` escape, so no charset or line terminator changes what it says), and runs once, through `Function`, inside a
+closure of the wrapper's: the text cannot name the closure's variables, so it cannot reach the routed check or its table. Chromium reads the
+global `FindProxyForURL`; the wrapper defines it as an accessor that cannot be redefined or deleted, and a text that assigns the name (bare, as
+`this.` or `globalThis.`, in strict mode, through `eval` or `new Function`, inside `with`) hands the setter its function, which is the one
+wrapped. The routed check compares characters by index against both spellings of every routed suffix and calls nothing on the host or on a
+prototype, so a text that replaces `String.prototype` or `Array.prototype` methods changes nothing; it drops every trailing dot of the host
+(Chromium hands a script the host with the root dots kept, in lower case) and treats a host that is not a string as routed. A text that does not
+compile, throws while it loads, defines no function or throws when asked answers `DIRECT`, as Chromium's own session does for a script that
+fails, so a broken text cannot send anything to a proxy either. Measured in Chromium's PAC context: it honours a non-configurable accessor
+for `FindProxyForURL`, runs `Function`-compiled code with the helpers (`dnsResolve`, `isInNet`, `shExpMatch` and the rest) as globals, and
+makes a new context for each `setProxy` of a `data:` address; an address carrying 12 MB of script applies, far past the 6 MB of script the
+largest text `pac-fetch.ts` returns can come to once escaped.
+
+**The script is fetched by a session of Orivon's own, direct, and only from the address the system names.** `orivon-pac-fetch` lives in memory, is
+set to `{ mode: 'direct' }` before its first request and is marked as one that sets a proxy of its own, so the fetch goes through no proxy
+(the script's own, a tunnel or the mirrored one). It sends no cookies or credentials, caches nothing, takes only `http:` and `https:` (also after
+a redirect) and an answer with status 200, and stops at a megabyte (one byte more fails, as in Chromium) and at 30 seconds. The text is decoded by the
+charset the answer names, else by a byte-order mark, else as Latin-1 (what Chromium does); a failure is one word (`scheme`, `credentials`,
+`status`, `size`, `time`, `network`, `charset`) and carries neither the address nor the text.
+
+**The script is fetched again when the copy could be out of date, and Chromium's own session is told to read it again when the text changed.** A fetch
+is due for a new address, once the text is half an hour old, when Chromium's answers changed and the last attempt is 20 seconds old, and once more
+in the same pass when the copy and Chromium's answers differ and no fetch has been made in that pass. Chromium's own session notices an edit of a
+script at the same address late or not at all (measured: nothing within 150 seconds), but `forceReloadProxyConfig` on it makes it fetch the script
+again (measured), so a changed text, and a difference that stays, have the mirror ask for that before the check, once per pass. A fetch that fails
+keeps the last text for the same address; with none, the sessions stay on the system's own. The text is forgotten when the settings stop naming a script.
+
+**A script that answers differently at every question stays with the system, and costs one pass per read.** A copy cannot agree with a script
+that answers by the clock or at random (`disagrees`), and the 2-second question sees such a change every time. A change in Chromium's answers with
+the settings the same starts a pass only once a minute, so the reads of the settings (a process each) stay at the 30-second pace, with one fetch
+and one reload of Chromium's session at most per pass.
 
 **Each GNOME rule is what Chromium's GSettings reader makes of the key, measured.** `use-same-proxy` and the HTTP server's `enabled` switch are
 not read at all; a server with an empty host is unset; a `socks` server is SOCKS5 and answers for every scheme with no server of its own;
@@ -113,6 +151,6 @@ a rule for an address, a block of addresses and `<local>` as it is. No `kioslave
 environment, which Orivon already keeps the names out of. Reversed exceptions, a type 4 (the servers are names of environment variables)
 and a server or exception that could not be written into a rule are `unsupported`.
 
-**The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`, `kde`, `windows`), what the read came to (`manual`,
-`none`, `script`, `detect`, `unsupported`, `unreadable`, `unknown`), whether the sessions are mirrored or on the system's own, and why.
+**The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`, `kde`, `windows`, `macos`), what the read came to (`manual`,
+`none`, `script`, `detect`, `unsupported`, `unreadable`, `unknown`), whether the sessions are mirrored or on the system's own, and why. The address of a script and its text reach neither the log nor the report.
 `gsettings` prints an `authentication-password` line, and a KDE server entry can hold `user:password@`, so no output is logged and neither parser has a field a password could reach.

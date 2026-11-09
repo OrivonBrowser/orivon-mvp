@@ -83,6 +83,7 @@ and in tabs opened from it, runs in that tunnel's profile until the tab closes, 
 | `src/main/pages/serve.ts` | The renderer's dev server on loopback, in a source run only | Answering an `orivon://` page in development | Loopback |
 | `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
 | `src/main/route/dead-end.ts` | Listens on a random `127.0.0.1` port, accepts and closes; reads and sends nothing | The place a session is pointed at to stop it (a session made while the whole browser is on the tunnel, one that could not be pointed, the requests made with no session), so a stopped request fails at once and no other listener on this computer is shown a destination name | Loopback |
+| `src/main/route/proxy-mirror/pac-fetch.ts` | The address of the proxy script the system names, and only that (`http:` or `https:`, redirects to the same kinds followed), through a session of its own set to `{ mode: 'direct' }`, with no cookies or credentials and nothing cached, at most a megabyte and thirty seconds | Copying the system's proxy script into the sessions that follow the system | Not routed, by design: the script is fetched as the system's own settings would have Chromium fetch it, direct, and the session sets a proxy of its own, so no tunnel, front or system proxy takes the request. It happens only while the settings name a script; the address and the text reach neither the log nor `orivon://report` |
 | `src/main/route/proxy-mirror/read-kde.ts` | Nothing: uses only `isIPv4` and `isIPv6` | Telling an address from a hostname in KDE's proxy exceptions | Loopback |
 | `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions, and of every other session the runtime creates while the whole browser is on the tunnel: the front, or the dead end (the moment a session is made or switched on, before the front is had); also `app.setProxy` for the requests made with no session | Where a session takes the tunnel; it marks a session as changing from before each `setProxy` until the call ends (`proxy-answers.ts`) | Routed (it makes sessions take it) |
 | `src/main/route/route-subsystem.ts` | Nothing of its own: wires the sessions, `app.setProxy`, the system-proxy session that T20 asks, the system-mirror session that Orivon's direct requests and the lookups about a site set to off use, and the system-check session where a copy of the system's proxy settings is tried (`proxy-mirror/`; it runs `gsettings`, and sets a proxy on the sessions that follow the system only after the check); registers the guard that keeps a name the verifier serves from a proxy the system sets, on every website session | Starting the routes | Routed (it makes the rest take the tunnel) |
@@ -158,7 +159,7 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   do not map it to the verifier: it stays on the proxy and the guard refuses it. A copy reaches a session only after `orivon-system-check`, a session of the
   mirror's own set to it, answers as `orivon-system-proxy` (Chromium's own answer, never leaving `{ mode: 'system' }`) does for
   two ordinary addresses and up to three the system's exceptions cover; a difference, read again at once, leaves every session
-  on `{ mode: 'system' }`. Settings that name a script or detection, cannot be carried exactly or cannot be read stay on it
+  on `{ mode: 'system' }`. Settings that name detection, cannot be carried exactly or cannot be read stay on it
   too, but a copy already applied outlasts a read that failed, or a check that got no answer, while Chromium's answers for the two
   ordinary addresses are what they were when it passed. The settings are read every thirty seconds and Chromium's answer asked every two.
 - **A manual proxy in KDE's settings.** The same copy, read from the `kioslaverc` files Chromium reads (`$HOME/.config`, the
@@ -172,8 +173,18 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   (`proxy-mirror/README.md`). A proxy found by detection beside a manual one is copied and left to the check.
 - **A manual proxy in macOS's settings.** The same copy, read from `/usr/sbin/scutil --proxy` (run without a shell, three seconds at
   most, its output never logged): the web, secure web and SOCKS servers that are switched on, the SOCKS one as SOCKS5, and the
-  exceptions as listed, with `<local>` first when "Exclude simple hostnames" is ticked. A script, even beside a manual proxy, and
-  automatic discovery alone stay on `{ mode: 'system' }`. Nothing is read or run on other desktops.
+  exceptions as listed, with `<local>` first when "Exclude simple hostnames" is ticked. Automatic discovery alone stays on
+  `{ mode: 'system' }`; a script, even beside a manual proxy, is the next item's. Nothing is read or run on other desktops.
+- **A proxy script in the system's settings.** GNOME's `autoconfig-url`, KDE's `Proxy Config Script`, Windows' `AutoConfigURL` (or the
+  script of the connection blob) and macOS's `ProxyAutoConfigURLString` name one. `proxy-mirror/pac-fetch.ts` fetches its text from
+  that address alone, and `pac-wrapper.ts` makes of it a script of Orivon's own that answers `DIRECT` for every name the verifier serves
+  (any case, any number of root dots) before the system's text runs, and runs that text where it can neither reach that check
+  nor replace the function Chromium asks; a text that fails to compile or throws answers `DIRECT`, as Chromium's own session does. The wrapped script
+  goes to `orivon-system-check` first and reaches the other sessions only after it answers as `orivon-system-proxy` does for the two ordinary
+  addresses; a script whose answers differ at every question, and one that cannot be fetched (no answer, not `http:` or `https:`, over a
+  megabyte), leave the sessions on `{ mode: 'system' }`, where the guard decides. The script is fetched again when the settings name
+  another address, when Chromium's answers change, and every half hour; Chromium's own session is asked to read it again when the text
+  changed (`proxy-mirror/README.md`).
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
   temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held

@@ -3,6 +3,7 @@
 // or a URL; each exception is a suffix match; and a line Chromium's reader skips is skipped here too. Pure.
 
 import { isIPv4, isIPv6 } from 'node:net'
+import { scriptAddress } from './settings-source.js'
 import type { SystemSettings } from './settings-source.js'
 
 /** `fgets` into a 512-byte buffer: a line of 511 bytes or more, its newline apart, is skipped whole. */
@@ -115,7 +116,7 @@ export function parseKdeSettings (files: readonly string[]): SystemSettings {
   for (const text of files) mergeFile(settings, text)
   if (settings.mode === undefined || settings.mode === 'none') return { kind: 'none' }
   if (settings.mode === 'detect') return { kind: 'detect' }
-  if (settings.mode === 'script') return { kind: settings.script === '' ? 'detect' : 'script' }
+  if (settings.mode === 'script') return settings.script === '' ? { kind: 'detect' } : { kind: 'script', url: scriptAddress(settings.script) }
   if (settings.mode === 'environment') return { kind: 'unsupported' }
   const rules: string[] = []
   for (const [scheme, entry] of [['http', settings.http], ['https', settings.https], ['socks', settings.socks]] as const) {

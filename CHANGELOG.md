@@ -33,6 +33,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 - **New-tab pictures keep their own colours**: nothing dark lies over the Orivon picture or your own any more; the text on it has a soft shadow instead.
 - **The Orivon picture on the new tab is in evening light**: the same scene, darker and still in full colour, so the default background is no longer glaring.
 - **A `.eth` name opens behind a manual proxy in GNOME's, KDE's, Windows' or macOS's settings.** Orivon copies the proxy's servers and exceptions into its sessions with the names it serves left out, after checking the copy against Chromium's own answer; ordinary sites still go through the proxy and a change of the setting is followed within seconds. KDE's reversed exceptions and scripts keep the refusal. `orivon://report` says whether the proxy is copied and why not.
+- **A `.eth` name opens behind a proxy script in GNOME's, KDE's, Windows' or macOS's settings.** Orivon fetches the script direct, wraps it so that the names it serves always go direct and every other name gets the script's own answer, and gives its sessions the wrapped copy once it answers as Chromium's own session does. A script that cannot be fetched, or answers differently at every question, keeps the refusal.
 
 ### Fixed
 
