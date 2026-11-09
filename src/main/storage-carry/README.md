@@ -55,6 +55,14 @@ of the very same handler. The secret is chosen at random per run, so the shell's
 a page, and the hold lets only that path through. Cookies need no page: the cookie jar of each session is read and written
 from the main process.
 
+**A service worker is bypassed for the hidden page.** An app that registered a worker in its old partition has it answer a
+navigation to its origin, and a worker that answers with the app's own page would run the app's code in the page the carry
+reads from, which could open, upgrade or delete the very databases being copied. `openCarryPage` attaches the debugger to the
+page, enables its Network domain and sets `Network.setBypassServiceWorker` before the document loads, as the developer tools'
+"Bypass for network" does (the setting does nothing until the domain is enabled), and then refuses a page that a worker controls
+or that holds a script. The check is the second line: only the bypass keeps a page of an app that has a worker from being
+refused. The debugger attaches after a first blank load, because a page that has not loaded anything has no target to answer.
+
 **Every call returns text.** `executeJavaScript` converts what it returns, and stops at the first value it cannot (a Blob
 inside a Map). The script returns JSON strings, and a value that JSON cannot say is tagged (`$t`): dates, binary, Blobs
 and Files (as bytes, type and name), maps, sets, regular expressions, errors, big integers, NaN, the infinities, negative

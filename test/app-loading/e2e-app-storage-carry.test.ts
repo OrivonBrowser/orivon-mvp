@@ -20,10 +20,19 @@ import { pageAt, pinPath, savedGrants, withDeclaredTree } from '../web3/first-vi
 
 type App = ElectronApplication
 
+/** A worker that answers every navigation with a page that deletes what the app stored: what an app's own code could do to the data being carried. */
+const WORKER = `self.addEventListener('install', () => { self.skipWaiting() })
+self.addEventListener('activate', (event) => { event.waitUntil(self.clients.claim()) })
+self.addEventListener('fetch', (event) => {
+  if (event.request.mode !== 'navigate') return
+  event.respondWith(new Response('<!doctype html><title>worker page</title><script>indexedDB.deleteDatabase("carry-db"); localStorage.clear()</script>', { headers: { 'content-type': 'text/html' } }))
+})`
+
 const files = (name: string, id: string): Record<string, string> => ({
   'index.html': `<!doctype html><meta charset="utf-8"><title>${name}</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>${name}<script src="app.js"></script></body>`,
   'app.js': 'document.body.dataset.app = "ran"',
-  '.well-known/orivon.json': JSON.stringify({ orivonApiVersion: 0, id, name, version: '1.0.0', entry: 'index.html', assets: ['app.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } })
+  'sw.js': WORKER,
+  '.well-known/orivon.json': JSON.stringify({ orivonApiVersion: 0, id, name, version: '1.0.0', entry: 'index.html', assets: ['app.js', 'sw.js'], capabilities: { fs: { quotaBytes: 1_048_576 } } })
 })
 
 /** What the earlier version left in the app's partition: a script-set cookie, local storage, a database of three stores. */
@@ -57,7 +66,10 @@ const SEED_PAGE = `(async () => {
     tx.onerror = () => reject(tx.error)
   })
   db.close()
-  return 'seeded'
+  const registration = await navigator.serviceWorker.register('/sw.js')
+  const worker = registration.installing || registration.waiting || registration.active
+  if (worker.state !== 'activated') await new Promise((resolve) => { worker.addEventListener('statechange', () => { if (worker.state === 'activated') resolve() }) })
+  return 'seeded:' + worker.state
 })()`
 
 /** What the app's first page finds in its own storage, as JSON. */
@@ -194,7 +206,7 @@ it('[app:storage-follows-an-app-into-the-website-session] carries an allowed app
       check('the app is pinned', await waitFor(() => existsSync(pinPath(userData, origin)), 60_000))
       check('a partition with nothing in it leaves no record', !existsSync(join(userData, 'carried-app-storage.json')) || !(JSON.parse(readFileSync(join(userData, 'carried-app-storage.json'), 'utf8')) as { origins: Record<string, unknown> }).origins[origin])
 
-      check('the earlier version\'s state is put in the partition', await seedPartition(one, partition, origin) === 'seeded')
+      check('the earlier version\'s state and a worker that answers every navigation are put in the partition', await seedPartition(one, partition, origin) === 'seeded:activated')
       await closeElectronApp(one, APP_CLOSE_RACE_MS, { keepProfile: true })
       first = undefined
 
