@@ -95,9 +95,15 @@ commands, so each system's output is a unit fixture.
   cannot be fetched. `docs/known-limitations.md`, T90, T84, T20 and the egress section on these names change with the
   behaviour.
 - Provisional until measured: that Chromium's PAC context runs `Function(...)` and reads an accessor `FindProxyForURL`
-  (else the script is checked to parse on its own and concatenated); which registry form Windows' call reads when a tool
-  writes only one; the poll intervals' cost on Windows. Each is settled by the run the design
-  names before the pull request that relies on it.
+  (else the script is checked to parse on its own and concatenated). It is settled by the run the
+  design names before the pull request that relies on it.
+- Measured on a Windows runner for the Windows reader: Chromium takes the registry values when `ProxyEnable` is on, or off
+  beside a `ProxyServer`, and the `DefaultConnectionSettings` blob otherwise, so a tool that writes only one form is followed;
+  a `reg.exe` query takes about 26 ms and 14 ms of CPU, three are started per read, and the 30-second reads with the two-second
+  question cost 0.6% of one core in all processes together (`src/main/route/proxy-mirror/README.md`, Design notes).
+- Measured on a macOS runner for the macOS reader: Chromium reads the top level of the `scutil --proxy` dictionary only, the SOCKS
+  server is SOCKS5, simple host names bypass the proxy only when "Exclude simple hostnames" is on, and a change made with
+  `networksetup` shows in Chromium's answer within a tenth of a second (`src/main/route/proxy-mirror/README.md`, Design notes).
 - Built in four pull requests, the order *provisional* until each lands. The first is the seam and changes no behaviour:
   the controller's `systemConfig` and `systemChanged`, the `orivon-system-mirror` session for Orivon's direct requests, and
   a CI rule that runs the system-proxy spec for the route files. The second reads GNOME and polls (GNOME manual proxies
