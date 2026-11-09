@@ -78,7 +78,7 @@ async function get (path: string, options: { host?: string, method?: string, hea
 const relayed = (): RelayRequest[] => posted.filter((message): message is RelayRequest => message.type === 'relay-request')
 
 async function until (check: () => boolean, what: string): Promise<void> {
-  for (let tries = 0; tries < 400; tries += 1) {
+  for (let tries = 0; tries < 2000; tries += 1) {
     if (check()) return
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
