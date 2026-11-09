@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { BUILTIN_ADDRESSES } from '../../../../protocols/builtin.js'
 import { exceptionCanaries } from '../canaries.js'
-import { mirroredConfig, routedBypassRules } from '../mirrored-config.js'
+import { mirroredConfig } from '../mirrored-config.js'
+import { routedBypassRules } from '../../verifier-name-guard.js'
 
 describe('the rules that keep a name the verifier serves from a proxy', () => {
-  it('name every routed suffix as the resolver rules map it, and no root-dot spelling, which they do not match', () => {
+  it('name every routed suffix as the resolver rules map it, and its root-dot spelling, which they refuse', () => {
     const rules = routedBypassRules()
-    expect(rules).toEqual(BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}`))
+    expect(rules).toEqual(BUILTIN_ADDRESSES.routedSuffixes().flatMap((suffix) => [`*.${suffix}`, `*.${suffix}.`]))
     expect(rules).toContain('*.eth')
-    expect(rules.filter((rule) => rule.endsWith('.'))).toEqual([])
+    expect(rules).toContain('*.eth.')
   })
 })
 
