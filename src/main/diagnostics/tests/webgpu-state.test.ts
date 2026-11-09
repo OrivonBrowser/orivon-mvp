@@ -191,6 +191,17 @@ describe('webGpuState', () => {
   })
 
   describe('Windows', () => {
+    it('says pages are drawn on the processor when only Microsoft\'s software renderer is there, as GitHub\'s Windows runner reports it', () => {
+      const warp = device({ vendorId: 0x1414, driverVersion: '10.0.26100.33648', active: false })
+      const features = { webgpu: 'unavailable_software', gpu_compositing: 'disabled_software', webgl: 'unavailable_software' }
+      for (const adapter of [{ kind: 'none' } as const, undefined]) {
+        const state = webGpuState(windows([warp, warp], { features, adapter }))
+        expect(state).toMatchObject({ state: 'unavailable', reason: 'software-only' })
+        expect(state.sentence).toMatch(/^WebGPU is off because this computer draws pages on its processor, and Chromium does not allow WebGPU there\./)
+      }
+      expect(webGpuState(windows([warp], { features, adapter: { kind: 'adapter' } })).state).toBe('available')
+    })
+
     it('does not call Microsoft\'s software renderer a missing graphics card on Windows', () => {
       const warp = device({ vendorId: 0x1414, driverVersion: '10.0.26100.1' })
       expect(webGpuState(windows([warp], { adapter: undefined })).state).toBe('unknown')

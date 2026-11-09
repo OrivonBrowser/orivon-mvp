@@ -1,10 +1,13 @@
 // A website whose page asks for a WebGPU adapter is asked under the address bar, "wants to use your graphics card
-// for WebGPU", with Block and Grant WebGPU, and the answer is kept per site. CI runs this on an X11 session with no
+// for WebGPU", with Block and Grant WebGPU, and the answer is kept per site. CI runs Linux on an X11 session with no
 // graphics card behind it: Chromium gives no adapter there, so the question is the one that turns the graphics mode on
-// and offers a restart. That path is what the spec drives: the question, the grant (the setting turned on, the allow
-// kept, the page told it has no adapter, the offer to start again), the block, an origin that holds grants, which
-// is not asked, and a private window, which is not asked to restart. Restart Orivon is never pressed. The path with an adapter to give is run by
-// test/page/e2e-webgpu-x11.test.ts on a computer that has a card. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
+// and offers a restart, which is most of what the spec drives: the question, the grant (the setting turned on, the allow
+// kept, the page told it has no adapter, the offer to start again), the block, an origin that holds grants, which is
+// not asked, and a private window, which is not asked to restart. Restart Orivon is never pressed. The mode and its
+// restart exist on an X11 session only, so those tests run on Linux alone; the others run on every system and expect
+// what that system does: a Mac gives an adapter and asks for it, and a computer with no graphics card that is not on
+// X11 (GitHub's Windows runner) gives none and asks nobody. The path with an adapter to give on a Linux computer that
+// has a card is run by test/page/e2e-webgpu-x11.test.ts. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
 import { mkdirSync, readFileSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -13,7 +16,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { Manifest } from '../../src/contracts/index.js'
 import { serveApp } from '../node-runtime/pinned-app.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
-import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
+import { html, launchShell, seedSiteAnswers, startServer, visit, visitWithoutPage } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { nativeDialogsAsked as dialogsAsked, stubNativeDialogs as stubDialogs } from '../support/question-support.js'
 import { activeTabInfo, delay, findViewShowing, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
@@ -52,6 +55,33 @@ afterAll(async () => {
 })
 
 type App = ElectronApplication
+
+/** The graphics mode a grant turns on, and the restart that follows, exist on an X11 session only; CI runs Linux under a virtual X11 display. */
+const X11 = process.platform === 'linux'
+
+let adapterRead: Promise<boolean> | undefined
+
+/** Whether Chromium gives a page an adapter on this system, read once with a site that is allowed, so no question holds the call. Linux under a virtual display gives none. */
+function chromiumGivesAdapter (): Promise<boolean> {
+  adapterRead ??= (async () => {
+    if (X11) return false
+    const { app, chrome } = await launchShell({ seedProfile: async (dir: string) => { await seedSiteAnswers(dir, { [origins.a]: { webgpu: 'allow' } }) } })
+    try {
+      await visitWithoutPage(app, chrome, `${origins.a}/`)
+      return await app.evaluate(async ({ webContents }, target) => {
+        const contents = webContents.getAllWebContents().find((candidate) => candidate.getURL().startsWith(target))
+        if (contents === undefined) throw new Error('no tab on the fixture page')
+        return await contents.executeJavaScript('navigator.gpu.requestAdapter().then((adapter) => adapter !== null)') as boolean
+      }, origins.a)
+    } finally {
+      await closeElectron(app)
+    }
+  })()
+  return adapterRead
+}
+
+/** Whether a plain website is asked on this system: where a grant turns the graphics mode on, and where Chromium has an adapter to keep or refuse. */
+const asksWebsite = async (): Promise<boolean> => X11 || await chromiumGivesAdapter()
 
 const promptPages = (app: App): Page[] => app.windows().filter((w) => w.url().includes('overlay=site-prompt') && !w.isClosed())
 const promptShown = async (app: App): Promise<boolean> => await popoverShown(app, 'overlay=site-prompt')
@@ -125,35 +155,56 @@ async function shoot (app: App, chrome: Page, name: string, page: Page): Promise
   await page.emulateMedia({ colorScheme: 'light' })
 }
 
-it('[app:webgpu-asked-per-site] asks a website that wants WebGPU, turns the graphics mode on and offers a restart when it is granted, and keeps a block', async () => {
+it('[app:webgpu-asked-per-site] asks a website that wants WebGPU wherever the answer changes what its page gets, keeps a block, and asks nobody where it changes nothing', async () => {
+  const asked = await asksWebsite()
   const { app, chrome } = await launchShell()
   try {
     await stubDialogs(app)
     const dir = await userDataOf(app)
     expect(settingOf(dir)).not.toBe(true)
 
-    // A site that is blocked: told it has no adapter, and not asked again. The graphics mode stays as it was.
+    // A site that is blocked: told it has no adapter, and not asked again. The graphics mode stays as it was. Where
+    // there is nothing to keep (no adapter, and no graphics mode a restart would turn on), nobody is asked at all.
     const second = await visit(app, chrome, `${origins.b}/`)
     expect(await promptShown(app)).toBe(false)
     await second.click('#gpu')
-    let prompt = await waitAsk(app)
-    expect(await textOf(prompt, '.origin')).toEqual([origins.b])
-    expect(await textOf(prompt, '.sp-text')).toEqual(['wants to use your graphics card for WebGPU'])
-    await press(prompt, 'Block')
+    if (asked) {
+      const prompt = await waitAsk(app)
+      expect(await textOf(prompt, '.origin')).toEqual([origins.b])
+      expect(await textOf(prompt, '.sp-text')).toEqual(['wants to use your graphics card for WebGPU'])
+      // The restart is in the question only where there is a graphics mode to turn on.
+      if (!X11) expect(await textOf(prompt, '.sp-note')).toEqual([])
+      await press(prompt, 'Block')
+    }
     expect(await result(second)).toBe('null')
     expect(await waitFor(async () => !(await promptShown(app)))).toBe(true)
     await clear(second)
     await second.click('#gpu')
     expect(await result(second)).toBe('null')
     await expectNoPrompt(app)
-    expect(await waitFor(() => JSON.stringify(siteAnswers(dir, origins.b)) === JSON.stringify({ webgpu: 'block' }))).toBe(true)
+    const kept = asked ? { webgpu: 'block' } : undefined
+    expect(await waitFor(() => JSON.stringify(siteAnswers(dir, origins.b)) === JSON.stringify(kept))).toBe(true)
     expect(settingOf(dir)).not.toBe(true)
 
-    // A site that is granted: the question says what the restart costs, the grant is kept, the setting turns on, and
-    // the offer to start again follows. The page still has no adapter this run.
+    expect(await dialogsAsked(app)).toEqual([])
+    expect(mainOutput(app)).not.toMatch(/\[site-asks\]|webgpu requestAdapter not wrapped/)
+  } finally {
+    await closeElectron(app)
+  }
+}, E2E_TIMEOUT_MS)
+
+it.skipIf(!X11)('turns the graphics mode on and offers a restart when a website is granted WebGPU, and offers nothing more after Later', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    await stubDialogs(app)
+    const dir = await userDataOf(app)
+    expect(settingOf(dir)).not.toBe(true)
+
+    // The question says what the restart costs, the grant is kept, the setting turns on, and the offer to start again
+    // follows. The page still has no adapter this run.
     const view = await visit(app, chrome, `${origins.a}/`)
     await view.click('#gpu')
-    prompt = await waitAsk(app)
+    const prompt = await waitAsk(app)
     expect(await textOf(prompt, '.origin')).toEqual([origins.a])
     expect(await textOf(prompt, '.sp-text')).toEqual(['wants to use your graphics card for WebGPU'])
     expect(await textOf(prompt, '.sp-note')).toEqual(['Orivon restarts to turn WebGPU on. It may use more battery, and on some laptops videos can go blank.'])
@@ -189,6 +240,8 @@ it('[app:webgpu-asked-per-site] asks a website that wants WebGPU, turns the grap
 }, E2E_TIMEOUT_MS)
 
 it('[app:webgpu-asked-per-site] does not ask an installed app that holds grants for WebGPU, and asks one that holds none as a website', async () => {
+  const asked = await asksWebsite()
+  const given = await chromiumGivesAdapter()
   const { app, chrome } = await launchShell()
   try {
     const manifestOf = (id: string, capabilities: Manifest['capabilities']): Manifest => ({ orivonApiVersion: 0, id: `app.orivon.behaviour.${id}`, name: `Behaviour ${id}`, version: '1.0.0', entry: 'index.html', capabilities })
@@ -197,17 +250,20 @@ it('[app:webgpu-asked-per-site] does not ask an installed app that holds grants 
     const connect = ['webgpu-asked.test:9']
     expect(await serveApp(app, GRANTED_APP, manifestOf('webgpu-asked-granted', { net: { tcp: { connect } } }), 'tcp.connect', files, connect)).toEqual({ granted: true, registered: true })
 
-    // The control: an installed app with no grant is a website here, and is asked.
+    // The control: an installed app with no grant is a website here, and is asked wherever a website is.
     const bare = await visit(app, chrome, `${BARE_APP}/`)
     await bare.click('#gpu')
-    const prompt = await waitAsk(app)
-    expect(await textOf(prompt, '.origin')).toEqual([BARE_APP])
-    await press(prompt, 'Block')
+    if (asked) {
+      const prompt = await waitAsk(app)
+      expect(await textOf(prompt, '.origin')).toEqual([BARE_APP])
+      await press(prompt, 'Block')
+    }
     expect(await result(bare)).toBe('null')
 
+    // An app that holds grants keeps what Chromium gave it: the adapter where there is one, unasked.
     const granted = await visit(app, chrome, `${GRANTED_APP}/`)
     await granted.click('#gpu')
-    expect(await result(granted)).toBe('null')
+    expect(await result(granted)).toBe(given ? 'adapter' : 'null')
     await expectNoPrompt(app)
     expect(settingOf(await userDataOf(app))).not.toBe(true)
   } finally {
@@ -215,11 +271,13 @@ it('[app:webgpu-asked-per-site] does not ask an installed app that holds grants 
   }
 }, E2E_TIMEOUT_MS)
 
-it('[app:webgpu-asked-per-site] asks nothing in a private window, which cannot start again to turn the graphics mode on', async () => {
+it('[app:webgpu-asked-per-site] asks nothing in a private window unless Chromium has an adapter to give, since it cannot start again to turn the graphics mode on', async () => {
+  const given = await chromiumGivesAdapter()
   const { app, chrome } = await launchShell({ args: ['--orivon-private'] })
   try {
     const view = await visit(app, chrome, `${origins.a}/`)
     await view.click('#gpu')
+    if (given) await press(await waitAsk(app), 'Block')
     expect(await result(view)).toBe('null')
     await expectNoPrompt(app)
     expect(settingOf(await userDataOf(app))).not.toBe(true)
@@ -228,7 +286,7 @@ it('[app:webgpu-asked-per-site] asks nothing in a private window, which cannot s
   }
 }, E2E_TIMEOUT_MS)
 
-it('[app:webgpu-asked-per-site] says the tabs and windows open again when Orivon continues where it left off, and still never presses Restart Orivon', async () => {
+it.skipIf(!X11)('says the tabs and windows open again when Orivon continues where it left off, and still never presses Restart Orivon', async () => {
   const continuing = async (dir: string): Promise<void> => {
     await mkdir(dir, { recursive: true })
     await writeFile(join(dir, 'settings.json'), JSON.stringify({ version: 1, values: { 'startup.mode': 'continue' } }))
@@ -254,7 +312,7 @@ it('[app:webgpu-asked-per-site] says the tabs and windows open again when Orivon
   }
 }, E2E_TIMEOUT_MS)
 
-it('[app:webgpu-asked-per-site] says nothing of this page opening again when its tab carries a tunnel choice of its own, which a launch tab would lose', async () => {
+it.skipIf(!X11)('says nothing of this page opening again when its tab carries a tunnel choice of its own, which a launch tab would lose', async () => {
   const { app, chrome } = await launchShell()
   try {
     await visit(app, chrome, `${origins.a}/`)
@@ -279,7 +337,7 @@ it('[app:webgpu-asked-per-site] says nothing of this page opening again when its
   }
 }, E2E_TIMEOUT_MS)
 
-it('[app:webgpu-asked-per-site] keeps the restart offer up through a press on the address bar\'s chip and the site\'s own pages, lists WebGPU on the chip after one, and ends the offer when the tab goes to another site', async () => {
+it.skipIf(!X11)('keeps the restart offer up through a press on the address bar\'s chip and the site\'s own pages, lists WebGPU on the chip after one, and ends the offer when the tab goes to another site', async () => {
   const { app, chrome } = await launchShell()
   try {
     const view = await visit(app, chrome, `${origins.a}/`)
@@ -322,6 +380,7 @@ it('[app:webgpu-asked-per-site] keeps the restart offer up through a press on th
 }, E2E_TIMEOUT_MS)
 
 it('[app:webgpu-asked-per-site] refuses a document its own header sandboxes, whose origin is opaque, without a question, so a site cannot leave the question by sandboxing its page', async () => {
+  const asked = await asksWebsite()
   const { app, chrome } = await launchShell()
   try {
     const dir = await userDataOf(app)
@@ -333,12 +392,14 @@ it('[app:webgpu-asked-per-site] refuses a document its own header sandboxes, who
     expect(siteAnswers(dir, origins.a)).toBeUndefined()
     expect(settingOf(dir)).not.toBe(true)
 
-    // The control: the same site, not sandboxed, is asked.
+    // The control: the same site, not sandboxed, is asked wherever a website is.
     const plain = await visit(app, chrome, `${origins.a}/`)
     await plain.click('#gpu')
-    const prompt = await waitAsk(app)
-    expect(await textOf(prompt, '.origin')).toEqual([origins.a])
-    await press(prompt, 'Block')
+    if (asked) {
+      const prompt = await waitAsk(app)
+      expect(await textOf(prompt, '.origin')).toEqual([origins.a])
+      await press(prompt, 'Block')
+    }
     expect(await result(plain)).toBe('null')
   } finally {
     await closeElectron(app)
