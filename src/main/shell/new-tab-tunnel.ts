@@ -1,9 +1,11 @@
-// The tunnel choice a blank tab takes from the tab it is opened from (ADR-0101). Electron-free: the tab's facts arrive as values.
+// The tunnel choice a blank tab takes from the tab it is opened from (ADR-0101). Pure but for the type of the tab collection it reads: the tab's facts arrive as values.
 import { originFromUrl } from '../../broker/policy/origin.js'
 import type { TunnelEntry } from '../route/route-state.js'
 import { choiceForBlankTab } from '../route/site-always.js'
 import { canTunnel, isProfilePartition } from '../route/site-partition.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
+import type { TabManager } from './tabs.js'
+import { addressOfTab, openingAddressOf } from './tunnel-popover-tab.js'
 
 /** What the choice reads of the tab a blank tab is opened from. */
 export interface NewTabSource {
@@ -34,4 +36,27 @@ function entryFollowed (source: NewTabSource): TunnelEntry | undefined {
 /** The choice a blank tab opened from the tab described by `source` takes: its own, else the tunnel of the website's entry it follows (`choiceForBlankTab`). */
 export function choiceForNewTabFrom (source: NewTabSource): TabTunnelChoice | undefined {
   return choiceForBlankTab({ choice: source.choice, entry: source.choice === undefined ? entryFollowed(source) : undefined })
+}
+
+/** What `newTabChoice` reads of the tunnel routes. */
+interface RoutesRead {
+  readonly hub: { readonly unreadable: () => boolean }
+  readonly store: { readonly stateOf: (origin: string) => TunnelEntry | undefined }
+}
+
+/**
+ * The choice a blank tab opened from the tab `id` of `tabs` takes (`choiceForNewTabFrom`), read from the tab's record, the address it
+ * shows or is opening and the session it runs in. None for no tab. While the tunnel settings cannot be read no entry is read, since every
+ * website then takes the one tunnel they all take; the tab's own choice still counts.
+ */
+export function newTabChoice (tabs: Pick<TabManager, 'record' | 'getState' | 'liveWebContents'>, id: string | null, routes: RoutesRead | undefined, isApp: ((origin: string) => boolean) | undefined): TabTunnelChoice | undefined {
+  const record = id === null ? undefined : tabs.record(id)
+  if (id === null || record === undefined) return undefined
+  return choiceForNewTabFrom({
+    choice: record.tunnelChoice,
+    address: addressOfTab(tabs.getState(), id, openingAddressOf(tabs)),
+    partition: record.partition,
+    isApp: isApp ?? (() => false),
+    entryOf: (origin) => routes === undefined || routes.hub.unreadable() ? undefined : routes.store.stateOf(origin)
+  })
 }

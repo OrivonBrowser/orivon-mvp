@@ -4,7 +4,7 @@
 // T18 (security-model.md): every tab WebContents gets setWindowOpenHandler wired so a popup becomes a tab, never an OS
 // window. A redirect, clicked link, form or script navigation that changes a tab's origin is caught by wireView()'s
 // did-navigate handler, which repartitions as a typed cross-origin navigation does (repartitionView()'s own doc: the residual).
-import type { LoadURLOptions, View, WebContents, WebContentsView } from 'electron'
+import type { LoadURLOptions, View, WebContentsView } from 'electron'
 import { join } from 'node:path'
 import { captureFaviconInto } from '../browsing/favicon.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
@@ -21,11 +21,10 @@ import { gatewayRedirectFor } from './eth-gateway-rule.js'
 import { exitHtmlFullscreen, goBack, goForward, navigateTab, reloadTab } from './tab-navigation.js'
 import type { NavigationEnv } from './tab-navigation.js'
 import { TabOpener } from './tab-open.js'
-import { KeyboardWaiters, watchNewTab } from './new-tab-focus.js'
+import { KeyboardWaiters, watchFreshTab } from './new-tab-focus.js'
 import { TabPanes } from './tab-panes.js'
 import { setTabTunnelChoice } from './tab-tunnel-choice.js'
-import { choiceForNewTabFrom } from './new-tab-tunnel.js'
-import { addressOfTab, openingAddressOf } from './tunnel-popover-tab.js'
+import { newTabChoice } from './new-tab-tunnel.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
@@ -136,7 +135,7 @@ export class TabManager {
       localFilesRefused: () => { shell?.localFilesRefused?.() },
       activeId: () => this.activeId,
       records: () => this.tabs,
-      freshTabInFront: (id, contents) => { this.watchFreshTab(id, contents) }
+      freshTabInFront: (id, contents) => { watchFreshTab(this.shell, this.keyboard, id, contents, { active: () => this.activeId === id, fresh: () => this.tabs.get(id)?.isDashboardTab === true }) }
     }, new TabFactory(this.viewHost, () => ctx.broker, dashboardUrl, shell?.internalPages))
     this.splits = new SplitController({
       order: this.order,
@@ -202,25 +201,6 @@ export class TabManager {
   /** True from the moment the window starts closing: no tab may be opened or driven on this manager any more. */
   isDisposed (): boolean { return this.disposed }
 
-  /** Where the keyboard goes for a tab opened on the start page (./new-tab-focus.ts). Only a shell that can run a command has a bar to give it to. */
-  private watchFreshTab (id: string, contents: WebContents): void {
-    const shell = this.shell
-    if (shell?.runCommand === undefined) return
-    this.keyboard.begin(id)
-    watchNewTab(contents, {
-      placed: () => { this.keyboard.release(id) },
-      input: () => ({
-        active: this.activeId === id,
-        // Still the start page: the record's flag, which the tab's first navigation clears.
-        freshNewTab: this.tabs.get(id)?.isDashboardTab === true,
-        windowFocused: !shell.window.isDestroyed() && shell.window.isFocused(),
-        coveredByIntro: shell.coveredByIntro?.() === true
-      }),
-      focusAddressBar: () => { shell.runCommand?.('nav.focusAddress') },
-      returnKeyboard: () => { shell.focusChrome?.() }
-    })
-  }
-
   getState (): TabsSnapshot {
     return {
       tabs: this.order.map((id) => buildTabState(id, this.tabs.get(id), this.liveWebContents(id), this.stateEnv)),
@@ -240,23 +220,8 @@ export class TabManager {
   /** The tunnel choice of the tab in front, for what asks on its behalf before it navigates (the address bar's suggestions). */
   activeTunnelChoice (): TabTunnelChoice | undefined { return this.activeId === null ? undefined : this.tabs.get(this.activeId)?.tunnelChoice }
 
-  /**
-   * The tunnel choice a blank tab opened from the tab `from` (the one in front when absent) takes, to pass to `createTab`: the tab's own, or the tunnel of the
-   * entry of the website it shows (new-tab-tunnel.ts), so the new tab's tunnel button shows it and its first address leaves by it.
-   */
-  newTabTunnelChoice (from?: string): TabTunnelChoice | undefined {
-    const id = from ?? this.activeId
-    const record = id === null ? undefined : this.tabs.get(id)
-    if (id === null || record === undefined) return undefined
-    const routes = this.ctx.routes
-    return choiceForNewTabFrom({
-      choice: record.tunnelChoice,
-      address: addressOfTab(this.getState(), id, openingAddressOf(this)),
-      partition: record.partition,
-      isApp: this.shell?.services?.tunnel.isApp ?? (() => false),
-      entryOf: (origin) => routes === undefined || routes.hub.unreadable() ? undefined : routes.store.stateOf(origin)
-    })
-  }
+  /** The tunnel choice a blank tab opened from the tab `from` (the one in front when absent) takes: pass it to `createTab` (new-tab-tunnel.ts). */
+  newTabTunnelChoice (from?: string): TabTunnelChoice | undefined { return newTabChoice(this, from ?? this.activeId, this.ctx.routes, this.shell?.services?.tunnel.isApp) }
 
   /** A local file in a new tab of the local-files session; undefined for anything `localFileKey` refuses. */
   openLocalFile (url: string, active = true): Promise<string | undefined> { return this.opener.openLocalFile(url, active) }
