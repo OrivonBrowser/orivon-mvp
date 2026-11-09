@@ -45,6 +45,8 @@ export interface RouteControllerDeps {
   readonly defaultSession?: () => RouteSession
   /** The host rules the sessions of the shared identity reach without the proxy besides this machine: the names the verifier answers for. */
   readonly sharedBypass?: () => string
+  /** The host rules every session pointed at a front, and the requests made with no session, reach without it: the root-dot spelling of the names the verifier answers for, which the resolver rules refuse. */
+  readonly rootDotBypass?: () => string
   /** Points the requests made with no session (a utility process's `net`, the runtime's own) at a proxy. */
   readonly setAppProxy?: (config: RouteProxyConfig) => Promise<void>
   /** Whether the session set its own proxy and answers for what it lets through, so the shared identity leaves it alone. */
@@ -208,14 +210,16 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     return turn
   }
 
+  /** What a front is bypassed for: this machine, the root-dot names, and the `extra` host rules of the identity. */
+  const routedBypass = (extra?: string): string => [...new Set([ROUTED_BYPASS, deps.rootDotBypass?.(), extra].flatMap((list) => list?.split(';') ?? []).filter((rule) => rule !== ''))].join(';')
+
   async function pointAt (session: RouteSession, port: number, kind: TunnelKind): Promise<void> {
     if (pointedAt.get(session) === port) {
       // The same front, now leaving by another tunnel: the session is where it was, and only what it is said to be changes.
       pointedVia.set(session, kind)
       return
     }
-    const extra = bypasses.get(session)
-    await within(setProxyOf(session, { mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}`, proxyBypassRules: extra === undefined ? ROUTED_BYPASS : `${ROUTED_BYPASS};${extra}` }, callMs), callMs)
+    await within(setProxyOf(session, { mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String(port)}`, proxyBypassRules: routedBypass(bypasses.get(session)) }, callMs), callMs)
     pointedAt.set(session, port)
     pointedVia.set(session, kind)
   }
@@ -270,7 +274,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     if (deps.setAppProxy === undefined) return
     try {
       const config: RouteProxyConfig = routed
-        ? { mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String((await hub.front(SHARED_ORIGIN)).port)}`, proxyBypassRules: ROUTED_BYPASS }
+        ? { mode: 'fixed_servers', proxyRules: `http://127.0.0.1:${String((await hub.front(SHARED_ORIGIN)).port)}`, proxyBypassRules: routedBypass() }
         : { mode: 'system' }
       await within(deps.setAppProxy(config), callMs)
     } catch (error) {

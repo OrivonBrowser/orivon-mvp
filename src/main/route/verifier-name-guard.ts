@@ -39,11 +39,20 @@ export function verifierNameFilter (): { readonly urls: string[] } {
   return { urls: BUILTIN_ADDRESSES.routedSuffixes().flatMap((suffix) => SCHEMES.flatMap((scheme) => [`${scheme}://*.${suffix}/*`, `${scheme}://*.${suffix}./*`])) }
 }
 
+/** The host rules that keep the root-dot spelling of a name the verifier serves from a proxy: a bypass rule treats `vitalik.eth.` as a host of its own, which `*.eth` does not match. A name that goes direct is refused by the resolver rules (`../verifier/resolver-rules.ts`). */
+export function rootDotBypassRules (): string[] {
+  return BUILTIN_ADDRESSES.routedSuffixes().map((suffix) => `*.${suffix}.`)
+}
+
+/** The host rules that keep a name the verifier serves from a proxy, with and without the root dot. */
+export function routedBypassRules (): string[] {
+  return BUILTIN_ADDRESSES.routedSuffixes().flatMap((suffix) => [`*.${suffix}`, `*.${suffix}.`])
+}
+
 /** Whether `url` names a host under a suffix the resolver rules send to the verifier (`MAP *.suffix`), written with or without the root dot; any spelling those rules match, an empty label included. */
 export function namesVerifierHost (url: string): boolean {
   try {
-    const host = new URL(url).hostname.replace(/\.$/, '')
-    return BUILTIN_ADDRESSES.routedSuffixes().some((suffix) => host.endsWith(`.${suffix}`))
+    return BUILTIN_ADDRESSES.namesServedHost(new URL(url).hostname)
   } catch {
     return false
   }

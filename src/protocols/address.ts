@@ -103,6 +103,12 @@ export class ProtocolAddresses {
     return labels.length >= 2 && labels.every((label) => label !== '') && this.routedSuffixes().includes(last)
   }
 
+  /** Whether `host` is under a routed suffix in any spelling, the root-dot one (`vitalik.eth.`) and an empty label included: the check for refusing a name, where `routesToVerifier` is the precise one for serving it. */
+  namesServedHost (host: string): boolean {
+    const bare = host.toLowerCase().replace(/\.+$/, '')
+    return this.routedSuffixes().some((suffix) => bare.endsWith(`.${suffix}`))
+  }
+
   /** `vitalik.eth` is `.eth`'s `vitalik.eth`; `<label>.ipfs.orivon` is `ipfs:`'s name for that label. */
   servedName (host: string): ServedName | undefined {
     const labels = hostLabels(host)
