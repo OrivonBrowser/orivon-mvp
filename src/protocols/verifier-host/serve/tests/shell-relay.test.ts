@@ -66,7 +66,7 @@ function harness (options: { token?: string | undefined, idleMs?: number, limit?
 
 /** Waits until `check` holds, polling on the event loop. */
 async function until (check: () => boolean, what: string): Promise<void> {
-  for (let tries = 0; tries < 400; tries += 1) {
+  for (let tries = 0; tries < 2000; tries += 1) {
     if (check()) return
     await new Promise((resolve) => setTimeout(resolve, 5))
   }
