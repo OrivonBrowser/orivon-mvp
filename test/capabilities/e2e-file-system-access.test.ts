@@ -15,8 +15,8 @@
 // drop exercises the gate itself; only the dialog is left out.
 //
 // Hermetic: one throwaway server on loopback and one throwaway directory, made inside the checkout and not in
-// `os.tmpdir()`: Chromium refuses a dropped folder under a system or application-data folder (on Windows the
-// temporary folder is under AppData), and the page's getAsFileSystemHandle() then never settles.
+// `os.tmpdir()`: a folder dropped from under AppData, where Windows keeps the temporary folder, is never handed to
+// the page (getAsFileSystemHandle() does not settle), so the spec would stop before it reaches what it checks.
 import { afterAll, expect, it } from 'vitest'
 import { createServer, type Server } from 'node:http'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
