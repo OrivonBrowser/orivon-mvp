@@ -1,6 +1,6 @@
 // The mirror reads the settings, checks the copy against Chromium's own answer on a session of its own, and applies it only when
-// they agree; whatever it cannot read, carry or check leaves the sessions on `{ mode: 'system' }`. Driven on a fake clock over a
-// model of the two sessions' answers.
+// they agree; whatever it cannot read, carry or check leaves the sessions on `{ mode: 'system' }`, except that a copy already applied
+// is kept through a read that failed or a check that got no answer. Driven on a fake clock over a model of the two sessions' answers.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SystemProxyConfig } from '../../system-follow.js'
@@ -10,6 +10,9 @@ import type { SystemSettings } from '../settings-source.js'
 
 const MANUAL: SystemSettings = { kind: 'manual', proxyRules: 'http=proxy.test:3128;https=proxy.test:3128', exceptions: ['localhost', '*.corp.test'] }
 const MOVED: SystemSettings = { kind: 'manual', proxyRules: 'http=proxy.test:3129;https=proxy.test:3129', exceptions: ['localhost', '*.corp.test'] }
+const EDITED: SystemSettings = { ...MANUAL, exceptions: ['localhost', '*.corp.test', '*.lan'] }
+/** Past the longest a question to a session may take (5 seconds). */
+const PAST_A_CALL_MS = 6_000
 
 /** Chromium's answer for `url` under rules like `http=h:p;https=h:p` and bypass rules like `*.suffix`: what the two sessions are modelled to say. */
 function answer (rules: string, bypass: readonly string[], url: string): string {
@@ -32,25 +35,43 @@ interface World {
   reads: number
   sets: SystemProxyConfig[]
   applied: number
+  /** What `apply` says: whether every session took the config. */
+  applyClean: boolean
+  /** What the mirror did to a session other than Chromium's own, in order. */
+  order: string[]
   checkConfig: SystemProxyConfig | undefined
   hang: boolean
+  /** The check session's answers never come. */
+  hangCheck: boolean
+  /** A read, or a set of the check session, that waits for this before it ends. */
+  gates: { read?: Promise<void>, set?: Promise<void> }
 }
 
 function setup (options: { read?: boolean, held?: boolean, settings?: SystemSettings } = {}): { mirror: ProxyMirror, world: World, lines: string[] } {
   const settings = options.settings ?? MANUAL
-  const world: World = { settings, truth: settings, corrupt: () => undefined, nextReads: [], reads: 0, sets: [], applied: 0, checkConfig: undefined, hang: false }
+  const world: World = { settings, truth: settings, corrupt: () => undefined, nextReads: [], reads: 0, sets: [], applied: 0, applyClean: true, order: [], checkConfig: undefined, hang: false, hangCheck: false, gates: {} }
   const lines: string[] = []
   const deps: ProxyMirrorDeps = {
     source: 'gnome',
-    read: options.read === false ? undefined : async () => { world.reads += 1; return world.nextReads.shift() ?? world.settings },
+    read: options.read === false ? undefined : async () => {
+      world.reads += 1
+      if (world.gates.read !== undefined) await world.gates.read
+      return world.nextReads.shift() ?? world.settings
+    },
     ...(options.held === true ? { held: true } : {}),
     systemAnswer: async (url) => {
       if (world.hang) return await new Promise<string>(() => {})
       return world.truth.kind === 'manual' ? answer(world.truth.proxyRules, world.truth.exceptions, url) : 'DIRECT'
     },
     check: {
-      set: async (config) => { world.sets.push(config); world.checkConfig = config },
+      set: async (config) => {
+        world.order.push(`set:${config.mode ?? ''}`)
+        world.sets.push(config)
+        world.checkConfig = config
+        if (world.gates.set !== undefined) await world.gates.set
+      },
       answer: async (url) => {
+        if (world.hangCheck) return await new Promise<string>(() => {})
         const config = world.checkConfig
         const wrong = world.corrupt(url)
         if (wrong !== undefined) return wrong
@@ -58,7 +79,11 @@ function setup (options: { read?: boolean, held?: boolean, settings?: SystemSett
         return answer(config.proxyRules ?? '', (config.proxyBypassRules ?? '').split(';'), url)
       }
     },
-    apply: async () => { world.applied += 1 },
+    apply: async () => {
+      world.order.push('apply')
+      world.applied += 1
+      return world.applyClean
+    },
     log: (line) => { lines.push(line) }
   }
   return { mirror: createProxyMirror(deps), world, lines }
@@ -88,7 +113,8 @@ describe('a manual proxy', () => {
     await mirror.start()
     expect(mirror.config()).toMatchObject({ mode: 'fixed_servers', proxyRules: 'http=proxy.test:3128;https=proxy.test:3128' })
     expect(mirror.config().proxyBypassRules).toContain('*.corp.test')
-    expect(mirror.config().proxyBypassRules).toContain('*.eth.')
+    expect(mirror.config().proxyBypassRules).toContain('*.eth')
+    expect(mirror.config().proxyBypassRules).not.toContain('*.eth.')
     expect(world.applied).toBe(1)
     expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
     mirror.stop()
@@ -96,10 +122,8 @@ describe('a manual proxy', () => {
 
   it('is tried on the check session before it is applied to any other', async () => {
     const { mirror, world } = setup()
-    const order: string[] = []
-    world.sets.push = ((config: SystemProxyConfig) => { order.push(`set:${config.mode ?? ''}`); return world.sets.length + 1 }) as typeof world.sets.push
     await mirror.start()
-    expect(order[0]).toBe('set:fixed_servers')
+    expect(world.order).toEqual(['set:fixed_servers', 'apply'])
     mirror.stop()
   })
 
@@ -227,6 +251,143 @@ describe('settings that are not copied', () => {
   })
 })
 
+describe('a copy that is applied, and a read or a check that decides nothing', () => {
+  it('stays through a read that failed while Chromium\'s answers are what they were, and nothing is set again when the reads are good once more', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    const before = mirror.config()
+    world.nextReads = [{ kind: 'unreadable' }, { kind: 'unreadable' }]
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS * 2)
+    expect(mirror.config()).toEqual(before)
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    expect(world.order).toEqual(['set:fixed_servers', 'apply'])
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS * 2)
+    expect(world.order).toEqual(['set:fixed_servers', 'apply'])
+    mirror.stop()
+  })
+
+  it('stays through a check that got no answer, is tried again at the next read, and an edit made meanwhile is applied then', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    world.settings = EDITED
+    world.truth = EDITED
+    world.hangCheck = true
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS + PAST_A_CALL_MS)
+    expect(mirror.config().proxyBypassRules).not.toContain('*.lan')
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    expect(world.applied).toBe(1)
+    world.hangCheck = false
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(mirror.config().proxyBypassRules).toContain('*.lan')
+    expect(mirror.status().reason).toBe('copied')
+    expect(world.applied).toBe(2)
+    mirror.stop()
+  })
+
+  it('stays through a check whose session could not be set', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    world.settings = EDITED
+    world.truth = EDITED
+    world.gates.set = new Promise<void>(() => {})
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS + PAST_A_CALL_MS)
+    expect(mirror.status().reason).toBe('copied')
+    expect(world.applied).toBe(1)
+    mirror.stop()
+  })
+
+  it('goes back to the system\'s own when Chromium\'s answers moved, even if the read failed', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    world.settings = { kind: 'unreadable' }
+    world.truth = { kind: 'none' }
+    await vi.advanceTimersByTimeAsync(ANSWER_EVERY_MS)
+    expect(mirror.config()).toEqual({ mode: 'system' })
+    expect(mirror.status()).toMatchObject({ state: 'system', reason: 'unreadable' })
+    expect(world.applied).toBe(2)
+    mirror.stop()
+  })
+
+  it('goes back to the system\'s own when a check gets a real different answer', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    world.settings = EDITED
+    world.truth = EDITED
+    world.corrupt = (url) => url === 'https://example.com/' ? 'DIRECT' : undefined
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(mirror.config()).toEqual({ mode: 'system' })
+    expect(mirror.status()).toMatchObject({ state: 'system', reason: 'disagrees' })
+    mirror.stop()
+  })
+
+  it('goes back to the system\'s own when the read taken again after a real difference fails', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    world.settings = EDITED
+    world.truth = EDITED
+    world.corrupt = (url) => url === 'https://probe.lan/' ? 'PROXY proxy.test:3128' : undefined
+    world.nextReads = [EDITED, { kind: 'unreadable' }]
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(mirror.config()).toEqual({ mode: 'system' })
+    expect(mirror.status()).toMatchObject({ state: 'system', reason: 'unreadable' })
+    mirror.stop()
+  })
+})
+
+describe('a session that did not take the config', () => {
+  it('is set again at the next pass, and only once it took it is the config left alone', async () => {
+    const { mirror, world } = setup()
+    world.applyClean = false
+    await mirror.start()
+    expect(world.applied).toBe(1)
+    expect(mirror.status().reason).toBe('copied')
+    world.applyClean = true
+    const setsBefore = world.sets.length
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(world.applied).toBe(2)
+    expect(world.sets.length).toBe(setsBefore)
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS * 3)
+    expect(world.applied).toBe(2)
+    mirror.stop()
+  })
+
+  it('is set again by a pass that decides the config it already holds', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    world.settings = EDITED
+    world.truth = EDITED
+    world.corrupt = (url) => url === 'https://example.com/' ? 'DIRECT' : undefined
+    world.applyClean = false
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(mirror.config()).toEqual({ mode: 'system' })
+    expect(mirror.status().reason).toBe('disagrees')
+    expect(world.applied).toBe(2)
+    world.applyClean = true
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(mirror.status().reason).toBe('disagrees')
+    expect(world.applied).toBe(3)
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(world.applied).toBe(3)
+    mirror.stop()
+  })
+
+  it('is set again after a pass that changed nothing else, and after one that moved the config', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    world.applyClean = false
+    world.settings = MOVED
+    world.truth = MOVED
+    await vi.advanceTimersByTimeAsync(ANSWER_EVERY_MS)
+    expect(world.applied).toBe(2)
+    world.applyClean = true
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(world.applied).toBe(3)
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(world.applied).toBe(3)
+    mirror.stop()
+  })
+})
+
 describe('what it says of itself', () => {
   it('holds no address, URL or exception in the status or in a line of the log', async () => {
     const { mirror, world, lines } = setup()
@@ -264,6 +425,23 @@ describe('a session that does not answer', () => {
 })
 
 describe('stopping', () => {
+  it.each(['read', 'set'] as const)('leaves a pass that ends later with nothing applied: stopped while the %s was under way', async (where) => {
+    const { mirror, world } = setup()
+    let release: () => void = () => {}
+    world.gates[where] = new Promise<void>((resolve) => { release = resolve })
+    const started = mirror.start()
+    await vi.advanceTimersByTimeAsync(1)
+    mirror.stop()
+    release()
+    await vi.advanceTimersByTimeAsync(START_BOUND_MS)
+    await started
+    expect(world.applied).toBe(0)
+    expect(world.order).not.toContain('apply')
+    if (where === 'read') expect(world.sets).toEqual([])
+    expect(mirror.config()).toEqual({ mode: 'system' })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
   it('ends the timers', async () => {
     const { mirror } = setup()
     await mirror.start()
