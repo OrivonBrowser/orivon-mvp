@@ -33,7 +33,7 @@ import { setMirrorStatusSource } from './proxy-mirror/mirror-status.js'
 import { createProxyMirror } from './proxy-mirror/proxy-mirror.js'
 import type { ProxyMirror } from './proxy-mirror/proxy-mirror.js'
 import { readKdeSettings } from './proxy-mirror/read-kde-files.js'
-import { readGnomeSettings, readWindowsSettings } from './proxy-mirror/run-readers.js'
+import { readGnomeSettings, readMacosSettings, readWindowsSettings } from './proxy-mirror/run-readers.js'
 import { sourceOf } from './proxy-mirror/settings-source.js'
 import { guardOfSession, namesVerifierHost, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
@@ -193,7 +193,7 @@ export const routeSubsystem: Subsystem = {
     const source = sourceOf(process.platform, process.env)
     proxyMirror = createProxyMirror({
       source,
-      read: source === 'gnome' ? readGnomeSettings : source === 'kde' ? readKdeSettings : source === 'windows' ? readWindowsSettings : undefined,
+      read: source === 'gnome' ? readGnomeSettings : source === 'kde' ? readKdeSettings : source === 'windows' ? readWindowsSettings : source === 'macos' ? readMacosSettings : undefined,
       held: heldToNym,
       systemAnswer: async (url) => await systemProxySession().resolveProxy(url),
       check: { set: async (config) => { await systemCheckSession().setProxy(config) }, answer: async (url) => await systemCheckSession().resolveProxy(url) },

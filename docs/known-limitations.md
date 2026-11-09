@@ -18,18 +18,18 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   an app that is not routed gets no `orivon.net` sockets and no name lookups, rather than going
   around it. [`architecture/egress.md`](architecture/egress.md) lists every path to the network
   and how each takes the tunnel.
-- **Behind a proxy that macOS sets, or one that a script or automatic detection finds, `.eth` names and other Web3 addresses open only when
+- **Behind a proxy that a script or automatic detection finds, `.eth` names and other Web3 addresses open only when
   the proxy would not carry them.** *Provisional.* A name the verifier serves is answered on this computer, and a
   proxy that carried it would learn the name and could answer it with a page of its own. On Linux with a proxy set
   only by environment variables (`http_proxy` and the like) Orivon keeps these names out of it and they open. A
   tunnel keeps them out too. Behind a manual proxy in GNOME's settings (and in the desktops that share them: Unity,
-  Cinnamon, Pantheon, Deepin, UKUI, COSMIC) or in KDE's (read from the `kioslaverc` Chromium reads) or Windows', Orivon copies the proxy's
+  Cinnamon, Pantheon, Deepin, UKUI, COSMIC), in KDE's (read from the `kioslaverc` Chromium reads), in Windows' or in macOS's, Orivon copies the proxy's
   servers and exceptions into the sessions that follow the system, with the names it serves added to the exceptions, so they open and ordinary sites still go through the
   proxy. The copy is made only when a session of Orivon's own, set to it, answers as Chromium does for the same
   addresses; a proxy turned on, off or moved is followed within a few seconds, and an edit of the exceptions alone
   within thirty. Wherever the settings cannot be read or copied exactly, or the check disagrees, the sessions follow
   the system and the next paragraph applies; KDE's reversed exceptions are one such case. A name written with a dot at the end (`name.eth.`) is refused behind any such proxy,
-  copied or not. Where macOS settings, or a script, give the proxy, a session
+  copied or not. Where a script or automatic detection gives the proxy, a session
   that follows the system cannot be told to leave a name out, so Orivon asks the session which proxy it would use
   and refuses the request before it is sent unless the answer is "none"; the tab says whether the proxy would have
   seen the name or Orivon could not tell. Ordinary sites still go through the proxy. To open the names there, add
