@@ -674,7 +674,7 @@ describe('the shared identity, while the whole browser is on the tunnel', () => 
         setAppProxy: async (config) => { appProxies.push(`${config.mode ?? ''}:${config.proxyRules ?? ''}:${config.proxyBypassRules ?? ''}`) },
         ownProxy: (session) => ownProxy.has(session),
         followsSystem: (session) => systemSessions.has(session),
-        sharedBypass: () => '*.eth',
+        sharedBypass: () => '*.eth;*.eth.',
         defaultSession: () => defaultRef as FakeSession
       }
     })
@@ -691,7 +691,7 @@ describe('the shared identity, while the whole browser is on the tunnel', () => 
     await controller.settled()
     const front = await hub.front('orivon-shared-tunnel')
     expect(made.proxies).toEqual(['fixed_servers:http://127.0.0.1:9', `fixed_servers:http://127.0.0.1:${String(front.port)}`])
-    expect(made.bypass[1]).toContain('*.eth')
+    expect(made.bypass[1]).toContain('*.eth;*.eth.')
     expect(defaultSession.proxies).toEqual([])
   })
 
