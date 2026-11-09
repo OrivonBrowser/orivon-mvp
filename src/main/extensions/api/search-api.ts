@@ -1,8 +1,7 @@
 // chrome.search.query: opens the default engine's results for a text, as typing it in the address bar
 // would. The URL comes from the engine code (`currentSearchUrl`, the same default the address bar uses), which encodes the text; nothing is
-// concatenated here. A tab the call names must be an ordinary web tab: an app's tab or an Orivon page
-// is not one an extension can send anywhere.
-import type { WebContents } from 'electron'
+// concatenated here. A tab the call names must be one an extension can see (`ctx.visibleTab`): an Orivon page is not one an
+// extension can send anywhere, nor is a tab in a session with no extensions.
 import { currentSearchUrl } from '../../browsing/search-current.js'
 import type { ApiEvent, ExtensionApiContext, ExtensionApiModule } from './api-types.js'
 
@@ -35,11 +34,10 @@ export function installSearch (ctx: ExtensionApiContext): void {
     const { text, disposition, tabId } = parseQuery(properties)
     const shell = ctx.shell() ?? fail('Search is not available yet.')
     const url = currentSearchUrl(shell.settings, text)
-    const ordinary = (contents: WebContents): boolean => !ctx.isAppOrigin(contents.getURL()) && shell.internalPages.pageOf(contents) === undefined
 
     if (tabId !== undefined) {
       const found = ctx.tab(tabId)
-      if (found === undefined || !ordinary(found.contents)) return fail(`No tab with id: ${String(tabId)}.`)
+      if (found === undefined || !ctx.visibleTab(found.contents)) return fail(`No tab with id: ${String(tabId)}.`)
       found.window.tabs.navigate(found.id, url)
       return
     }
@@ -54,7 +52,7 @@ export function installSearch (ctx: ExtensionApiContext): void {
       return
     }
     const current = ctx.activeTab(caller?.window.id)
-    if (current !== undefined && ordinary(current.contents)) current.window.tabs.navigate(current.id, url)
+    if (current !== undefined && ctx.visibleTab(current.contents)) current.window.tabs.navigate(current.id, url)
     else target.tabs.createTab(url)
   })
 }
