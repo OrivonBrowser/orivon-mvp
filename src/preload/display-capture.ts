@@ -100,6 +100,28 @@ function randomName (prefix: string): string {
   return `${prefix}-${Array.from(words, (word) => word.toString(36)).join('')}`
 }
 
+/**
+ * The canary: this world's own `getDisplayMedia` call, which main refuses, queued ahead of the real one. The page cannot
+ * reach this world's `MediaDevices`, so it can neither answer for the canary nor change what it asks. Returns false when
+ * the call could not be made, in which case the real call is not either. A canary that is served instead of refused
+ * means a request was granted that the gate should have refused: its tracks are stopped and main is told, which ends the
+ * page's renderer.
+ */
+function askCanary (nonce: string): boolean {
+  try {
+    const devices = navigator.mediaDevices
+    void devices.getDisplayMedia({ video: true }).then((served) => {
+      for (const track of served.getTracks()) track.stop()
+      ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'failed', nonce, name: 'NotAllowedError' })
+    }, () => {
+      ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'canary', nonce })
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
 async function share (options: ShareOptions, callNow: CallNow): Promise<ShareResult> {
   if (!window.isSecureContext) return refusal('NotAllowedError', 'Permission denied')
   if (!policyAllows()) return refusal('NotAllowedError', 'Access to the feature "display-capture" is disallowed by permissions policy.')
@@ -116,11 +138,16 @@ async function share (options: ShareOptions, callNow: CallNow): Promise<ShareRes
   const nonce = go.nonce
   const portal = go.portal === true
 
-  // One synchronous step: main holds the page's request until it has heard both messages, so it can tell this call
-  // from any other request that arrives meanwhile. The second message waits a turn of the event loop: a call that
-  // fails at once has failed before it and says so.
+  // One synchronous step makes two calls, the canary and then the real one. Blink hands a frame's display requests to the
+  // browser one at a time and in order, so main refuses the first request it sees, and once the canary is reported
+  // refused every request the page queued before this step has been answered and the next request is the real call.
+  // The second message waits a turn of the event loop: a call that fails at once has failed before it and says so.
   let rejectedEarly = false
   ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'arm', nonce })
+  if (!askCanary(nonce)) {
+    ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'called', nonce, rejectedEarly: true })
+    return refusal('NotAllowedError', 'Permission denied')
+  }
   let concluded: ShareResult | undefined
   const conclude = (outcome: unknown): ShareResult => {
     concluded ??= receive(nonce, outcome, portal)
