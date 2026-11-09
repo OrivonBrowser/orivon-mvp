@@ -4,10 +4,10 @@ import { fakeContext } from './api-fixtures.js'
 
 const ENGINE_URL = (text: string): string => `https://duckduckgo.com/?q=${encodeURIComponent(text).replace(/%20/g, '+')}`
 
-function setup (opts: { appTab?: boolean, internal?: boolean, noWindow?: boolean, mode?: 'web2' | 'web3' } = {}) {
+function setup (opts: { grantedTab?: boolean, internal?: boolean, noWindow?: boolean, mode?: 'web2' | 'web3' } = {}) {
   const tabs = { createTab: vi.fn(), navigate: vi.fn() }
   const window = { tabs }
-  const contents = { getURL: () => (opts.appTab === true ? 'https://app.example/x' : 'https://page.test/') }
+  const contents = { getURL: () => (opts.grantedTab === true ? 'https://granted.example/x' : 'https://page.test/') }
   const openWindow = vi.fn()
   const shell = {
     settings: { get: (key: string) => ({ 'search.mode': opts.mode ?? 'web2', 'search.web3Engine': 'explore', 'search.engine': 'duckduckgo' } as Record<string, string>)[key] ?? '' },
@@ -51,16 +51,23 @@ describe('search.query', () => {
     expect(made).toHaveBeenCalledWith(ENGINE_URL('x'))
   })
 
-  it('opens a new window when there is none, and a new tab when the current one is an app or an Orivon page', async () => {
+  it('opens a new window when there is none, and a new tab when the current one is an Orivon page', async () => {
     const none = setup({ noWindow: true })
     await none.call('search.query', { text: 'x' })
     expect(none.openWindow).toHaveBeenCalledTimes(1)
-    for (const opts of [{ appTab: true }, { internal: true }]) {
-      const s = setup(opts)
-      await s.call('search.query', { text: 'x' })
-      expect(s.tabs.navigate).not.toHaveBeenCalled()
-      expect(s.tabs.createTab).toHaveBeenCalledWith(ENGINE_URL('x'))
-    }
+    const s = setup({ internal: true })
+    await s.call('search.query', { text: 'x' })
+    expect(s.tabs.navigate).not.toHaveBeenCalled()
+    expect(s.tabs.createTab).toHaveBeenCalledWith(ENGINE_URL('x'))
+  })
+
+  it('searches in the current tab when it is the tab of a site that holds Orivon permissions, as in any other', async () => {
+    const s = setup({ grantedTab: true })
+    await s.call('search.query', { text: 'x' })
+    expect(s.tabs.navigate).toHaveBeenCalledWith('t1', ENGINE_URL('x'))
+    expect(s.tabs.createTab).not.toHaveBeenCalled()
+    await s.call('search.query', { text: 'y', tabId: 42 })
+    expect(s.tabs.navigate).toHaveBeenLastCalledWith('t1', ENGINE_URL('y'))
   })
 
   it('searches in the tab it is told to, and refuses a tab it cannot use', async () => {
@@ -68,9 +75,7 @@ describe('search.query', () => {
     await s.call('search.query', { text: 'x', tabId: 42 })
     expect(s.tabs.navigate).toHaveBeenCalledWith('t1', ENGINE_URL('x'))
     await expect(s.call('search.query', { text: 'x', tabId: 7 })).rejects.toThrow('No tab with id: 7.')
-    for (const opts of [{ appTab: true }, { internal: true }]) {
-      await expect(setup(opts).call('search.query', { text: 'x', tabId: 42 })).rejects.toThrow('No tab with id: 42.')
-    }
+    await expect(setup({ internal: true }).call('search.query', { text: 'x', tabId: 42 })).rejects.toThrow('No tab with id: 42.')
   })
 
   it('searches in the window the call comes from, not the one in front of the person', async () => {

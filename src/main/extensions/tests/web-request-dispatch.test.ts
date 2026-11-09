@@ -77,7 +77,6 @@ interface Setup {
 function setup (overrides: {
   access?: (id: string, url: string) => boolean
   held?: (id: string, permission: string) => boolean
-  isAppOrigin?: (url: string) => boolean
   servesHost?: (hostname: string) => boolean
   pageUrl?: string
   timeoutMs?: number
@@ -91,7 +90,6 @@ function setup (overrides: {
     isTab: (id) => id === 5,
     hostPermissionsOf,
     hostAccess: access,
-    isAppOrigin: overrides.isAppOrigin ?? (() => false),
     servesHost: overrides.servesHost ?? (() => false),
     pageUrlOf: () => overrides.pageUrl,
     held,
@@ -584,27 +582,24 @@ describe('where a listener may be added from', () => {
   })
 })
 
-describe('apps stay out', () => {
-  const app = 'https://app.example'
-  const appOnly = (url: string): boolean => url.startsWith(app)
+describe('a site that holds Orivon permissions', () => {
+  const granted = 'https://granted.example'
 
-  it('hides a request for an app\'s URL, one an app\'s page made, and one an app initiated', () => {
-    const { dispatcher, fake } = setup({ isAppOrigin: appOnly })
+  it('sends a listener the request for its URL, one its page made and one it initiated, like any other', () => {
+    const { dispatcher, fake } = setup()
     const host = fakeHost()
     dispatcher.addListener(apiEvent(host), 'onCompleted', 1, FILTER, [])
-    fake.runs.get('onCompleted')?.(electronRequest({ url: `${app}/api` }))
-    fake.runs.get('onCompleted')?.(electronRequest({ frame: { parent: null, frameTreeNodeId: 1, origin: app } }))
-    expect(host.send).not.toHaveBeenCalled()
-    fake.runs.get('onCompleted')?.(electronRequest())
-    expect(host.send).toHaveBeenCalledTimes(1)
+    fake.runs.get('onCompleted')?.(electronRequest({ url: `${granted}/api` }))
+    fake.runs.get('onCompleted')?.(electronRequest({ frame: { parent: null, frameTreeNodeId: 1, origin: granted } }))
+    expect(host.send).toHaveBeenCalledTimes(2)
   })
 
-  it('hides a request made by a page that is on an app\'s origin, whatever its frame says', () => {
-    const { dispatcher, fake } = setup({ isAppOrigin: appOnly, pageUrl: `${app}/index.html` })
+  it('sends a listener the request a page on its origin made, whatever its frame says', () => {
+    const { dispatcher, fake } = setup({ pageUrl: `${granted}/index.html` })
     const host = fakeHost()
     dispatcher.addListener(apiEvent(host), 'onCompleted', 1, FILTER, [])
     fake.runs.get('onCompleted')?.(electronRequest())
-    expect(host.send).not.toHaveBeenCalled()
+    expect(host.send).toHaveBeenCalledTimes(1)
   })
 })
 

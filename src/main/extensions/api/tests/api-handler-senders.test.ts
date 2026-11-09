@@ -43,7 +43,6 @@ function setup () {
     extensions: () => undefined,
     prefs: createExtensionPrefsStore(null),
     held: () => true,
-    isAppOrigin: () => false,
     webContentsFromId: () => undefined,
     popupParent: () => undefined
   }, { name: 'ns', permission: 'ns-perm', install: () => {} })

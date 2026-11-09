@@ -1,7 +1,6 @@
 // chrome.search.query: opens the default engine's results for a text, as typing it in the address bar
 // would. The URL comes from the engine code (`currentSearchUrl`, the same default the address bar uses), which encodes the text; nothing is
-// concatenated here. A tab the call names must be an ordinary web tab: an app's tab or an Orivon page
-// is not one an extension can send anywhere.
+// concatenated here. A tab the call names must be a web tab: an Orivon page is not one an extension can send anywhere.
 import type { WebContents } from 'electron'
 import { currentSearchUrl } from '../../browsing/search-current.js'
 import type { ApiEvent, ExtensionApiContext, ExtensionApiModule } from './api-types.js'
@@ -35,7 +34,7 @@ export function installSearch (ctx: ExtensionApiContext): void {
     const { text, disposition, tabId } = parseQuery(properties)
     const shell = ctx.shell() ?? fail('Search is not available yet.')
     const url = currentSearchUrl(shell.settings, text)
-    const ordinary = (contents: WebContents): boolean => !ctx.isAppOrigin(contents.getURL()) && shell.internalPages.pageOf(contents) === undefined
+    const ordinary = (contents: WebContents): boolean => shell.internalPages.pageOf(contents) === undefined
 
     if (tabId !== undefined) {
       const found = ctx.tab(tabId)

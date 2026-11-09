@@ -22,16 +22,13 @@ import { callingExtensionId, setEventListenerFilter, setMessageSenderIdCheck, se
 import { setCookieHostAccessCheck } from 'orivon:crx-extensions-cookies'
 import { setTabUrlAccessCheck, setTabHostAccessCheck } from 'orivon:crx-extensions-tabs'
 import { setOpenPopupAnchor, setPopupHost, setTabCaptureInvocationRecorder } from 'orivon:crx-extensions-browser-action'
-import { setTabCaptureAppRefusalCheck, setTabCaptureConsumedCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
+import { setTabCaptureConsumedCheck, setTabCaptureGrantRecorder, setTabCaptureInvocationCheck } from 'orivon:crx-extensions-tab-capture'
 import type { ShellServices } from '../shell/shell-services.js'
 import { setPageMenuItemsSource } from '../shell/page-menu-items.js'
 import type { SubsystemContext } from '../registry.js'
-import { originFromUrl } from '../../broker/policy/origin.js'
 import { mintTabCaptureGrant, wasTabCaptureGrantConsumed } from '../sessions/tab-capture-grants.js'
-import { setTabCaptureMediaAppRefusalCheck } from '../sessions/tab-capture-media.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { EXTENSION_SANDBOX_CSP_FILTER, extensionSandboxCsp } from './extension-sandbox-csp.js'
-import { appOrigin } from '../shell/devtools-app-origin.js'
 import { eventListenerFilter } from './extension-event-filter.js'
 import { closeCurrentPopup, installBackgroundPagePolicy, installPopupPolicy } from './extension-popup-policy.js'
 import { extensionPopupHost, wirePopupHost } from './extension-popup-host.js'
@@ -333,25 +330,10 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   watchPinSetting(services)
 
   setRemoteMessageSenderCheck((event) => event.type === 'frame' && isFromChromeView(event.sender))
-  // ADR-0044 moved a granted, network-served app's tab into this SAME
-  // default session tabCapture's own tab store tracks -- the same
-  // predicate shell-services.ts's own DevTools prompt uses for the
-  // identical "is this tab an app I granted, not an ordinary site" question.
-  const tabCaptureAppRefusal = (tab: WebContents): boolean => {
-    const origin = appOrigin(originFromUrl, tab)
-    return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
-  }
-  setTabCaptureAppRefusalCheck(tabCaptureAppRefusal)
-  // The same predicate, registered a second time for permission-gate.ts's
-  // own re-check inside the 'media' REQUEST handler -- setTabCaptureMediaAppRefusalCheck's
-  // own doc says why a single registration point (this file's own
-  // `setTabCaptureAppRefusalCheck`, read only by the vendored tab-capture.ts)
-  // is not enough on its own.
-  setTabCaptureMediaAppRefusalCheck(tabCaptureAppRefusal)
-  // What extensions add to a page's right-click menu: an ordinary tab's, never a granted app's.
+  // What extensions add to a page's right-click menu: the menu of a tab the library tracks, whatever permissions its site holds.
   setPageMenuItemsSource((wc, params) => {
     const host = hostForSession(wc.session)
-    return host === undefined || !trackedTabs.has(wc) || tabCaptureAppRefusal(wc) ? [] : host.getContextMenuItems(wc, params)
+    return host === undefined || !trackedTabs.has(wc) ? [] : host.getContextMenuItems(wc, params)
   })
 
   /** The toolbar of the window holding `wc` speaks to the instance of the session `wc` runs in. */

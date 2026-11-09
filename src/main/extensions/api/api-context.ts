@@ -22,7 +22,6 @@ export interface ExtensionApiDeps {
   readonly extensions: () => ExtensionsApi | undefined
   readonly prefs: ExtensionPrefsStore
   readonly held: (extensionId: string, permission: string) => boolean
-  readonly isAppOrigin: (url: string) => boolean
   /** `webContents.fromId`, injected so this file needs no electron runtime. */
   readonly webContentsFromId: (id: number) => WebContents | undefined
   /** The shell window the open popup holding `contents` hangs under. */
@@ -79,8 +78,7 @@ export function createApiContext (deps: ExtensionApiDeps, module: ExtensionApiMo
     canSee: (extensionId, contents) => {
       const manifest = deps.session.extensions.getExtension(extensionId)?.manifest
       return manifest != null && hostAccessFor(extensionId, manifest, contents.getURL(), contents.id)
-    },
-    isAppOrigin: deps.isAppOrigin
+    }
   }
 }
 

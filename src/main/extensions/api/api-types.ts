@@ -49,9 +49,6 @@ export interface ExtensionApiContext {
   readonly callerWindow: (event: ApiEvent) => ShellWindow | undefined
   /** The extension's host access covers the tab's current URL. */
   readonly canSee: (extensionId: string, contents: WebContents) => boolean
-  /** The URL belongs to a registered app's origin: every data API keeps such
-   * URLs, tabs and storage out of its answers and events. */
-  readonly isAppOrigin: (url: string) => boolean
 }
 
 export interface ExtensionApiModule {

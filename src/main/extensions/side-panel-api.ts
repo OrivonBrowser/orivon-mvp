@@ -51,10 +51,10 @@ function integerField (given: Record<string, unknown>, key: string): number | un
   return value
 }
 
-/** A tab an extension can see: not a granted app's, not an Orivon page. */
+/** A tab an extension can see: not an Orivon page. */
 export function isOrdinaryTab (ctx: ExtensionApiContext, contents: WebContents): boolean {
   const shell = ctx.shell()
-  return shell !== undefined && !ctx.isAppOrigin(contents.getURL()) && shell.internalPages.pageOf(contents) === undefined
+  return shell !== undefined && shell.internalPages.pageOf(contents) === undefined
 }
 
 export function installSidePanel (ctx: ExtensionApiContext, driver: SidePanelDriver): void {
@@ -106,7 +106,7 @@ export function installSidePanel (ctx: ExtensionApiContext, driver: SidePanelDri
 
   /**
    * The tab the person's input would have been made in: the one the call names, or the one in front of the window it names.
-   * An app's tab and an Orivon page are none: the extension cannot see them.
+   * An Orivon page is none: the extension cannot see it.
    */
   const inputTabOf = (target: PanelTarget): WebContents | undefined => {
     if (target.tabId !== undefined) return ctx.tab(target.tabId)?.contents

@@ -5,9 +5,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { session } from 'electron'
 import type { WebContents } from 'electron'
-import { originFromUrl } from '../../broker/policy/origin.js'
 import { INTERNAL_EVENT_CHANNEL } from '../channels.js'
-import type { SubsystemContext } from '../registry.js'
 import { anchorFor } from './extension-action-anchor.js'
 import { createExtensionCommandKeys } from './extension-commands-runner.js'
 import type { ExtensionCommandKeys, LoadedExtension } from './extension-commands-runner.js'
@@ -18,7 +16,6 @@ import { recordExtensionInvocation } from './side-panel-gesture.js'
 import { readRegistry } from './registry-runner.js'
 
 export interface InstallCommandKeysOptions {
-  readonly ctx: SubsystemContext
   readonly prefs: ExtensionPrefsStore
   readonly userDataPath: string
 }
@@ -34,7 +31,7 @@ function inFileOrder (folder: string, loaded: Record<string, unknown>): unknown 
 }
 
 export function installExtensionCommands (options: InstallCommandKeysOptions): ExtensionCommandKeys {
-  const { ctx, prefs, userDataPath } = options
+  const { prefs, userDataPath } = options
   const extensions = session.defaultSession.extensions
 
   // What the session has loaded is the truth (an install loads before it is written to the registry); the registry
@@ -78,11 +75,7 @@ export function installExtensionCommands (options: InstallCommandKeysOptions): E
     keyChanged: (extensionId, change) => { extensionHost()?.getRouter().sendEvent(extensionId, 'commands.onChanged', change) },
     recordInvocation: recordExtensionInvocation,
     openSidePanel: (extensionId, tab, window) => openSidePanelFor(extensionId, tab, window),
-    isHiddenTab: (tab) => {
-      if (tab.session !== session.defaultSession) return true
-      const origin = originFromUrl(tab.getURL())
-      return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
-    },
+    isHiddenTab: (tab) => tab.session !== session.defaultSession,
     anchorFor,
     recorded: (page, outcome) => {
       const contents = page as WebContents

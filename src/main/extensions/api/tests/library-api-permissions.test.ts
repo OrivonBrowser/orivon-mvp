@@ -57,7 +57,6 @@ function setup () {
     extensions: () => undefined,
     prefs: createExtensionPrefsStore(null),
     held: () => true,
-    isAppOrigin: () => false,
     webContentsFromId: () => undefined,
     popupParent: () => undefined
   }, [bookmarksApi, historyApi, topSitesApi, searchApi])

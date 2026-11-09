@@ -7,10 +7,10 @@ import { createSidePanelOptions } from '../side-panel-options.js'
 
 type Press = (type: string) => void
 
-function setup (opts: { appTab?: boolean, internal?: boolean, refuse?: string, reaches?: boolean, showing?: boolean } = {}) {
+function setup (opts: { grantedTab?: boolean, internal?: boolean, refuse?: string, reaches?: boolean, showing?: boolean } = {}) {
   const listeners: Array<(event: unknown, input: { type: string }) => void> = []
   const contents = {
-    getURL: () => (opts.appTab === true ? 'https://app.example/x' : 'https://page.test/'),
+    getURL: () => (opts.grantedTab === true ? 'https://granted.example/x' : 'https://page.test/'),
     isDestroyed: () => false,
     on: (event: string, listener: (event: unknown, input: { type: string }) => void) => { if (event === 'input-event') listeners.push(listener) }
   }
@@ -160,13 +160,31 @@ describe('sidePanel.open from a click on a page', () => {
   })
 })
 
-describe('an app\'s tab and an Orivon page', () => {
-  it.each([[{ appTab: true }], [{ internal: true }]])('is no tab in open, setOptions and getOptions (%j)', async (opts) => {
-    const s = setup(opts)
+describe('an Orivon page', () => {
+  it('is no tab in open, setOptions and getOptions', async () => {
+    const s = setup({ internal: true })
     s.driver.gesture.record(EXT)
     await expect(s.call('sidePanel.open', { tabId: 42 })).rejects.toThrow('No tab with id: 42.')
     await expect(s.call('sidePanel.setOptions', { tabId: 42, enabled: false })).rejects.toThrow('No tab with id: 42.')
     await expect(s.call('sidePanel.getOptions', { tabId: 42 })).rejects.toThrow('No tab with id: 42.')
+  })
+})
+
+describe('the tab of a site that holds Orivon permissions', () => {
+  it('is a tab like any other in open, setOptions and getOptions', async () => {
+    const s = setup({ grantedTab: true })
+    s.driver.gesture.record(EXT)
+    await s.call('sidePanel.open', { tabId: 42 })
+    expect(s.driver.open).toHaveBeenCalledWith({ extensionId: EXT, window: s.window, tabId: 42 })
+    await s.call('sidePanel.setOptions', { tabId: 42, enabled: false })
+    expect(await s.call('sidePanel.getOptions', { tabId: 42 })).toEqual({ enabled: false, path: 'panel.html' })
+  })
+
+  it('counts a click in the front tab as the input a call that names the window needs', async () => {
+    const s = setup({ grantedTab: true })
+    s.press('mouseDown')
+    await s.call('sidePanel.open', { windowId: 5 })
+    expect(s.driver.open).toHaveBeenCalledTimes(1)
   })
 })
 

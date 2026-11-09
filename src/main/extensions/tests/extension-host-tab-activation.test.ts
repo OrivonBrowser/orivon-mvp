@@ -61,7 +61,6 @@ vi.mock('orivon:crx-extensions-tabs', () => ({ setTabUrlAccessCheck: vi.fn(), se
 vi.mock('orivon:crx-extensions-browser-action', () => ({ setTabCaptureInvocationRecorder: vi.fn(), setPopupHost: vi.fn(), setOpenPopupAnchor: vi.fn() }))
 vi.mock('orivon:crx-extensions-tab-capture', () => ({
   setTabCaptureInvocationCheck: vi.fn(),
-  setTabCaptureAppRefusalCheck: vi.fn(),
   setTabCaptureGrantRecorder: vi.fn(),
   setTabCaptureConsumedCheck: vi.fn()
 }))
@@ -69,7 +68,7 @@ vi.mock('orivon:crx-extensions-tab-capture', () => ({
 const { createExtensionHost, attachExtensionShell } = await import('../extension-host.js')
 const { session: mockedSession } = await import('electron')
 
-function buildShell (): {
+function buildShell (ctx: SubsystemContext = {} as unknown as SubsystemContext): {
   services: ShellServices
   subscribed: { tabCreated: any, tabActivated: any, tabClosed: any, tabClosing: any, viewReplaced: any }
   findTab: ReturnType<typeof vi.fn>
@@ -88,7 +87,7 @@ function buildShell (): {
     tabLifecycle: { subscribe: (cbs: any) => { subscribed = cbs } },
     settings: { onChange: () => () => {} }
   } as unknown as ShellServices
-  attachExtensionShell({} as unknown as SubsystemContext, services, {} as any)
+  attachExtensionShell(ctx, services, {} as any)
   return { services, subscribed, findTab, shellWindow }
 }
 
@@ -336,5 +335,17 @@ describe('extension-host: what extensions add to a page\'s right-click menu', ()
     expect(pageMenuItems(tracked, params)).toEqual([{ label: 'Translate' }])
     expect(lastInstance.getContextMenuItems).toHaveBeenCalledWith(tracked, params)
     expect(pageMenuItems(untracked, params)).toEqual([])
+  })
+
+  it('comes from the library for a tab whose site holds Orivon permissions, as for any other', async () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const granted = { broker: { app: { hasGrantsSync: () => true } } } as unknown as SubsystemContext
+    const { subscribed } = buildShell(granted)
+    const { pageMenuItems } = await import('../../shell/page-menu-items.js')
+    const tab = { session: mockedSession.defaultSession, isDestroyed: () => false, getURL: () => 'https://granted.example/' } as unknown as WebContents
+    subscribed.tabCreated(tab, { id: 1 } as unknown as BaseWindow)
+
+    expect(pageMenuItems(tab, { x: 1, y: 2 } as never)).toEqual([{ label: 'Translate' }])
   })
 })

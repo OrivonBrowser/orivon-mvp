@@ -5,30 +5,6 @@ import type { WebContents } from 'electron'
 import { extensionIdFromChromeExtensionOrigin, isTabCaptureMediaRequestAllowed, markTabCaptureGrantConsumed } from './tab-capture-grants.js'
 
 /**
- * The SAME "is this tab a granted app" question
- * `vendor/.../tab-capture.ts`'s own `setTabCaptureAppRefusalCheck` answers
- * at mint time and on navigation -- repeated here because a mint-time
- * refusal alone leaves a gap this handler is the last line against: a tab
- * refused at `getMediaStreamId()` time never reaches here at all, but a tab
- * that was NOT a granted app at mint, then navigates to one, keeps its
- * already-live grant (`tab-capture-grants.ts` has no idea a navigation
- * happened) until either `tab-capture.ts`'s own `did-navigate` re-check
- * fires or -- if that re-check is ever slower than the extension's own
- * `getUserMedia('tab')` call -- this handler is asked to actually hand out
- * the stream. Checking `contents` here is exactly right for this call
- * shape: `allowTabCaptureMediaRequest`'s doc below says `contents` IS the
- * captured tab for a tab-capture request, so this is the tab at the moment access is
- * actually granted, not at some earlier moment. Wired from
- * `../extensions/extension-host.ts`, alongside the vendored library's own
- * identical registration -- two call sites, one predicate.
- */
-type MediaAppRefusalCheck = (contents: WebContents) => boolean
-let gMediaAppRefusalCheck: MediaAppRefusalCheck | undefined
-export function setTabCaptureMediaAppRefusalCheck (check: MediaAppRefusalCheck): void {
-  gMediaAppRefusalCheck = check
-}
-
-/**
  * `media` stays denied by default (a page asking for camera/microphone) --
  * this is the one carve-out, for chrome.tabCapture's own `getUserMedia({
  * audio: { mandatory: { chromeMediaSource: 'tab', ... } } })` call. Measured
@@ -93,11 +69,6 @@ export function allowTabCaptureMediaRequest (contents: WebContents, details: obj
   const now = Date.now()
   const allowed = isTabCaptureMediaRequestAllowed(origin, contents.id, mediaTypes, isMainFrame, now)
   if (!allowed) return false
-  // Re-run against `contents` -- the captured tab, for this call
-  // shape -- one more time, right before actually granting: see
-  // setTabCaptureMediaAppRefusalCheck's own doc for why a mint-time-only
-  // check is not enough.
-  if (gMediaAppRefusalCheck?.(contents) === true) return false
   const extensionId = extensionIdFromChromeExtensionOrigin(origin)
   if (extensionId !== undefined) markTabCaptureGrantConsumed(extensionId, contents.id, now)
   return true

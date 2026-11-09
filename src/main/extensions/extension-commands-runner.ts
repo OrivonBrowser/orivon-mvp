@@ -37,7 +37,7 @@ export interface CommandKeysDeps {
   } | undefined
   /** Counts the key press as an invocation of the extension on the tab, as a click on its icon would. */
   readonly recordInvocation: (extensionId: string, tab: WebContents) => void
-  /** A tab no extension is told about: a registered app's, or one that is not a page of the extensions' own session (an internal page). */
+  /** A tab no extension is told about: one that is not a page of the extensions' own session (an internal page, or an app served from its own kept copy). */
   readonly isHiddenTab: (tab: WebContents) => boolean
   /** Where a popup opens for `extensionId` in `window`: under its icon, else under the Extensions button. */
   readonly anchorFor: (window: ShellWindow, extensionId: string) => Promise<Rectangle>

@@ -338,9 +338,7 @@
     (`TabCaptureAPI`): resolves `targetTabId` (or the active tab) through
     `ExtensionStore.getTabById`/`getActiveTabOfCurrentWindow` only, refuses
     a tab outside the extension's own session, refuses a target whose URL is
-    not `http:`/`https:` (below), refuses one
-    (`setTabCaptureAppRefusalCheck`, `src/main/extensions/extension-host.ts`)
-    belonging to a granted app, refuses one the extension was never invoked
+    not `http:`/`https:` (below), refuses one the extension was never invoked
     on with Chrome's own error text ("Extension has not been invoked for the
     current page...", `setTabCaptureInvocationCheck`), resolves the
     capture's consumer as `consumerTabId` when given or else the extension's
@@ -352,7 +350,7 @@
     once every capturer has released the tab: a closed tab, the ACTUAL
     consumer (the offscreen document, or the `consumerTabId` tab, below)
     being destroyed or crashing, `'extension-unloaded'`, the tab's own
-    navigation newly failing the app-refusal or http(s) check (below),
+    navigation newly failing the http(s) check (below),
     or -- the one still on a timer, and now per (extension, target
     tab), never per extension alone (below) -- a 10-second safety
     net for a minted id that was never actually redeemed, checked against
@@ -441,26 +439,18 @@
       candidate signal is safe or general enough to build on.
     - **A target must be an `http(s)` tab.** `ctx.store` tracks
       every `wc.session === session.defaultSession` tab, which (ADR-0044)
-      includes a granted app's own tab -- `setTabCaptureAppRefusalCheck`'s
-      own job -- but ALSO another extension's own page (its popup or
-      options page opened as a tab, another extension's offscreen document),
-      which is not a granted app at all: `devtools-app-origin.ts`'s own
-      `appOrigin` returns null for a `chrome-extension://` page, so the
-      app-refusal check alone never refused it. DECIDED: refuse every
+      includes a tab of a site that holds Orivon permissions, and ALSO
+      another extension's own page (its popup or options page opened as a
+      tab, another extension's offscreen document). DECIDED: refuse every
       non-`http(s)` target outright, the caller's own pages included, rather
-      than carving out an exception for them.
-    - **The app-refusal and http(s) checks are re-run on the
-      captured tab's own navigation, and the app-refusal check again inside
-      the `'media'` REQUEST handler itself.** A tab that was an ordinary page
-      at mint time can navigate to a granted app's origin, or to a
-      non-http(s) URL, without ever closing; `getMediaStreamId`'s own checks
-      previously ran once, at mint, and never again. `recheckCaptureStillAllowed`
-      (this file), wired to the captured tab's own `'did-navigate'`, ends
-      every capture of it the moment either check newly refuses.
-      `../sessions/permission-gate.ts`'s own `setTabCaptureMediaAppRefusalCheck`
-      registration covers the second half: a live, still-unexpired grant
-      handed to the REQUEST handler for a tab that has since become a
-      granted app's own.
+      than carving out an exception for them. A site that holds permissions
+      is an `http(s)` tab like any other.
+    - **The http(s) check is re-run on the captured tab's own
+      navigation.** A tab that was an ordinary page at mint time can
+      navigate to a non-http(s) URL without ever closing.
+      `recheckCaptureStillAllowed` (this file), wired to the captured tab's
+      own `'did-navigate'`, ends every capture of it the moment the check
+      newly refuses.
     - **The captured tab's own `'destroyed'`/`'did-navigate'`
       listeners are now removed on an ordinary release.** Previously
       attached once per tab and never removed unless the tab itself was
@@ -936,6 +926,13 @@ and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of
     was `normal` for every window and `update` handled `state` only, so an extension that keeps one popup
     (`getAll()` for a `popup` with its id, then `update(id, { focused: true })`) never found it and opened a
     new window for each request.
+77. **`chrome.tabCapture` has no refusal for a site that holds Orivon permissions.** `src/browser/api/tab-capture.ts`:
+    there is no app-refusal hook in `getMediaStreamId` or in `recheckCaptureStillAllowed`, so the tab of an
+    origin that holds grants is captured under the same rules as any `http(s)` tab: the extension must have
+    been invoked on it, and the capture ends when the tab navigates to something that is not `http(s)`.
+    Reason: a site that holds permissions is a website the extension is allowed on; what keeps the
+    extension's code from that site's `window.orivon` is the filter in
+    `src/preload/surface/main-world-socket.ts`, not a refusal here.
 
 Nothing else changed; upstream code is not reformatted.
 
