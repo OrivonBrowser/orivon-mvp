@@ -128,7 +128,7 @@ jobs:
           done
           sleep 3
           {
-            system_profiler SPDisplaysDataType
+            system_profiler SPDisplaysDataType 2>&1 || echo "system_profiler failed"
             echo "Dock pid before: ${before:-none}, now: ${now:-none}"
             echo -n "Visible frame (x, y, width, height): "
             osascript -l JavaScript -e 'ObjC.import("AppKit"); const f = $.NSScreen.mainScreen.visibleFrame; [f.origin.x, f.origin.y, f.size.width, f.size.height].join(", ")' 2>&1 || echo "not readable"
