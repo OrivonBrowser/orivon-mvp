@@ -12,7 +12,7 @@
 // view-background-test-hook.ts.
 import { expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron } from '../support/launch-electron.mjs'
-import { pressKey } from '../support/e2e-helpers.js'
+import { pressKey, waitForKeyboardAt } from '../support/e2e-helpers.js'
 import { distinctColours } from '../support/qa-visual.js'
 import { ABSENCE_SETTLE_MS, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
@@ -243,6 +243,8 @@ it('a press held on the button while the menu is open closes it, and letting go 
     await chrome.click('#menu')
     expect(await waitFor(async () => await popoverShown(app, 'overlay=menu'))).toBe(true)
     await menuPage(app)?.waitForSelector('.menu-row')
+    // A press can only blur a menu that holds the keyboard: a view takes it when its page has loaded, after it is shown.
+    expect(await waitForKeyboardAt(app, 'overlay=menu')).toBe(true)
 
     const box = await chrome.locator('#menu').boundingBox()
     if (box === null) throw new Error('the menu button has no box')
@@ -275,6 +277,9 @@ it('the same for a popup toggled by overlay name: a press held on the tab-search
     const chrome = await readyChrome(app)
     await chrome.click('#tab-search')
     expect(await waitFor(shown)).toBe(true)
+    // This popup is built at the click, so it is shown while its page still loads. A focus change before the page has
+    // loaded blurs nothing, and the page then takes the keyboard and stays open: wait for it to hold the keyboard.
+    expect(await waitForKeyboardAt(app, 'overlay=tab-search')).toBe(true)
 
     const box = await chrome.locator('#tab-search').boundingBox()
     if (box === null) throw new Error('the tab-search button has no box')
