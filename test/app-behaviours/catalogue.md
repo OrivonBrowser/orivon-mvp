@@ -19,7 +19,8 @@ behaviour's sentence without one, and the same for a change to the public surfac
 (section The contracts surface in [`testing.md`](../../docs/development/testing.md)). The matrix of what works today is
 [`compatibility-matrix.md`](../../docs/planning/compatibility-matrix.md); this page is its test-side index.
 
-Ports are named only where the compatibility pages already name them.
+The Ports column names each orivon-ports port that relies on a row, and that port's README names
+the row back; the porting skill keeps both sides.
 
 ## Consent and grants
 
