@@ -399,7 +399,8 @@ debugger click), needs real events. `test/support/native-pointer.ts`'s `pressPoi
 sends the system's own events (move, button down, button up): X11 XTest to the virtual display of the headless
 runner on Linux, `mouse_event` through PowerShell on Windows, a CoreGraphics event through `osascript` on macOS.
 A spec calls it where `realPointerAvailable()` holds: the virtual display, or a GitHub-hosted Windows or macOS
-runner, whose desktop belongs to the job. On a person's own Windows or macOS machine the press would take their
+runner (`RUNNER_ENVIRONMENT=github-hosted`; a self-hosted one can be a person's desktop), whose desktop belongs to the
+job, and `pressPointer` itself throws anywhere else. On a person's own Windows or macOS machine the press would take their
 pointer, so the spec expects `realPointerAvailable()` and fails there with the reason (a catalogue proof carries
 no `skipIf`). No window manager is needed for hit testing, `e2e-app-page-drag-regions` is the
 worked example. A press that depends on window-manager

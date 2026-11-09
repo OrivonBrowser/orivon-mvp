@@ -1,25 +1,47 @@
 // The commands that make a real pointer press, built for each system without making one.
 import { describe, expect, it } from 'vitest'
-import { pointerCommand, realPointerAvailable } from './native-pointer.js'
+import { pointerCommand, pressPointer, realPointerAvailable } from './native-pointer.js'
 import { underVirtualDisplay } from './focus-helpers.js'
 
 const decoded = (args: string[]): string => Buffer.from(args[args.indexOf('-EncodedCommand') + 1] ?? '', 'base64').toString('utf16le')
 
+const HOSTED = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted' }
+
 describe('realPointerAvailable', () => {
-  it('is true on Windows and macOS only on a hosted runner, whose desktop belongs to the job', () => {
+  it('is true on Windows and macOS only on a GitHub-hosted runner, whose desktop belongs to the job', () => {
     for (const platform of ['win32', 'darwin']) {
-      expect(realPointerAvailable(platform, { GITHUB_ACTIONS: 'true' })).toBe(true)
+      expect(realPointerAvailable(platform, HOSTED)).toBe(true)
       expect(realPointerAvailable(platform, { CI: 'true' })).toBe(false)
       expect(realPointerAvailable(platform, {})).toBe(false)
     }
   })
 
+  it('is false on a self-hosted runner, which sets GITHUB_ACTIONS too and can be a person\'s desktop', () => {
+    for (const platform of ['win32', 'darwin']) {
+      expect(realPointerAvailable(platform, { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'self-hosted' })).toBe(false)
+      expect(realPointerAvailable(platform, { GITHUB_ACTIONS: 'true' })).toBe(false)
+      expect(realPointerAvailable(platform, { RUNNER_ENVIRONMENT: 'github-hosted' })).toBe(false)
+    }
+  })
+
   it('follows the virtual display on Linux, whatever the environment says', () => {
-    expect(realPointerAvailable('linux', { GITHUB_ACTIONS: 'true' })).toBe(underVirtualDisplay())
+    expect(realPointerAvailable('linux', HOSTED)).toBe(underVirtualDisplay())
+    expect(realPointerAvailable('linux', {})).toBe(underVirtualDisplay())
   })
 
   it('is false on a system with no way to press', () => {
-    expect(realPointerAvailable('freebsd', { GITHUB_ACTIONS: 'true' })).toBe(false)
+    expect(realPointerAvailable('freebsd', HOSTED)).toBe(false)
+  })
+})
+
+describe('pressPointer', () => {
+  it('throws with the reason, and presses nothing, where a real press is not allowed', () => {
+    for (const platform of ['win32', 'darwin']) {
+      expect(() => { pressPointer(10, 10, 1, platform, {}) }).toThrow(/realPointerAvailable\(\) is false/)
+      expect(() => { pressPointer(10, 10, 1, platform, { GITHUB_ACTIONS: 'true' }) }).toThrow(/realPointerAvailable\(\) is false/)
+      expect(() => { pressPointer(10, 10, 1, platform, { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'self-hosted' }) }).toThrow(/virtual display or on a GitHub-hosted/)
+    }
+    expect(() => { pressPointer(10, 10, 1, 'freebsd', HOSTED) }).toThrow(/realPointerAvailable\(\) is false/)
   })
 })
 

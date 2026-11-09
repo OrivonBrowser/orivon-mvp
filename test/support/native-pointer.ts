@@ -8,12 +8,13 @@ import { underVirtualDisplay } from './focus-helpers.js'
 
 /**
  * Whether a real press may be made here: Linux under the virtual display (X11 XTest), or Windows or macOS on a
- * GitHub-hosted runner, whose desktop belongs to the job. On a person's own Windows or macOS machine it is false:
- * the press would take their pointer.
+ * GitHub-hosted runner (`RUNNER_ENVIRONMENT=github-hosted`), whose desktop belongs to the job. A self-hosted runner
+ * sets `GITHUB_ACTIONS` too and can be a person's desktop, and so can any other Windows or macOS machine: there it is
+ * false, because the press would take their pointer.
  */
 export function realPointerAvailable (platform: string = process.platform, env: Record<string, string | undefined> = process.env): boolean {
   if (platform === 'linux') return underVirtualDisplay()
-  return (platform === 'win32' || platform === 'darwin') && env['GITHUB_ACTIONS'] === 'true'
+  return (platform === 'win32' || platform === 'darwin') && env['GITHUB_ACTIONS'] === 'true' && env['RUNNER_ENVIRONMENT'] === 'github-hosted'
 }
 
 /** The program and arguments that move the pointer to (x, y), press `button` (1 left, 2 middle, 3 right) there and release it. */
@@ -62,9 +63,10 @@ export function pointerCommand (platform: string, x: number, y: number, button: 
   return { file: 'python3', args: ['-c', script, String(at[0]), String(at[1]), String(button)] }
 }
 
-/** A press and release of `button` (1 left, 2 middle, 3 right) at a point in screen pixels. */
-export function pressPointer (x: number, y: number, button: number): void {
-  const { file, args } = pointerCommand(process.platform, x, y, button)
+/** A press and release of `button` (1 left, 2 middle, 3 right) at a point in screen pixels. Throws where realPointerAvailable() does not hold, so no caller can take a person's pointer. */
+export function pressPointer (x: number, y: number, button: number, platform: string = process.platform, env: Record<string, string | undefined> = process.env): void {
+  if (!realPointerAvailable(platform, env)) throw new Error('pressPointer: a real press moves the pointer, so it runs only on the headless runner\'s virtual display or on a GitHub-hosted Windows or macOS runner (realPointerAvailable() is false here)')
+  const { file, args } = pointerCommand(platform, x, y, button)
   execFileSync(file, args, { timeout: 30_000 })
 }
 
