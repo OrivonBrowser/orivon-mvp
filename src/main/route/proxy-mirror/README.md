@@ -59,7 +59,9 @@ split at the separators Chromium's Windows reader splits it at (`;`, `,` and whi
 makes the settings per machine (`ProxySettingsPerUser` 0) is `unsupported`; a blob cut short or of a layout this reader does not know is
 too, and a blob of no bytes is no blob. `reg.exe` exits with 1 for every error it reports, a key or value that is not there among them, so
 a query that exits with 1 reads as nothing set (for the Internet Settings key itself, which always exists, that is `unreadable`); a query that
-takes too long or cannot start is `unreadable` whichever it was, and the canary check judges what the rest comes to.
+takes too long or cannot start is `unreadable` whichever it was, and the canary check judges what the rest comes to. A read starts three `reg.exe`
+processes at once (about 26 ms of wall time and 14 ms of CPU each on a GitHub Windows runner), and the 30-second reads with the 2-second question
+cost 0.6% of one core in all of Orivon's processes together over twenty minutes.
 
 **An unchanged read does nothing.** The settings and Chromium's two base answers are compared with the last pass; only a difference, or a
 state that is not settled (`unreadable`, `disagrees`), runs the check again. The 2-second question is asked in process of the session
