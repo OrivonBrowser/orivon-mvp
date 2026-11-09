@@ -137,7 +137,7 @@ through that server, so the session, the tunnel setting, the person's site data 
 app as the website it is, with one copy of an extension and one set of its data. What the page may do beyond a
 website is decided by the grants held for its origin, never by the session. An app on a host the server does
 not answer (a plain https host, a loopback address) keeps a session of its own, as does one whose route is
-not the shared session's (*provisional*, until the server hands a tunnel profile's requests to the shell too).
+not the shared session's (*provisional*, until the shared session sends the app as its own route does).
 
 **The grant prompt is origin-first.** Any origin can serve a manifest, and the `name` in it is
 self-asserted, so the origin is the largest and primary element and the app's claimed name is

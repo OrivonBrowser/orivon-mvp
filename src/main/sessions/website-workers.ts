@@ -1,6 +1,6 @@
 // What an allowed app that runs in the shared session must not inherit from the website its origin was before: the
-// workers and response caches that website installed, which the shell's check never saw. Electron-bound (a session's
-// storage), and holds no state of its own.
+// workers and response caches that website installed, which the shell's check never saw. It reaches a session's storage
+// through the one call it needs, so a unit test needs no Electron, and it holds no state of its own.
 
 /** The part of a session this file uses: an Electron `Session` has it. */
 export interface WorkerStorage {

@@ -19,7 +19,9 @@ the one folder in this directory that imports `electron`, and all of it is tied 
 **A session is prepared before its app is served from it.** `prepareAppSession` runs every preparer
 `beforeAppSessionServes` was given (main points a routed app's session at its proxy this way) and `serve.ts` awaits it
 before `registerAppOrigin`, so no page loads in a session that is not yet as it must be. A preparer that fails stops
-the app being served, not the browser.
+the app being served, not the browser. A preparer is told whether the app is served from its pin or live from the
+verifier (`from`): the first live serving of an app that runs in the shared session is where
+`../../main/sessions/website-workers.ts` drops the service workers and Cache Storage the origin held as a website.
 
 Why re-registering a handler is idempotent, why `restorePinnedServing` runs at startup, and why
 the CSP is read from the live grant ledger on every request (so a revoke narrows the very next

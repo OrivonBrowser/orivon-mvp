@@ -15,8 +15,11 @@
 An allowed app whose host Orivon's protocols serve (a `.eth` name, an IPFS or Swarm address, every host
 `BUILTIN_ADDRESSES.routesToVerifier` answers for) runs in the session a website at that origin runs in: the shared
 default session. It never gets a partition of its own. Its files still
-come from its kept copy, or checked live while the copy is being made: the verifier host hands every request for a host
-the shell serves to the main process, which answers with the same handler a partition had. The person's extensions
+come from its kept copy, or checked live while the copy is being made: the verifier host hands the requests that are the
+site's own to the main process, which answers with the same handler a partition had. A request is the site's own when
+the browser marked it `Sec-Fetch-Site` `same-origin` or `none`, or when it is a top-level navigation from any site, so a
+link from another site opens the kept copy. Another site's image, script or frame keeps the verifier's plain path: the
+timing of its answer must not tell a page that an app is kept. Chromium sets these headers and a page cannot forge them. The person's extensions
 run on it as on any other website, one instance with one set of data, and Orivon keeps none of them off it: content scripts,
 the toolbar popup, menu entries, shortcuts, the side panel, history and search, network requests and tab capture all
 reach an allowed site. What still stands between an extension and the site's grants is ADR-0045: extension code is
@@ -26,10 +29,15 @@ An app on any other origin (a plain `https` host, a loopback address) keeps its 
 requests never reach the verifier, so nothing outside a partition of its own can serve its kept copy or check its files.
 Serving those hosts on the network path too (for example, by sending them to the verifier at start) would settle it.
 So does an app with a route of its own, a tunnel entry or an entry that is off while the browser is on a tunnel: the
-verifier does not hand a tunnel profile's requests to the shell (the host fetches for them only through that tunnel), and
-the app's own reads leave by its own route, so the shared session cannot send the app as its own route would. It keeps
-its partition until the shared session and the app's route agree, or until a tunnel profile's requests reach the shell
-too. A tab's own tunnel choice does not apply to an installed app, as before.
+app's own reads leave by its own route, so the shared session cannot send the app as its own route would. It keeps its
+partition until the shared session and the app's route agree. A tab's own tunnel choice does not apply to an installed
+app, as before.
+
+For a request of a tunnel profile (a website tab with a tunnel of its own, whose page links to the app), the verifier
+hands the request to the shell only when the app is served from its pin, since then no byte leaves; while the app is only
+read live, the request keeps the verifier's path, where the read leaves through the tunnel. That split is *provisional*:
+a live-served app in a tunnel profile does not open from the shell until its pin lands, and what would settle it is a
+read of the live handler that also leaves through the profile's tunnel.
 
 `window.orivon` is attributed to a document of such an app in the session `partitionForTab` names, the shared one, and
 never in the partition the app had before. The document must also have committed after the shell began to serve the
@@ -66,7 +74,9 @@ session where the extensions are.
 ## Consequences
 
 - A tab of an allowed web3 site no longer swaps sessions when the site is allowed: the reload after Allow keeps the
-  session and changes only the app-tab flag (the Node globals and the routed `fetch`).
+  session and changes only the app-tab flag (the Node globals and the routed `fetch`). A navigation that gains the flag is
+  stopped before the app's first request and issued again in a view that has it, with the referrer Chromium would have
+  sent.
 - `window.orivon` attributes a call from such a site to it when the page runs in the shared session and committed after
   the shell began to serve the app, never in a partition of its own.
 - A block empties and closes the site's pages in every session they are in.
@@ -75,8 +85,12 @@ session where the extensions are.
 - What such an app stored in its own partition before this change stays there. A later step carries it into the shared
   session once, the first time the app opens there: cookies, local storage and databases are carried, and what cannot be
   is named in the log. Until then an app that moved starts with empty storage.
-- The verifier must be running for an allowed web3 site to open, as for every web3 site. If the host restarts, the shell
-  sends it the hosts it serves again before it answers.
+- The verifier must be running for an allowed web3 site to open, as for every web3 site. A tab of such an app keeps the
+  host awake, a request for its host waits until the host listens, and the shell sends the host the hosts it serves
+  before any held request is let go, on a start and on a restart alike.
+- A request the host relays never touches the shared session's HTTP cache, so bytes a website cached at the same address
+  cannot answer the app's request. The service workers and Cache Storage the origin held as a website are removed the
+  first time the app is served live there, because they would run code nothing checked.
 - Extensions can block, redirect and record an allowed site, as on any website. A redirect can replace the site's code
   with an extension's while the site holds Orivon permissions; telling safe extensions from unsafe ones is a job for
   Web3 Score providers, later.

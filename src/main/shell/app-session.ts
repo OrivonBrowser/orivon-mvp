@@ -8,10 +8,9 @@ import { isRelayable } from '../verifier/shell-serves.js'
 
 /**
  * Whether the allowed app at `origin` runs in the shared session, as a website does. That needs two things: the verifier
- * hands every request for the host to the shell, which answers with the app's own handler (`../verifier/shell-serves.ts`),
- * so the shared session can serve the kept copy; and the shared session sends the app as its own route would, which a
- * tunnel entry of the app's own is not (a tunnel profile's requests are never handed to the shell, and the app's reads
- * leave by its own route).
+ * hands the shell the requests that are the site's own, which answers with the app's own handler
+ * (`../verifier/shell-serves.ts`), so the shared session can serve the kept copy; and the shared session sends the app as
+ * its own route would, which a tunnel entry of the app's own is not (the app's reads leave by its own route).
  */
 export function runsAsWebsite (origin: string): boolean {
   return isOriginServedFromCacheSync(origin) && couldRunAsWebsite(origin)

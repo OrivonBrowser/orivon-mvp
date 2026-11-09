@@ -185,6 +185,8 @@ are the only thing keeping every name above away from a document running another
 they look like duplication and are not. The grant ledger is untouched by the gate: it governs
 `orivon.*` capabilities, not Chromium's own.
 
+**[`website-workers.ts`](website-workers.ts) clears what a website left at an origin before the app is served there.** An allowed app that runs in the shared session was a website there first, and a service worker or a Cache Storage entry that website installed would answer the app's requests with bytes the declared tree never checked. The preparer in `../install/app-install-subsystem.ts` removes both the first time the app is served live (`ADR-0108`); the data the site kept (cookies, local storage, databases) stays, since one origin has one set of data, and the app registers its own worker through the check.
+
 **[`session-attribution.ts`](session-attribution.ts) decides attribution at a document's own
 commit, never by re-checking a live document against the CURRENT state.** A live re-check
 sounds simpler, but it strands every already-open, already-attributed document of an origin the
