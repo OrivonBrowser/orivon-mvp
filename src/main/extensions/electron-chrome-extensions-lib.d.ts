@@ -43,6 +43,7 @@ declare module 'orivon:crx-extensions' {
       updateWindow?(window: Electron.BaseWindow, props: UpdateWindowDetails): void
       navigateTab?(tab: Electron.WebContents, url: string): void | Promise<void>
       windowOf?(contents: Electron.WebContents): Electron.BaseWindow | undefined
+      frontTracked?(window: Electron.BaseWindow): boolean
       activateTabShowing?(url: string): boolean
       extensionContexts?(extensionId: string): Array<{ contextType: 'SIDE_PANEL', contents: Electron.WebContents, windowId: number }>
       menuItemClicked?(extensionId: string, tab: Electron.WebContents): void
@@ -95,9 +96,10 @@ declare module 'orivon:crx-extensions' {
     /** UPSTREAM.md patch 51: every action, pinned or not, with the badge text
      * it shows for `tabId`. */
     listAllActions (tabId?: number): Array<{ id: string, title: string, hasPopup: boolean, badge: string }>
-    /** UPSTREAM.md patch 46: a click on `extensionId`'s action for `tab`, from
-     * Orivon's own trusted code, counted as an invocation like a real click. */
-    activateAction (extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void
+    /** UPSTREAM.md patch 46: a click on `extensionId`'s action in `window`, from
+     * Orivon's own trusted code, counted as an invocation like a real click. Patch 76: it acts on
+     * what is in front of `window`, which may be no tab. */
+    activateAction (extensionId: string, window: Electron.BaseWindow, anchor: Electron.Rectangle): void
     /** UPSTREAM.md patch 46: the toolbar list changed (public `onUpdate`). */
     notifyActionsChanged (): void
     /** UPSTREAM.md patch 60: fires `chrome.commands.onCommand(name, tab)` in one extension (its worker
@@ -193,10 +195,10 @@ declare module 'orivon:crx-extensions-browser-action' {
   export function setActionVisibilityCheck (check: (extensionId: string) => boolean): void
   /** UPSTREAM.md patch 46: run once a click is counted, before any popup
    * opens; true means it was handled elsewhere (no popup, no onClicked).
-   * Patch 76: `tab` is undefined when no tab of the instance is in front (an Orivon
-   * page, a tab of another session); `window` is the one the click belongs to. */
+   * Patch 76: `tab` is undefined when the page in front of `window` is one no instance
+   * tracks (an Orivon page, a tab of a session no extension is in). */
   export function setActionClickInterceptor (
-    intercept: (extensionId: string, tab: Electron.WebContents | undefined, window: Electron.BaseWindow | undefined) => boolean
+    intercept: (extensionId: string, tab: Electron.WebContents | undefined, window: Electron.BaseWindow) => boolean
   ): void
   /** UPSTREAM.md patch 50: builds the right-click menu of a toolbar action;
    * `extensionItems` are the extension's own `contextMenus` entries for it. */

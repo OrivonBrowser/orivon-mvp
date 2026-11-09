@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// UPSTREAM.md patch 76: a toolbar click, or chrome.action.openPopup(), over a page no tab of the instance
-// stands for (an Orivon page, a tab of another session) opens the popup in the window of the toolbar that
-// was clicked, with no tab. Nothing is dispatched to the extension in its place, and no invocation is recorded.
+// UPSTREAM.md patch 76: a toolbar click, or chrome.action.openPopup(), acts on what is in front of the
+// window it belongs to. Over a page no extension instance tracks (an Orivon page, a tab of a session no
+// extension is in) the popup opens in that window with no tab; nothing is dispatched to the extension in its
+// place and no invocation is recorded. Over another instance's tab nothing opens.
 vi.mock('electron', () => ({ Menu: class {}, MenuItem: class {}, nativeImage: {} }))
 const created: any[] = []
 vi.mock('../../../../vendor/electron-chrome-extensions/src/browser/popup.js', () => ({
@@ -24,29 +25,34 @@ const A = 'a'.repeat(32)
 const ANCHOR = { x: 1, y: 2, width: 3, height: 4 }
 const NO_TAB = -1
 
-function build (options: { popup?: string, active?: any } = {}): { api: any, ctx: any, win: any, tab: any } {
+interface Front { active: any, frontTracked: boolean }
+
+/** A library instance with one window. `front.active` is the tab of the instance in front there; `front.frontTracked` is the host's answer. */
+function build (options: { popup?: string, active?: 'tab' | 'other', frontTracked?: boolean } = {}): { api: any, ctx: any, win: any, tab: any, other: any, front: Front, chromeView: any } {
   const win: any = { id: 1, isDestroyed: () => false, getSize: () => [800, 600] }
   const tab: any = { id: 10 }
+  const other: any = { id: 11 }
   const chromeView = {}
+  const front: Front = { active: options.active === undefined ? undefined : { tab, other }[options.active], frontTracked: options.frontTracked ?? false }
   const ctx: any = {
     router: { apiHandler: () => vi.fn(), sendEvent: vi.fn() },
     session: { extensions: { on: vi.fn(), getExtension: () => undefined } },
     emit: vi.fn(),
     store: {
       on: vi.fn(),
-      impl: { windowOf: (wc: unknown) => (wc === chromeView ? win : undefined) },
-      getTabById: (id: number) => (id === tab.id ? tab : undefined),
-      getActiveTabFromWindow: () => options.active,
+      impl: { windowOf: (wc: unknown) => (wc === chromeView ? win : undefined), frontTracked: () => front.frontTracked },
+      getTabById: (id: number) => [tab, other].find((candidate) => candidate.id === id),
+      getActiveTabFromWindow: () => front.active,
       getActiveTabOfCurrentWindow: () => undefined,
       getCurrentWindow: () => win,
       getWindowById: () => win,
-      tabToWindow: new Map([[tab, win]]),
-      tabDetailsCache: new Map([[10, { id: 10 }]])
+      tabToWindow: new Map([[tab, win], [other, win]]),
+      tabDetailsCache: new Map([[10, { id: 10 }], [11, { id: 11 }]])
     }
   }
   const api: any = new BrowserActionAPI(ctx)
   if (options.popup !== undefined) api.getAction(A).popup = options.popup
-  return { api, ctx, win, tab: Object.assign(tab, { chromeView }) }
+  return { api, ctx, win, tab, other, front, chromeView }
 }
 
 const click = (api: any, chromeView: unknown, tabId = NO_TAB): void => {
@@ -65,10 +71,10 @@ beforeEach(() => {
   setOpenPopupAnchor(undefined)
 })
 
-describe('a toolbar click with no tab in front', () => {
+describe('a toolbar click over a page no instance tracks', () => {
   it('opens the popup in the window of the toolbar that was clicked, with no tab', () => {
-    const { api, win, tab } = build({ popup: 'popup.html' })
-    click(api, tab.chromeView)
+    const { api, win, chromeView } = build({ popup: 'popup.html' })
+    click(api, chromeView)
     expect(created).toHaveLength(1)
     expect(created[0].parent).toBe(win)
     expect(created[0].url).toBe(`chrome-extension://${A}/popup.html`)
@@ -76,77 +82,138 @@ describe('a toolbar click with no tab in front', () => {
   })
 
   it('reports that popup to getContexts with tab -1', () => {
-    const { api, tab } = build({ popup: 'popup.html' })
-    click(api, tab.chromeView)
+    const { api, chromeView } = build({ popup: 'popup.html' })
+    click(api, chromeView)
     expect(api.getOpenPopup()?.tabId).toBe(-1)
   })
 
   it('uses the action\'s popup, since no per-tab popup can apply', () => {
-    const { api, tab } = build({ popup: 'popup.html' })
+    const { api, chromeView } = build({ popup: 'popup.html' })
     api.getAction(A).tabs[10] = { popup: 'other.html' }
-    click(api, tab.chromeView)
+    click(api, chromeView)
     expect(created[0].url).toBe(`chrome-extension://${A}/popup.html`)
   })
 
   it('records no invocation: there is no tab to be invoked on', () => {
-    const { api, tab } = build({ popup: 'popup.html' })
-    click(api, tab.chromeView)
+    const { api, chromeView } = build({ popup: 'popup.html' })
+    click(api, chromeView)
     expect(recorder).not.toHaveBeenCalled()
   })
 
   it('offers the click to the interceptor with the window and no tab; true ends it there', () => {
-    const { api, win, tab } = build({ popup: 'popup.html' })
+    const { api, win, chromeView } = build({ popup: 'popup.html' })
     interceptor.mockReturnValueOnce(true)
-    click(api, tab.chromeView)
+    click(api, chromeView)
     expect(interceptor).toHaveBeenCalledWith(A, undefined, win)
     expect(created).toHaveLength(0)
   })
 
   it('dispatches onClicked to nobody when the action has no popup, and does not throw', () => {
-    const { api, ctx, tab } = build()
-    expect(() => { click(api, tab.chromeView) }).not.toThrow()
+    const { api, ctx, chromeView } = build()
+    expect(() => { click(api, chromeView) }).not.toThrow()
     expect(ctx.router.sendEvent).not.toHaveBeenCalled()
     expect(created).toHaveLength(0)
   })
 
-  it('still refuses when there is no tab and no window to anchor in', () => {
-    const { api } = build({ popup: 'popup.html' })
-    expect(() => { api.activateClick({ eventType: 'click', extensionId: A, tabId: NO_TAB, anchorRect: ANCHOR }, true) }).toThrow('Unable to get active tab')
-  })
-
-  it('still refuses a tab id nothing tracks when it names no window either (a menu or key click)', () => {
-    const { api } = build({ popup: 'popup.html' })
-    expect(() => { api.activateClick({ eventType: 'click', extensionId: A, tabId: 99, anchorRect: ANCHOR }, true) }).toThrow('Unable to get active tab')
-  })
-
-  it('refuses a toolbar whose window is gone', () => {
-    const { api, win, tab } = build({ popup: 'popup.html' })
-    win.isDestroyed = () => true
-    expect(() => { click(api, tab.chromeView) }).toThrow('Unable to get active tab')
+  it('ignores the tab id the toolbar still holds: that tab is behind the page in front, not under the click', () => {
+    const { api, tab, chromeView } = build({ popup: 'popup.html' })
+    click(api, chromeView, tab.id)
+    expect(recorder).not.toHaveBeenCalled()
+    expect(interceptor).toHaveBeenCalledWith(A, undefined, expect.anything())
+    expect(api.getOpenPopup()?.tabId).toBe(-1)
   })
 })
 
-describe('a toolbar click with a tab in front', () => {
-  it('is unchanged: the tab is recorded and offered to the interceptor with its window, and the popup opens for it', () => {
-    const { api, win, tab } = build({ popup: 'popup.html', active: undefined })
-    click(api, tab.chromeView, tab.id)
+describe('a toolbar click over a tab of another instance', () => {
+  it('opens nothing, and says there is no tab to act on', () => {
+    const { api, chromeView } = build({ popup: 'popup.html', frontTracked: true })
+    expect(() => { click(api, chromeView) }).toThrow('Unable to get active tab')
+    expect(created).toHaveLength(0)
+    expect(recorder).not.toHaveBeenCalled()
+    expect(interceptor).not.toHaveBeenCalled()
+  })
+})
+
+describe('a toolbar click over a tab of the instance', () => {
+  it('acts on the tab in front of the window, records it, and offers it to the interceptor with the window', () => {
+    const { api, win, tab, chromeView } = build({ popup: 'popup.html', active: 'tab' })
+    click(api, chromeView, tab.id)
     expect(recorder).toHaveBeenCalledWith(A, tab)
     expect(interceptor).toHaveBeenCalledWith(A, tab, win)
     expect(created[0].parent).toBe(win)
     expect(api.getOpenPopup()?.tabId).toBe(10)
   })
 
-  it('dispatches onClicked with the tab when the action has no popup', () => {
-    const { api, ctx, tab } = build()
-    click(api, tab.chromeView, tab.id)
+  it('acts on the tab now in front, not on the one the toolbar named when it was last drawn', () => {
+    const { api, other, chromeView } = build({ popup: 'popup.html', active: 'other' })
+    click(api, chromeView, 10)
+    expect(api.getOpenPopup()?.tabId).toBe(other.id)
+    expect(recorder).toHaveBeenCalledWith(A, other)
+  })
+
+  it('dispatches onClicked with the tab in front when the action has no popup', () => {
+    const { api, ctx, tab, chromeView } = build({ active: 'tab' })
+    click(api, chromeView, tab.id)
     expect(ctx.router.sendEvent).toHaveBeenCalledWith(A, 'browserAction.onClicked', { id: 10 })
   })
 })
 
-describe('chrome.action.openPopup with no tab in front', () => {
+describe('a click that names no window (a menu or key click without one)', () => {
+  it('reads the tab id it names', () => {
+    const { api, tab } = build({ popup: 'popup.html' })
+    api.activateClick({ eventType: 'click', extensionId: A, tabId: tab.id, anchorRect: ANCHOR }, true)
+    expect(recorder).toHaveBeenCalledWith(A, tab)
+    expect(api.getOpenPopup()?.tabId).toBe(10)
+  })
+
+  it('refuses a tab id nothing tracks, and an absent one when the last window has none', () => {
+    const { api } = build({ popup: 'popup.html' })
+    expect(() => { api.activateClick({ eventType: 'click', extensionId: A, tabId: 99, anchorRect: ANCHOR }, true) }).toThrow('Unable to get active tab')
+    expect(() => { api.activateClick({ eventType: 'click', extensionId: A, tabId: NO_TAB, anchorRect: ANCHOR }, true) }).toThrow('Unable to get active tab')
+  })
+
+  it('treats a toolbar whose window is gone as naming none', () => {
+    const { api, win, chromeView } = build({ popup: 'popup.html' })
+    win.isDestroyed = () => true
+    expect(() => { click(api, chromeView) }).toThrow('Unable to get active tab')
+  })
+})
+
+describe('activateFromMain', () => {
+  it('acts on what is in front of the window: no tab over a page no instance tracks', () => {
+    const { api, win } = build({ popup: 'popup.html' })
+    api.activateFromMain(A, win, ANCHOR)
+    expect(created).toHaveLength(1)
+    expect(created[0].parent).toBe(win)
+    expect(api.getOpenPopup()?.tabId).toBe(-1)
+    expect(recorder).not.toHaveBeenCalled()
+  })
+
+  it('acts on the tab in front, recorded as an invocation', () => {
+    const { api, win, tab } = build({ popup: 'popup.html', active: 'tab' })
+    api.activateFromMain(A, win, ANCHOR)
+    expect(api.getOpenPopup()?.tabId).toBe(tab.id)
+    expect(recorder).toHaveBeenCalledWith(A, tab)
+  })
+
+  it('does nothing for a window that is gone', () => {
+    const { api, win } = build({ popup: 'popup.html' })
+    win.isDestroyed = () => true
+    api.activateFromMain(A, win, ANCHOR)
+    expect(created).toHaveLength(0)
+  })
+
+  it('opens nothing over a tab of another instance', () => {
+    const { api, win } = build({ popup: 'popup.html', frontTracked: true })
+    expect(() => { api.activateFromMain(A, win, ANCHOR) }).toThrow('Unable to get active tab')
+    expect(created).toHaveLength(0)
+  })
+})
+
+describe('chrome.action.openPopup', () => {
   const event = { type: 'frame', sender: {}, extension: { id: A } }
 
-  it('opens the popup in the current window, anchored where the embedder says', async () => {
+  it('over a page no instance tracks opens the popup in the current window with no tab, anchored where the embedder says', async () => {
     const { api, win } = build({ popup: 'popup.html' })
     const rect = { x: 700, y: 36, width: 28, height: 28 }
     setOpenPopupAnchor(async () => rect)
@@ -155,6 +222,41 @@ describe('chrome.action.openPopup with no tab in front', () => {
     expect(created[0].parent).toBe(win)
     expect(created[0].anchorRect).toEqual(rect)
     expect(recorder).not.toHaveBeenCalled()
+    expect(api.getOpenPopup()?.tabId).toBe(-1)
+  })
+
+  it('over a tab of the instance opens the popup for that tab, still not counted as a click', async () => {
+    const { api } = build({ popup: 'popup.html', active: 'tab' })
+    await api.openPopup(event, undefined)
+    expect(api.getOpenPopup()?.tabId).toBe(10)
+    expect(recorder).not.toHaveBeenCalled()
+    expect(interceptor).not.toHaveBeenCalled()
+  })
+
+  it('opens nothing over a tab of another instance', async () => {
+    const { api } = build({ popup: 'popup.html', frontTracked: true })
+    await api.openPopup(event, undefined)
+    expect(created).toHaveLength(0)
+  })
+
+  it('opens nothing when another instance\'s tab came to the front while the anchor was measured', async () => {
+    const { api, front } = build({ popup: 'popup.html' })
+    setOpenPopupAnchor(async () => { front.frontTracked = true; return undefined })
+    await api.openPopup(event, undefined)
+    expect(created).toHaveLength(0)
+  })
+
+  it('opens for the tab that is in front after the anchor was measured, not the one before', async () => {
+    const { api, front, other } = build({ popup: 'popup.html', active: 'tab' })
+    setOpenPopupAnchor(async () => { front.active = other; return ANCHOR })
+    await api.openPopup(event, undefined)
+    expect(api.getOpenPopup()?.tabId).toBe(11)
+  })
+
+  it('opens with no tab when the front became a page no instance tracks while the anchor was measured', async () => {
+    const { api, front } = build({ popup: 'popup.html', active: 'tab' })
+    setOpenPopupAnchor(async () => { front.active = undefined; return ANCHOR })
+    await api.openPopup(event, undefined)
     expect(api.getOpenPopup()?.tabId).toBe(-1)
   })
 

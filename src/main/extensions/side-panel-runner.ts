@@ -191,8 +191,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
   }
 
   setActionClickInterceptor((extensionId, tab, base) => {
-    const shellWindows = ctx.shell()?.windows
-    const window = tab !== undefined ? shellWindows?.findTab(tab)?.window : shellWindows?.all().find((candidate) => candidate.window === base)
+    const window = ctx.shell()?.windows.all().find((candidate) => candidate.window === base)
     if (window == null) return false
     return driver.actionClick(extensionId, window, tab !== undefined && isOrdinaryTab(ctx, tab) ? tab.id : undefined)
   })

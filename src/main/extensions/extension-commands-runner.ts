@@ -3,7 +3,7 @@
 // dispatcher, carries a pressed command out, and records the key a person picks
 // for one on the shortcuts page. Everything it reaches comes through `deps`, so
 // a test supplies fakes; install-extension-commands.ts supplies the real ones.
-import type { Rectangle, WebContents } from 'electron'
+import type { BaseWindow, Rectangle, WebContents } from 'electron'
 import { displayKeys, matches, parseBinding } from '../shortcuts/accelerator.js'
 import type { Chord, Platform } from '../shortcuts/accelerator.js'
 import { commandById } from '../shortcuts/commands.js'
@@ -32,13 +32,15 @@ export interface CommandKeysDeps {
   readonly onExtensionsChanged: (listener: () => void) => () => void
   readonly host: () => {
     sendCommand: (extensionId: string, name: string, tab: WebContents | undefined) => void
-    activateAction: (extensionId: string, tab: WebContents, anchor: Rectangle) => void
+    activateAction: (extensionId: string, window: BaseWindow, anchor: Rectangle) => void
     listActions: () => ReadonlyArray<{ id: string }>
   } | undefined
   /** Counts the key press as an invocation of the extension on the tab, as a click on its icon would. */
   readonly recordInvocation: (extensionId: string, tab: WebContents) => void
   /** A tab no extension is told about: a registered app's, or one that is not a page of the extensions' own session (an internal page). */
   readonly isHiddenTab: (tab: WebContents) => boolean
+  /** A page no extension instance tracks and no app owns, an Orivon page: the action key opens the popup over one with no tab. */
+  readonly isUntrackedPage: (tab: WebContents) => boolean
   /** Where a popup opens for `extensionId` in `window`: under its icon, else under the Extensions button. */
   readonly anchorFor: (window: ShellWindow, extensionId: string) => Promise<Rectangle>
   /** The page that recorded a key hears what came of it. */
@@ -184,10 +186,11 @@ export function createExtensionCommandKeys (deps: CommandKeysDeps): ExtensionCom
     return tab === undefined || tab.isDestroyed() ? undefined : tab
   }
 
-  function activate (window: ShellWindow, extensionId: string, tab: WebContents): void {
+  /** The popup opens over whatever is in front of `window` once the anchor is known, not over the page the key was pressed on. */
+  function activate (window: ShellWindow, extensionId: string): void {
     const host = deps.host()
     void deps.anchorFor(window, extensionId).then((anchor) => {
-      if (!tab.isDestroyed()) host?.activateAction(extensionId, tab, anchor)
+      if (!window.window.isDestroyed()) host?.activateAction(extensionId, window.window, anchor)
     }).catch((error: unknown) => { deps.log(`a shortcut could not open ${extensionId}'s action: ${String(error)}`) })
   }
 
@@ -211,8 +214,9 @@ export function createExtensionCommandKeys (deps: CommandKeysDeps): ExtensionCom
       const tab = tabFor(window)
       const visible = tab !== undefined && !deps.isHiddenTab(tab) ? tab : undefined
       if (entry.kind === 'action') {
-        if (visible === undefined || !host.listActions().some((action) => action.id === entry.extensionId)) return false
-        activate(window, entry.extensionId, visible)
+        const opensOver = tab !== undefined && (visible !== undefined || deps.isUntrackedPage(tab))
+        if (!opensOver || !host.listActions().some((action) => action.id === entry.extensionId)) return false
+        activate(window, entry.extensionId)
         return true
       }
       if (entry.kind === 'side-panel') return visible !== undefined && deps.openSidePanel?.(entry.extensionId, visible, window) === true

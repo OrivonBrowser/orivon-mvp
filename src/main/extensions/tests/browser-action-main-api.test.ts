@@ -13,14 +13,18 @@ const A = 'a'.repeat(32)
 const B = 'b'.repeat(32)
 const ANCHOR = { x: 1, y: 2, width: 3, height: 4 }
 
+const fakeWindow = (): any => ({ id: 3, isDestroyed: () => false })
+
 function fakeCtx (tab: { id: number }, names: Record<string, string> = {}): any {
   return {
     router: { apiHandler: () => vi.fn(), sendEvent: vi.fn() },
     session: { extensions: { on: vi.fn(), getExtension: (id: string) => (names[id] === undefined ? undefined : { name: names[id] }) } },
     store: {
       on: vi.fn(),
+      impl: {},
       getTabById: (id: number) => (id === tab.id ? tab : undefined),
       getActiveTabOfCurrentWindow: () => tab,
+      getActiveTabFromWindow: () => tab,
       tabToWindow: new Map(),
       tabDetailsCache: new Map()
     }
@@ -76,7 +80,7 @@ describe('activateFromMain', () => {
     const ctx = fakeCtx(tab)
     const api = new BrowserActionAPI(ctx)
     withActions(api)
-    api.activateFromMain(B, tab as never, ANCHOR)
+    api.activateFromMain(B, fakeWindow(), ANCHOR)
     expect(recorder).toHaveBeenCalledWith(B, tab)
     expect(ctx.router.sendEvent).toHaveBeenCalledWith(B, 'browserAction.onClicked', undefined)
   })
@@ -84,13 +88,12 @@ describe('activateFromMain', () => {
   it('stops after the invocation is counted when the interceptor handles the click', () => {
     const tab = { id: 7 }
     const ctx = fakeCtx(tab)
-    const window = { id: 3 }
-    ctx.store.tabToWindow.set(tab, window)
+    const window = fakeWindow()
     const api = new BrowserActionAPI(ctx)
     withActions(api)
     const intercept = vi.fn(() => true)
     setActionClickInterceptor(intercept)
-    api.activateFromMain(B, tab as never, ANCHOR)
+    api.activateFromMain(B, window, ANCHOR)
     expect(intercept).toHaveBeenCalledWith(B, tab, window)
     expect(recorder).toHaveBeenCalledWith(B, tab)
     expect(ctx.router.sendEvent).not.toHaveBeenCalled()
@@ -102,13 +105,39 @@ describe('activateFromMain', () => {
     const api = new BrowserActionAPI(ctx)
     withActions(api)
     setActionClickInterceptor(() => false)
-    api.activateFromMain(B, tab as never, ANCHOR)
+    api.activateFromMain(B, fakeWindow(), ANCHOR)
     expect(ctx.router.sendEvent).toHaveBeenCalledTimes(1)
   })
 
-  it('refuses a tab the library does not know', () => {
-    const api = new BrowserActionAPI(fakeCtx({ id: 7 }))
-    expect(() => { api.activateFromMain(A, { id: 99 } as never, ANCHOR) }).toThrow(/Unable to get active tab/)
+  it('acts on what is in front of the window: over a page no instance tracks, the interceptor hears of no tab and the extension of no click', () => {
+    const ctx = fakeCtx({ id: 7 })
+    ctx.store.getActiveTabFromWindow = () => undefined
+    const window = fakeWindow()
+    const api = new BrowserActionAPI(ctx)
+    withActions(api)
+    const intercept = vi.fn(() => false)
+    setActionClickInterceptor(intercept)
+    api.activateFromMain(B, window, ANCHOR)
+    expect(intercept).toHaveBeenCalledWith(B, undefined, window)
+    expect(recorder).not.toHaveBeenCalled()
+    expect(ctx.router.sendEvent).not.toHaveBeenCalled()
+  })
+
+  it('refuses a window whose front is a tab of another instance', () => {
+    const ctx = fakeCtx({ id: 7 })
+    ctx.store.getActiveTabFromWindow = () => undefined
+    ctx.store.impl = { frontTracked: () => true }
+    const api = new BrowserActionAPI(ctx)
+    expect(() => { api.activateFromMain(A, fakeWindow(), ANCHOR) }).toThrow(/Unable to get active tab/)
+  })
+
+  it('does nothing for a window that is gone', () => {
+    const ctx = fakeCtx({ id: 7 })
+    const api = new BrowserActionAPI(ctx)
+    withActions(api)
+    api.activateFromMain(B, { id: 3, isDestroyed: () => true } as never, ANCHOR)
+    expect(ctx.router.sendEvent).not.toHaveBeenCalled()
+    expect(recorder).not.toHaveBeenCalled()
   })
 })
 
@@ -136,7 +165,7 @@ describe('chrome.action.openPopup and the click interceptor', () => {
     withActions(api)
     const intercept = vi.fn(() => false)
     setActionClickInterceptor(intercept)
-    api.activateFromMain(B, tab as never, ANCHOR)
+    api.activateFromMain(B, fakeWindow(), ANCHOR)
     expect(intercept).toHaveBeenCalledTimes(1)
   })
 })

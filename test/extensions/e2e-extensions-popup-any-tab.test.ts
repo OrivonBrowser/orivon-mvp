@@ -1,8 +1,9 @@
 // An extension's popup opens from the toolbar whatever page is in front, as in Chrome: an ordinary page, the new
-// tab page, and an `orivon://` page, which no extension instance tracks. With no tab to name, the popup is
-// anchored in the window of the toolbar that was clicked, and its own `chrome.tabs.query({ active: true,
-// currentWindow: true })` honestly answers no tab. `chrome.action.openPopup()` does the same. The new tab page
-// is a tab like any other, and going back to an ordinary page gives its tab back.
+// tab page, and an `orivon://` page, which no extension instance tracks. With no tab to name, the popup hangs in
+// the window of the toolbar that was clicked, even when another window was used last, and the extension sees it
+// as tab-less: its own `chrome.tabs.query({ active: true, currentWindow: true })` answers no tab and
+// `chrome.runtime.getContexts` gives tab -1. `chrome.action.openPopup()` does the same, with the page still in
+// front. The new tab page is a tab like any other, and going back to an ordinary page gives its tab back.
 //
 // Fixture: test/apps/extensions/action-popup/ (MV3, a popup; no service-worker handlers are used). Run with
 // `npm run test:e2e`, or directly:
@@ -36,6 +37,24 @@ async function startFixtureServer (): Promise<{ server: Server, url: string }> {
 
 const popupOf = (app: ElectronApplication, id: string): Page | undefined =>
   app.windows().find((w) => w.url().startsWith(`chrome-extension://${id}/popup.html`))
+
+/** The id of the window that holds a view showing a page whose address matches `pattern` (a RegExp source), or null. */
+async function windowHolding (app: ElectronApplication, pattern: string): Promise<number | null> {
+  return await app.evaluate(({ BaseWindow }, source: string) => {
+    type Node = { children?: Node[], webContents?: Electron.WebContents }
+    const matcher = new RegExp(source)
+    const holds = (view: Node): boolean => matcher.test(view.webContents?.getURL() ?? '') || (view.children ?? []).some(holds)
+    return BaseWindow.getAllWindows().find((win) => holds(win.contentView as unknown as Node))?.id ?? null
+  }, pattern)
+}
+
+const POPUP_WINDOW = (id: string): string => `^chrome-extension://${id}/popup\\.html`
+
+/** What the popup's own `chrome.runtime.getContexts` says of the tab it belongs to: -1 when it has none. */
+async function popupContextTabs (popup: Page): Promise<number[]> {
+  return await evaluateRetrying(popup, async () =>
+    (await chrome.runtime.getContexts({ contextTypes: ['POPUP' as chrome.runtime.ContextType] })).map((context) => context.tabId))
+}
 
 /** What the popup's own `chrome.tabs.query` answers for the window it hangs under. */
 async function activeTabUrls (popup: Page): Promise<string[]> {
@@ -90,10 +109,14 @@ it('opens an extension\'s popup from the toolbar over an ordinary page, the new 
       check('and the toolbar button names no tab', await waitFor(async () => await buttonTab() === '-1'), String(await buttonTab()))
       const overSettings = await clickAction()
       check('over an Orivon page the toolbar click opens the popup', overSettings !== undefined)
-      check('in the window of the toolbar that was clicked', (await popupView(live, id)) !== null)
+      const toolbarWindow = await windowHolding(live, '/renderer/index\\.html$')
+      const popupWindow = await windowHolding(live, POPUP_WINDOW(id))
+      check('in the window of the toolbar that was clicked', toolbarWindow !== null && popupWindow === toolbarWindow, `popup in ${String(popupWindow)}, toolbar in ${String(toolbarWindow)}`)
       if (overSettings !== undefined) {
         const urls = await activeTabUrls(overSettings)
         check('and its query finds no tab in front', urls.length === 0, JSON.stringify(urls))
+        const tabs = await popupContextTabs(overSettings)
+        check('and getContexts gives it tab -1', tabs.length === 1 && tabs[0] === -1, JSON.stringify(tabs))
       }
       await closePopup(live, id)
 
@@ -104,6 +127,14 @@ it('opens an extension\'s popup from the toolbar over an ordinary page, the new 
       }, extensionPage)
       const opened = await waitFor(async () => popupOf(live, id) !== undefined && await popupView(live, id) !== null)
       check('chrome.action.openPopup() opens the popup over an Orivon page', opened)
+      check('with the Orivon page still in front', (await front()).startsWith('orivon://settings'), await front())
+      const apiPopup = popupOf(live, id)
+      if (apiPopup !== undefined) {
+        const urls = await activeTabUrls(apiPopup)
+        check('the popup it opened has no tab: its query finds none', urls.length === 0, JSON.stringify(urls))
+        const tabs = await popupContextTabs(apiPopup)
+        check('and getContexts gives it tab -1', tabs.length === 1 && tabs[0] === -1, JSON.stringify(tabs))
+      }
       await closePopup(live, id)
 
       // 4. The new tab page, a tab the extension's instance tracks: its query finds that page, and not the ordinary one behind.
@@ -127,6 +158,24 @@ it('opens an extension\'s popup from the toolbar over an ordinary page, the new 
         const urls = await activeTabUrls(again)
         check('and its query finds the page in front again', urls.length === 1 && urls[0] === started.url, JSON.stringify(urls))
       }
+
+      // 6. Two windows. The toolbar of the window that was not used last has an Orivon page in front, and its click
+      // hangs the popup there, not in the window that was used last.
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string) => void } }).orivonShell.openInternal('settings') })
+      check('the first window shows the settings page again', await waitFor(async () => (await front()).startsWith('orivon://settings')), await front())
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (command: string) => void } }).orivonShell.runCommand('window.new') })
+      const twoWindows = await waitFor(async () => (await live.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().filter((win) => win.isVisible()).length)) === 2)
+      check('a second window is open', twoWindows)
+      const firstWindow = await windowHolding(live, '^orivon://settings')
+      const overFirst = await clickAction()
+      check('over the Orivon page of the first window the toolbar click opens the popup', overFirst !== undefined)
+      if (overFirst !== undefined) {
+        const hungIn = await windowHolding(live, POPUP_WINDOW(id))
+        check('in the window of the toolbar that was clicked, not the one used last', firstWindow !== null && hungIn === firstWindow, `popup in ${String(hungIn)}, first window ${String(firstWindow)}`)
+        const urls = await activeTabUrls(overFirst)
+        check('and its query finds no tab in front', urls.length === 0, JSON.stringify(urls))
+      }
+      await closePopup(live, id)
 
       const output = mainOutput(live)
       check('no click was refused with "Unable to get active tab"', !output.includes('Unable to get active tab'), output.slice(output.indexOf('Unable to get active tab'), output.indexOf('Unable to get active tab') + 300))

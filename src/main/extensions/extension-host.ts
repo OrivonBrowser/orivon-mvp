@@ -157,7 +157,8 @@ export function createExtensionHost (preloadPath: string): ElectronChromeExtensi
     license: 'GPL-3.0',
     session: session.defaultSession,
     preloadPath,
-    ...buildHostImpl(() => bridge, callingExtensionId, session.defaultSession)
+    ...buildHostImpl(() => bridge, callingExtensionId, session.defaultSession),
+    frontTracked
   })
 
   // extension-sw-preload-recovery.ts must not import extensions-dnr.ts
@@ -244,7 +245,8 @@ export function createProfileExtensionHost (target: Session, preloadPath: string
     license: 'GPL-3.0',
     session: target,
     preloadPath,
-    ...buildHostImpl(() => bridge, callingExtensionId, target)
+    ...buildHostImpl(() => bridge, callingExtensionId, target),
+    frontTracked
   })
   watchForMissedServiceWorkerPreload(target)
   installPopupPolicy(host, { services: () => bridge?.services, isLoaded: isLoadedExtension })
@@ -279,6 +281,12 @@ const trackedTabs = new Set<WebContents>()
 export function isExtensionTab (webContentsId: number): boolean {
   const contents = webContents.fromId(webContentsId)
   return contents !== undefined && trackedTabs.has(contents)
+}
+
+/** Whether the page in front of `window` is a tab some library instance tracks: what lets a click open an extension's popup with no tab only over a page none does. */
+function frontTracked (window: BaseWindow): boolean {
+  const front = bridge?.services.windows.all().find((candidate) => candidate.window === window)?.tabs.activeWebContents()
+  return front !== undefined && trackedTabs.has(front)
 }
 
 /** The library instances there are: the default session's, and one for each profile session. */

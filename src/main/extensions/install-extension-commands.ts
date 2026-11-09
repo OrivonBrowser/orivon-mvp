@@ -11,7 +11,7 @@ import type { SubsystemContext } from '../registry.js'
 import { anchorFor } from './extension-action-anchor.js'
 import { createExtensionCommandKeys } from './extension-commands-runner.js'
 import type { ExtensionCommandKeys, LoadedExtension } from './extension-commands-runner.js'
-import { extensionHost } from './extension-host.js'
+import { extensionHost, isExtensionTab } from './extension-host.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
 import { openSidePanelFor } from './side-panel-runner.js'
 import { recordExtensionInvocation } from './side-panel-gesture.js'
@@ -62,6 +62,11 @@ export function installExtensionCommands (options: InstallCommandKeysOptions): E
       .map(({ id, name, manifest }) => ({ id, name, manifest }))
   }
 
+  const isAppTab = (tab: WebContents): boolean => {
+    const origin = originFromUrl(tab.getURL())
+    return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
+  }
+
   return createExtensionCommandKeys({
     platform: process.platform,
     prefs,
@@ -80,9 +85,9 @@ export function installExtensionCommands (options: InstallCommandKeysOptions): E
     openSidePanel: (extensionId, tab, window) => openSidePanelFor(extensionId, tab, window),
     isHiddenTab: (tab) => {
       if (tab.session !== session.defaultSession) return true
-      const origin = originFromUrl(tab.getURL())
-      return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
+      return isAppTab(tab)
     },
+    isUntrackedPage: (tab) => !isExtensionTab(tab.id) && !isAppTab(tab),
     anchorFor,
     recorded: (page, outcome) => {
       const contents = page as WebContents

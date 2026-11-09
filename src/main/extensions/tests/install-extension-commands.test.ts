@@ -13,7 +13,7 @@ const sessionExtensions = Object.assign(new EventEmitter(), { getAllExtensions: 
 const defaultSession = { extensions: sessionExtensions }
 Object.assign(sessionExtensions, { owner: defaultSession })
 vi.mock('electron', () => ({ session: { defaultSession } }))
-vi.mock('../extension-host.js', () => ({ extensionHost: () => ({ sendCommand: () => {}, activateAction: () => {}, listActions: () => [] }) }))
+vi.mock('../extension-host.js', () => ({ extensionHost: () => ({ sendCommand: () => {}, activateAction: () => {}, listActions: () => [] }), isExtensionTab: () => false }))
 const openSidePanelFor = vi.hoisted(() => vi.fn((_id: string, _tab: unknown, _window: unknown) => true))
 vi.mock('../side-panel-runner.js', () => ({ openSidePanelFor }))
 const registry = vi.hoisted(() => ({ entries: [] as Array<{ id: string, installedAt: number }> }))

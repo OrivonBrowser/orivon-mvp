@@ -211,14 +211,18 @@ right end (`extension-action-anchor.ts`). A virtual display never reports a page
 so the library measures the page's content after half a second, and again while it still renders; a real display's size, and the placement
 on Wayland, are *provisional* until a person's desktop shows them.
 
-**A toolbar click opens the popup whatever page is in front.** An `orivon:` page, or a tab of a session an instance
-does not track, is in none of its tabs, and `extension-host.ts`'s `tabActivated` tells every instance that no tab of
-theirs is in front of that window (the cached `active` of the window's tabs goes false with it). The click is then
-handled with the toolbar's own window and no tab (UPSTREAM.md patch 76): the popup opens under that window, its
+**A toolbar click opens the popup whatever page is in front.** A click, `chrome.action.openPopup()` and a command key
+(`_execute_action`) act on what is in front of the window they belong to when they run, not on the tab a toolbar last
+drew. An `orivon:` page, or a tab of a session no extension is in, is in none of the instances' tabs, and
+`extension-host.ts`'s `tabActivated` tells every instance that no tab of theirs is in front of that window (the cached
+`active` of the window's tabs goes false with it); its `frontTracked` answers whether the front page is a tab any
+instance tracks. Over a page none tracks the popup opens under that window with no tab (UPSTREAM.md patch 76): its
 `chrome.tabs.query({ active: true, currentWindow: true })` finds no tab, and `getContexts` reports it with tab `-1`, as in
-Chrome on a `chrome://` page. `chrome.action.openPopup()` does the same. `onClicked` carries a tab, so an action with
-no popup hears nothing; no tab-capture invocation is recorded; and the side panel's click interceptor
-(`side-panel-runner.ts`) is given the window instead of a tab, so an `openPanelOnActionClick` extension's panel opens in it.
+Chrome on a `chrome://` page. `onClicked` carries a tab, so an action with no popup hears nothing; no tab-capture
+invocation is recorded; and the side panel's click interceptor (`side-panel-runner.ts`) is given the window, so an
+`openPanelOnActionClick` extension's panel opens in it. Over a tab of another instance (a profile session's) an instance
+opens nothing: the toolbar speaks to the instance of the front tab, `openPopup` returns, and the command key is left to
+the page. The command key is left to a registered app's page too.
 
 **The Chrome Web Store page keeps its own `chrome.webstorePrivate`.** Every extension load makes the
 renderer rebuild `chrome.*`; the preload defines `webstorePrivate` and `management` as accessors that
