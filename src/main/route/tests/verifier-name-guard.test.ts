@@ -3,7 +3,7 @@ import { loadRefusals } from '../load-refusals.js'
 import { trackProxySet } from '../proxy-answers.js'
 import {
   createRefusalNotes, guardOfSession, namesVerifierHost, noteRefusal, PLAIN_NAME_REFUSED, PROXY_NOT_KNOWN, PROXY_WOULD_SEE_NAME, proxyWouldCarry,
-  refuseWhenProxySees, refusesPlain, refusingProxiedNames, verifierNameFilter, verifierNameGuard
+  refuseWhenProxySees, refusesPlain, refusingProxiedNames, routedBypassRules, verifierNameFilter, verifierNameGuard
 } from '../verifier-name-guard.js'
 import type { NameRefusal } from '../verifier-name-guard.js'
 
@@ -20,13 +20,18 @@ describe('which requests name a host the verifier serves', () => {
     for (const url of ['https://example.com/', 'https://name.eth.example.com/', 'https://eth/', 'https://notorivon/', 'http://127.0.0.1:8080/', 'https://example.com/name.eth', 'not a url', '']) expect(namesVerifierHost(url), url).toBe(false)
   })
 
-  it('names, for Electron\'s filter, each suffix under each scheme with and without the root dot', () => {
-    const { urls } = verifierNameFilter()
-    for (const scheme of ['http', 'https', 'ws', 'wss']) for (const suffix of ['eth', 'orivon']) {
-      expect(urls).toContain(`${scheme}://*.${suffix}/*`)
-      expect(urls).toContain(`${scheme}://*.${suffix}./*`)
-    }
-    expect(urls.every((pattern) => /^wss?:\/\/|^https?:\/\//.test(pattern))).toBe(true)
+  it('takes the root-dot spelling however many dots end the host, and leaves a host that merely holds a suffix alone', () => {
+    for (const url of ['https://vitalik.eth./', 'https://vitalik.eth../', 'https://x.ipfs.orivon./']) expect(namesVerifierHost(url), url).toBe(true)
+    for (const scheme of ['http', 'https', 'ws', 'wss']) for (const dots of ['', '.', '..', '...']) expect(namesVerifierHost(`${scheme}://vitalik.eth${dots}/`), `${scheme} ${dots}`).toBe(true)
+    for (const url of ['https://eth./', 'https://vitalik.eth.example.com./', 'https://example.com./']) expect(namesVerifierHost(url), url).toBe(false)
+  })
+
+  it('lists, for a proxy\'s bypass rules, each suffix with and without the root dot, which a rule for the one does not match', () => {
+    expect(routedBypassRules()).toEqual(['*.eth', '*.eth.', '*.orivon', '*.orivon.'])
+  })
+
+  it('hands Electron every request of a scheme a proxy can carry, whatever its host, and leaves the host to the predicate above, so no number of trailing dots depends on a pattern', () => {
+    expect(verifierNameFilter().urls).toEqual(['http://*/*', 'https://*/*', 'ws://*/*', 'wss://*/*'])
   })
 })
 
@@ -246,6 +251,13 @@ describe('a request Orivon makes itself', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {})
     const session = { resolveProxy: vi.fn(async () => 'PROXY p:1') }
     await expect(refuseWhenProxySees(session, 'https://app.eth/index.html', none)).rejects.toThrow(PROXY_WOULD_SEE_NAME)
+  })
+
+  it('is refused for the root-dot spelling of a name too, when the session\'s proxy would carry it', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const carried = { resolveProxy: vi.fn(async () => 'PROXY p:1') }
+    for (const url of ['https://app.eth./index.html', 'https://x.ipfs.orivon./']) await expect(refuseWhenProxySees(carried, url, none), url).rejects.toThrow(PROXY_WOULD_SEE_NAME)
+    expect(carried.resolveProxy).toHaveBeenCalledTimes(2)
   })
 
   it('goes on when the session sends the name to the verifier, and asks nothing for any other host', async () => {
