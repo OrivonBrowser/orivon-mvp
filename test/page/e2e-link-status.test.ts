@@ -2,12 +2,12 @@
 // the bottom-left corner of the page that link is in, one line wide as its text; it moves to the bottom-right corner
 // when the pointer reaches it; it never takes the keyboard, lies under an open menu, and goes with its tab. The
 // pointer is Playwright's, sent to the page under it and to the bubble's own page, the way a pointer moving between
-// the two views reaches each.
+// the two views reaches each; in a split window it is sent from the main process, to a page Playwright may not have.
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
-import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
+import { hoverWithoutPage, html, launchShell, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, findViewShowing, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
@@ -77,13 +77,16 @@ interface Shown { text: string, rect: Box, view: BubbleView }
 /** What the person sees: the text and the rectangle of the bubble, in window pixels, or nothing while it is not up. */
 async function shown (app: ElectronApplication): Promise<Shown | undefined> {
   const view = await bubbleView(app)
-  const page = bubblePage(app)
-  if (view === null || !view.visible || view.bounds.width === 0 || view.bounds.height === 0 || page === undefined) return undefined
-  const drawn = await page.evaluate(() => {
-    const element = document.querySelector('.link-status:not(.link-status-probe)')
-    if (element === null) return null
-    const box = element.getBoundingClientRect()
-    return { text: element.textContent ?? '', x: box.x, y: box.y, width: box.width, height: box.height }
+  if (view === null || !view.visible || view.bounds.width === 0 || view.bounds.height === 0) return undefined
+  // Read from the main process: the bubble's page is made when a link is first pointed at, and a macOS runner sometimes never attaches a page made after the window's first (test/README.md, Known risk).
+  const drawn = await app.evaluate(async ({ webContents }) => {
+    const wc = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL().includes('overlay=link-status'))
+    return wc === undefined ? null : await wc.executeJavaScript(`(() => {
+      const element = document.querySelector('.link-status:not(.link-status-probe)')
+      if (element === null) return null
+      const box = element.getBoundingClientRect()
+      return { text: element.textContent ?? '', x: box.x, y: box.y, width: box.width, height: box.height }
+    })()`).catch(() => null) as { text: string, x: number, y: number, width: number, height: number } | null
   }).catch(() => null)
   if (drawn === null || drawn.text === '') return undefined
   return { text: drawn.text, rect: { x: view.bounds.x + drawn.x, y: view.bounds.y + drawn.y, width: drawn.width, height: drawn.height }, view }
@@ -414,17 +417,14 @@ it('is in the corner of the pane the pointer is in, in a split window, not of th
     })).toBe(true)
     const [one, two] = await panes()
     expect(two.x).toBeGreaterThan(one.x)
-    expect(await waitFor(() => findViewShowing(app, chrome, `${server.origin}/two`) !== undefined && findViewShowing(app, chrome, `${server.origin}/one`) !== undefined)).toBe(true)
-    const pageOne = findViewShowing(app, chrome, `${server.origin}/one`) as Page
-    const pageTwo = findViewShowing(app, chrome, `${server.origin}/two`) as Page
 
-    // The tab in front is the first; the pointer is in the second.
-    await pageTwo.hover('#top')
+    // The tab in front is the first; the pointer is in the second. It moves from the main process: the second tab's page is one a macOS runner sometimes never attaches to Playwright (test/README.md, Known risk).
+    await hoverWithoutPage(app, `${server.origin}/two`, '#top')
     const inTwo = await bubbleUp(app, `${server.origin}/two/top-link`)
     expect(inTwo.rect.x).toBe(two.x)
     expect(Math.abs(bottom(inTwo.rect) - bottom(two))).toBeLessThanOrEqual(1)
 
-    await pageOne.hover('#top')
+    await hoverWithoutPage(app, `${server.origin}/one`, '#top')
     const inOne = await bubbleUp(app, `${server.origin}/one/top-link`)
     expect(inOne.rect.x).toBe(one.x)
     expect(Math.abs(bottom(inOne.rect) - bottom(one))).toBeLessThanOrEqual(1)
