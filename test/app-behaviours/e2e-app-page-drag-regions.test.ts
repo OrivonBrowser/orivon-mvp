@@ -94,21 +94,43 @@ async function pressAndWatch (app: ElectronApplication, page: Page | Frame, orig
   return await waitFor(async () => await page.evaluate((wanted) => (window as unknown as { __clicks: string[] }).__clicks.includes(wanted), id), 4_000)
 }
 
-// Linux needs the virtual display; Windows and macOS need a hosted runner, because the press takes the pointer.
-it.skipIf(process.platform !== 'linux' && !realPointerAvailable())('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a page\'s drag region reaches the page, in an app tab and on a website', async () => {
+/** What the page's own declarations compute to: both regions, the one from the stylesheet and the one set later with `!important`. */
+async function declaredRegions (page: Page): Promise<string[]> {
+  return await page.evaluate(() => ['bar', 'late'].map((id) => String((getComputedStyle(document.getElementById(id) as Element) as unknown as Record<string, string>)['appRegion'])))
+}
+
+const SHELL_ARGS = (): string[] => [`--host-resolver-rules=MAP ${OTHER_SITE} 127.0.0.1:${new URL(website.origin).port}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`]
+
+// Linux needs the virtual display; Windows and macOS need a hosted runner, because the press takes the pointer. Each
+// test is a launch of its own and uses the window's first tab: a macOS runner sometimes never lets Playwright attach
+// the page of a tab opened later (test/README.md, Known risk), and a page it cannot reach cannot say what it received.
+const canPress = process.platform === 'linux' || realPointerAvailable()
+
+it.skipIf(!canPress)('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a drag region of an app\'s page reaches the page', async () => {
   expect(realPointerAvailable()).toBe(true)
-  const { app, chrome } = await launchShell({ args: [`--host-resolver-rules=MAP ${OTHER_SITE} 127.0.0.1:${new URL(website.origin).port}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`] })
+  const { app, chrome } = await launchShell({ args: SHELL_ARGS() })
   try {
-    await runPhase('page drag regions', async (check) => {
+    await runPhase('page drag regions in an app tab', async (check) => {
       await grantApp(app, appServer.origin, appManifest('page-drag-regions', { fs: { quotaBytes: 1024 } }), [{ capability: 'fs', patterns: [] }])
       const appPage = await visit(app, chrome, `${appServer.origin}/`)
-      const regions = await appPage.evaluate(() => ['bar', 'late'].map((id) => String((getComputedStyle(document.getElementById(id) as Element) as unknown as Record<string, string>)['appRegion'])))
+      const regions = await declaredRegions(appPage)
       check('[app:page-drag-region-never-swallows-a-press] the page\'s own declarations, one in a stylesheet and one set later with !important, both compute as no-drag', regions.every((region) => region === 'no-drag'), JSON.stringify(regions))
       check('[app:page-drag-region-never-swallows-a-press] a real press on a button inside an app\'s drag region is a click for the page', await pressAndWatch(app, appPage, appServer.origin, 'inside'))
       check('[app:page-drag-region-never-swallows-a-press] and so is one inside a region the app marked after it loaded', await pressAndWatch(app, appPage, appServer.origin, 'later'))
+    })
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
 
-      await chrome.click('#new-tab')
+it.skipIf(!canPress)('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a drag region of a website, or of a frame in it, reaches the page', async () => {
+  expect(realPointerAvailable()).toBe(true)
+  const { app, chrome } = await launchShell({ args: SHELL_ARGS() })
+  try {
+    await runPhase('page drag regions on a website', async (check) => {
       const sitePage = await visit(app, chrome, `${website.origin}/`)
+      const regions = await declaredRegions(sitePage)
+      check('[app:page-drag-region-never-swallows-a-press] the website\'s own declarations, one in a stylesheet and one set later with !important, both compute as no-drag', regions.every((region) => region === 'no-drag'), JSON.stringify(regions))
       check('[app:page-drag-region-never-swallows-a-press] a real press on a button inside a website\'s drag region is a click for the page', await pressAndWatch(app, sitePage, website.origin, 'inside'))
       check('[app:page-drag-region-never-swallows-a-press] and so is one inside a region the website marked after it loaded', await pressAndWatch(app, sitePage, website.origin, 'later'))
 
