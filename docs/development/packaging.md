@@ -142,7 +142,9 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
   only hashes: nothing is uploaded to IPFS from CI.
 - **A pinning node** runs `pin-releases.sh sync` on a timer. It reads the public releases list,
   downloads the files of the newest three releases, checks each against its SHA-256, adds them
-  with the same flags, and refuses a release whose files add up to any other CID. It pins what
+  with the same flags, and refuses a release whose files add up to any other CID. An add that
+  does not finish (Kubo's client gives up, the connection drops) proves nothing about the files:
+  the release is tried again on the next run, and a pin Kubo makes meanwhile is kept. It pins what
   it keeps as `orivon-release-<tag>` and unpins the older releases it pinned; a pin without that
   name is never touched. With `LATEST_KEY` set it also points that IPNS key at the newest release
   it keeps, so one `ipns://` address, and a `.eth` name whose contenthash is that address, always
@@ -150,8 +152,13 @@ under "On IPFS", which the workflow writes, and in the `ipfs.json` attached to i
   the release's files, the same blocks, plus an `index.html` that starts the download of the
   package for the visitor's system (the `.exe` on Windows, the Apple silicon or Intel `.dmg` on
   macOS, the `.deb` on Linux) and lists every file; on a phone, an unknown system or without
-  JavaScript it is only the list. The page asks search engines not to index it. The pinner composes that folder in the node's MFS and pins it as
-  `orivon-latest-release`, so its CID differs from the release's.
+  JavaScript it is only the list. The page asks search engines not to index it. Each file is also
+  there under its name with `latest` in place of the version (`Orivon-Setup-latest-x64.exe`,
+  `Orivon-latest-arm64.dmg`, `orivon_latest_amd64.deb`, and so on), the same blocks again, so a link
+  to it opens the newest release whatever its version; the page lists only the real names. The
+  release's `ipfs.json` is there too, with the SHA-256 of each file and the release's CID. The
+  pinner composes that folder in the node's MFS and pins it as `orivon-latest-release`, so its
+  CID differs from the release's.
 - **Anyone can pin a release too.** The CID depends only on the files and the flags in
   `pin-releases.sh`, so `pin-releases.sh sync` (or `ipfs add` with those flags) on any Kubo node
   reproduces it. Changing the flags changes every CID from the next release on.
@@ -371,7 +378,7 @@ on the pinning node, so it cannot say whether a page opens in a person's own bro
 loads). Below them it shows the node's version, uptime, inbound connection budget, storage and the last
 runs of the pinner and the watchdog. A banner at the top is green when nothing is wrong and otherwise
 lists each problem in plain words; one gateway failing while another serves shows in the table but is not
-a problem. With `LATEST_KEY` set it also says which release that key opens: the one whose files it holds, the start page aside. `status.json` holds the same
+a problem. With `LATEST_KEY` set it also says which release that key opens: the one whose files it holds, leaving aside what the pinner adds (the start page, `ipfs.json` and the `latest` names). `status.json` holds the same
 data for agents; `STATUS.md` is the page as Markdown.
 
 `NAMES_FILE` has one line per IPNS key, the key name first and then the names, with `#` starting a comment:
