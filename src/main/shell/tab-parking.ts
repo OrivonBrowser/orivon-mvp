@@ -94,7 +94,7 @@ export function closeParkedViews (record: TabRecord): void {
  *
  * `referrer`, when the caller stopped a page's own navigation to make the move,
  * is the document address and policy Chromium applies to `target` (pre-partition.ts);
- * a view that loads nothing (`carried`) has none to send. */
+ * a view that carries the old list and loads `target` after it sends it too, and one that loads nothing has none to send. */
 export function repartitionView (
   id: string,
   record: TabRecord,
@@ -133,7 +133,7 @@ export function repartitionView (
   const left = oldView.webContents.isDestroyed() ? null : listOf(oldView.webContents)
   // The new-tab page stays out of a carried list, because Back would reach it in a view that cannot show it.
   const heldDashboard = dashboardViews.has(oldView) ? host.dashboardUrl : undefined
-  const carried = !step && parked === undefined && oldPartition === nextPartition && left !== null && carryHistory(oldView.webContents, newView.webContents, target, heldDashboard)
+  const carried = !step && parked === undefined && oldPartition === nextPartition && left !== null && carryHistory(oldView.webContents, newView.webContents, target, heldDashboard, referrer)
   // Whatever the new view does not hold stays with the tab. A step has already moved the pages it leaves.
   const outer = record.outer ?? EMPTY_OUTER
   const kept = step || left === null ? outer : carried ? keepBehind(outer, left.entries, heldDashboard) : leaveView(outer, left.entries, left.index, left.entries[left.index]?.url === target, host.dashboardUrl)

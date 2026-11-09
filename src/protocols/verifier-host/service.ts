@@ -112,7 +112,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const sites = new RoutedSites(sitesOf(registry, route), (tunnel) => tunnelSet(tunnel).sites)
   const certificate = createRunCertificate()
   const shell = new ShellRelay({ post: deps.post, ownReadToken: config.shell?.ownReadToken })
-  shell.setServed(config.shell?.origins ?? [])
+  shell.setServed(config.shell?.origins ?? [], config.shell?.pinned)
   const server = createVerifierServer(registry, sites, certificate, undefined, { direct: route, tunnel: (tunnel) => tunnelSet(tunnel).route }, consent, shell)
   server.once('close', () => { shell.dispose(); deps.chunkChecks?.close() })
   await new Promise<void>((resolve, reject) => {
@@ -145,7 +145,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     node: (notice) => { nodes.notice(notice) },
     ipfsLookup: (allowed) => { controls.lookupService = allowed },
     shell: (message) => {
-      if (message.type === 'shell-serves') shell.setServed(message.origins)
+      if (message.type === 'shell-serves') shell.setServed(message.origins, message.pinned)
       else shell.receive(message)
     }
   }

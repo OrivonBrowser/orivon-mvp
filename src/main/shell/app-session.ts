@@ -2,7 +2,7 @@
 // reader of "does this app have a partition of its own" asks (`tab-partition.ts`, `../sessions/session-attribution.ts`,
 // the block, the extensions' reach), so that none decides it a second time.
 import { partitionFor } from '../../broker/grants/origin-hash.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { sharedSessionRoutesLike } from '../route/site-routes.js'
 import { isRelayable } from '../verifier/shell-serves.js'
 
@@ -30,4 +30,12 @@ export function hasOwnPartition (origin: string): boolean {
 /** The session the allowed app at `origin` runs in: undefined for the shared one, else the app's own partition. */
 export function appSessionPartition (origin: string): string | undefined {
   return hasOwnPartition(origin) ? partitionFor(origin) : undefined
+}
+
+/**
+ * Whether the allowed app at `origin` is answered with no verifier host running: served from its pin, in a partition of its
+ * own. An app that runs where websites run reaches the host for every request, pinned or not, so its tab keeps the host awake.
+ */
+export function needsNoVerifierHost (origin: string): boolean {
+  return isOriginPinnedSync(origin) && hasOwnPartition(origin)
 }

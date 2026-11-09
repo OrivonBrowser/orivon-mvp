@@ -2,9 +2,7 @@
 // workers and response caches that website installed, which the shell's check never saw. Electron-bound (a session's
 // storage), and holds no state of its own.
 
-import type { Session } from 'electron'
-
-/** The part of a session this file uses. */
+/** The part of a session this file uses: an Electron `Session` has it. */
 export interface WorkerStorage {
   clearStorageData: (options: { origin: string, storages: Array<'serviceworkers' | 'cachestorage'> }) => Promise<void>
 }
@@ -15,6 +13,6 @@ export interface WorkerStorage {
  * declared tree was never asked about, and the app registers its own, through the check, on its first load. What the site
  * stored beyond that (its data) stays: one origin has one set of data.
  */
-export async function forgetWebsiteWorkers (target: WorkerStorage | Session, origin: string): Promise<void> {
+export async function forgetWebsiteWorkers (target: WorkerStorage, origin: string): Promise<void> {
   await target.clearStorageData({ origin, storages: ['serviceworkers', 'cachestorage'] })
 }

@@ -9,7 +9,8 @@ const repartitionView = vi.fn()
 vi.mock('../tab-parking.js', () => ({ repartitionView }))
 const partitionChanged = vi.fn()
 const partitionAfterFileBlock = vi.fn()
-vi.mock('../tab-partition.js', () => ({ partitionChanged, partitionAfterFileBlock }))
+const appTabFlagGained = vi.fn(() => false)
+vi.mock('../tab-partition.js', () => ({ partitionChanged, partitionAfterFileBlock, appTabFlagGained }))
 const isNavigationHeld = vi.fn(() => false)
 vi.mock('../navigation-hold.js', () => ({ isNavigationHeld }))
 const referrerOfInitiator = vi.fn((..._args: unknown[]): { url: string, policy: string } | undefined => undefined)
@@ -21,7 +22,7 @@ const { setSiteRoutes } = await import('../../route/site-routes.js')
 function rig (record: Record<string, unknown> = {}) {
   const wc = Object.assign(new EventEmitter(), { isDestroyed: () => false }) as unknown as WebContents & EventEmitter
   const view = {}
-  const tab = { view, partition: undefined, isDashboardTab: false, internalPage: null, ...record }
+  const tab = { view, partition: undefined, isDashboardTab: false, internalPage: null, host: { broker: undefined }, ...record }
   let on = true
   repartitionBeforeCommit(wc, 'tab-1', tab as never, () => on)
   const fire = (name: 'will-navigate' | 'will-redirect', extra: Record<string, unknown> = {}) => {
@@ -32,7 +33,7 @@ function rig (record: Record<string, unknown> = {}) {
   return { fire, tab, hide: () => { on = false } }
 }
 
-beforeEach(() => { setSiteRoutes(undefined); referrerOfInitiator.mockReset().mockReturnValue(undefined); repartitionView.mockReset(); partitionChanged.mockReset(); partitionAfterFileBlock.mockReset(); isNavigationHeld.mockReset().mockReturnValue(false) })
+beforeEach(() => { setSiteRoutes(undefined); referrerOfInitiator.mockReset().mockReturnValue(undefined); repartitionView.mockReset(); partitionChanged.mockReset(); partitionAfterFileBlock.mockReset(); appTabFlagGained.mockReset().mockReturnValue(false); isNavigationHeld.mockReset().mockReturnValue(false) })
 
 describe('repartitionBeforeCommit', () => {
   it.each(['will-navigate', 'will-redirect'] as const)('stops a main-frame %s into a cache-served partition and loads it there', async (name) => {
@@ -106,6 +107,35 @@ describe('repartitionBeforeCommit', () => {
     expect(rig().fire('will-navigate').preventDefault).not.toHaveBeenCalled()
     partitionChanged.mockReturnValue({ to: undefined })
     expect(rig().fire('will-navigate').preventDefault).not.toHaveBeenCalled()
+  })
+
+  describe('an app that runs in the session the tab is in, reached by a view built without the app-tab flag', () => {
+    const top = { url: 'https://a.eth/page', parent: null }
+
+    it.each(['will-navigate', 'will-redirect'] as const)('stops a main-frame %s and rebuilds the view in the same session before the app commits', async (name) => {
+      partitionChanged.mockReturnValue(undefined)
+      appTabFlagGained.mockReturnValue(true)
+      const { fire } = rig({ partition: 'persist:profile' })
+      const event = fire(name)
+      expect(event.preventDefault).toHaveBeenCalled()
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', 'persist:profile', false, undefined)
+    })
+
+    it('loads the address with the referrer the initiating page would have sent', async () => {
+      partitionChanged.mockReturnValue(undefined)
+      appTabFlagGained.mockReturnValue(true)
+      referrerOfInitiator.mockReturnValue({ url: 'https://a.eth/page', policy: 'default' })
+      rig().fire('will-navigate', { initiator: top })
+      await new Promise((resolve) => setImmediate(resolve))
+      expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://app.eth/', undefined, false, { url: 'https://a.eth/page', policy: 'default' })
+    })
+
+    it('leaves a view that already carries the flag, and a move to a plain website, to run', () => {
+      partitionChanged.mockReturnValue(undefined)
+      appTabFlagGained.mockReturnValue(false)
+      expect(rig().fire('will-navigate').preventDefault).not.toHaveBeenCalled()
+    })
   })
 
   describe('a move to the shared session from a session that sends the address differently', () => {

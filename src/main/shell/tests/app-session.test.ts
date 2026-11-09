@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const { served } = vi.hoisted(() => ({ served: new Set<string>() }))
+const { served, pinned } = vi.hoisted(() => ({ served: new Set<string>(), pinned: new Set<string>() }))
 vi.mock('../../../loader/electron/serve.js', () => ({
-  isOriginServedFromCacheSync: (origin: string) => served.has(origin)
+  isOriginServedFromCacheSync: (origin: string) => served.has(origin),
+  isOriginPinnedSync: (origin: string) => pinned.has(origin)
 }))
 
-const { appSessionPartition, hasOwnPartition, runsAsWebsite } = await import('../app-session.js')
+const { appSessionPartition, hasOwnPartition, needsNoVerifierHost, runsAsWebsite } = await import('../app-session.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
 const { partitionFor } = await import('../../../broker/grants/origin-hash.js')
 
@@ -16,6 +17,7 @@ const LOOPBACK = 'http://127.0.0.1:8080'
 
 afterEach(() => {
   served.clear()
+  pinned.clear()
   setSiteRoutes(undefined)
 })
 
@@ -57,5 +59,21 @@ describe('an origin that is no app', () => {
     expect(runsAsWebsite(NAMED)).toBe(false)
     expect(hasOwnPartition(NAMED)).toBe(false)
     expect(hasOwnPartition(PLAIN)).toBe(false)
+  })
+})
+
+describe('which allowed apps keep the verifier host awake', () => {
+  it('keeps it for an app that runs where websites run, pinned or not, since the host answers its requests', () => {
+    served.add(NAMED)
+    expect(needsNoVerifierHost(NAMED)).toBe(false)
+    pinned.add(NAMED)
+    expect(needsNoVerifierHost(NAMED)).toBe(false)
+  })
+
+  it('lets it sleep for an app in a partition of its own that is served from its pin, and keeps it for one still read live', () => {
+    served.add(PLAIN)
+    expect(needsNoVerifierHost(PLAIN)).toBe(false)
+    pinned.add(PLAIN)
+    expect(needsNoVerifierHost(PLAIN)).toBe(true)
   })
 })

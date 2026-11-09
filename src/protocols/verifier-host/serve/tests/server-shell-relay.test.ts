@@ -63,7 +63,7 @@ interface Reply { status: number, headers: Record<string, string | string[] | un
 async function get (path: string, options: { host?: string, method?: string, headers?: Record<string, string> } = {}): Promise<Reply> {
   const host = options.host ?? 'kept.eth'
   return await new Promise((resolve) => {
-    const req = request({ host: '127.0.0.1', port, path, method: options.method ?? 'GET', servername: host, rejectUnauthorized: false, headers: { host, [PARTITION_HEADER]: `https://${host}`, ...options.headers } }, (res) => {
+    const req = request({ host: '127.0.0.1', port, path, method: options.method ?? 'GET', servername: host, rejectUnauthorized: false, headers: { host, [PARTITION_HEADER]: `https://${host}`, 'sec-fetch-site': 'same-origin', ...options.headers } }, (res) => {
       const chunks: Buffer[] = []
       res.on('data', (chunk: Buffer) => chunks.push(chunk))
       res.on('end', () => { resolve({ status: res.statusCode ?? 0, headers: res.headers, body: Buffer.concat(chunks) }) })
@@ -113,20 +113,54 @@ describe('the loopback server with a shell behind it', () => {
     expect((await reply).status).toBe(204)
   })
 
-  it('answers a request of another site\'s page as it always did, so that page cannot tell the app is kept', async () => {
+  it('answers another site\'s subresource and frame as it always did, so that page cannot tell the app is kept', async () => {
     const before = relayed().length
-    const reply = await get('/app.js', { headers: { [PARTITION_HEADER]: 'https://evil.example' } })
-    expect(reply.status).toBe(200)
-    expect(reply.body.toString()).toBe('from the verifier')
+    const image = await get('/app.js', { headers: { [PARTITION_HEADER]: 'https://evil.example', 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'image' } })
+    expect(image.status).toBe(200)
+    expect(image.body.toString()).toBe('from the verifier')
+    const frame = await get('/', { headers: { [PARTITION_HEADER]: 'https://evil.example', 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'iframe' } })
+    expect(frame.body.toString()).toBe('from the verifier')
     expect(relayed()).toHaveLength(before)
   })
 
-  it('answers a request of a tunnel profile\'s page itself, so its reads still leave through the tunnel', async () => {
+  it('hands over the top-level navigation another site\'s link makes, so the link opens the kept copy', async () => {
+    const before = relayed().length
+    const reply = get('/', { headers: { 'sec-fetch-site': 'cross-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' } })
+    await until(() => relayed().length === before + 1, 'the request was relayed')
+    const sent = relayed().at(-1)!
+    relay.receive({ type: 'relay-head', id: sent.id, status: 204, headers: [] })
+    relay.receive({ type: 'relay-end', id: sent.id })
+    expect((await reply).status).toBe(204)
+  })
+
+  it('hands over what the site\'s own frame asks for under another site\'s page, which the browser marks same-origin', async () => {
+    const before = relayed().length
+    const reply = get('/app.js', { headers: { [PARTITION_HEADER]: 'https://evil.example', 'sec-fetch-site': 'same-origin', 'sec-fetch-mode': 'no-cors', 'sec-fetch-dest': 'script' } })
+    await until(() => relayed().length === before + 1, 'the request was relayed')
+    const sent = relayed().at(-1)!
+    relay.receive({ type: 'relay-head', id: sent.id, status: 204, headers: [] })
+    relay.receive({ type: 'relay-end', id: sent.id })
+    expect((await reply).status).toBe(204)
+  })
+
+  it('answers a request of a tunnel profile\'s page itself while the app is only served live, so its reads still leave through the tunnel', async () => {
     const before = relayed().length
     const reply = await get('/app.js', { headers: { [ROUTE_HEADER]: 'nym' } })
     expect(reply.status).toBe(200)
     expect(reply.body.toString()).toBe('from the verifier')
     expect(relayed()).toHaveLength(before)
+  })
+
+  it('hands over a request of a tunnel profile\'s page once the app is served from its pin, which reads nothing from the network', async () => {
+    relay.setServed(['https://kept.eth'], ['https://kept.eth'])
+    const before = relayed().length
+    const reply = get('/app.js', { headers: { [ROUTE_HEADER]: 'nym' } })
+    await until(() => relayed().length === before + 1, 'the request was relayed')
+    const sent = relayed().at(-1)!
+    relay.receive({ type: 'relay-head', id: sent.id, status: 204, headers: [] })
+    relay.receive({ type: 'relay-end', id: sent.id })
+    expect((await reply).status).toBe(204)
+    relay.setServed(['https://kept.eth'])
   })
 
   it('refuses a target that reads as another host before it hands anything over', async () => {

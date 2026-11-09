@@ -78,7 +78,7 @@ describe('a request for a host the shell serves, through the host\'s server', ()
   it('is answered by the handler with its status, headers and body, and the answer is complete', async () => {
     const { port } = await wire(async (given) => new Response(`${given.method} ${new URL(given.url).pathname}`, { status: 203, headers: { 'x-from': 'the handler' } }))
     const reply = await new Promise<{ status: number, from: string | string[] | undefined, body: string }>((resolve) => {
-      const req = request({ host: '127.0.0.1', port, path: '/dir/app.js', headers: { host: 'kept.example' } }, (res) => {
+      const req = request({ host: '127.0.0.1', port, path: '/dir/app.js', headers: { host: 'kept.example', 'sec-fetch-site': 'same-origin' } }, (res) => {
         const chunks: Buffer[] = []
         res.on('data', (chunk: Buffer) => chunks.push(chunk))
         res.on('end', () => { resolve({ status: res.statusCode ?? 0, from: res.headers['x-from'], body: Buffer.concat(chunks).toString() }) })
@@ -91,7 +91,7 @@ describe('a request for a host the shell serves, through the host\'s server', ()
   it('is not sent back to itself when the handler reads the host\'s server with the shell\'s mark', async () => {
     const holder: { port: number } = { port: 0 }
     const ownRead = async (): Promise<string> => await new Promise((resolve, reject) => {
-      const req = request({ host: '127.0.0.1', port: holder.port, path: '/app.js', headers: { host: 'kept.example', [OWN_READ_HEADER]: TOKEN } }, (res) => {
+      const req = request({ host: '127.0.0.1', port: holder.port, path: '/app.js', headers: { host: 'kept.example', 'sec-fetch-site': 'same-origin', [OWN_READ_HEADER]: TOKEN } }, (res) => {
         const chunks: Buffer[] = []
         res.on('data', (chunk: Buffer) => chunks.push(chunk))
         res.on('end', () => { resolve(Buffer.concat(chunks).toString()) })
@@ -102,7 +102,7 @@ describe('a request for a host the shell serves, through the host\'s server', ()
     const live = await wire(async () => new Response(`the handler read: ${await ownRead()}`))
     holder.port = live.port
     const reply = await new Promise<string>((resolve) => {
-      const req = request({ host: '127.0.0.1', port: live.port, path: '/app.js', headers: { host: 'kept.example' } }, (res) => {
+      const req = request({ host: '127.0.0.1', port: live.port, path: '/app.js', headers: { host: 'kept.example', 'sec-fetch-site': 'same-origin' } }, (res) => {
         const chunks: Buffer[] = []
         res.on('data', (chunk: Buffer) => chunks.push(chunk))
         res.on('end', () => { resolve(Buffer.concat(chunks).toString()) })
@@ -126,7 +126,7 @@ describe('a request for a host the shell serves, through the host\'s server', ()
       }
     }, { highWaterMark: 0 }), { headers: { 'content-length': String(total) } }))
     const received = await new Promise<number>((resolve) => {
-      const req = request({ host: '127.0.0.1', port, path: '/big.bin', headers: { host: 'kept.example' } }, (res) => {
+      const req = request({ host: '127.0.0.1', port, path: '/big.bin', headers: { host: 'kept.example', 'sec-fetch-site': 'same-origin' } }, (res) => {
         let count = 0
         let order = true
         res.pause()
@@ -157,7 +157,7 @@ describe('a request for a host the shell serves, through the host\'s server', ()
       pull (controller) { controller.enqueue(new Uint8Array(RELAY_CHUNK_BYTES)); pulled += 1 },
       cancel () { cancelled = true }
     }, { highWaterMark: 0 }), { headers: { 'content-type': 'application/octet-stream' } }))
-    const req = request({ host: '127.0.0.1', port, path: '/endless.bin', headers: { host: 'kept.example' } }, (res) => {
+    const req = request({ host: '127.0.0.1', port, path: '/endless.bin', headers: { host: 'kept.example', 'sec-fetch-site': 'same-origin' } }, (res) => {
       res.pause()
       setTimeout(() => { req.destroy() }, 50)
     })

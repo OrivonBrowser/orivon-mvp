@@ -114,16 +114,6 @@ function pathOf (target: string | undefined, host: string): URL | undefined {
 }
 
 /**
- * Whether a request belongs to the host's own site: its page is that site's (or no page started it), and it is not a
- * tunnel profile's. Only such a request is the shell's to answer. Another site's page is answered as it always was, so no
- * page can time an allowed app's host and learn it is installed (A256), and a tunnel profile's read still leaves
- * through its tunnel.
- */
-function belongsToOwnSite (req: IncomingMessage, host: string): boolean {
-  return partitionOf(req, host) === `https://${host}` && routeOf(req) === 'direct'
-}
-
-/**
  * `servedRoot` is set only for a failure reached after the name resolved to a root: a 404 that
  * carries it says that root has no such path, where one without it may say the name has no content.
  */
@@ -334,7 +324,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     return
   }
   // A host the shell serves from a copy it keeps is the shell's to answer for its own site, with the very handler that app's partition uses, whatever the method: nothing below looks at the request.
-  if (shell?.wants(host, req.headers) === true && belongsToOwnSite(req, host)) {
+  if (shell?.wants(host, req.headers, routeOf(req) !== 'direct') === true) {
     const target = pathOf(req.url, host)
     if (target === undefined) res.writeHead(400, { 'content-type': 'text/plain' }).end('not a path this server serves')
     else shell.relay(req, res, target, SERVED_CONTENT_CSP)

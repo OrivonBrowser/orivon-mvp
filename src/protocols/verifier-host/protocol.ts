@@ -67,7 +67,8 @@ export type RelayToHost =
   | { readonly type: 'relay-error', readonly id: number, readonly message: string }
 
 /** The origins the shell serves from a copy it keeps, whole each time. A request for one of their hosts is handed to the shell. */
-export interface ShellServes { readonly type: 'shell-serves', readonly origins: readonly string[] }
+/** The origins the shell serves, and those of them it serves from a pin (a tunnel profile's request is handed over only for these). */
+export interface ShellServes { readonly type: 'shell-serves', readonly origins: readonly string[], readonly pinned?: readonly string[] }
 
 export interface HostConfig {
   readonly port: number
@@ -154,7 +155,7 @@ export interface HostConfig {
    * (`loader/fetch/own-read.ts`). `origins` is the set as of this start; `shell-serves` replaces it while the host runs. Absent, no
    * request is handed to the shell.
    */
-  readonly shell?: { readonly ownReadToken: string, readonly origins: readonly string[] }
+  readonly shell?: { readonly ownReadToken: string, readonly origins: readonly string[], readonly pinned?: readonly string[] }
 }
 
 export type LightClientState =

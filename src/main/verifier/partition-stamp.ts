@@ -10,7 +10,7 @@ import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import { failedFiles } from './failed-files-store.js'
 import { noteCompletedFile } from './failed-files.js'
-import { headerValue, isOfOwnSite, requestPartition, withPartition, withoutHttpCache, withRoute } from './partition.js'
+import { originOfUrl, requestPartition, withPartition, withoutHttpCache, withRoute } from './partition.js'
 import { isHandedToShell } from './shell-serves.js'
 
 /** Only a request whose host a protocol actually routes to the verifier --
@@ -46,7 +46,7 @@ export function verifiedHostFilter (): WebRequestFilter {
  * The same handler marks every request of a tunnel profile's session with that tunnel, whatever frame it
  * came from or whether it has one, and strips the mark from every other session's: the verifier fetches for it only
  * through that tunnel.
- * A request the verifier hands to the shell (a site's own, for a host the shell serves from a copy it keeps) is also kept out of the
+ * A request the verifier hands to the shell (`shell-serves.ts`'s `isHandedToShell`) is also kept out of the
  * HTTP cache, read and write: the session's cache may hold bytes from before the site was served that the shell's check never
  * saw (see README.md's Design notes).
  */
@@ -58,9 +58,10 @@ export function installPartitionStamp (target: Session, tunnel: TunnelRoute | un
     } catch {
       frame = undefined
     }
-    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url, fetchSite: headerValue(current.requestHeaders, 'sec-fetch-site') })
+    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
     const stamped = withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnel)
-    const handedToShell = tunnel === undefined && isOfOwnSite(partition, details.url) && isHandedToShell(partition)
+    const origin = originOfUrl(details.url)
+    const handedToShell = origin !== undefined && isHandedToShell(origin, current.requestHeaders, tunnel !== undefined)
     return { ...current, requestHeaders: handedToShell ? withoutHttpCache(stamped) : stamped }
   })
 }

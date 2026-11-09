@@ -36,7 +36,7 @@ async function start (relay: ShellRelay, network = 'network'): Promise<number> {
 function get (port: number, path: string, options: { host?: string, method?: string, headers?: Record<string, string>, abortAfterMs?: number } = {}): { done: Promise<Reply>, abort: () => void } {
   let abort = (): void => {}
   const done = new Promise<Reply>((resolve) => {
-    const req = request({ host: '127.0.0.1', port, path, method: options.method ?? 'GET', headers: { host: options.host ?? 'kept.example', ...options.headers } }, (res) => {
+    const req = request({ host: '127.0.0.1', port, path, method: options.method ?? 'GET', headers: { host: options.host ?? 'kept.example', 'sec-fetch-site': 'same-origin', ...options.headers } }, (res) => {
       const chunks: Buffer[] = []
       const finish = (error?: string): void => { resolve({ status: res.statusCode ?? 0, headers: res.headers, rawHeaders: res.rawHeaders, body: Buffer.concat(chunks), ...(error === undefined ? {} : { error }) }) }
       res.on('data', (chunk: Buffer) => chunks.push(chunk))
@@ -74,6 +74,22 @@ async function until (check: () => boolean, what: string): Promise<void> {
 }
 
 describe('which requests are handed to the shell', () => {
+  it('hands over only what the browser made for the site, and a tunnel profile\'s request only for an app served from its pin', () => {
+    const { relay } = harness()
+    const mark = (site: string, mode?: string, dest?: string): IncomingHttpHeaders => ({ 'sec-fetch-site': site, ...(mode === undefined ? {} : { 'sec-fetch-mode': mode }), ...(dest === undefined ? {} : { 'sec-fetch-dest': dest }) })
+    expect(relay.wants('kept.example', mark('same-origin'))).toBe(true)
+    expect(relay.wants('kept.example', mark('none'))).toBe(true)
+    expect(relay.wants('kept.example', mark('cross-site', 'navigate', 'document'))).toBe(true)
+    expect(relay.wants('kept.example', mark('cross-site', 'navigate', 'iframe'))).toBe(false)
+    expect(relay.wants('kept.example', mark('cross-site', 'no-cors', 'image'))).toBe(false)
+    expect(relay.wants('kept.example', mark('same-site', 'cors', 'empty'))).toBe(false)
+    expect(relay.wants('kept.example', {})).toBe(false)
+    expect(relay.wants('kept.example', mark('same-origin'), true)).toBe(false)
+    relay.setServed(['https://kept.example'], ['https://kept.example'])
+    expect(relay.wants('kept.example', mark('same-origin'), true)).toBe(true)
+    expect(relay.wants('other.example', mark('same-origin'), true)).toBe(false)
+  })
+
   it('hands over a request for a host the shell serves, and answers any other from the network', async () => {
     const { relay, requests } = harness()
     const port = await start(relay)

@@ -149,6 +149,14 @@ export function appTabFlagChanged (target: string, view: WebContentsView, broker
   return (appTabArgsFor(target, broker) !== undefined) !== appTabViews.has(view)
 }
 
+/** Whether `target` needs the app-tab flag and `view` was built without it: the half of `appTabFlagChanged` whose first
+ * request must not commit in the view, because the page it reaches would run with the routed `fetch` missing
+ * (pre-partition.ts stops such a navigation before it starts). Leaving an app for a website only drops the flag, and that
+ * swap waits for `did-navigate`. */
+export function appTabFlagGained (target: string, view: WebContentsView, broker: Broker | undefined): boolean {
+  return originFromUrl(target) !== null && appTabArgsFor(target, broker) !== undefined && !appTabViews.has(view)
+}
+
 /** The views built with APP_TAB_FLAG. Electron cannot read a view's
  * webPreferences back, and a parked view may only be reused while its flag
  * still matches what its origin needs (tab-parking.ts's takeParkedView, the

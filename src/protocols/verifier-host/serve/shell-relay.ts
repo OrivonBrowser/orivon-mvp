@@ -6,6 +6,7 @@
 import { timingSafeEqual } from 'node:crypto'
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import { OWN_READ_HEADER } from '../../../loader/fetch/content-root.js'
+import { isOwnSiteRequest } from '../../../loader/fetch/own-site-request.js'
 import { MAX_RELAYS } from '../protocol.js'
 import type { FromHost, HeaderPairs, RelayToHost } from '../protocol.js'
 
@@ -55,25 +56,36 @@ function isHeaderPairs (value: unknown): value is HeaderPairs {
   return Array.isArray(value) && value.every((pair) => Array.isArray(pair) && pair.length === 2 && typeof pair[0] === 'string' && typeof pair[1] === 'string')
 }
 
+/** The hosts of the default-port `https:` origins in `origins`: the only ones this server could be asked for. */
+function hostsOf (origins: readonly string[]): Set<string> {
+  const hosts = new Set<string>()
+  for (const origin of origins) {
+    try {
+      const parsed = new URL(origin)
+      if (parsed.protocol === 'https:' && parsed.port === '' && parsed.origin === origin) hosts.add(parsed.hostname)
+    } catch {
+      // Not an origin: nothing is served for it.
+    }
+  }
+  return hosts
+}
+
 export class ShellRelay {
   private served = new Set<string>()
+  private pinned = new Set<string>()
   private readonly open = new Map<number, Relayed>()
   private nextId = 1
 
   constructor (private readonly deps: ShellRelayDeps) {}
 
-  /** The origins the shell now serves; only a default-port `https:` origin is a host this server could be asked for. Replaces the set held. */
-  setServed (origins: readonly string[]): void {
-    const hosts = new Set<string>()
-    for (const origin of origins) {
-      try {
-        const parsed = new URL(origin)
-        if (parsed.protocol === 'https:' && parsed.port === '' && parsed.origin === origin) hosts.add(parsed.hostname)
-      } catch {
-        // Not an origin: nothing is served for it.
-      }
-    }
-    this.served = hosts
+  /**
+   * The origins the shell now serves, and those of them it serves from a pin; only a default-port `https:` origin is a host
+   * this server could be asked for. Replaces the sets held. A pinned origin has no bytes to fetch, so a tunnel profile's
+   * request for it may be handed over; one served live reads the network, and stays on the path that leaves through the tunnel.
+   */
+  setServed (origins: readonly string[], pinned: readonly string[] = []): void {
+    this.served = hostsOf(origins)
+    this.pinned = hostsOf(pinned)
   }
 
   private isOwnRead (headers: IncomingHttpHeaders): boolean {
@@ -85,9 +97,16 @@ export class ShellRelay {
     return given.length === wanted.length && timingSafeEqual(given, wanted)
   }
 
-  /** Whether the shell answers this request: its host is one the shell serves, and the request is not a read the shell made itself. */
-  wants (host: string, headers: IncomingHttpHeaders): boolean {
-    return this.deps.ownReadToken !== undefined && this.served.has(host) && !this.isOwnRead(headers)
+  /**
+   * Whether the shell answers this request: its host is one the shell serves, the request is not a read the shell made itself,
+   * and the browser made it for the site (`loader/fetch/own-site-request.ts`). A request of a tunnel profile (`tunnelled`) is
+   * the shell's only while the app is served from its pin. Anything else is answered as it always was, so no page can time an
+   * allowed app's host and learn it is installed (A256), and a read for a tunnel still leaves through it.
+   */
+  wants (host: string, headers: IncomingHttpHeaders, tunnelled = false): boolean {
+    if (this.deps.ownReadToken === undefined || !this.served.has(host) || this.isOwnRead(headers)) return false
+    if (tunnelled && !this.pinned.has(host)) return false
+    return isOwnSiteRequest(headers)
   }
 
   /** Hands `req` to the shell. `extraCsp` goes on the answer as a policy of its own, whatever policy the shell's answer carries: what every answer this server writes says of where it came from and who may frame it. */

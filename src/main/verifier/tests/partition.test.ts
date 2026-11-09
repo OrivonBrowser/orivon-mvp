@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { headerValue, isOfOwnSite, requestPartition, withoutHttpCache, withPartition, withRoute } from '../partition.js'
+import { originOfUrl, requestPartition, withoutHttpCache, withPartition, withRoute } from '../partition.js'
 
 describe('requestPartition', () => {
   it('gives a top-level navigation the partition of the page it opens', () => {
@@ -19,28 +19,11 @@ describe('requestPartition', () => {
   })
 })
 
-describe('requestPartition for a request with no frame', () => {
-  it("gives a worker's request for its own origin that origin's partition, as the browser's Sec-Fetch-Site says it is", () => {
-    expect(requestPartition({ url: 'https://app.ipfs.orivon/probe.js', resourceType: 'xhr', topUrl: undefined, fetchSite: 'same-origin' })).toBe('https://app.ipfs.orivon')
-    expect(requestPartition({ url: 'https://app.ipfs.orivon/sw.js', resourceType: 'script', topUrl: undefined, fetchSite: 'same-origin' })).toBe('https://app.ipfs.orivon')
-  })
-
-  it('gives none to any other frameless request: another origin, a read of the shell\'s own, or one with no header', () => {
-    for (const fetchSite of ['cross-site', 'same-site', 'none', undefined]) {
-      expect(requestPartition({ url: 'https://app.ipfs.orivon/probe.js', resourceType: 'xhr', topUrl: undefined, fetchSite })).toBeUndefined()
-    }
-  })
-
-  it('leaves a request with a frame to its top-level page whatever the header says', () => {
-    expect(requestPartition({ url: 'https://app.ipfs.orivon/x.js', resourceType: 'script', topUrl: 'https://news.example/', fetchSite: 'same-origin' })).toBe('https://news.example')
-  })
-})
-
-describe('isOfOwnSite', () => {
-  it('holds for a partition that is the origin the URL is for, and for nothing else', () => {
-    expect(isOfOwnSite('https://app.ipfs.orivon', 'https://app.ipfs.orivon/a/b.js?x=1')).toBe(true)
-    expect(isOfOwnSite('https://news.example', 'https://app.ipfs.orivon/a.js')).toBe(false)
-    expect(isOfOwnSite(undefined, 'https://app.ipfs.orivon/a.js')).toBe(false)
+describe('originOfUrl', () => {
+  it('is the origin of an address, and undefined for one with none', () => {
+    expect(originOfUrl('https://app.ipfs.orivon/a/b.js?x=1')).toBe('https://app.ipfs.orivon')
+    expect(originOfUrl('data:text/plain,hello')).toBeUndefined()
+    expect(originOfUrl('not a url')).toBeUndefined()
   })
 })
 
@@ -48,13 +31,6 @@ describe('withoutHttpCache', () => {
   it('adds the condition the HTTP cache passes through, replacing one the page set in any case', () => {
     expect(withoutHttpCache({ Accept: '*/*' })).toEqual({ Accept: '*/*', 'If-Match': '*' })
     expect(withoutHttpCache({ 'if-match': '"abc"', Accept: '*/*' })).toEqual({ Accept: '*/*', 'If-Match': '*' })
-  })
-})
-
-describe('headerValue', () => {
-  it('finds a header whatever case it was sent in', () => {
-    expect(headerValue({ 'Sec-Fetch-Site': 'same-origin' }, 'sec-fetch-site')).toBe('same-origin')
-    expect(headerValue({ Accept: '*/*' }, 'sec-fetch-site')).toBeUndefined()
   })
 })
 

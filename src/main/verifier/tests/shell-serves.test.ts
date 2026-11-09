@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Session } from 'electron'
 import { registerAppOrigin, retireAppOrigin } from '../../../loader/electron/app-partitions.js'
+import { OWN_READ_HEADER } from '../../../loader/fetch/content-root.js'
 import { ownReadToken } from '../../../loader/fetch/own-read.js'
-import { announceServed, hostShell, isHandedToShell, isRelayable, relayHandlerFor, relayableOrigins, serveShell } from '../shell-serves.js'
+import { announceServed, hostShell, isHandedToShell, isRelayable, pinnedRelayableOrigins, relayHandlerFor, relayableOrigins, serveShell } from '../shell-serves.js'
 
 // Which of the origins the shell serves the verifier's server may hand over: the hosts it answers, on its one port.
 
@@ -46,16 +47,27 @@ describe('what the host is told and asked for', () => {
     expect(relayHandlerFor('https://relayed.eth')).toBeUndefined()
   })
 
-  it('is handed to the shell only while the shell serves a host the server answers', () => {
+  it('keeps a request out of the HTTP cache only when the host hands it to the shell, as the host decides it', () => {
     const session = fakeSession()
-    expect(isHandedToShell('https://handed.eth')).toBe(false)
-    registerAppOrigin(session, 'https://handed.eth', async () => new Response('kept'))
+    const own = { 'Sec-Fetch-Site': 'same-origin' }
+    expect(isHandedToShell('https://handed.eth', own, false)).toBe(false)
+    registerAppOrigin(session, 'https://handed.eth', async () => new Response('kept'), 'verifier')
     registerAppOrigin(session, 'https://elsewhere.example', async () => new Response('other'))
-    expect(isHandedToShell('https://handed.eth')).toBe(true)
-    expect(isHandedToShell('https://elsewhere.example')).toBe(false)
+    expect(isHandedToShell('https://handed.eth', own, false)).toBe(true)
+    expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'none' }, false)).toBe(true)
+    expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' }, false)).toBe(true)
+    expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'image' }, false)).toBe(false)
+    expect(isHandedToShell('https://elsewhere.example', own, false)).toBe(false)
+    // The shell's own reads are not handed back to it, so they keep the cache.
+    expect(isHandedToShell('https://handed.eth', { 'Sec-Fetch-Site': 'none', [OWN_READ_HEADER]: ownReadToken() }, false)).toBe(false)
+    // A tunnel profile's request is the shell's only for an app served from its pin.
+    expect(isHandedToShell('https://handed.eth', own, true)).toBe(false)
+    registerAppOrigin(session, 'https://pinned.eth', async () => new Response('pinned'))
+    expect(isHandedToShell('https://pinned.eth', own, true)).toBe(true)
+    retireAppOrigin(session, 'https://pinned.eth')
     retireAppOrigin(session, 'https://handed.eth')
     retireAppOrigin(session, 'https://elsewhere.example')
-    expect(isHandedToShell('https://handed.eth')).toBe(false)
+    expect(isHandedToShell('https://handed.eth', own, false)).toBe(false)
   })
 })
 
@@ -63,8 +75,11 @@ describe('what the host is started and kept informed with', () => {
   it('starts it with the secret mark and the set served now', () => {
     const session = fakeSession()
     registerAppOrigin(session, 'https://started.eth', async () => new Response('kept'))
-    expect(hostShell()).toEqual({ ownReadToken: ownReadToken(), origins: expect.arrayContaining(['https://started.eth']) })
+    registerAppOrigin(session, 'https://live.eth', async () => new Response('live'), 'verifier')
+    expect(hostShell()).toEqual({ ownReadToken: ownReadToken(), origins: expect.arrayContaining(['https://started.eth', 'https://live.eth']), pinned: expect.arrayContaining(['https://started.eth']) })
+    expect(hostShell().pinned).not.toContain('https://live.eth')
     retireAppOrigin(session, 'https://started.eth')
+    retireAppOrigin(session, 'https://live.eth')
   })
 
   it('sends it the whole set, and again on every change, to the end of the run', () => {
@@ -73,10 +88,10 @@ describe('what the host is started and kept informed with', () => {
     const host = { send: vi.fn((message: unknown) => { sent.push(message); return true }) }
     serveShell(host)
     registerAppOrigin(session, 'https://changing.eth', async () => new Response('kept'))
-    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.arrayContaining(['https://changing.eth']) })
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.arrayContaining(['https://changing.eth']), pinned: expect.arrayContaining(['https://changing.eth']) })
     retireAppOrigin(session, 'https://changing.eth')
-    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.not.arrayContaining(['https://changing.eth']) })
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.not.arrayContaining(['https://changing.eth']), pinned: expect.not.arrayContaining(['https://changing.eth']) })
     announceServed(host)
-    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: relayableOrigins() })
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: relayableOrigins(), pinned: pinnedRelayableOrigins() })
   })
 })
