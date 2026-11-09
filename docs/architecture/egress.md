@@ -84,7 +84,7 @@ and in tabs opened from it, runs in that tunnel's profile until the tab closes, 
 | `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
 | `src/main/route/dead-end.ts` | Listens on a random `127.0.0.1` port, accepts and closes; reads and sends nothing | The place a session is pointed at to stop it (a session made while the whole browser is on the tunnel, one that could not be pointed, the requests made with no session), so a stopped request fails at once and no other listener on this computer is shown a destination name | Loopback |
 | `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions, and of every other session the runtime creates while the whole browser is on the tunnel: the front, or the dead end (the moment a session is made or switched on, before the front is had); also `app.setProxy` for the requests made with no session | Where a session takes the tunnel; it marks a session as changing from before each `setProxy` until the call ends (`proxy-answers.ts`) | Routed (it makes sessions take it) |
-| `src/main/route/route-subsystem.ts` | Nothing of its own: wires the sessions, `app.setProxy`, the system-proxy session that T20 asks and the system-mirror session that Orivon's direct requests and the lookups about a site set to off use; registers the guard that keeps a name the verifier serves from a proxy the system sets, on every website session | Starting the routes | Routed (it makes the rest take the tunnel) |
+| `src/main/route/route-subsystem.ts` | Nothing of its own: wires the sessions, `app.setProxy`, the system-proxy session that T20 asks, the system-mirror session that Orivon's direct requests and the lookups about a site set to off use, and the system-check session where a copy of the system's proxy settings is tried (`proxy-mirror/`; it runs `gsettings`, and sets a proxy on the sessions that follow the system only after the check); registers the guard that keeps a name the verifier serves from a proxy the system sets, on every website session | Starting the routes | Routed (it makes the rest take the tunnel) |
 | `src/main/self-update/update-check-runner.ts` | GitHub's releases API | Looking for a newer release | Tunnelled while the whole browser is on it (`ownFetch`): the check goes through the tunnel or does not happen. Not routed otherwise |
 | `src/main/sessions/web-context-host.ts` | Nothing from the session: its proxy is a port nothing listens on | A web context answers `https` itself (through `reach`), refuses `http` and WebSocket | Takes the app's route through `reach`; the session's proxy only confines it |
 | `src/main/settings/proxy-checks.ts` | Nothing: uses only `isIPv6` | Reading a SOCKS5 address | Loopback |
@@ -142,7 +142,7 @@ bypass at their front when they are on a tunnel; an app's routed session and a t
 name to the front, which is the person's own tunnel and not the system's proxy. A session that follows the system's proxy cannot
 be given a bypass list (`{ mode: 'system' }` takes none), so the proxy would be asked to carry `CONNECT name.eth:443`, would
 learn the name, and could answer a plain `http://name.eth/` with a page of its own that loads under the `.eth` address (the
-HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse). Two things keep the names from it
+HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse). Three things keep the names from it
 ([T90](security-model.md)):
 
 - **A proxy of the environment (Linux, no desktop proxy setting).** Before Chromium starts, `src/main/verifier/no-proxy.ts`
@@ -150,6 +150,16 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   resolves those names direct. A program Orivon starts inherits the variable, including one opened with `openExternal` or
   `openPath`, and asks no proxy about these names either. A proxy found with a script (`auto_proxy`) is not exempted this
   way; the guard below covers it.
+- **A manual proxy in GNOME's settings (and the desktops that share them).** `src/main/route/proxy-mirror/` reads the settings
+  (`gsettings list-recursively org.gnome.system.proxy`, run without a shell, three seconds at most, its output never logged) and
+  sets every session that would follow the system to the same servers and exceptions, plus `*.suffix` for every
+  routed suffix, so Chromium resolves those names direct. The root-dot spelling (`name.eth.`) gets no rule, because the resolver rules
+  do not map it to the verifier: it stays on the proxy and the guard refuses it. A copy reaches a session only after `orivon-system-check`, a session of the
+  mirror's own set to it, answers as `orivon-system-proxy` (Chromium's own answer, never leaving `{ mode: 'system' }`) does for
+  two ordinary addresses and up to three the system's exceptions cover; a difference, read again at once, leaves every session
+  on `{ mode: 'system' }`. Settings that name a script or detection, cannot be carried exactly or cannot be read stay on it
+  too, but a copy already applied outlasts a read that failed, or a check that got no answer, while Chromium's answers for the two
+  ordinary addresses are what they were when it passed. The settings are read every thirty seconds and Chromium's answer asked every two. This runs nothing on other desktops, Windows or macOS.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
   temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held
