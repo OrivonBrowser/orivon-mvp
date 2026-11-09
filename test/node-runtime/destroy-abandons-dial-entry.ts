@@ -23,7 +23,7 @@ const SOCKETS = 100
 const wait = async (ms: number): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, ms)) }
 
 /** Past the in-flight bound the broker makes a file call wait for a slot; aborting the dials has to hand slots back at once. */
-async function signalAbandonsDials (port: number): Promise<NonNullable<AbandonResults['signal']>> {
+async function signalAbandonsDials (host: string, port: number): Promise<NonNullable<AbandonResults['signal']>> {
   const orivon = (globalThis as unknown as { orivon: DialApi }).orivon
   const controllers: AbortController[] = []
   const settled: Array<Promise<string>> = []
@@ -31,7 +31,7 @@ async function signalAbandonsDials (port: number): Promise<NonNullable<AbandonRe
     for (let i = 0; i < count; i++) {
       const controller = new AbortController()
       controllers.push(controller)
-      settled.push(orivon.net.connect({ host: '127.0.0.1', port, signal: controller.signal }).then(
+      settled.push(orivon.net.connect({ host, port, signal: controller.signal }).then(
         async (socket) => { await socket.close(); return 'connected' },
         (error: { code?: string }) => error.code ?? 'error'
       ))
@@ -62,11 +62,11 @@ async function signalAbandonsDials (port: number): Promise<NonNullable<AbandonRe
 }
 
 /** What a torrent client does to a peer it gave up on: destroy the socket while it is connecting. */
-async function destroyAbandonsDials (silentPort: number, livePort: number): Promise<NonNullable<AbandonResults['destroy']>> {
+async function destroyAbandonsDials (silentHost: string, silentPort: number, livePort: number): Promise<NonNullable<AbandonResults['destroy']>> {
   const errors: string[] = []
   let closed = 0
   const sockets = Array.from({ length: SOCKETS }, () => {
-    const socket = net.connect({ host: '127.0.0.1', port: silentPort })
+    const socket = net.connect({ host: silentHost, port: silentPort })
     socket.on('error', (error) => { errors.push(String(error)) })
     socket.on('close', () => { closed += 1 })
     return socket
@@ -87,10 +87,11 @@ async function destroyAbandonsDials (silentPort: number, livePort: number): Prom
 }
 
 async function run (): Promise<AbandonResults> {
+  const silentHost = document.querySelector('meta[name=silent-host]')?.getAttribute('content') ?? ''
   const silentPort = Number(document.querySelector('meta[name=silent-port]')?.getAttribute('content'))
   const livePort = Number(document.querySelector('meta[name=live-port]')?.getAttribute('content'))
-  const signal = await signalAbandonsDials(silentPort)
-  return { signal, destroy: await destroyAbandonsDials(silentPort, livePort) }
+  const signal = await signalAbandonsDials(silentHost, silentPort)
+  return { signal, destroy: await destroyAbandonsDials(silentHost, silentPort, livePort) }
 }
 
 
