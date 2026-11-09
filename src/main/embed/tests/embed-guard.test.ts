@@ -14,7 +14,7 @@ const SETTINGS = { preloadPath: '/out/preload/embed.js', partition: embedPartiti
 describe('embedPartitionFor', () => {
   it('is a persist: partition, keyed by the app origin, and never the app\'s own partition', () => {
     const partition = embedPartitionFor(APP)
-    expect(partition.startsWith('persist:embed-')).toBe(true)
+    expect(partition).toMatch(/^persist:embed-[0-9a-f]{32}$/)
     expect(partition).not.toBe(partitionFor(APP))
     expect(embedPartitionFor('https://other.example')).not.toBe(partition)
   })

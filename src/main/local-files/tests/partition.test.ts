@@ -23,7 +23,7 @@ describe('localPartitionFor -- which session a local file runs in', () => {
       apps.add(FILE)
       installLocalFileApps(apps)
 
-      expect(localPartitionFor(FILE)).toBe(`persist:local-${originHash(FILE)}`)
+      expect(localPartitionFor(FILE)).toBe(`persist:local-${originHash(FILE).slice(0, 32)}`)
       expect(localPartitionFor('file:///home/u/notes/other.html')).toBe(LOCAL_FILES_PARTITION)
     } finally {
       rmSync(dir, { recursive: true, force: true })
@@ -42,8 +42,8 @@ describe('localPartitionFor -- which session a local file runs in', () => {
 describe('isLocalPartition', () => {
   it('recognises the shared session and a per-file one, and nothing else', () => {
     expect(isLocalPartition(LOCAL_FILES_PARTITION)).toBe(true)
-    expect(isLocalPartition(`persist:local-${originHash(FILE)}`)).toBe(true)
-    expect(isLocalPartition(`persist:app-${originHash('https://x.example')}`)).toBe(false)
+    expect(isLocalPartition(`persist:local-${originHash(FILE).slice(0, 32)}`)).toBe(true)
+    expect(isLocalPartition(`persist:app-${originHash('https://x.example').slice(0, 32)}`)).toBe(false)
     expect(isLocalPartition('persist:orivon-shell')).toBe(false)
     expect(isLocalPartition(undefined)).toBe(false)
   })
@@ -62,8 +62,8 @@ describe('allLocalPartitions', () => {
 
       expect(allLocalPartitions()).toEqual([
         LOCAL_FILES_PARTITION,
-        `persist:local-${originHash(FILE)}`,
-        `persist:local-${originHash('file:///home/u/notes/other.html')}`
+        `persist:local-${originHash(FILE).slice(0, 32)}`,
+        `persist:local-${originHash('file:///home/u/notes/other.html').slice(0, 32)}`
       ])
     } finally {
       rmSync(dir, { recursive: true, force: true })

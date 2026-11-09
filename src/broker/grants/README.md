@@ -1,7 +1,8 @@
 # `src/broker/grants/`: what the user actually agreed to
 
 **What lives here.** The per-origin ledger of manifests and grants, its persistence across
-restarts, and the origin hash that names an origin's storage on disk.
+restarts, and the origin hash that names an origin's storage on disk: the whole hash for a directory,
+its first 32 digits for a session folder (`origin-hash.ts`'s `hashedPartitionName`).
 
 **What it depends on.** [`src/contracts/`](../../contracts/), [`../policy/`](../policy/),
 [`../adapters/atomic-write.ts`](../adapters/atomic-write.ts), and
@@ -23,6 +24,12 @@ declared; the grant is what a person approved (`open-questions.md` A18). `GrantL
 both, apart, so the narrowing happens in one place: the capability entry points.
 
 ## Design notes
+
+**A session folder keeps 32 digits of the hash, a directory all 64.** The deepest file Chromium writes under a session
+folder has to fit Windows' 259-character path limit, which `Partitions/<kind>-<64 hex>` did not leave room for under a
+profile folder over 48 characters; 32 digits (128 bits) leave room for 80 and are as unique for an origin as 64 are. The
+folders of the 64-digit names are renamed at launch by `../../main/launch/partition-folders.ts`, which reads the kinds from
+`HASHED_PARTITION_KINDS` so a new kind of session cannot be left out of the move (ADR-0108).
 
 **Three storage roots.** `ledger-storage.ts`'s real implementation keeps the ledger under its own
 `grants/` root; the `fs` capability's files live under their own `app-data/<hash>/files`
