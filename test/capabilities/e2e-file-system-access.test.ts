@@ -39,17 +39,20 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>${TITLE}</title>
 <script>
   window.__dropped = undefined
   window.__droppedError = undefined
+  window.__trail = []
   const zone = document.getElementById('drop')
+  for (const type of ['dragenter', 'dragover', 'dragleave', 'drop']) zone.addEventListener(type, () => { window.__trail.push(type) })
   zone.addEventListener('dragover', (e) => e.preventDefault())
   zone.addEventListener('drop', (e) => {
     e.preventDefault()
     const pending = [...e.dataTransfer.items].map((item) => item.getAsFileSystemHandle())
+    window.__trail.push('asked for ' + pending.length)
     Promise.all(pending).then((handles) => { window.__dropped = handles }, (e) => { window.__droppedError = e.name + ': ' + e.message })
   })
 </script>
 </body>`
 
-interface DropWindow { __dropped: FileSystemHandle[] | undefined, __droppedError: string | undefined }
+interface DropWindow { __dropped: FileSystemHandle[] | undefined, __droppedError: string | undefined, __trail: string[] }
 
 afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
@@ -86,12 +89,14 @@ it('lets an ordinary website read and write a file the person handed it, and ref
         await view.evaluate(() => {
           (window as unknown as DropWindow).__dropped = undefined
           ;(window as unknown as DropWindow).__droppedError = undefined
+          ;(window as unknown as DropWindow).__trail = []
         })
         const data = { items: [], files: [path], dragOperationsMask: 1 }
         for (const type of ['dragEnter', 'dragOver', 'drop'] as const) {
           await cdp.send('Input.dispatchDragEvent', { type, x: 100, y: 100, data })
         }
-        await view.waitForFunction(() => (window as unknown as DropWindow).__dropped !== undefined || (window as unknown as DropWindow).__droppedError !== undefined)
+        const answered = await view.waitForFunction(() => (window as unknown as DropWindow).__dropped !== undefined || (window as unknown as DropWindow).__droppedError !== undefined).then(() => true, () => false)
+        if (!answered) throw new Error(`the page was handed no handle for ${path}; it saw: ${JSON.stringify(await view.evaluate(() => (window as unknown as DropWindow).__trail))}`)
         const refused = await view.evaluate(() => (window as unknown as DropWindow).__droppedError)
         if (refused !== undefined) throw new Error(`the page was refused a handle for ${path}: ${refused}`)
         return await evaluateRetrying(view, () => (window as unknown as DropWindow).__dropped?.map((h) => h.kind).join(','))
