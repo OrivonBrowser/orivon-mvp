@@ -1,8 +1,9 @@
-// Behind a manual proxy in GNOME's settings, Orivon copies the proxy into its sessions with the names the verifier serves left
+// Behind a manual proxy in GNOME's, KDE's or Windows' settings (Windows': written as Internet Options writes it, or by a tool that writes
+// only the values or only the connection blob), Orivon copies the proxy into its sessions with the names the verifier serves left
 // out: a .eth name opens and the proxy is never asked about it, an ordinary site is still served through the proxy, the system's
 // own exceptions still apply, and a proxy that is moved, turned off or turned on again is followed without a restart. Where the
-// settings cannot be read, the guard refuses a name as before and the report says why; where no reader exists yet (any computer
-// but a GNOME one) nothing is read, copied or changed. The proxy is a forward proxy on loopback that logs every `CONNECT` and
+// settings cannot be read or carried, the guard refuses a name as before and the report says why; where no reader exists yet (any computer
+// but a GNOME, a KDE or a Windows one) nothing is read, copied or changed. The proxy is a forward proxy on loopback that logs every `CONNECT` and
 // every plain-HTTP request.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/web3/e2e-eth-system-proxy-mirror.test.ts
@@ -15,14 +16,17 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
-import { gnomeProxy, launchShellOn, ORDINARY, PROXY_SHEET, CANCELLED, refusalLines, report, resolved, startLoggingProxy, verifierNames, visitReporting } from './system-proxy-support.js'
-import type { LoggingProxy, Running } from './system-proxy-support.js'
+import { gnomeProxy, kdeProxy, launchShellOn, ORDINARY, PROXY_SHEET, CANCELLED, refusalLines, report, resolved, startLoggingProxy, verifierNames, visitReporting, windowsAutoDetect, windowsManualProxy } from './system-proxy-support.js'
+import type { LoggingProxy, Running, WindowsProxyForm } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
 const LINUX = process.platform === 'linux'
+const WINDOWS = process.platform === 'win32'
 const SETUP_TIMEOUT_MS = 240_000
 /** What the system's exceptions cover that no implicit rule does. */
 const EXCEPTIONS = ['localhost', '127.0.0.0/8', '::1', '*.lan.test']
+/** The same on Windows, with the exception Windows adds to a list for every name without a dot. */
+const WINDOWS_EXCEPTIONS = '<local>;*.lan.test'
 
 let scratch = ''
 let gateway: Awaited<ReturnType<typeof startFixtureGateway>>
@@ -42,6 +46,28 @@ const launchShell = async (env: Record<string, string>): Promise<Running> => awa
 
 /** The desktop's proxy settings for a launch of its own, pointing at `port`. */
 const desktopProxy = (port: number): ReturnType<typeof gnomeProxy> => gnomeProxy(mkdtempSync(join(scratch, 'desktop-')), port, EXCEPTIONS)
+
+/** A computer's proxy as the settings window or a tool would change it, in whatever form the computer keeps it. */
+interface ProxySettings {
+  readonly env: Record<string, string>
+  readonly write: (port: number) => void
+  readonly off: () => void
+  readonly restore: () => void
+}
+
+const windowsProxy = (form: WindowsProxyForm, port: number, detect: boolean): ProxySettings => {
+  const proxy = windowsManualProxy(form, { server: `127.0.0.1:${String(port)}`, bypass: WINDOWS_EXCEPTIONS, detect })
+  return { env: {}, write: (next) => { proxy.write({ server: `127.0.0.1:${String(next)}`, bypass: WINDOWS_EXCEPTIONS, detect }) }, off: proxy.off, restore: proxy.restore }
+}
+
+/** The computers whose settings carry a manual proxy, and the source the report names for each. */
+const COMPUTERS: ReadonlyArray<{ readonly name: string, readonly source: string, readonly applies: boolean, readonly set: (port: number) => ProxySettings }> = [
+  { name: 'GNOME settings', source: 'gnome', applies: LINUX, set: (port) => ({ ...desktopProxy(port), restore: () => {} }) },
+  { name: 'Windows settings, written as Internet Options writes them,', source: 'windows', applies: WINDOWS, set: (port) => windowsProxy('both', port, false) },
+  { name: 'Windows settings, written as values only,', source: 'windows', applies: WINDOWS, set: (port) => windowsProxy('values', port, false) },
+  { name: 'Windows settings, written as the connection blob only,', source: 'windows', applies: WINDOWS, set: (port) => windowsProxy('blob', port, false) },
+  { name: 'Windows settings, with detection on beside the proxy,', source: 'windows', applies: WINDOWS, set: (port) => windowsProxy('both', port, true) }
+]
 
 interface SystemProxyFact { readonly source: string, readonly mode: string, readonly state: string, readonly reason: string }
 
@@ -80,25 +106,33 @@ async function waitForAnswer (app: ElectronApplication, url: string, expected: R
   return last
 }
 
+/** Waits until every session kind answers `url` as `expected` says. A partition is made the first time it is named and its proxy is set a moment later (the guard waits for that), so the facts about the profiles are read once each has taken the copy. */
+async function waitForEverySession (app: ElectronApplication, url: string, expected: RegExp): Promise<void> {
+  let last: Record<string, string> = {}
+  const settled = await waitFor(async () => { last = await resolved(app, url); return Object.values(last).every((answer) => expected.test(answer)) }, 15_000)
+  if (!settled) throw new Error(`the sessions still answer ${JSON.stringify(last)} for ${url}`)
+}
+
 /** Has `proxy` answer for the ordinary address with a page of this title, so a visit shows which proxy served it. */
 const serveOrdinary = (proxy: LoggingProxy, title: string): void => { proxy.serve('ordinary.test:8080', title) }
 
-describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy', () => {
+for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer whose ${computer.name} carry a manual proxy`, () => {
   let first: LoggingProxy
   let second: LoggingProxy
-  let desktop: ReturnType<typeof gnomeProxy>
+  let desktop: ProxySettings
   let running: Running
   let reported: Awaited<ReturnType<typeof reportedMirror>>
-  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, exempt: Record<string, string>, fromMain: string, refusals: string[], rootDotFetch: string, rootDotRefusals: string[] }
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, rootDot: Record<string, string>, ordinarySessions: Record<string, string>, exempt: Record<string, string>, local: Record<string, string>, fromMain: string, refusals: string[], rootDotFetch: string, rootDotRefusals: string[] }
 
   beforeAll(async () => {
     first = await startLoggingProxy()
     second = await startLoggingProxy()
     serveOrdinary(first, 'ordinary via the first proxy')
     serveOrdinary(second, 'ordinary via the second proxy')
-    desktop = desktopProxy(first.port)
+    desktop = computer.set(first.port)
     running = await launchShell(desktop.env)
     const { app, chrome } = running
+    await waitForEverySession(app, 'https://fixture.eth/', /^DIRECT$/)
     const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the first proxy')
     const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
     const fromMain = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth/'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
@@ -112,19 +146,21 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy', 
       rootDot: await resolved(app, 'https://fixture.eth./'),
       ordinarySessions: await resolved(app, 'https://ordinary.test/'),
       exempt: await resolved(app, 'http://printer.lan.test/'),
+      local: await resolved(app, 'http://intranet/'),
       fromMain,
       refusals,
       rootDotFetch,
       rootDotRefusals: refusalLines(app).slice(refusals.length)
     }
     reported = await reportedMirror(app, chrome)
-    report('manual GNOME proxy', { ...facts, mirror: reported.fact, lines: reported.lines, firstSaw: first.seen.filter((line) => !line.includes('gvt1.com')) })
+    report(`manual proxy, ${computer.name}`, { ...facts, mirror: reported.fact, lines: reported.lines, firstSaw: first.seen.filter((line) => !line.includes('gvt1.com')) })
   }, SETUP_TIMEOUT_MS)
 
   afterAll(async () => {
     await closeElectronApp(running.app)
     await first.close()
     await second.close()
+    desktop.restore()
   })
 
   it('serves an ordinary site through the proxy and a .eth name from the verifier, which the proxy is never asked about', () => {
@@ -153,16 +189,20 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy', 
     for (const kind of Object.keys(facts.exempt)) expect(facts.exempt[kind], `${kind} session, an excepted name`).toBe('DIRECT')
   })
 
+  it.skipIf(computer.source !== 'windows')('keeps <local>: a name without a dot is not sent to the proxy', () => {
+    for (const kind of Object.keys(facts.local)) expect(facts.local[kind], `${kind} session, a name without a dot`).toBe('DIRECT')
+  })
+
   it('reaches the verifier for the shell\'s own fetch of a .eth name, and refuses nothing for the proxy\'s sake', () => {
     expect(facts.fromMain).toBe('status 200')
     expect(facts.refusals.filter((line) => !line.includes('plain request'))).toEqual([])
   })
 
   it('tells the report that the settings are copied, without the proxy\'s address or an exception', () => {
-    expect(reported.fact).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    expect(reported.fact).toEqual({ source: computer.source, mode: 'manual', state: 'mirrored', reason: 'copied' })
     expect(reported.text).not.toContain(String(first.port))
     expect(reported.text).not.toContain('lan.test')
-    expect(reported.lines).toEqual(['[route] system proxy: copied (gnome, manual, copied)'])
+    expect(reported.lines).toEqual([`[route] system proxy: copied (${computer.source}, manual, copied)`])
   })
 
   it('follows a proxy moved to another address: the new proxy is asked for the ordinary site and the .eth name still opens', async () => {
@@ -232,8 +272,173 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy th
   })
 })
 
-describe('a computer whose proxy settings Orivon cannot read yet', () => {
-  const SOURCE: Record<string, string> = { linux: 'environment', win32: 'windows', darwin: 'macos' }
+describe.skipIf(!WINDOWS)('a computer whose Windows settings only detect the proxy automatically', () => {
+  let restore: () => void = () => {}
+
+  beforeAll(() => { restore = windowsAutoDetect() })
+  afterAll(() => { restore() })
+
+  it('copies nothing, opens a .eth name, and the report says the settings only detect', async () => {
+    const { app, chrome } = await launchShell({})
+    try {
+      const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture', 60_000)
+      const reported = await reportedMirror(app, chrome)
+      report('windows, detection only', { eth, mirror: reported.fact, lines: reported.lines })
+      expect(eth.result, JSON.stringify(eth)).toBe('page')
+      expect(reported.fact).toEqual({ source: 'windows', mode: 'detect', state: 'system', reason: 'detect' })
+      expect(reported.lines).toEqual(['[route] system proxy: left to the system (windows, detect, detect)'])
+    } finally {
+      await closeElectronApp(app)
+    }
+  }, SETUP_TIMEOUT_MS)
+})
+
+/** What KDE's exceptions cover: a bare name, which Chromium reads as a suffix, and a dotted one. */
+const KDE_EXCEPTIONS = ['localhost', '127.0.0.0/8', '::1', 'lan.test', '.corp.test']
+
+describe.skipIf(!LINUX)('a computer whose KDE settings carry a manual proxy', () => {
+  let first: LoggingProxy
+  let second: LoggingProxy
+  let desktop: ReturnType<typeof kdeProxy>
+  let running: Running
+  let reported: Awaited<ReturnType<typeof reportedMirror>>
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, ordinarySessions: Record<string, string>, suffixed: Record<string, Record<string, string>>, corp: Record<string, string>, fromMain: string, refusals: string[] }
+
+  beforeAll(async () => {
+    first = await startLoggingProxy()
+    second = await startLoggingProxy()
+    serveOrdinary(first, 'ordinary via the first proxy')
+    serveOrdinary(second, 'ordinary via the second proxy')
+    desktop = kdeProxy(mkdtempSync(join(scratch, 'kde-home-')), first.port, KDE_EXCEPTIONS)
+    running = await launchShell(desktop.env)
+    const { app, chrome } = running
+    await waitForEverySession(app, 'https://fixture.eth/', /^DIRECT$/)
+    const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the first proxy')
+    const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
+    const fromMain = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth/'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
+    facts = {
+      ordinary,
+      eth,
+      eth2: await resolved(app, 'https://fixture.eth/'),
+      ordinarySessions: await resolved(app, 'https://ordinary.test/'),
+      suffixed: { 'a name under the bare entry': await resolved(app, 'http://printer.lan.test/'), 'a name that only ends with it': await resolved(app, 'http://xlan.test/'), 'a name under the dotted entry': await resolved(app, 'http://www.corp.test/') },
+      corp: await resolved(app, 'http://corp.test/'),
+      fromMain,
+      refusals: refusalLines(app)
+    }
+    reported = await reportedMirror(app, chrome)
+    report('manual KDE proxy', { ...facts, mirror: reported.fact, lines: reported.lines, firstSaw: first.seen.filter((line) => !line.includes('gvt1.com')) })
+  }, SETUP_TIMEOUT_MS)
+
+  afterAll(async () => {
+    await closeElectronApp(running.app)
+    await first.close()
+    await second.close()
+  })
+
+  it('serves an ordinary site through the proxy and a .eth name from the verifier, which the proxy is never asked about', () => {
+    expect(facts.ordinary.result).toBe('page')
+    expect(first.seen).toContain(`GET ${ORDINARY}`)
+    expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
+    expect(verifierNames(first.seen)).toEqual([])
+    expect(first.seen.filter((line) => line.startsWith('CONNECT') && !line.includes('gvt1.com'))).toEqual([])
+  })
+
+  it('answers DIRECT for a name the verifier serves in every session kind, and the proxy for an ordinary one', () => {
+    for (const kind of Object.keys(facts.eth2)) {
+      expect(facts.eth2[kind], `${kind} session, .eth`).toBe('DIRECT')
+      expect(facts.ordinarySessions[kind], `${kind} session, ordinary`).toBe(`PROXY 127.0.0.1:${String(first.port)}`)
+    }
+  })
+
+  it('keeps the system\'s own exceptions, each hostname as the suffix match KDE\'s settings make of it', () => {
+    for (const [what, answers] of Object.entries(facts.suffixed)) {
+      for (const kind of Object.keys(answers)) expect(answers[kind], `${kind} session, ${what}`).toBe('DIRECT')
+    }
+    for (const kind of Object.keys(facts.corp)) expect(facts.corp[kind], `${kind} session, the dotted entry's own domain`).toBe(`PROXY 127.0.0.1:${String(first.port)}`)
+  })
+
+  it('reaches the verifier for the shell\'s own fetch of a .eth name, and refuses nothing for the proxy\'s sake', () => {
+    expect(facts.fromMain).toBe('status 200')
+    expect(facts.refusals.filter((line) => !line.includes('plain request'))).toEqual([])
+  })
+
+  it('tells the report that the settings are copied, without the proxy\'s address or an exception', () => {
+    expect(reported.fact).toEqual({ source: 'kde', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    expect(reported.text).not.toContain(String(first.port))
+    expect(reported.text).not.toContain('lan.test')
+    expect(reported.text).not.toContain('corp.test')
+    expect(reported.lines).toEqual(['[route] system proxy: copied (kde, manual, copied)'])
+  })
+
+  it('follows a proxy moved to another address: the new proxy is asked for the ordinary site and the .eth name still opens', async () => {
+    desktop.write(second.port)
+    await waitForCopy(running.app, second.port)
+    const ordinary = await visitReporting(running.app, running.chrome, ORDINARY, 'ordinary via the second proxy')
+    const eth = await visitReporting(running.app, running.chrome, 'https://fixture.eth/', 'verified fixture')
+    expect(ordinary.result).toBe('page')
+    expect(second.seen).toContain(`GET ${ORDINARY}`)
+    expect(eth.result, JSON.stringify(eth)).toBe('page')
+    expect(verifierNames(first.seen)).toEqual([])
+    expect(verifierNames(second.seen)).toEqual([])
+  }, SETUP_TIMEOUT_MS)
+
+  it('follows a proxy turned off: nothing is sent to a proxy and the .eth name still opens', async () => {
+    desktop.off()
+    await waitForAnswer(running.app, 'https://ordinary.test/', /^DIRECT$/)
+    const ordinary = await visitReporting(running.app, running.chrome, ORDINARY, 'ordinary via the second proxy', 8_000)
+    const eth = await visitReporting(running.app, running.chrome, 'https://fixture.eth/', 'verified fixture')
+    expect(ordinary.result, 'the ordinary site no longer comes from a proxy').not.toBe('page')
+    expect(eth.result, JSON.stringify(eth)).toBe('page')
+  }, SETUP_TIMEOUT_MS)
+
+  it('follows a proxy turned on again, and the proxy is still never asked about a name the verifier serves', async () => {
+    desktop.write(first.port)
+    await waitForCopy(running.app, first.port)
+    const ordinary = await visitReporting(running.app, running.chrome, ORDINARY, 'ordinary via the first proxy')
+    const eth = await visitReporting(running.app, running.chrome, 'https://fixture.eth/', 'verified fixture')
+    expect(ordinary.result).toBe('page')
+    expect(eth.result, JSON.stringify(eth)).toBe('page')
+    expect(verifierNames(first.seen)).toEqual([])
+  }, SETUP_TIMEOUT_MS)
+})
+
+describe.skipIf(!LINUX)('a computer whose KDE settings reverse the exceptions, which Orivon cannot carry', () => {
+  let proxy: LoggingProxy
+  let running: Running
+  let facts: { eth: Awaited<ReturnType<typeof visitReporting>>, sessions: Record<string, string> }
+  let reported: Awaited<ReturnType<typeof reportedMirror>>
+
+  beforeAll(async () => {
+    proxy = await startLoggingProxy()
+    // Only the hosts listed use the proxy, and the list names the .eth names.
+    running = await launchShell(kdeProxy(mkdtempSync(join(scratch, 'kde-home-')), proxy.port, ['.eth', 'lan.test'], true).env)
+    const { app, chrome } = running
+    const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
+    facts = { eth, sessions: await resolved(app, 'https://fixture.eth/') }
+    reported = await reportedMirror(app, chrome)
+    report('reversed KDE exceptions', { ...facts, mirror: reported.fact, lines: reported.lines, refusals: refusalLines(app) })
+  }, SETUP_TIMEOUT_MS)
+
+  afterAll(async () => {
+    await closeElectronApp(running.app)
+    await proxy.close()
+  })
+
+  it('refuses a .eth name, saying the proxy would see it, and the proxy is never asked', () => {
+    expect(facts.eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: PROXY_SHEET })
+    expect(verifierNames(proxy.seen)).toEqual([])
+    for (const kind of Object.keys(facts.sessions)) expect(facts.sessions[kind], `${kind} session, .eth`).toMatch(/^PROXY /)
+  })
+
+  it('tells the report that the sessions follow the system\'s own settings, and why', () => {
+    expect(reported.fact).toEqual({ source: 'kde', mode: 'unsupported', state: 'system', reason: 'unsupported' })
+    expect(reported.lines).toEqual(['[route] system proxy: left to the system (kde, unsupported, unsupported)'])
+  })
+})
+
+describe.skipIf(WINDOWS)('a computer whose proxy settings Orivon cannot read yet', () => {
+  const SOURCE: Record<string, string> = { linux: 'environment', darwin: 'macos' }
 
   it('reads, copies and changes nothing, loads a .eth name, and the report says so', async () => {
     const { app, chrome } = await launchShell({})
