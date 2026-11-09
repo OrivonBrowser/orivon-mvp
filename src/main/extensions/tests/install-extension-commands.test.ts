@@ -14,7 +14,8 @@ const defaultSession = { extensions: sessionExtensions }
 Object.assign(sessionExtensions, { owner: defaultSession })
 vi.mock('electron', () => ({ session: { defaultSession } }))
 const sendCommand = vi.hoisted(() => vi.fn((_id: string, _name: string, _tab: unknown) => {}))
-vi.mock('../extension-host.js', () => ({ extensionHost: () => ({ sendCommand, activateAction: () => {}, listActions: () => [] }) }))
+const isVisibleExtensionTab = vi.hoisted(() => vi.fn((_tab: unknown) => true))
+vi.mock('../extension-host.js', () => ({ extensionHost: () => ({ sendCommand, activateAction: () => {}, listActions: () => [] }), isVisibleExtensionTab }))
 const openSidePanelFor = vi.hoisted(() => vi.fn((_id: string, _tab: unknown, _window: unknown) => true))
 vi.mock('../side-panel-runner.js', () => ({ openSidePanelFor }))
 const registry = vi.hoisted(() => ({ entries: [] as Array<{ id: string, installedAt: number }> }))
@@ -28,6 +29,7 @@ beforeEach(() => {
   sessionExtensions.removeAllListeners()
   sessionExtensions.getAllExtensions.mockReset().mockReturnValue([])
   sendCommand.mockClear()
+  isVisibleExtensionTab.mockReset().mockReturnValue(true)
   registry.entries = []
 })
 afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
@@ -111,6 +113,8 @@ describe('installExtensionCommands', () => {
 
   describe('the tab a command key is told about', () => {
     const tabIn = (session: unknown, url: string): unknown => Object.assign(new EventEmitter(), { id: 7, isDestroyed: () => false, session, getURL: () => url })
+    // The origin of every tab here holds Orivon grants, so a grant check in the runner would hide each of them.
+    const holdsGrants = { hasGrantsSync: () => true }
     const press = parseBinding('Alt+Shift+K', 'linux') as Chord
     const run = (tab: unknown): boolean => {
       sessionExtensions.getAllExtensions.mockReturnValue([loaded('one', { mark: { suggested_key: { default: 'Alt+Shift+K' }, description: 'Mark' } })])
@@ -120,13 +124,15 @@ describe('installExtensionCommands', () => {
       return keys.run(press, tab as never)
     }
 
-    it('is the tab in front when it runs in the extensions\' own session, whatever permissions its site holds', () => {
-      const tab = tabIn(defaultSession, 'https://granted.example/')
+    it('is the tab in front when an extension can see it, whatever permissions its site holds', () => {
+      const tab = Object.assign(tabIn(defaultSession, 'https://granted.example/') as object, { broker: holdsGrants })
       expect(run(tab)).toBe(true)
+      expect(isVisibleExtensionTab).toHaveBeenCalledWith(tab)
       expect(sendCommand).toHaveBeenCalledWith('one', 'mark', tab)
     })
 
-    it('is none when the tab runs in another session', () => {
+    it('is none when no extension can see it, and the key still goes to the extension', () => {
+      isVisibleExtensionTab.mockReturnValue(false)
       expect(run(tabIn({ extensions: new EventEmitter() }, 'https://page.example/'))).toBe(true)
       expect(sendCommand).toHaveBeenCalledWith('one', 'mark', undefined)
     })

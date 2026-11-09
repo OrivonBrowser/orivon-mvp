@@ -278,6 +278,15 @@ export function isExtensionTab (webContentsId: number): boolean {
   return contents !== undefined && trackedTabs.has(contents)
 }
 
+/**
+ * A tab an extension can see: one a library instance tracks (a tab in a session with no extensions is none) and not an
+ * Orivon page. Every API that names a tab, the side panel, the command keys and the page menu use this one rule.
+ */
+export function isVisibleExtensionTab (contents: WebContents): boolean {
+  const services = bridge?.services
+  return services !== undefined && !contents.isDestroyed() && trackedTabs.has(contents) && services.internalPages.pageOf(contents) === undefined
+}
+
 /** The library instances there are: the default session's, and one for each profile session. */
 function allHosts (): ElectronChromeExtensions[] {
   const hosts: ElectronChromeExtensions[] = hostExtensions === undefined ? [] : [hostExtensions]
@@ -333,7 +342,7 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
   // What extensions add to a page's right-click menu: the menu of a tab the library tracks, whatever permissions its site holds.
   setPageMenuItemsSource((wc, params) => {
     const host = hostForSession(wc.session)
-    return host === undefined || !trackedTabs.has(wc) ? [] : host.getContextMenuItems(wc, params)
+    return host === undefined || !isVisibleExtensionTab(wc) ? [] : host.getContextMenuItems(wc, params)
   })
 
   /** The toolbar of the window holding `wc` speaks to the instance of the session `wc` runs in. */

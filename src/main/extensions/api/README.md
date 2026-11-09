@@ -25,9 +25,11 @@ frames and worker reach a handler, never a web page, a content script or another
 the router never runs; an event `<name>.<x>` reaches a listener only when `ctx.held` says it holds
 the permission (`extension-event-filter.ts`'s `EVENT_GATES` adds per-event rules).
 
-**A site that holds Orivon permissions is a website to a data API.** A tab, an address or a history
-page is answered for or left out by the same rules whoever's it is: a tab in the default session
-and not an Orivon page is a tab, and no module asks whether an origin holds grants.
+**A site that holds Orivon permissions is a website to a data API.** `ctx.visibleTab(contents)` is the one rule for a
+tab an extension can see: a tab a library instance tracks (`isVisibleExtensionTab` in `../extension-host.ts`) that is not
+an Orivon page. `search`, `sidePanel` and the command keys use it; no module asks whether an origin holds grants. A tab
+in a session with no extensions, such as an app run from its pinned copy, is no tab to any of them. History is the
+person's one list for every session, so `history` and `topSites` list that app's pages with the rest.
 
 **`chrome.sidePanel`** is registered by [`../side-panel-runner.ts`](../side-panel-runner.ts) (`sidePanelApi`, listed in
 `api-registry.ts`): its context call builds the driver that runs the panel, so the module needs no `electron` value of

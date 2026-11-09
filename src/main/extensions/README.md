@@ -248,8 +248,10 @@ that runs a command is consumed; every other key still reaches the page. `_execu
 the popup as a click on the icon does, under the icon or else the Extensions button
 (`extension-action-anchor.ts`); a named command reaches `chrome.commands.onCommand` through
 `ElectronChromeExtensions.sendCommand` with the active tab, and counts as an invocation of the
-extension on that tab. A tab no extension is told about (a tab outside the default session, or an
-internal page) is passed as no tab; a site that holds Orivon permissions is a tab like any other. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
+extension on that tab. A tab no extension can see (an Orivon page, or a tab in a session with no extensions, such as an app run from
+its pinned copy) is passed as no tab: a named command still reaches the extension and the key is consumed,
+while `_execute_action` and `_execute_side_panel` do nothing and leave the key with the page. A site that holds
+Orivon permissions is a tab like any other. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
 table is empty until `installShortcuts` says the saved shortcuts are read, because a lookup before
 that would cache the defaults. The macOS reading of `Command` and `MacCtrl` is *provisional*: it
 is unit-tested and has not run on a Mac.
@@ -277,7 +279,10 @@ The extension's hidden offscreen document is never navigated.
 **[`site-reach.ts`](site-reach.ts) returns none for an origin served from its pinned cache,
 without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
 including a site that holds grants, with its page menu entries, command keys, side panel,
-`webRequest` and `declarativeNetRequest` rules and `chrome.tabCapture` -- but `GRANTED_APPS_CLAUSE`
+`webRequest` and `declarativeNetRequest` rules and `chrome.tabCapture`. An app run from its pinned copy
+has a session of its own that no extension reaches: no content script, request, menu entry, tab API or side panel,
+and a named command key reaches an extension with no tab. Only history is shared, since it is the person's one list
+for every session: `chrome.history` and `chrome.topSites` list that app's pages. `GRANTED_APPS_CLAUSE`
 (`../../broker/policy/extension-manifest.ts`) already carries the one exception: "except an app
 running from its pinned copy". Naming extensions on such an origin's site-info popup or grant
 prompt would say something false, so this file matches that exception exactly rather than

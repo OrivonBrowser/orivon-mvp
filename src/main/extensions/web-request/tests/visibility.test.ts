@@ -81,15 +81,21 @@ describe('requestVisibleTo', () => {
 
   describe('a site that holds Orivon permissions', () => {
     const granted = 'https://granted.example'
+    const holdsGrants = (): boolean => true
+    // The function takes no grant input today. Every optional predicate after host access answers "yes" here, so a check that
+    // asks whether the origin holds grants, in whichever position it comes back, hides these requests and fails the tests.
+    // Neither answer changes a request that is not the error of a navigation to a name Orivon serves.
+    const onGrantedSite = (request: VisibleRequest, hasHostAccess: (url: string) => boolean = all): boolean =>
+      (requestVisibleTo as (...args: unknown[]) => boolean)(ME, request, hasHostAccess, holdsGrants, holdsGrants)
 
     it('shows a request for its URL, one it initiated and one made from its page, like any other', () => {
-      expect(requestVisibleTo(ME, page({ url: `${granted}/api.js`, initiator: undefined }), all)).toBe(true)
-      expect(requestVisibleTo(ME, page({ initiator: granted }), all)).toBe(true)
-      expect(requestVisibleTo(ME, page({ pageUrl: `${granted}/index.html` }), all)).toBe(true)
+      expect(onGrantedSite(page({ url: `${granted}/api.js`, initiator: undefined }))).toBe(true)
+      expect(onGrantedSite(page({ initiator: granted }))).toBe(true)
+      expect(onGrantedSite(page({ pageUrl: `${granted}/index.html` }))).toBe(true)
     })
 
     it('still needs host access to it', () => {
-      expect(requestVisibleTo(ME, page({ url: `${granted}/api.js`, initiator: granted }), (url) => !url.startsWith(granted))).toBe(false)
+      expect(onGrantedSite(page({ url: `${granted}/api.js`, initiator: granted }), (url) => !url.startsWith(granted))).toBe(false)
     })
   })
 })

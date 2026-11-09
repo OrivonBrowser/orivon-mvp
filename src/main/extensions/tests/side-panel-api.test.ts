@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { fakeContext, EXT } from '../api/tests/api-fixtures.js'
+import { fakeContext, EXT, HOLDS_GRANTS } from '../api/tests/api-fixtures.js'
 import { createSidePanelApi, GESTURE_ERROR, TARGET_ERROR } from '../side-panel-api.js'
 import type { SidePanelDriver } from '../side-panel-api.js'
 import { createGestureLedger, createTabGesture } from '../side-panel-gesture.js'
@@ -7,7 +7,7 @@ import { createSidePanelOptions } from '../side-panel-options.js'
 
 type Press = (type: string) => void
 
-function setup (opts: { grantedTab?: boolean, internal?: boolean, refuse?: string, reaches?: boolean, showing?: boolean } = {}) {
+function setup (opts: { grantedTab?: boolean, internal?: boolean, untracked?: boolean, refuse?: string, reaches?: boolean, showing?: boolean } = {}) {
   const listeners: Array<(event: unknown, input: { type: string }) => void> = []
   const contents = {
     getURL: () => (opts.grantedTab === true ? 'https://granted.example/x' : 'https://page.test/'),
@@ -18,7 +18,8 @@ function setup (opts: { grantedTab?: boolean, internal?: boolean, refuse?: strin
   const window = { window: { id: 5, isDestroyed: () => false }, tabs: { activeWebContents: () => contents } }
   const shell = {
     windows: { all: () => [window] },
-    internalPages: { pageOf: () => (opts.internal === true ? 'settings' : undefined) }
+    internalPages: { pageOf: () => (opts.internal === true ? 'settings' : undefined) },
+    ...HOLDS_GRANTS
   }
   const found = { contents, window, id: 't1' }
   const options = createSidePanelOptions({ manifestOf: () => ({ side_panel: { default_path: 'panel.html' } }), holds: () => true })
@@ -32,7 +33,11 @@ function setup (opts: { grantedTab?: boolean, internal?: boolean, refuse?: strin
     open: vi.fn(async () => { if (opts.refuse !== undefined) throw new Error(opts.refuse) }),
     close: vi.fn(async () => {})
   } satisfies SidePanelDriver
-  const fake = fakeContext(shell, { tab: ((id: unknown) => (id === 42 ? found : undefined)) as never, canSee: () => opts.reaches !== false })
+  const fake = fakeContext(shell, {
+    tab: ((id: unknown) => (id === 42 ? found : undefined)) as never,
+    visibleTab: () => opts.untracked !== true && opts.internal !== true,
+    canSee: () => opts.reaches !== false
+  })
   createSidePanelApi(() => driver).install(fake.ctx)
   return { driver, window, press, ...fake }
 }
@@ -167,6 +172,22 @@ describe('an Orivon page', () => {
     await expect(s.call('sidePanel.open', { tabId: 42 })).rejects.toThrow('No tab with id: 42.')
     await expect(s.call('sidePanel.setOptions', { tabId: 42, enabled: false })).rejects.toThrow('No tab with id: 42.')
     await expect(s.call('sidePanel.getOptions', { tabId: 42 })).rejects.toThrow('No tab with id: 42.')
+  })
+})
+
+describe('a tab in a session with no extensions', () => {
+  it('is no tab in open, setOptions and getOptions', async () => {
+    const s = setup({ untracked: true })
+    s.driver.gesture.record(EXT)
+    await expect(s.call('sidePanel.open', { tabId: 42 })).rejects.toThrow('No tab with id: 42.')
+    await expect(s.call('sidePanel.setOptions', { tabId: 42, enabled: false })).rejects.toThrow('No tab with id: 42.')
+    await expect(s.call('sidePanel.getOptions', { tabId: 42 })).rejects.toThrow('No tab with id: 42.')
+  })
+
+  it('does not count a click in the front tab as the input a call that names the window needs', async () => {
+    const s = setup({ untracked: true })
+    s.press('mouseDown')
+    await expect(s.call('sidePanel.open', { windowId: 5 })).rejects.toThrow(GESTURE_ERROR)
   })
 })
 

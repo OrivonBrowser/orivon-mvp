@@ -926,13 +926,6 @@ and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of
     was `normal` for every window and `update` handled `state` only, so an extension that keeps one popup
     (`getAll()` for a `popup` with its id, then `update(id, { focused: true })`) never found it and opened a
     new window for each request.
-77. **`chrome.tabCapture` has no refusal for a site that holds Orivon permissions.** `src/browser/api/tab-capture.ts`:
-    there is no app-refusal hook in `getMediaStreamId` or in `recheckCaptureStillAllowed`, so the tab of an
-    origin that holds grants is captured under the same rules as any `http(s)` tab: the extension must have
-    been invoked on it, and the capture ends when the tab navigates to something that is not `http(s)`.
-    Reason: a site that holds permissions is a website the extension is allowed on; what keeps the
-    extension's code from that site's `window.orivon` is the filter in
-    `src/preload/surface/main-world-socket.ts`, not a refusal here.
 
 Nothing else changed; upstream code is not reformatted.
 

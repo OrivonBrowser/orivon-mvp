@@ -44,6 +44,7 @@ function setup () {
     prefs: createExtensionPrefsStore(null),
     held: () => true,
     webContentsFromId: () => undefined,
+    visibleTab: () => true,
     popupParent: () => undefined
   }, { name: 'ns', permission: 'ns-perm', install: () => {} })
   ctx.handle('ns.read', run)

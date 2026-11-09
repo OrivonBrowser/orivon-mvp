@@ -9,7 +9,7 @@ import { INTERNAL_EVENT_CHANNEL } from '../channels.js'
 import { anchorFor } from './extension-action-anchor.js'
 import { createExtensionCommandKeys } from './extension-commands-runner.js'
 import type { ExtensionCommandKeys, LoadedExtension } from './extension-commands-runner.js'
-import { extensionHost } from './extension-host.js'
+import { extensionHost, isVisibleExtensionTab } from './extension-host.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
 import { openSidePanelFor } from './side-panel-runner.js'
 import { recordExtensionInvocation } from './side-panel-gesture.js'
@@ -75,7 +75,7 @@ export function installExtensionCommands (options: InstallCommandKeysOptions): E
     keyChanged: (extensionId, change) => { extensionHost()?.getRouter().sendEvent(extensionId, 'commands.onChanged', change) },
     recordInvocation: recordExtensionInvocation,
     openSidePanel: (extensionId, tab, window) => openSidePanelFor(extensionId, tab, window),
-    isHiddenTab: (tab) => tab.session !== session.defaultSession,
+    isHiddenTab: (tab) => !isVisibleExtensionTab(tab),
     anchorFor,
     recorded: (page, outcome) => {
       const contents = page as WebContents

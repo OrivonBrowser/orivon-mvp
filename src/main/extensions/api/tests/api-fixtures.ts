@@ -8,7 +8,14 @@ export type Handler = (event: ApiEvent, ...args: unknown[]) => unknown
 
 export interface SentEvent { readonly name: string, readonly args: unknown[] }
 
+/**
+ * What a grant check could ask, answering that every origin holds Orivon grants. The context has no such input, so a
+ * module that reintroduces one (`isAppOrigin`, `hasGrantsSync`) hides every tab the tests build and fails them.
+ */
+export const HOLDS_GRANTS = { isAppOrigin: () => true, hasGrants: () => true, broker: { app: { hasGrantsSync: () => true } } }
+
 export function fakeContext (shell: Record<string, unknown>, over: Partial<ExtensionApiContext> = {}) {
+  const pageOf = (shell.internalPages as { pageOf?: (contents: unknown) => unknown } | undefined)?.pageOf
   const handlers = new Map<string, { run: Handler, opts: unknown }>()
   const events: SentEvent[] = []
   const ctx = {
@@ -18,7 +25,9 @@ export function fakeContext (shell: Record<string, unknown>, over: Partial<Exten
     onShell: (run: (shell: never) => void) => { run(shell as never) },
     held: () => true,
     session: { extensions: { getAllExtensions: () => [{ id: EXT }], on: () => {} } },
+    ...HOLDS_GRANTS,
     tab: () => undefined,
+    visibleTab: (contents: unknown) => pageOf?.(contents) === undefined,
     activeTab: () => undefined,
     callerWindow: () => undefined,
     ...over

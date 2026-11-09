@@ -696,7 +696,7 @@ is not the same as it doing anything: read the note, not just the symbol.
 | `dns` | ⚠️ | `chrome.dns.resolve` exists as a real function, not exercised in measurement; dev-channel-only in real Chrome too |
 | `downloads` | ⚠️ | Every method and event is a declared no-op stub; nothing downloads, cancels or reports |
 | `extension` | ⚠️ | `isAllowedFileSchemeAccess`/`isAllowedIncognitoAccess` always answer `false`; `getViews` always `[]` |
-| `history` | ✅ | `search` (24 hours by default), `addUrl`, `deleteUrl`, `deleteRange`, `deleteAll`, `onVisited` and `onVisitRemoved` over Orivon's history; `getVisits` returns one visit per address; `onVisitRemoved` covers the newest 200 pages; a granted site's pages are listed and deleted like any other (`api/history-api.ts`) |
+| `history` | ✅ | `search` (24 hours by default), `addUrl`, `deleteUrl`, `deleteRange`, `deleteAll`, `onVisited` and `onVisitRemoved` over Orivon's history; `getVisits` returns one visit per address; `onVisitRemoved` covers the newest 200 pages; every page of the person's one history is listed and deleted, a granted site's and an app run from its pinned copy's included (`api/history-api.ts`) |
 | `i18n` | ✅ | `getMessage` resolves the real `_locales` string; `getUILanguage` and `getAcceptLanguages` answer from the system locale (measured: `en-GB`) |
 | `idle` | ✅ | `queryState()` measured returning `"active"` |
 | `management` | ⚠️ | Only `getPermissionWarningsByManifest` and `getSelf` are real; `uninstallSelf` rejects with "Unknown error." and removes nothing (measured: the extension stays loaded and registered); `getAll` is not a function |
@@ -1139,7 +1139,7 @@ the reference set, and whether this build has it.
 | `declarativeNetRequest` | ✅ | Static, dynamic and session rules are applied (Table 7c) |
 | Extension shortcuts | ✅ | An extension's command keys bind when free, rebind at `orivon://extensions/shortcuts`, and never take a key Orivon uses (Table 7b) |
 | Asking for more access later | ✅ | `chrome.permissions.request` asks in a sheet and the person can take a grant back from the details page (Table 7b) |
-| Bookmarks, history, top sites and search for extensions | ✅ | Over Orivon's own stores; history and top sites list a granted site's pages like any other (Table 7c) |
+| Bookmarks, history, top sites and search for extensions | ✅ | Over Orivon's own stores; history and top sites list every page, a granted site's and an app run from its pinned copy's included (Table 7c) |
 | `webRequest` | ✅ | Served by Orivon, blocking included for manifest version 2; full uBlock Origin blocks (Table 7c) |
 | `sidePanel` | ✅ | Real (Table 7c, 7d) |
 | `userScripts` | ⚠️ | Present as no-ops (Table 7c) |

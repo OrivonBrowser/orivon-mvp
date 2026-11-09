@@ -1,7 +1,7 @@
-// An extension works on a page whose origin holds Orivon permissions exactly as on any other website:
-// its webRequest listeners see the page's requests and block them, its declarativeNetRequest rules block
-// there, its page right-click item shows, and chrome.tabCapture captures the tab. What stays: code an
-// extension runs is still refused by window.orivon (ADR-0045), on the very page it now reaches.
+// An extension works on a page whose origin holds Orivon permissions as on any other website: its webRequest
+// listeners see the page's requests and block them, its declarativeNetRequest rules block there, its page
+// right-click item shows, and chrome.tabCapture captures the tab. Code an extension runs is refused by
+// window.orivon (ADR-0045) on that same page.
 //
 // The page is granted with the developer-only hook before it is opened (as e2e-extensions-orivon-filter
 // does it), so it carries the granted-origin policy: no inline script, so every script here is a file.
@@ -128,14 +128,14 @@ describe('extensions on a page whose origin holds Orivon permissions', () => {
     await runPhase('extensions on a granted page: requests', async (check) => {
       let app: ElectronApplication | undefined
       try {
-        const ids = { webRequest: '', caller: '' }
+        const ids = { webRequest: '' }
         app = await launchElectron({
           appPath: '.',
           args: [HERMETIC_RESOLVER],
           seedProfile: async (dir) => {
             ids.webRequest = seedFixture(dir, 'webrequest-mv2')
             seedFixture(dir, 'dnr-blocker')
-            ids.caller = seedFixture(dir, 'orivon-caller')
+            seedFixture(dir, 'orivon-caller')
           },
           sandbox: true
         })
@@ -249,8 +249,7 @@ describe('extensions on a page whose origin holds Orivon permissions', () => {
         check('the granted tab\'s oscillator is running', await waitFor(async () => await evaluateRetrying(view, () => (window as unknown as { __ctx?: AudioContext }).__ctx?.state === 'running'), 8_000))
         const tabId = await liveApp.evaluate(({ webContents }, url: string) => webContents.getAllWebContents().find((wc) => wc.getURL() === url)?.id ?? -2, `${started.origin}/orivon-fixture/audio`)
 
-        // The first worker of a new extension misses the library's preload and is reloaded once: the first message waits for it.
-        await new Promise((resolve) => setTimeout(resolve, 10_000))
+        await waitRecovered(app)
 
         const selector = `#${extensionId}`
         check('the toolbar shows the fixture\'s action', await waitFor(async () => await chrome.evaluate(
@@ -271,7 +270,6 @@ describe('extensions on a page whose origin holds Orivon permissions', () => {
         check('tabCapture.getMediaStreamId gave the extension a stream id for the granted tab', typeof captured?.streamId === 'string', JSON.stringify({ captured, tabId, output: mainOutput(liveApp).slice(-400) }))
         check('the offscreen document\'s getUserMedia("tab") call returns a live track', captured?.offscreenResult?.trackReadyState === 'live', JSON.stringify(captured))
         check('the granted tab is muted locally while captured', await liveApp.evaluate(({ webContents }, id: number) => webContents.fromId(id)?.audioMuted, tabId) === true)
-        check('no refusal about a granted app reached the log', !mainOutput(liveApp).includes('belongs to a granted app'))
       } finally {
         if (app !== undefined) await closeElectronApp(app)
       }

@@ -85,7 +85,10 @@ function setup (overrides: {
   const access = vi.fn((id: string, _hostPermissions: unknown, url: string) => overrides.access === undefined ? true : overrides.access(id, url))
   const hostPermissionsOf = vi.fn(() => ['<all_urls>'])
   const held = vi.fn((id: string, permission: string) => overrides.held === undefined ? true : overrides.held(id, permission))
+  // Every origin holds Orivon grants here: a dispatcher that asks (`isAppOrigin`, `hasGrants`) would hide every request.
+  const grants = { isAppOrigin: () => true, hasGrants: () => true }
   const dispatcher = createWebRequestDispatcher({
+    ...grants,
     owner: fake.owner,
     isTab: (id) => id === 5,
     hostPermissionsOf,

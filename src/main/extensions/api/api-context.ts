@@ -24,6 +24,8 @@ export interface ExtensionApiDeps {
   readonly held: (extensionId: string, permission: string) => boolean
   /** `webContents.fromId`, injected so this file needs no electron runtime. */
   readonly webContentsFromId: (id: number) => WebContents | undefined
+  /** The one rule for a tab an extension can see (`isVisibleExtensionTab`). */
+  readonly visibleTab: (contents: WebContents) => boolean
   /** The shell window the open popup holding `contents` hangs under. */
   readonly popupParent: (contents: WebContents) => BaseWindow | undefined
 }
@@ -59,6 +61,7 @@ export function createApiContext (deps: ExtensionApiDeps, module: ExtensionApiMo
     prefs: deps.prefs,
     held: deps.held,
     tab,
+    visibleTab: deps.visibleTab,
     activeTab: (windowId) => {
       const windows = deps.shell()?.windows
       if (windows === undefined) return undefined

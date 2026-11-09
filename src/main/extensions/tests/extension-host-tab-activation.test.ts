@@ -68,6 +68,8 @@ vi.mock('orivon:crx-extensions-tab-capture', () => ({
 const { createExtensionHost, attachExtensionShell } = await import('../extension-host.js')
 const { session: mockedSession } = await import('electron')
 
+const internalPageOf = vi.fn((_contents: unknown): string | undefined => undefined)
+
 function buildShell (ctx: SubsystemContext = {} as unknown as SubsystemContext): {
   services: ShellServices
   subscribed: { tabCreated: any, tabActivated: any, tabClosed: any, tabClosing: any, viewReplaced: any }
@@ -85,6 +87,7 @@ function buildShell (ctx: SubsystemContext = {} as unknown as SubsystemContext):
       findTab
     },
     tabLifecycle: { subscribe: (cbs: any) => { subscribed = cbs } },
+    internalPages: { pageOf: internalPageOf },
     settings: { onChange: () => () => {} }
   } as unknown as ShellServices
   attachExtensionShell(ctx, services, {} as any)
@@ -347,5 +350,49 @@ describe('extension-host: what extensions add to a page\'s right-click menu', ()
     subscribed.tabCreated(tab, { id: 1 } as unknown as BaseWindow)
 
     expect(pageMenuItems(tab, { x: 1, y: 2 } as never)).toEqual([{ label: 'Translate' }])
+  })
+})
+
+describe('extension-host: isVisibleExtensionTab, the one rule for a tab an extension can see', () => {
+  beforeEach(() => {
+    capturedOptions = undefined
+    lastInstance = undefined
+    getExtension.mockReset()
+    internalPageOf.mockReset().mockReturnValue(undefined)
+  })
+
+  // The origin of every tab below holds Orivon grants: the rule asks the library's own store and the internal pages, nothing else.
+  const granted = { broker: { app: { hasGrantsSync: () => true } } } as unknown as SubsystemContext
+  const tabIn = (session: unknown): WebContents => ({ session, isDestroyed: () => false, getURL: () => 'https://granted.example/' }) as unknown as WebContents
+
+  it('is true for a tab the library tracks, a granted site\'s included', async () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed } = buildShell(granted)
+    const { isVisibleExtensionTab } = await import('../extension-host.js')
+    const tab = tabIn(mockedSession.defaultSession)
+    subscribed.tabCreated(tab, { id: 1 } as unknown as BaseWindow)
+    expect(isVisibleExtensionTab(tab)).toBe(true)
+  })
+
+  it('is false for a tab in a session with no extensions, which the library never learns of', async () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed } = buildShell(granted)
+    const { isVisibleExtensionTab } = await import('../extension-host.js')
+    const tab = tabIn({ different: true })
+    subscribed.tabCreated(tab, { id: 1 } as unknown as BaseWindow)
+    expect(isVisibleExtensionTab(tab)).toBe(false)
+  })
+
+  it('is false for an Orivon page, tracked or not', async () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed } = buildShell(granted)
+    const { isVisibleExtensionTab } = await import('../extension-host.js')
+    const tab = tabIn(mockedSession.defaultSession)
+    subscribed.tabCreated(tab, { id: 1 } as unknown as BaseWindow)
+    internalPageOf.mockReturnValue('settings')
+    expect(isVisibleExtensionTab(tab)).toBe(false)
   })
 })

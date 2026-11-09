@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import { BOTH_ERROR, installSearch, parseQuery, searchApi } from '../search-api.js'
-import { fakeContext } from './api-fixtures.js'
+import { fakeContext, HOLDS_GRANTS } from './api-fixtures.js'
 
 const ENGINE_URL = (text: string): string => `https://duckduckgo.com/?q=${encodeURIComponent(text).replace(/%20/g, '+')}`
 
-function setup (opts: { grantedTab?: boolean, internal?: boolean, noWindow?: boolean, mode?: 'web2' | 'web3' } = {}) {
+function setup (opts: { grantedTab?: boolean, internal?: boolean, untracked?: boolean, noWindow?: boolean, mode?: 'web2' | 'web3' } = {}) {
   const tabs = { createTab: vi.fn(), navigate: vi.fn() }
   const window = { tabs }
   const contents = { getURL: () => (opts.grantedTab === true ? 'https://granted.example/x' : 'https://page.test/') }
@@ -13,10 +13,15 @@ function setup (opts: { grantedTab?: boolean, internal?: boolean, noWindow?: boo
     settings: { get: (key: string) => ({ 'search.mode': opts.mode ?? 'web2', 'search.web3Engine': 'explore', 'search.engine': 'duckduckgo' } as Record<string, string>)[key] ?? '' },
     windows: { focused: () => (opts.noWindow === true ? undefined : window) },
     commands: { openWindow },
-    internalPages: { pageOf: () => (opts.internal === true ? 'settings' : undefined) }
+    internalPages: { pageOf: () => (opts.internal === true ? 'settings' : undefined) },
+    ...HOLDS_GRANTS
   }
   const found = { contents, window, id: 't1' }
-  const fake = fakeContext(shell, { tab: ((id: unknown) => (id === 42 ? found : undefined)) as never, activeTab: (() => found) as never })
+  const fake = fakeContext(shell, {
+    tab: ((id: unknown) => (id === 42 ? found : undefined)) as never,
+    activeTab: (() => found) as never,
+    visibleTab: () => opts.untracked !== true && opts.internal !== true
+  })
   installSearch(fake.ctx)
   return { tabs, openWindow, ...fake }
 }
@@ -68,6 +73,14 @@ describe('search.query', () => {
     expect(s.tabs.createTab).not.toHaveBeenCalled()
     await s.call('search.query', { text: 'y', tabId: 42 })
     expect(s.tabs.navigate).toHaveBeenLastCalledWith('t1', ENGINE_URL('y'))
+  })
+
+  it('opens a new tab when the current one is in a session with no extensions, and refuses it by id', async () => {
+    const s = setup({ untracked: true })
+    await s.call('search.query', { text: 'x' })
+    expect(s.tabs.navigate).not.toHaveBeenCalled()
+    expect(s.tabs.createTab).toHaveBeenCalledWith(ENGINE_URL('x'))
+    await expect(s.call('search.query', { text: 'x', tabId: 42 })).rejects.toThrow('No tab with id: 42.')
   })
 
   it('searches in the tab it is told to, and refuses a tab it cannot use', async () => {

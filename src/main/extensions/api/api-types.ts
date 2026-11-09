@@ -44,6 +44,8 @@ export interface ExtensionApiContext {
   readonly prefs: ExtensionPrefsStore
   readonly held: (extensionId: string, permission: string) => boolean
   readonly tab: (tabId: unknown) => ResolvedTab | undefined
+  /** Whether `contents` is a tab an extension can see: one a library instance tracks, and not an Orivon page. */
+  readonly visibleTab: (contents: WebContents) => boolean
   readonly activeTab: (windowId?: unknown) => ResolvedTab | undefined
   /** The window the call comes from: the one holding the tab it runs in, or the one an open popup hangs under. Undefined for a worker or a background page. */
   readonly callerWindow: (event: ApiEvent) => ShellWindow | undefined

@@ -28,6 +28,7 @@ function fakeDeps (over: Partial<ExtensionApiDeps> = {}) {
     prefs: createExtensionPrefsStore(null),
     held: () => true,
     webContentsFromId: () => undefined,
+    visibleTab: () => true,
     popupParent: () => undefined,
     ...over
   }
@@ -186,5 +187,15 @@ describe('createApiContext: callerWindow', () => {
     expect(ctxWith(null, undefined).callerWindow(frameEvent)).toBeUndefined()
     expect(ctxWith(null, winA).callerWindow({ type: 'service-worker', sender: undefined, extension: { id: ID, manifest: {} } })).toBeUndefined()
     expect(createApiContext(fakeDeps().deps, MODULE).callerWindow(frameEvent)).toBeUndefined()
+  })
+})
+
+describe('createApiContext: visibleTab', () => {
+  it('is the answer of the one rule the host gives, and asks nothing about grants', () => {
+    const asked: unknown[] = []
+    const tab = { id: 9 }
+    const ctx = createApiContext(fakeDeps({ visibleTab: (contents) => { asked.push(contents); return false } }).deps, MODULE)
+    expect(ctx.visibleTab(tab as never)).toBe(false)
+    expect(asked).toEqual([tab])
   })
 })

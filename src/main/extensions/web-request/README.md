@@ -33,8 +33,9 @@ the request is `visibility.ts`'s question, asked against the HTTP origin the Web
 about grants: a request from such a page, to its origin or with it as the initiator reaches an
 extension on the same rules as any other, host access included, the way the data APIs treat it
 (`../api/README.md`). A request from a page outside the default session never reaches a listener at
-all, because the listener is installed on that session only, so an app run from its pinned copy in
-a session of its own stays out of reach.
+all, because the listener is installed on that session only: an app run from its pinned copy, in a session
+of its own, has no request an extension hears, blocks or redirects, and no content script, menu entry or
+tab API either (only history and top sites list its pages).
 
 **A name Orivon serves loads and fails in Orivon, never in an extension.** `visibility.ts` hides `onErrorOccurred` of a
 `main_frame` or `sub_frame` request to a host a protocol serves (`.eth` and every other top-level domain a protocol
