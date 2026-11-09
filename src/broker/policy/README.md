@@ -53,6 +53,14 @@ refuse this machine on those ports after the grant check. The held ports come fr
 (`CreateBrokerOptions.ownLoopbackPort`), because they live in the main process and change while it
 runs.
 
+**[`picker-blocklist.ts`](picker-blocklist.ts) lets the account's own temporary folder through the
+system-folder rule.** macOS keeps it at `/var/folders/...`, and `/var` is a symlink into
+`/private/var`: a pick is realpath'd before it is checked, so a file the person made in the
+temporary folder lands inside a system folder and the app that asked saw a cancellation. The
+exemption holds only for a temporary folder that is neither a filesystem root nor an ancestor of a
+system folder (`TMPDIR=/var` opens nothing), and it never reaches a private session or the
+temporary folder itself, which the rules before it refuse.
+
 **`bind(0)` returns ranges, not a yes.** Port 0 asks the OS to pick, and a bare yes would let it
 pick outside what the person read ("ports 6881-6889"). Returning the granted ranges means the
 caller binds inside them by the shape of the result, as `ConnectAllowed.addresses` does for
