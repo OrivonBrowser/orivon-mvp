@@ -26,6 +26,7 @@ import type { ElectronApplication } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 import { closeElectronApp, forwardOutput, killChild, navigateToFixture, runPhase, waitForTcpReady } from '../support/e2e-helpers.js'
+import type { InputModifier } from '../support/key-bindings.js'
 import { answerQuestion, noNativeDialogs, questionGone, readQuestion, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
 import { HOST, STATIC_PORT } from '../apps/fixture/config.mjs'
 import { embedPartitionFor } from '../../src/main/embed/embed-guard.js'
@@ -160,12 +161,15 @@ interface PageState {
 
 type Chrome = Awaited<ReturnType<typeof navigateToFixture>>
 
+/** The held key that turns a click on a link into a new-tab click: Command on macOS, where Control-click is a secondary click that asks for no window, and Control elsewhere. */
+const NEW_TAB_MODIFIER: InputModifier = process.platform === 'darwin' ? 'meta' : 'control'
+
 /** A click at `point` inside the shown page, as input the renderer takes for a person's: a user gesture, and any held modifier. */
-async function clickGuest (app: ElectronApplication, guestId: number, point: { x: number, y: number }, modifiers: string[] = []): Promise<void> {
+async function clickGuest (app: ElectronApplication, guestId: number, point: { x: number, y: number }, modifiers: InputModifier[] = []): Promise<void> {
   await app.evaluate(({ webContents }, args) => {
     const guest = webContents.fromId(args.guestId)
     if (guest === undefined) throw new Error('no guest')
-    const at = { x: args.x, y: args.y, modifiers: args.modifiers as Array<'control'> }
+    const at = { x: args.x, y: args.y, modifiers: args.modifiers }
     guest.sendInputEvent({ type: 'mouseMove', ...at })
     guest.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
     guest.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
@@ -286,8 +290,12 @@ it(
         // ---- links and a form.
         const blank = await heardAfter(view, async () => { await clickGuest(app, guestId, rowMiddle('blank')) })
         check('a target=_blank link click is "foreground-tab", once', popupOf(blank)?.disposition === 'foreground-tab' && popupOf(blank)?.url === `${SITE_ORIGIN}/popup-target`, JSON.stringify(blank))
-        const ctrl = await heardAfter(view, async () => { await clickGuest(app, guestId, rowMiddle('plain'), ['control']) })
-        check('a control-click on a plain link is "background-tab", once', popupOf(ctrl)?.disposition === 'background-tab' && popupOf(ctrl)?.url === `${SITE_ORIGIN}/plain-target`, JSON.stringify(ctrl))
+        const newTab = await heardAfter(view, async () => { await clickGuest(app, guestId, rowMiddle('plain'), [NEW_TAB_MODIFIER]) })
+        check(
+          'a modifier click that asks for a new tab (Command on macOS, Control elsewhere) on a plain link is "background-tab", once',
+          popupOf(newTab)?.disposition === 'background-tab' && popupOf(newTab)?.url === `${SITE_ORIGIN}/plain-target`,
+          JSON.stringify(newTab)
+        )
         const named = await heardAfter(view, async () => { await clickGuest(app, guestId, rowMiddle('named')) })
         check('a link with a target name carries the name', popupOf(named)?.frameName === 'pane' && popupOf(named)?.url === `${SITE_ORIGIN}/named-target`, JSON.stringify(named))
         const posted = await heardAfter(view, async () => { await clickGuest(app, guestId, rowMiddle('post')) })
