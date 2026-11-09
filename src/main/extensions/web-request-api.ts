@@ -43,7 +43,6 @@ export const webRequestApi: ExtensionApiModule = {
       isTab: isExtensionTab,
       hostPermissionsOf,
       hostAccess: hostAccessForPatterns,
-      isAppOrigin: ctx.isAppOrigin,
       servesHost: (hostname) => BUILTIN_ADDRESSES.routesToVerifier(hostname),
       pageUrlOf,
       held: ctx.held,

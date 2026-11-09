@@ -1,6 +1,6 @@
 # ADR-0109: A person can keep the tunnel profiles' sign-ins the same as normal browsing, and a cookie mirror keeps them in step
 
-- **Status:** accepted. Amends [`ADR-0084`](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md) (where a website's sign-ins live while the new setting is off) and carries out `d-0779`.
+- **Status:** accepted. Amends [`ADR-0084`](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md) (where a website's sign-ins live while the new setting is off) and carries out `d-0780`.
 - **Date:** 2026-11-09
 - **Type:** product / security
 - **Decided by:** owner
