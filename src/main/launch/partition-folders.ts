@@ -1,9 +1,9 @@
 // Moves the session folders an earlier name left to their short names, once per start, before any session opens.
 // Electron-free over the folder it is handed.
 //
-// A session was named `<kind>-<64 hex>` and is now `<kind>-<first 32 hex>` (`broker/grants/origin-hash.ts`), so
-// `Partitions/app-<64 hex>` becomes `Partitions/app-<32 hex>`. Folders are renamed, never copied, merged or
-// deleted: a folder that cannot move stays where it is and is tried again at the next start.
+// A session opens `Partitions/<kind>-<first 32 hex>` (`broker/grants/origin-hash.ts`); a folder named `<kind>-<64 hex>`
+// is one an earlier name left, and becomes that. Folders are renamed, never copied, merged or deleted: a folder that
+// cannot move stays where it is and is tried again at the next start.
 
 import { readdirSync, renameSync, rmdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -13,8 +13,8 @@ import { HASHED_PARTITION_KINDS, PARTITION_HASH_LENGTH } from '../../broker/gran
 const LONG_HASH_LENGTH = 64
 const LEGACY_FOLDER = new RegExp(`^(${HASHED_PARTITION_KINDS.join('|')})-([0-9a-f]{${String(LONG_HASH_LENGTH)}})$`)
 
-/** Pauses before each further round on the folders a lock refused: Windows refuses a rename for as long as another process holds a file in the folder. */
-const RETRY_DELAYS_MS = [100, 250, 650]
+/** Pauses before each further round on the folders a lock refused: Windows refuses a rename for as long as another process holds a file in the folder, and an earlier run's helper processes can outlive its main one by a few seconds. */
+const RETRY_DELAYS_MS = [100, 250, 650, 1000, 2000]
 const LOCKED_CODES: ReadonlySet<string> = new Set(['EBUSY', 'EPERM', 'EACCES'])
 
 /**
@@ -90,7 +90,7 @@ function describe (move: FolderMove, partitions: string): string {
 
 /**
  * Renames every `Partitions/<kind>-<64 hex>` under `userData` to its short name. A folder the system refuses because a
- * process holds it is tried again after a short pause, three times at most; any other refusal waits for the next
+ * process holds it is tried again after a pause, five times at most (about four seconds in all); any other refusal waits for the next
  * start. Every folder's outcome is logged (`orivon://report` shows the log), and nothing is logged when no folder
  * has the long name. Never throws.
  */

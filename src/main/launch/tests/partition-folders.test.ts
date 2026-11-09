@@ -174,12 +174,12 @@ describe('moving the folders of the long names', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
-  it.each(['EBUSY', 'EPERM', 'EACCES'])('leaves a folder that %s keeps refusing where it is, tries three times more, and says so', (code) => {
+  it.each(['EBUSY', 'EPERM', 'EACCES'])('leaves a folder that %s keeps refusing where it is, tries five times more, and says so', (code) => {
     const from = seed(longName('app', APP), 'kept')
     const { io, waits } = refusing(['rename'], code)
     const moves = moveLongNamedPartitionFolders(userData, io)
     expect(moves).toEqual([{ from, to: join(partitions, shortName('app', APP)), outcome: 'failed', code }])
-    expect(waits).toEqual([100, 250, 650])
+    expect(waits).toEqual([100, 250, 650, 1000, 2000])
     expect(readFileSync(join(from, 'Cookies'), 'utf8')).toBe('kept')
     expect(warn).toHaveBeenCalledTimes(1)
     const line = String(warn.mock.calls[0]?.[0])
@@ -224,6 +224,44 @@ describe('moving the folders of the long names', () => {
     expect(readdirSync(partitions).sort()).toEqual([shortName('app', APP), shortName('app', OTHER), shortName('embed', APP)].sort())
     expect(readFileSync(join(partitions, shortName('app', OTHER), 'Cookies'), 'utf8')).toBe('second')
     expect(moveLongNamedPartitionFolders(userData)).toEqual([])
+  })
+
+  it('leaves the old data where it is, and meets a conflict at every start after it, when a refused folder is followed by a session that fills the short name', () => {
+    const from = seed(longName('app', APP), 'older data')
+    const { io } = refusing(['rename'], 'EBUSY')
+    expect(moveLongNamedPartitionFolders(userData, io)[0]?.outcome).toBe('failed')
+    // The run goes on without the move: the app's session opens the short name and writes into it.
+    const to = seed(shortName('app', APP), 'a new session')
+    for (let start = 0; start < 3; start += 1) expect(moveLongNamedPartitionFolders(userData)[0]).toMatchObject({ from, to, outcome: 'conflict' })
+    expect(readFileSync(join(from, 'Cookies'), 'utf8')).toBe('older data')
+    expect(readFileSync(join(to, 'Cookies'), 'utf8')).toBe('a new session')
+  })
+
+  it('moves a folder over the empty one it removed when the rename is refused once and then goes through', () => {
+    const from = seed(longName('app', APP), 'kept')
+    mkdirSync(join(partitions, shortName('app', APP)))
+    const { io, waits } = refusing(['rename'], 'EBUSY', 1)
+    expect(moveLongNamedPartitionFolders(userData, io).map((move) => move.outcome)).toEqual(['moved'])
+    expect(waits).toEqual([100])
+    expect(existsSync(from)).toBe(false)
+  })
+
+  it('reports a conflict when the system says the short name is not empty at the rename itself', () => {
+    const from = seed(longName('app', APP), 'kept')
+    const { io } = refusing(['rename'], 'ENOTEMPTY')
+    expect(moveLongNamedPartitionFolders(userData, io)[0]).toMatchObject({ outcome: 'conflict', code: 'ENOTEMPTY' })
+    expect(existsSync(from)).toBe(true)
+  })
+
+  it('fails, without a pause or a rename, when the short name is not a folder it can remove', () => {
+    const from = seed(longName('app', APP), 'kept')
+    writeFileSync(join(partitions, shortName('app', APP)), 'a file in the way')
+    const { io, waits, renames } = refusing([], 'EIO')
+    expect(moveLongNamedPartitionFolders(userData, io)[0]).toMatchObject({ outcome: 'failed', code: 'ENOTDIR' })
+    expect(waits).toEqual([])
+    expect(renames).toEqual([])
+    expect(readFileSync(join(partitions, shortName('app', APP)), 'utf8')).toBe('a file in the way')
+    expect(existsSync(from)).toBe(true)
   })
 
   it('reports a folder that was no longer there when its turn came, without calling it a failure', () => {

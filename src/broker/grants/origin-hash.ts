@@ -47,9 +47,10 @@ export function appDataRoot (userDataPath: string, canonicalOrigin: string): str
 
 /**
  * How many hex digits of `originHash` a session's folder name keeps. Chromium puts a service worker's cache index
- * about 180 characters below `Partitions/<kind>-<hash>/`, and Windows refuses a path over 259 characters, so
- * the profile folder may be 80 characters long with 32 digits and only 48 with 64. 32 digits are 128 bits: no
- * two origins that exist share a name, and nobody can search for a second origin with a given name.
+ * about 130 characters below `Partitions/<kind>-<hash>/`, and Windows refuses a path over 259 characters, so with
+ * 32 digits the profile folder may be 80 characters long for an app's session (78 for the others) and only 48
+ * with 64. 32 digits are 128 bits: no two origins that exist share a name, and nobody can search for a second
+ * origin with a given name.
  */
 export const PARTITION_HASH_LENGTH = 32
 

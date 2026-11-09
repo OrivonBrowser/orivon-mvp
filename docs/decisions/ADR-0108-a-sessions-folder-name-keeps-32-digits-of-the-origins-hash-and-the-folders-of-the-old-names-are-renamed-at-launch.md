@@ -19,7 +19,7 @@ At every start, before any session is made, Orivon renames each `Partitions/<kin
 - A short name that does not exist: the rename.
 - A short name that is an empty folder: that folder is removed (it holds no data) and the rename follows.
 - A short name that holds anything: nothing moves, both folders stay, and the log says so. This repeats at every start for as long as it lasts.
-- A rename the system refuses because a process holds the folder (`EBUSY`, `EPERM`, `EACCES`, which Windows answers while another process has a file in it): all such folders are tried again after 100, 250 and 650 ms, and a folder still refused stays under its long name until the next start. Any other refusal waits for the next start without a pause.
+- A rename the system refuses because a process holds the folder (`EBUSY`, `EPERM`, `EACCES`, which Windows answers while another process has a file in it): all such folders are tried again after pauses of 100, 250, 650, 1000 and 2000 ms (about four seconds in all, spent only when a folder is refused), and a folder still refused stays under its long name until the next start. Any other refusal waits for the next start without a pause.
 - Every outcome is a `[partitions]` line in the log, so `orivon://report` shows it. A start with nothing to move logs nothing.
 
 What is keyed by the whole hash and is not a session folder stays as it is: `grants/<hash>`, `apps/<hash>`,
@@ -62,8 +62,9 @@ hash, about 2^128 work, beyond any attacker. A pair of colliding origins costs a
 between two origins that one attacker owns, which gains nothing. The sessions hold web storage only: grants, app files and the
 `orivon.fs` root stay on the whole hash.
 
-32 digits put the deepest Chromium file about 179 characters below the profile folder, so one of up to 80 characters
-works (a Windows user name up to about 48), where 64 digits allowed 48.
+32 digits put the deepest Chromium file about 179 characters below the profile folder for an app's session (181 for
+the other kinds, whose names are two characters longer), so one of up to 80 characters works (78 for those), a Windows
+user name up to about 48, where 64 digits allowed 48.
 
 Electron opens the session `persist:<name>` in `<userData>/Partitions/<name>`. The names here are a kind, a hyphen and
 lowercase hex, which a folder name needs no escaping or case folding for, and `e2e-app-partition-move.test.ts` reads the
@@ -74,7 +75,9 @@ folder under the short name from a real launch and shows an app finding its data
 - A folder whose rename is refused at a start stays under its long name, and its app runs that start with an empty session
   under the short name. The next start then finds the short name holding data and leaves both folders (the third bullet
   above): the older data is on disk, untouched, and not the one the app reads. The retries make this rare; it is
-  logged every time it happens, and it can only be settled by a person with the folders in hand.
+  logged every time it happens, and it can only be settled by a person with the folders in hand. Every way Orivon
+  deletes a site's or an app's data (clearing it, removing a recorded local file, the cleanup of orphaned app sessions)
+  acts through the session's name, so none of them reaches a folder left under the long name.
 - Going back to an earlier build makes that build open `app-<64 hex>` again, empty, while the data is under the short
   names; and what that build then writes meets the third bullet at the next start of this one.
 - The cleanup of orphaned app sessions (`src/main/pages/orphaned-app-partitions.ts`) asks for a session by an origin's

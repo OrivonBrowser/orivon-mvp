@@ -89,9 +89,11 @@ describe('the names of the sessions made from an origin', () => {
     expect(hashedPartitionName('app', 'https://a.example')).not.toBe(hashedPartitionName('app', 'https://b.example'))
   })
 
-  it('leave a profile folder of 80 characters room for a service worker\'s cache index on Windows', () => {
-    const profileFolder = 80
-    const below = '\\Partitions\\app-'.length + PARTITION_HASH_LENGTH + '\\Service Worker\\CacheStorage\\'.length + 40 + '\\'.length + 36 + '\\index-dir\\the-real-index'.length
-    expect(profileFolder + below).toBeLessThanOrEqual(259)
+  it('leave a profile folder of 78 characters room for a service worker\'s cache index on Windows, in every kind', () => {
+    const profileFolder = 78
+    for (const kind of HASHED_PARTITION_KINDS) {
+      const below = '\\Partitions\\'.length + hashedPartitionName(kind, origin).length - 'persist:'.length + '\\Service Worker\\CacheStorage\\'.length + 40 + '\\'.length + 36 + '\\index-dir\\the-real-index'.length
+      expect(profileFolder + below).toBeLessThanOrEqual(259)
+    }
   })
 })

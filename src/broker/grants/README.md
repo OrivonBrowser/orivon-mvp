@@ -26,8 +26,8 @@ both, apart, so the narrowing happens in one place: the capability entry points.
 ## Design notes
 
 **A session folder keeps 32 digits of the hash, a directory all 64.** The deepest file Chromium writes under a session
-folder has to fit Windows' 259-character path limit, which `Partitions/<kind>-<64 hex>` did not leave room for under a
-profile folder over 48 characters; 32 digits (128 bits) leave room for 80 and are as unique for an origin as 64 are. The
+folder has to fit Windows' 259-character path limit: 32 digits leave room for a profile folder of 80 characters (the
+whole hash, 48), and 128 bits are enough that no two origins share a name. The
 folders of the 64-digit names are renamed at launch by `../../main/launch/partition-folders.ts`, which reads the kinds from
 `HASHED_PARTITION_KINDS` so a new kind of session cannot be left out of the move (ADR-0108).
 
