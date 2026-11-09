@@ -1,6 +1,6 @@
 // `chrome.sidePanel`: what an extension may ask of the browser's side panel. This file checks the arguments,
-// resolves the tab or window, and applies the rules (a tab that is not an ordinary web tab does not exist for an
-// extension; `open` needs a gesture and a panel that can show). What the panel does on screen is the driver's
+// resolves the tab or window, and applies the rules (a tab no extension can see, an Orivon page or a tab in a
+// session with no extensions, does not exist for an extension; `open` needs a gesture and a panel that can show). What the panel does on screen is the driver's
 // (side-panel-runner.ts); a test supplies a fake one.
 import type { WebContents } from 'electron'
 import type { ShellWindow } from '../shell/window-registry.js'
@@ -51,16 +51,10 @@ function integerField (given: Record<string, unknown>, key: string): number | un
   return value
 }
 
-/** A tab an extension can see: not a granted app's, not an Orivon page. */
-export function isOrdinaryTab (ctx: ExtensionApiContext, contents: WebContents): boolean {
-  const shell = ctx.shell()
-  return shell !== undefined && !ctx.isAppOrigin(contents.getURL()) && shell.internalPages.pageOf(contents) === undefined
-}
-
 export function installSidePanel (ctx: ExtensionApiContext, driver: SidePanelDriver): void {
   const ordinaryTab = (tabId: number): NonNullable<ReturnType<ExtensionApiContext['tab']>> => {
     const found = ctx.tab(tabId)
-    return found === undefined || !isOrdinaryTab(ctx, found.contents) ? fail(`No tab with id: ${String(tabId)}.`) : found
+    return found === undefined || !ctx.visibleTab(found.contents) ? fail(`No tab with id: ${String(tabId)}.`) : found
   }
 
   const targetOf = (event: ApiEvent, raw: unknown, call: string): PanelTarget => {
@@ -106,12 +100,12 @@ export function installSidePanel (ctx: ExtensionApiContext, driver: SidePanelDri
 
   /**
    * The tab the person's input would have been made in: the one the call names, or the one in front of the window it names.
-   * An app's tab and an Orivon page are none: the extension cannot see them.
+   * An Orivon page is none: the extension cannot see it.
    */
   const inputTabOf = (target: PanelTarget): WebContents | undefined => {
     if (target.tabId !== undefined) return ctx.tab(target.tabId)?.contents
     const front = target.window.tabs.activeWebContents()
-    return front === undefined || front.isDestroyed() || !isOrdinaryTab(ctx, front) ? undefined : front
+    return front === undefined || front.isDestroyed() || !ctx.visibleTab(front) ? undefined : front
   }
 
   ctx.handle('sidePanel.open', async (event, raw) => {

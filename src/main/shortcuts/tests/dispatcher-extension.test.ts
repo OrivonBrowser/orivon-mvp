@@ -70,11 +70,11 @@ describe('extension keys in the dispatcher', () => {
     expect(event.preventDefault).not.toHaveBeenCalled()
   })
 
-  it('leaves a registered app\'s tab its own keys, and tells the extension nothing', async () => {
+  it('runs an extension\'s command in a registered app\'s tab as in any other', async () => {
     const { press, extensionRun } = await setup({ appTab: true })
     const event = press(key('Y', 'KeyY', { control: true, shift: true }))
-    expect(extensionRun).not.toHaveBeenCalled()
-    expect(event.preventDefault).not.toHaveBeenCalled()
+    expect(extensionRun).toHaveBeenCalled()
+    expect(event.preventDefault).toHaveBeenCalled()
   })
 
   it('ignores a chord no extension holds', async () => {
