@@ -36,7 +36,9 @@ describe('notifyPickRefused', () => {
 
   it('hands the notice to the sink the shell supplies, naming the app and its origin', () => {
     const show = vi.fn()
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
     notifyPickRefused(info, show)
+    log.mockRestore()
     expect(show).toHaveBeenCalledExactlyOnceWith({
       title: 'Folder or file not allowed',
       message: '"Notes" (https://app.example) asked to use a folder or file Orivon will not hand over: it holds Orivon\'s own data.'
@@ -45,14 +47,18 @@ describe('notifyPickRefused', () => {
 
   it('names only the origin when the app has no name', () => {
     const show = vi.fn()
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
     notifyPickRefused({ ...info, appName: undefined }, show)
+    log.mockRestore()
     expect(show.mock.calls[0]?.[0].message).toMatch(/^https:\/\/app\.example asked/)
   })
 
-  it('only logs when there is nothing to show it on', () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  it('logs the reason whether or not there is anything to show it on', () => {
+    const log = vi.spyOn(console, 'warn').mockImplementation(() => {})
     expect(() => { notifyPickRefused(info, undefined) }).not.toThrow()
-    expect(log).toHaveBeenCalledTimes(1)
+    notifyPickRefused(info, vi.fn())
+    expect(log).toHaveBeenCalledTimes(2)
+    expect(String(log.mock.calls[0]?.[0])).toContain('it holds Orivon\'s own data')
     log.mockRestore()
   })
 })
