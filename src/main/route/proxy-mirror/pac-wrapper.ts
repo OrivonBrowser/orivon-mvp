@@ -29,7 +29,8 @@ function spellings (suffixes: readonly string[]): string {
  * the answer of `script` for every other. `script` runs once, as the body of a function made inside the closure, so it cannot reach
  * the closure's names; the global `FindProxyForURL` Chromium reads is an accessor that cannot be redefined or deleted, and a script
  * that assigns the name has what it assigned taken as its own function. A script that throws, does not compile or defines no
- * function answers `DIRECT` for every name, as Chromium does for a script that fails.
+ * function answers `DIRECT` for every name, as Chromium does for a script that fails, and an assignment made after it failed is
+ * ignored.
  */
 export function wrapPacScript (script: string, suffixes: readonly string[]): string {
   return `(function (g) {
@@ -39,6 +40,7 @@ var SUFFIXES = ${spellings(suffixes)};
 var system;
 var assigned = false;
 var loading = true;
+var failed = false;
 function routed (host) {
   if (typeof host !== 'string') return true;
   var end = host.length;
@@ -64,18 +66,19 @@ Object.defineProperty(g, 'FindProxyForURL', {
   configurable: false,
   enumerable: true,
   get: function () { return loading ? system : wrapped; },
-  set: function (value) { system = value; assigned = true; }
+  set: function (value) { if (failed) return; system = value; assigned = true; }
 });
 try {
   var found = Function(TEXT + '\\n;return FindProxyForURL').call(g);
   if (!assigned) system = found;
-} catch (error) { system = undefined; }
+} catch (error) { system = undefined; failed = true; }
 loading = false;
 })(this);
 `
 }
 
-/** `source` as the `data:` address `setProxy` takes for `pacScript`. */
+/** `source` as the `data:` address `setProxy` takes for `pacScript`; the source is the ASCII `wrapPacScript` makes, and anything else is refused, because base64 of Latin-1 would change what a character says. */
 export function pacDataUrl (source: string): string {
+  if (!/^[\n\x20-\x7e]*$/.test(source)) throw new Error('a proxy script must be ASCII')
   return `data:application/x-ns-proxy-autoconfig;base64,${Buffer.from(source, 'latin1').toString('base64')}`
 }

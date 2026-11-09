@@ -69,10 +69,16 @@ wrapped. The routed check compares characters by index against both spellings of
 prototype, so a text that replaces `String.prototype` or `Array.prototype` methods changes nothing; it drops every trailing dot of the host
 (Chromium hands a script the host with the root dots kept, in lower case) and treats a host that is not a string as routed. A text that does not
 compile, throws while it loads, defines no function or throws when asked answers `DIRECT`, as Chromium's own session does for a script that
-fails, so a broken text cannot send anything to a proxy either. Measured in Chromium's PAC context: it honours a non-configurable accessor
+fails, so a broken text cannot send anything to a proxy either; a load that failed is final, so a function assigned later (from a promise the
+text started) is not taken. A text does not see the wrapper: the stack, `caller`, `arguments.callee` and `prepareStackTrace` frames reach only
+strict functions, which hand out neither the function nor its `this`. Measured in Chromium's PAC context: it honours a non-configurable accessor
 for `FindProxyForURL`, runs `Function`-compiled code with the helpers (`dnsResolve`, `isInNet`, `shExpMatch` and the rest) as globals, and
-makes a new context for each `setProxy` of a `data:` address; an address carrying 12 MB of script applies, far past the 6 MB of script the
-largest text `pac-fetch.ts` returns can come to once escaped.
+makes a new context for each `setProxy` of a `data:` address. The size of the address is no limit: addresses up to 16,000,054 characters
+(12 MB of script, answered by the script) applied, and the longest one `pac-fetch.ts` can lead to is 8,390,482 characters (a megabyte of
+control characters, each escaped as six). `pacDataUrl` refuses anything that is not ASCII, because base64 of Latin-1 would change what a
+character says. The text runs as the body of a function, not as a top-level script, so its `var` and function declarations are local
+to it and not properties of the global: a script that reads one back through `this` or `globalThis` sees something else than it does
+in Chromium's own context. Only the check catches such a difference, and only on its canary hosts (`example.com` over http and https).
 
 **The script is fetched by a session of Orivon's own, direct, and only from the address the system names.** `orivon-pac-fetch` lives in memory, is
 set to `{ mode: 'direct' }` before its first request and is marked as one that sets a proxy of its own, so the fetch goes through no proxy
@@ -88,8 +94,9 @@ script at the same address late or not at all (measured: nothing within 150 seco
 again (measured), so a changed text, and a difference that stays, have the mirror ask for that before the check, once per pass. A fetch that fails
 keeps the last text for the same address; with none, the sessions stay on the system's own. The text is forgotten when the settings stop naming a script.
 
-**A script that answers differently at every question stays with the system, and costs one pass per read.** A copy cannot agree with a script
-that answers by the clock or at random (`disagrees`), and the 2-second question sees such a change every time. A change in Chromium's answers with
+**A script that answers differently at every question stays with the system, and costs one pass per read.** A copy that answers by the clock or
+at random seldom agrees with Chromium's own answer (`disagrees`), though a counter in step with the two questions of a pass can agree, and the
+copy is then as harmless as any other: it sends no routed name to a proxy. The 2-second question sees such a change every time. A change in Chromium's answers with
 the settings the same starts a pass only once a minute, so the reads of the settings (a process each) stay at the 30-second pace, with one fetch
 and one reload of Chromium's session at most per pass.
 

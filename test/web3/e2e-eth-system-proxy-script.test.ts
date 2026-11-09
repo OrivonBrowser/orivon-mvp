@@ -80,7 +80,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
   let desktop: ScriptSettings
   let running: Running
   let reported: Awaited<ReturnType<typeof reportedMirror>>
-  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, other: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, ordinarySessions: Record<string, string>, otherSessions: Record<string, string>, fromMain: string, refusals: string[] }
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, other: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, eth2: Record<string, string>, ethRootDot: Record<string, string>, ordinarySessions: Record<string, string>, otherSessions: Record<string, string>, fromMain: string, refusals: string[] }
 
   beforeAll(async () => {
     first = await startLoggingProxy()
@@ -103,6 +103,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
       other,
       eth,
       eth2: await resolved(app, 'https://fixture.eth/'),
+      ethRootDot: await resolved(app, 'https://fixture.eth./'),
       ordinarySessions: await resolved(app, 'https://ordinary.test/'),
       otherSessions: await resolved(app, 'https://other.test/'),
       fromMain,
@@ -138,6 +139,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
   it('answers DIRECT for a name the verifier serves in every session kind, and the script\'s answer for the rest', () => {
     for (const kind of Object.keys(facts.eth2)) {
       expect(facts.eth2[kind], `${kind} session, .eth`).toBe('DIRECT')
+      expect(facts.ethRootDot[kind], `${kind} session, .eth with root dots`).toBe('DIRECT')
       expect(facts.ordinarySessions[kind], `${kind} session, ordinary`).toBe(`PROXY 127.0.0.1:${String(first.port)}`)
       expect(facts.otherSessions[kind], `${kind} session, the other site`).toBe(`PROXY 127.0.0.1:${String(second.port)}`)
     }

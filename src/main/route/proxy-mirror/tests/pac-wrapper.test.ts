@@ -1,6 +1,7 @@
 import { createContext, runInContext } from 'node:vm'
 import { describe, expect, it } from 'vitest'
 import { BUILTIN_ADDRESSES } from '../../../../protocols/builtin.js'
+import { routedBypassRules } from '../../verifier-name-guard.js'
 import { pacDataUrl, wrapPacScript } from '../pac-wrapper.js'
 import type { PacRun } from './pac-vm.test-helpers.js'
 import { runPac } from './pac-vm.test-helpers.js'
@@ -189,6 +190,70 @@ describe('the wrapped script', () => {
     })
   })
 
+  describe('a script that goes after what the wrapper keeps for itself', () => {
+    const STORE = 'this.kept = '
+    const ATTACKS: ReadonlyArray<readonly [string, string]> = [
+      ['the caller of the code that loads it', `${STORE}String(arguments.callee.caller); ${SENDS_ALL}`],
+      ['the caller of the function it names', `function FindProxyForURL(u, h) { var c = FindProxyForURL.caller; ${STORE}String(c); return "${PROXY}" }`],
+      ['the functions of the stack, through prepareStackTrace', `var seen = []; Error.prepareStackTrace = function (e, frames) { return frames }; function grab () { var frames = new Error().stack; for (var i = 0; i < frames.length; i++) { seen.push(String(frames[i].getFunction()), String(frames[i].getThis())) } } grab(); function FindProxyForURL(u, h) { grab(); ${STORE}seen.join(); return "${PROXY}" } ${STORE}seen.join()`],
+      ['the frames captureStackTrace gives', `Error.prepareStackTrace = function (e, f) { return f.map(function (x) { return String(x.getFunction()) + String(x.getThis()) }).join() }; var o = {}; Error.captureStackTrace(o); ${STORE}o.stack; ${SENDS_ALL}`],
+      ['the function Chromium reads, changed while it is called', `function FindProxyForURL(u, h) { var w = globalThis.FindProxyForURL; try { w.call = function () { return "${PROXY}" } } catch (e) {} try { w.apply = w.call } catch (e) {} try { Object.setPrototypeOf(w, function () { return "${PROXY}" }) } catch (e) {} try { Object.freeze(w) } catch (e) {} try { ${STORE}String(w.caller) + String(w.arguments) + String(Object.getOwnPropertyDescriptor(globalThis, "FindProxyForURL").get.caller) } catch (e) {} return "${PROXY}" }`],
+      ['the names of the closure, assigned bare', `system = function () { return "${PROXY}" }; loading = true; assigned = false; wrapped = system; routed = function () { return false }; SUFFIXES = []; TEXT = ""; g = {}; found = system; ${SENDS_ALL}`],
+      ['the names of the closure, declared in a direct eval', `eval("var system = function () { return '${PROXY}' }; var loading = true; var wrapped = system; var routed = function () { return false }; var SUFFIXES = [];"); ${SENDS_ALL}`],
+      ['the names of the closure, declared in an indirect eval', `(0, eval)("var system = function () { return '${PROXY}' }; var loading = true; var wrapped = system; var routed = function () { return false }; var SUFFIXES = []; function FindProxyForURL() { return '${PROXY}' }"); ${SENDS_ALL}`],
+      ['a with block over a Proxy that has every name', `with (new Proxy({}, { has: function () { return true }, get: function (t, k) { return k === Symbol.unscopables ? undefined : function () { return "${PROXY}" } } })) { FindProxyForURL = function () { return "${PROXY}" } } ${SENDS_ALL}`],
+      ['a getter on Object.prototype', `Object.defineProperty(Object.prototype, "FindProxyForURL", { get: function () { return function () { return "${PROXY}" } }, configurable: true }); ${SENDS_ALL}`],
+      ['a Proxy as the prototype of the global', `try { Object.setPrototypeOf(this, new Proxy({}, { get: function () { return function () { return "${PROXY}" } } })) } catch (e) {} ${SENDS_ALL}`],
+      ['FindProxyForURLEx', `function FindProxyForURLEx(u, h) { return "${PROXY}" } this.FindProxyForURLEx = FindProxyForURLEx; ${SENDS_ALL}`],
+      ['a callable Proxy as the function', `FindProxyForURL = new Proxy(function () {}, { apply: function () { return "${PROXY}" }, get: function () { return function () { return "${PROXY}" } } })`],
+      ['a bound function', `FindProxyForURL = function () { return "${PROXY}" }.bind(null)`],
+      ['a class', `FindProxyForURL = class { constructor () { return "${PROXY}" } }`],
+      ['an async function', `async function FindProxyForURL () { return "${PROXY}" }`],
+      ['a string object', `function FindProxyForURL () { return new String("${PROXY}") }`],
+      ['a string that ends on a line continuation', `${SENDS_ALL}; var s = "\\`],
+      ['a return', `this.FindProxyForURL = function () { return "${PROXY}" }; return`],
+      ['an if with nothing after it', `${SENDS_ALL}; if (0)`],
+      ['a comment that is never closed', `${SENDS_ALL} /*`],
+      ['a template that is never closed', `${SENDS_ALL} \``],
+      ['a character class that is never closed', `${SENDS_ALL}; var r = /[`],
+      ['a parenthesis that is never closed', `${SENDS_ALL}; (`],
+      ['a brace that is never closed', `${SENDS_ALL}; {`],
+      ['an HTML comment that is never closed', `${SENDS_ALL} <!--`],
+      ['an HTML comment close at the start of a line', `-->\n${SENDS_ALL}\n--> return function () { return "${PROXY}" }`],
+      ['an HTML comment close after a comment', `/*\n*/ --> anything\n${SENDS_ALL}`],
+      ['a function returned at the top', `return function () { return "${PROXY}" }`],
+      ['a closing brace and an opening comment', '}/*'],
+      ['a closing brace, an HTML comment and a function', '}\n-->\n(function(){'],
+      ['a line separator that ends a comment', `// x ${SENDS_ALL}`],
+      ['a byte-order mark at the start', `﻿${SENDS_ALL}`],
+      ['an unpaired surrogate before the code', `\ud800${SENDS_ALL}`],
+      ['a NUL before the code', `\u0000${SENDS_ALL}`],
+      ['an escaped name for the function', `\\u0046indProxyForURL = function () { return "${PROXY}" }`],
+      ['carriage returns for line ends', `var a = 1\r${SENDS_ALL}\r`],
+      ['an assignment that fails with its function already set', `FindProxyForURL = function () { return "${PROXY}" }; throw 1`],
+      ['a thrown object whose getters assign the function', `throw { get message () { FindProxyForURL = function () { return "${PROXY}" }; return "m" }, toString: function () { FindProxyForURL = function () { return "${PROXY}" }; return "s" }, [Symbol.toPrimitive]: function () { FindProxyForURL = function () { return "${PROXY}" }; return "p" } }`],
+      ['a thrown object whose getters answer, in the call', `function FindProxyForURL () { throw { get message () { return "m" }, toString: function () { return "${PROXY}" } } }`],
+      ['a stack it fills in the call', 'function FindProxyForURL () { function again () { again() } again() }'],
+      ['an answer in characters beyond ASCII', 'function FindProxyForURL () { return "PROXY é.test:1" }']
+    ]
+
+    it.each(ATTACKS)('%s never sends a name Orivon serves to the proxy, and never shows the wrapper to the script', (_name, script) => {
+      const context = createContext({})
+      runInContext(wrapPacScript(script, SUFFIXES), context)
+      const ask = runInContext('(function (url, host) { return FindProxyForURL(url, host) })', context) as (url: string, host: string) => unknown
+      for (const host of ROUTED_HOSTS) expect(ask(`https://${host}/`, host)).toBe('DIRECT')
+      expect(() => ask('https://ordinary.test/', 'ordinary.test')).not.toThrow()
+      const shown = runInContext('Object.getOwnPropertyNames(globalThis).filter(function (name) { return name !== "FindProxyForURL" }).map(function (name) { try { return String(globalThis[name]) } catch (e) { return "" } }).join("\\n")', context) as string
+      expect(shown).not.toMatch(/SUFFIXES|loading|assigned|routed/)
+    })
+
+    it('does not give the function to a script that assigns it from a microtask after the script failed to load', async () => {
+      const { answer } = load(`Promise.resolve().then(function () { FindProxyForURL = function () { return "${PROXY}" } }); throw new Error("x")`)
+      await new Promise((resolve) => { setImmediate(resolve) })
+      for (const host of [...ROUTED_HOSTS, ...ORDINARY_HOSTS]) expect(answer(`https://${host}/`, host)).toBe('DIRECT')
+    })
+  })
+
   describe('a script text that tries to leave the place it was put in', () => {
     const ESCAPES = [
       'closing the closure',
@@ -234,6 +299,28 @@ describe('the wrapped script', () => {
     })
   })
 
+  describe('reads a name as the rest of Orivon does', () => {
+    const HOSTS = [
+      'vitalik.eth', 'Vitalik.ETH', 'a..eth', '.eth', '..eth', 'ipfs.orivon', 'bafy.ipfs.orivon', 'eth', 'orivon', 'example.com',
+      'vitalik.eth.example.com', 'orivon.example', '', 'xeth', 'ethx.test', 'x.ethereum', 'x.eth.test', 'x-eth', 'a.b.c.orivon'
+    ]
+
+    it.each(HOSTS)('%j, with no root dot and with one, two and three', (host) => {
+      const { answer } = load(SENDS_ALL, BUILTIN_ADDRESSES.routedSuffixes())
+      for (const dots of ['', '.', '..', '...']) {
+        const spelled = `${host}${dots}`
+        expect(answer('https://name/', spelled), JSON.stringify(spelled)).toBe(BUILTIN_ADDRESSES.namesServedHost(spelled) ? 'DIRECT' : PROXY)
+      }
+    })
+
+    it('gives DIRECT for the host of every exception the mirrored settings carry for a name', () => {
+      const { answer } = load(SENDS_ALL, BUILTIN_ADDRESSES.routedSuffixes())
+      const rules = routedBypassRules()
+      expect(rules.length).toBeGreaterThan(0)
+      for (const rule of rules) expect(answer('https://name/', rule.replace('*', 'name')), rule).toBe('DIRECT')
+    })
+  })
+
   describe('the source it makes', () => {
     it('is plain ASCII whatever the script holds, so no charset changes what it says', () => {
       const source = wrapPacScript(`// é€😀 \u0000\n${SENDS_ALL}`, SUFFIXES)
@@ -245,6 +332,13 @@ describe('the wrapped script', () => {
       const source = wrapPacScript(text, SUFFIXES)
       expect(source.split('marker-in-a-comment').length).toBe(2)
       expect(source).not.toContain('function FindProxyForURL() { return "DIRECT" } /* marker')
+    })
+
+    it('is refused as a data: URL when it holds anything but ASCII, where base64 of Latin-1 would change what it says', () => {
+      expect(() => pacDataUrl('var a = "\u00e9"')).toThrow('ASCII')
+      expect(() => pacDataUrl('var a = "\u0100"')).toThrow('ASCII')
+      expect(() => pacDataUrl('var a = "\u0000"')).toThrow('ASCII')
+      expect(() => pacDataUrl('var a = 1;\n')).not.toThrow()
     })
 
     it('is a data: URL that decodes to the source', () => {
