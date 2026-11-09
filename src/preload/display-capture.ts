@@ -6,6 +6,7 @@
 // here so that Stop reaches its tracks, clones included.
 import { contextBridge, ipcRenderer } from 'electron'
 import { DISPLAY_CAPTURE_CHANNEL, DISPLAY_CAPTURE_PICK_CHANNEL, DISPLAY_CAPTURE_STOP_CHANNEL } from '../main/channels.js'
+import { askCanary } from './display-canary.js'
 
 /** What the main world asks of this one for a call: whether the page wants audio, and the hints the picker opens on. */
 interface ShareOptions {
@@ -98,28 +99,6 @@ function reportedName (failure: ShareResult): string {
 function randomName (prefix: string): string {
   const words = crypto.getRandomValues(new Uint32Array(4))
   return `${prefix}-${Array.from(words, (word) => word.toString(36)).join('')}`
-}
-
-/**
- * The canary: this world's own `getDisplayMedia` call, which main refuses, queued ahead of the real one. The page cannot
- * reach this world's `MediaDevices`, so it can neither answer for the canary nor change what it asks. Returns false when
- * the call could not be made, in which case the real call is not either. A canary that is served instead of refused
- * means a request was granted that the gate should have refused: its tracks are stopped and main is told, which ends the
- * page's renderer.
- */
-function askCanary (nonce: string): boolean {
-  try {
-    const devices = navigator.mediaDevices
-    void devices.getDisplayMedia({ video: true }).then((served) => {
-      for (const track of served.getTracks()) track.stop()
-      ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'failed', nonce, name: 'NotAllowedError' })
-    }, () => {
-      ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'canary', nonce })
-    })
-    return true
-  } catch {
-    return false
-  }
 }
 
 async function share (options: ShareOptions, callNow: CallNow): Promise<ShareResult> {
