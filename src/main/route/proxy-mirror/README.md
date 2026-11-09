@@ -58,9 +58,9 @@ name meanwhile. A script and automatic detection stay on it too; each is reporte
 **Each GNOME rule is what Chromium's GSettings reader makes of the key, measured.** `use-same-proxy` and the HTTP server's `enabled` switch are
 not read at all; a server with an empty host is unset; a `socks` server is SOCKS5 and answers for every scheme with no server of its own;
 `ignore-hosts` entries match as Chromium matches a bypass rule written the same way (`*.corp.test` and `.corp.test` match `www.corp.test` and
-not `corp.test`; `corp.test` alone matches that host only). `*.eth` does not match `fixture.eth.`, the root-dot spelling, and the resolver
-rules (`MAP *.eth`) do not map that spelling to the verifier either, so no rule for it is added: a rule that sent it direct would have
-Chromium resolve the name itself and let it leave this computer. It stays on the proxy, where the guard refuses it. An IPv6 address in the
+not `corp.test`; `corp.test` alone matches that host only). `*.eth` does not match `fixture.eth.`, the root-dot spelling, so the exceptions carry `*.eth.` too (`routedBypassRules` in
+`../verifier-name-guard.ts`, the one list every bypass of these names is made from): the resolver rules refuse that spelling
+(`MAP *.eth. ~NOTFOUND`), so it goes direct and fails as not found, and neither a resolver nor the proxy is asked for it. An IPv6 address in the
 list is passed as the system wrote it, since Chromium's own reader hands each entry to the same bypass-rule parser as it stands.
 
 **Each macOS rule is what Chromium's `SCDynamicStoreCopyProxies` reader makes of the dictionary `scutil --proxy` prints, read from its source and measured on a macOS runner.** Only the top
