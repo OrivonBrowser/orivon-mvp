@@ -38,7 +38,7 @@ runs a real upstream app.
 | `telemetry/` | What usage statistics send and when: a real send of both reports to a loopback ingest, and nothing sent without consent or after it is withdrawn |
 | `window/` | Launch and start-up, profiles, windows, menus, overlays, shortcuts and theme |
 | `qa/` | The QA machinery proving itself: the layout audit, visual states, the failure-evidence bundle, journeys |
-| [`support/`](support/) | The shared harness: `launch-electron.mjs` (with `profile-seeds.mjs`, what it writes into a fresh profile, and `launch-env.mjs`, what a launch may do to the machine), `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown and the chrome-ready waits; [`virtual-hid/`](support/virtual-hid/README.md), a virtual USB HID device made through Docker and `/dev/uhid` |
+| [`support/`](support/) | The shared harness: `launch-electron.mjs` (with `profile-seeds.mjs`, what it writes into a fresh profile, and `launch-env.mjs`, what a launch may do to the machine, and `process-table.mjs`, the process list of each system), `smoke-helpers.mjs`, `e2e-helpers.ts`, the `qa-*` files, `question-support.ts`, and the unit tests of the teardown, the process lists and the chrome-ready waits; [`virtual-hid/`](support/virtual-hid/README.md), a virtual USB HID device made through Docker and `/dev/uhid` |
 | [`apps/`](apps/), `fixtures/` | The apps and static pages the specs serve |
 
 `impact-map.json` says which of these areas a changed file reaches, and `spec-weights.json` how long each spec
@@ -85,9 +85,11 @@ process tree (real Electron forks GPU/zygote/renderer helpers, so "the tree", no
 pid) and removes the temp profile -- in a `finally`, so a thrown graceful step or a hung
 `app.close()` still leaves nothing on disk or in the process table. `assertNoElectronSurvivors()`
 is the suite's own self-check: called once, in a file's top-level `afterAll`, it fails the run if
-any pid the file has closed is still a live Electron process (resolved via `/proc/<pid>/exe`,
-never a command-line match -- `pgrep -f node_modules/electron/dist/electron` matches its own
-argv too).
+any pid the file has closed is still a live Electron process (resolved from the binary each process
+runs, never a command-line match -- `pgrep -f node_modules/electron/dist/electron` matches its own
+argv too). The process list comes from `support/process-table.mjs`: `/proc` on Linux, `ps` on macOS and
+PowerShell's `Win32_Process` on Windows, where an orphan keeps its dead parent's pid, so a process that
+started before the parent it names is not counted as its child.
 
 `support/launch-electron-teardown.test.ts` unit-tests all of this against plain `node` child processes,
 never a real Electron launch -- see its own header for exactly what that approach can and cannot
