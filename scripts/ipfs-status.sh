@@ -424,9 +424,13 @@ collect_releases () {
   done 3< <(jq -c '.[:10][]' <<<"$list")
 }
 
-# A folder's files as sorted "<cid> <name>" lines, leaving out the index.html pin-releases.sh adds as the start page
-# of the newest-release folder: equal for a release and for that folder made from it.
-files_of () { ipfs --timeout="${TIMEOUT}s" ls --size=false --resolve-type=false "$1" 2>/dev/null | awk '$2 != "index.html"' | sort; }
+# A folder's files as sorted "<cid> <name>" lines, leaving out what pin-releases.sh adds to the newest-release folder
+# (index.html, ipfs.json, and each file again with "latest" in place of the version): equal for a release and for that
+# folder made from it.
+files_of () {
+  ipfs --timeout="${TIMEOUT}s" ls --size=false --resolve-type=false "$1" 2>/dev/null \
+    | awk '$2 != "index.html" && $2 != "ipfs.json" && $2 !~ /[-_]latest[-_]/' | sort
+}
 
 # Sets LATEST: which release the LATEST_KEY points at, and a problem when that is not the newest pinned one.
 collect_latest () {
