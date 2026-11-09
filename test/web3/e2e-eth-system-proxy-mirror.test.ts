@@ -80,6 +80,13 @@ async function waitForAnswer (app: ElectronApplication, url: string, expected: R
   return last
 }
 
+/** Waits until every session kind answers `url` as `expected` says. A partition is made the first time it is named and its proxy is set a moment later (the guard waits for that), so the facts about the profiles are read once each has taken the copy. */
+async function waitForEverySession (app: ElectronApplication, url: string, expected: RegExp): Promise<void> {
+  let last: Record<string, string> = {}
+  const settled = await waitFor(async () => { last = await resolved(app, url); return Object.values(last).every((answer) => expected.test(answer)) }, 15_000)
+  if (!settled) throw new Error(`the sessions still answer ${JSON.stringify(last)} for ${url}`)
+}
+
 /** Has `proxy` answer for the ordinary address with a page of this title, so a visit shows which proxy served it. */
 const serveOrdinary = (proxy: LoggingProxy, title: string): void => { proxy.serve('ordinary.test:8080', title) }
 
@@ -99,6 +106,7 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy', 
     desktop = desktopProxy(first.port)
     running = await launchShell(desktop.env)
     const { app, chrome } = running
+    await waitForEverySession(app, 'https://fixture.eth/', /^DIRECT$/)
     const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the first proxy')
     const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
     const fromMain = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth/'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
@@ -251,6 +259,7 @@ describe.skipIf(!LINUX)('a computer whose KDE settings carry a manual proxy', ()
     desktop = kdeProxy(mkdtempSync(join(scratch, 'kde-home-')), first.port, KDE_EXCEPTIONS)
     running = await launchShell(desktop.env)
     const { app, chrome } = running
+    await waitForEverySession(app, 'https://fixture.eth/', /^DIRECT$/)
     const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the first proxy')
     const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
     const fromMain = await app.evaluate(async ({ net }) => { try { const response = await net.fetch('https://fixture.eth/'); return `status ${String(response.status)}` } catch (error) { return String(error) } })
