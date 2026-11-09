@@ -65,6 +65,10 @@ and smoke check; the evidence lands in `qa-artifacts/cross-os/<run id>/<system>/
 failed job's `job.log`, and `qa-artifacts/latest/` with the screenshots and `inspect.md`, read as the `orivon-qa`
 skill says. Pixel baselines are never compared there (`CI=true`): read the screenshots, do not diff them.
 
+The macOS runner's screen is 1024x768 and AppKit keeps a window's height inside the screen less the menu bar and the
+Dock, so the workflow hides the Dock before `smoke`: a window gets the height a Mac without a Dock gives it, not 677 px.
+The screen and its visible frame are in `cross-os/screen.txt` of the evidence.
+
 ### Live sessions
 
 When one run's screenshots do not settle a question, [`live-session.yml`](../../.github/workflows/live-session.yml)
