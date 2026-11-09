@@ -47,9 +47,10 @@ suffix is added in both spellings. A bare IPv6 address in the list is bracketed.
 **Windows keeps the proxy in two forms, and Chromium reads them by a rule that is neither one alone, measured.** The values under
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings` (`ProxyEnable`, `ProxyServer`, `ProxyOverride`, `AutoConfigURL`,
 `AutoDetect`) are what most tools write; the `DefaultConnectionSettings` blob under its `Connections` key (flags 1 direct, 2 proxy, 4 script,
-8 detect, then the three strings) is what Internet Options writes beside them. A `ProxyEnable` value, whatever it holds, makes the values the
-manual proxy's and the blob's proxy is not looked at (`ProxyEnable` 0 with a blob of flags 3 is no proxy); without one the blob is, and a
-`ProxyServer` value alone is ignored. A script comes from the `AutoConfigURL` value or from a blob with flag 4 and an address, and wins over a
+8 detect, then the three strings) is what Internet Options writes beside them. The values are the manual proxy's when `ProxyEnable` is on (with
+no `ProxyServer` that is no proxy), or off beside a `ProxyServer` (no proxy, whatever the blob holds); without a `ProxyEnable` value, or with
+one that is off and no `ProxyServer`, the blob is, and a `ProxyServer` value alone is ignored. A script comes from the `AutoConfigURL` value or
+from a blob with flag 4 and an address, and wins over a
 manual proxy in both forms; a blob address under flag 1 is not used. A running session follows a change of either form at its next question.
 Detection is reported from the `AutoDetect` value or the blob's flag 8, which of them Windows honours was not measured (the runners have no
 detection server); beside a manual proxy it changes nothing here, since the manual part is copied and the canary check judges it. `ProxyServer`

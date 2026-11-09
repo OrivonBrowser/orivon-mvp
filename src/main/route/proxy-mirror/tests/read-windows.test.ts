@@ -53,17 +53,21 @@ describe('Windows\' proxy settings', () => {
     expect(parse({}, blobHex(5, '', '', ''))).toEqual({ kind: 'none' })
   })
 
-  it('are decided by the values as soon as a ProxyEnable value exists, and the blob\'s proxy is ignored', () => {
+  it('are decided by the values when ProxyEnable is on, or off beside a ProxyServer, and the blob\'s proxy is ignored', () => {
     expect(parse({ enable: 0, server: 'values.test:3128' }, blobHex(3, 'blob.test:3129', '*.corp.test'))).toEqual({ kind: 'none' })
     expect(parse({ enable: 1 }, blobHex(3, 'blob.test:3129'))).toEqual({ kind: 'none' })
+    expect(parse({ enable: 1, server: '' }, blobHex(3, 'blob.test:3129'))).toEqual({ kind: 'none' })
     expect(parse({ enable: 1, server: 'values.test:3128', override: '<local>' }, blobHex(3, 'blob.test:3129', '*.corp.test'))).toEqual({ kind: 'manual', proxyRules: 'values.test:3128', exceptions: ['<local>'] })
     expect(parse({ enable: 1, server: 'values.test:3128' }, blobHex(1))).toMatchObject({ kind: 'manual', proxyRules: 'values.test:3128' })
   })
 
-  it('are decided by the blob when no ProxyEnable value exists, and a ProxyServer value alone is ignored', () => {
+  it('are decided by the blob when ProxyEnable is not there, or is off with no ProxyServer, and a ProxyServer value alone is ignored', () => {
     expect(parse({ server: 'values.test:3128', override: '<local>' }, blobHex(3, 'blob.test:3129', '*.corp.test'))).toEqual({ kind: 'manual', proxyRules: 'blob.test:3129', exceptions: ['*.corp.test'] })
     expect(parse({ server: 'values.test:3128' }, blobHex(1))).toEqual({ kind: 'none' })
     expect(parse({ server: 'values.test:3128' })).toEqual({ kind: 'none' })
+    expect(parse({ enable: 0 }, blobHex(3, 'blob.test:3129', '*.corp.test'))).toEqual({ kind: 'manual', proxyRules: 'blob.test:3129', exceptions: ['*.corp.test'] })
+    expect(parse({ enable: 0, server: '' }, blobHex(3, 'blob.test:3129'))).toMatchObject({ kind: 'manual', proxyRules: 'blob.test:3129' })
+    expect(parse({ enable: 0 }, blobHex(1))).toEqual({ kind: 'none' })
   })
 
   it('are a script when a value names one or the blob does, beside a manual proxy too, since the script is what Chromium asks first', () => {

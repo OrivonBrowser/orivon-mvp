@@ -92,11 +92,15 @@ function blobOf (entry: Entry): Blob | 'empty' | undefined {
   return { flags: bytes.readUInt32LE(8), proxy: proxy.trim(), bypass, script: script.trim() }
 }
 
-/** The manual proxy: the values' when a `ProxyEnable` value exists, whatever it holds, else the blob's. */
+/** The manual proxy of the form Chromium reads: the values when a `ProxyEnable` value says something (on, or off beside a `ProxyServer`), else the blob. */
 function manualOf (values: Map<string, Entry>, blob: Blob | undefined): { readonly server: string, readonly bypass: string } | undefined {
   const enable = dword(values.get('proxyenable'))
-  if (enable === undefined) return blob !== undefined && (blob.flags & PROXY) !== 0 ? { server: blob.proxy, bypass: blob.bypass } : undefined
-  return enable === 0 ? undefined : { server: text(values.get('proxyserver')), bypass: text(values.get('proxyoverride')) }
+  if (enable !== undefined) {
+    const server = text(values.get('proxyserver'))
+    if (enable !== 0) return { server, bypass: text(values.get('proxyoverride')) }
+    if (server !== '') return undefined
+  }
+  return blob !== undefined && (blob.flags & PROXY) !== 0 ? { server: blob.proxy, bypass: blob.bypass } : undefined
 }
 
 /** What the three `reg query` calls printed, as the settings Chromium's Windows reader would make of them. */
