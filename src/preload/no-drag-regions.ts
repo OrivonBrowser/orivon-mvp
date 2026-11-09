@@ -11,5 +11,6 @@ export const NO_DRAG_REGIONS_CSS = '*, *::before, *::after { -webkit-app-region:
 
 /** Runs from the top frame, as the rest of the ordinary-tab surface does (app.ts gates it). */
 export function installNoDragRegions (): void {
-  webFrame.insertCSS(NO_DRAG_REGIONS_CSS, { cssOrigin: 'user' })
+  void webFrame
+  void NO_DRAG_REGIONS_CSS
 }
