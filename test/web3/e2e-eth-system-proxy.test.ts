@@ -5,8 +5,10 @@
 //
 // Where the computer's proxy comes from the environment (Linux with no desktop proxy setting, a shell profile that exports
 // `https_proxy`), Orivon adds the verifier's suffixes to `no_proxy` before it starts and the names load. Where it comes
-// from the desktop's own settings (GNOME here; KDE, Windows and macOS read theirs too), nothing Orivon can set exempts a
-// name, so a request for one is cancelled before it is sent and the tab says why. A proxy that is found with a script (PAC)
+// from the desktop's own settings, GNOME's manual proxy is copied into the sessions with the suffixes left out and the names
+// load (e2e-eth-system-proxy-mirror.test.ts follows it as it changes); where the settings are a script, or cannot be copied
+// (KDE, Windows and macOS read theirs too), nothing Orivon can set exempts a name, so a request for one is cancelled before it
+// is sent and the tab says why. A proxy that is found with a script (PAC)
 // answers its first question slowly, and a request that waits for it is not sent: the name opens when the script says DIRECT,
 // and the tab says Orivon could not tell when the script never answers. A name asked for over plain http is never sent, whatever
 // a script says. A browser on a SOCKS5 tunnel is on its front, which leaves the names to the verifier, whatever the computer's proxy is.
@@ -24,24 +26,17 @@ import type { ElectronApplication, Page } from 'playwright'
 import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
-import { assertNoElectronSurvivors, launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp, readShield } from '../support/e2e-helpers.js'
-import { activeTabInfo, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
-import { gnomeProxy, gnomeScriptProxy, launchWithoutDesktop, loadFailures, proxyEnvironment, proxyScript, recordLoadFailures, startLoggingProxy, startScriptServer, visitReporting, windowsAutoDetect } from './system-proxy-support.js'
-import type { LoggingProxy, ScriptServer, Visit } from './system-proxy-support.js'
+import { activeTabInfo } from '../support/smoke-helpers.mjs'
+import { CANCELLED, gnomeProxy, gnomeScriptProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, PROXY_SHEET, proxyEnvironment, proxyScript, refusalLines, report, resolved, startLoggingProxy, startScriptServer, SUBRESOURCES_BODY, UNSURE_SHEET, verifierNames, visitReporting, visitSubresources, windowsAutoDetect } from './system-proxy-support.js'
+import type { LoggingProxy, Running, ScriptServer, Visit } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
 /** The environment variables and the GNOME settings these cases write are what Linux reads; Windows and macOS read their own. */
 const LINUX = process.platform === 'linux'
 const WINDOWS = process.platform === 'win32'
 const SETUP_TIMEOUT_MS = 240_000
-const ORDINARY = 'http://ordinary.test:8080/'
-const SUBRESOURCES = 'http://subresources.test:8080/'
-/** A page the proxy serves that asks for names the verifier serves in every way a page can: a picture, a script's `fetch` and WebSocket, and a hint to connect ahead. It retitles itself once its requests have ended. */
-const SUBRESOURCES_BODY = `<link rel="preconnect" href="https://pre.eth"><img src="https://img.eth/a.png"><script>
-Promise.allSettled([fetch('https://fetched.eth/a'), new Promise((done) => { const socket = new WebSocket('wss://sock.eth/'); socket.onclose = socket.onerror = () => { done() } })]).then(() => { document.title = 'subresources settled' })
-</script>`
-
 let scratch = ''
 let gateway: Awaited<ReturnType<typeof startFixtureGateway>>
 let tls: { port: number, connections: () => number, requests: () => number, close: () => Promise<void> }
@@ -71,45 +66,8 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-/** The lines of a proxy's log that name a host the verifier serves. */
-const verifierNames = (log: readonly string[]): string[] => log.filter((line) => /\.(eth|orivon)\b/.test(line))
-
-interface Running { app: ElectronApplication, chrome: Page }
-
-/** A shell whose verifier host is up, launched with no desktop in its environment and `env` on top of it. */
-async function launchShell (env: Record<string, string>, seedProfile?: (dir: string) => void): Promise<Running> {
-  const app = await launchWithoutDesktop(async () => await launchElectron({
-    appPath: '.',
-    args: [HERMETIC_RESOLVER],
-    env: {
-      ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'fixture.eth': `ipfs://${gateway.roots['site']!}`, 'direct.eth': `ipfs://${gateway.roots['site']!}` }),
-      ORIVON_TEST_IPFS_GATEWAYS: gateway.url,
-      ...env
-    },
-    ...(seedProfile === undefined ? {} : { seedProfile })
-  }))
-  const listening = await waitFor(async () => await app.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 30_000)
-  if (!listening) throw new Error('the verifier host never reported listening')
-  await recordLoadFailures(app)
-  return { app, chrome: findChrome(app) }
-}
-
-/** What each session kind reports as the proxy for `url`: the answer of `session.resolveProxy`, by partition. */
-async function resolved (app: ElectronApplication, url: string): Promise<Record<string, string>> {
-  return await app.evaluate(async ({ session }, target) => {
-    const partitions: Array<[string, Electron.Session]> = [
-      ['default', session.defaultSession],
-      ['direct-profile', session.fromPartition('persist:direct-profile')],
-      ['proxy-profile', session.fromPartition('persist:proxy-profile')],
-      ['tunnel-profile', session.fromPartition('persist:tunnel-profile')]
-    ]
-    const out: Record<string, string> = {}
-    for (const [name, one] of partitions) out[name] = await one.resolveProxy(target)
-    return out
-  }, url)
-}
-
-const report = (label: string, facts: unknown): void => { console.log(`[system-proxy] ${label}: ${JSON.stringify(facts)}`) }
+/** A shell on this spec's fixture gateway. */
+const launchShell = async (env: Record<string, string>, seedProfile?: (dir: string) => void): Promise<Running> => await launchShellOn(gateway, env, seedProfile)
 
 describe('no proxy at all (the control)', () => {
   it('a .eth name loads and an ordinary name does not resolve, so a failure with a proxy is the proxy\'s', async () => {
@@ -128,24 +86,6 @@ describe('no proxy at all (the control)', () => {
 
 /** The desktop's proxy settings for a launch of its own, pointing at `port`. */
 const desktopProxy = (port: number): ReturnType<typeof gnomeProxy> => gnomeProxy(mkdtempSync(join(scratch, 'desktop-')), port)
-
-/** What the sheet gives for a name the system's proxy would see, for one the session could not say about, and for one asked for over plain http. */
-const ADVICE = 'Names like this open when your system has no proxy, when the proxy\'s exceptions list names like *.eth, or with a tunnel turned on.'
-const PROXY_SHEET = `This name was not opened Your system proxy would see this name, so Orivon did not open it. ${ADVICE}`
-const UNSURE_SHEET = `This name was not opened Orivon could not tell whether your system proxy would see this name, so it did not open it. Trying again may help. ${ADVICE}`
-const PLAIN_SHEET = 'This name opens only over https A name like this opens only over a secure connection, so Orivon did not open it over plain http.'
-/** Chromium's name for a request Orivon cancelled before it was sent. */
-const CANCELLED = 'ERR_BLOCKED_BY_CLIENT'
-
-/** Opens the page of `SUBRESOURCES` and waits for its requests to end, then for the connections a hint may still open. */
-async function visitSubresources (app: ElectronApplication, chrome: Page): Promise<Visit> {
-  const visit = await visitReporting(app, chrome, SUBRESOURCES, 'subresources settled')
-  await new Promise((resolve) => { setTimeout(resolve, 2_000) })
-  return visit
-}
-
-/** The lines of the main process's log that say a request was refused for the proxy's sake: what a bug report carries. */
-const refusalLines = (app: ElectronApplication): string[] => mainOutput(app).split('\n').filter((line) => line.includes('[route] refused a '))
 
 describe.skipIf(!LINUX)('a computer whose environment carries the proxy, the browser not on a tunnel', () => {
   let proxy: LoggingProxy
@@ -227,7 +167,7 @@ describe.skipIf(!LINUX)('a computer whose environment carries the proxy, the bro
   })
 })
 
-describe.skipIf(!LINUX)('a computer whose desktop carries the proxy, which no environment variable can exempt', () => {
+describe.skipIf(!LINUX)('a computer whose desktop carries a manual proxy, which no environment variable can exempt', () => {
   let proxy: LoggingProxy
   let running: Running
   let facts: { ordinary: Visit, eth: Visit, decoy: Visit, plain: Visit, subresources: Visit, plainTab: { address?: string, title?: string }, sessions: Record<string, Record<string, string>>, refusals: string[], logged: string }
@@ -261,12 +201,15 @@ describe.skipIf(!LINUX)('a computer whose desktop carries the proxy, which no en
     expect(proxy.seen).toContain(`GET ${ORDINARY}`)
   })
 
-  it('the desktop\'s proxy is the one every session kind would send a .eth name to, so the refusal below is the guard\'s', () => {
-    for (const kind of Object.keys(facts.sessions['eth']!)) expect(facts.sessions['eth']![kind], `${kind} session, .eth`).toMatch(/^PROXY /)
+  it('every session kind sends a name the verifier serves to the verifier and an ordinary name to the desktop\'s proxy', () => {
+    for (const kind of Object.keys(facts.sessions['eth']!)) {
+      expect(facts.sessions['eth']![kind], `${kind} session, .eth`).toBe('DIRECT')
+      expect(facts.sessions['ordinary']![kind], `${kind} session, ordinary`).toMatch(/^PROXY 127\.0\.0\.1:/)
+    }
   })
 
-  it('a .eth name is refused, and the tab says the proxy would see it', () => {
-    expect(facts.eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: PROXY_SHEET })
+  it('a .eth name loads', () => {
+    expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
   })
 
   it('the proxy is never asked about a name the verifier serves, a CONNECT included', () => {
@@ -279,9 +222,10 @@ describe.skipIf(!LINUX)('a computer whose desktop carries the proxy, which no en
     expect(facts.plainTab.title).not.toBe('served by the proxy as plain.eth')
   })
 
-  it('a page a proxy would serve under a .eth name over TLS is refused before anything connects to it', () => {
-    expect(facts.decoy).toMatchObject({ result: 'error', error: CANCELLED, sheet: PROXY_SHEET })
-    expect(tls.connections()).toBe(0)
+  it('a page a proxy would serve under a .eth name over TLS is never shown and never reached', () => {
+    expect(facts.decoy.result).not.toBe('page')
+    expect(tls.requests(), 'the decoy served no request').toBe(0)
+    expect(tls.connections(), 'and nothing connected to it').toBe(0)
   })
 
   it('a page\'s own requests for such names (a picture, a fetch, a WebSocket, a hint to connect ahead) never reach the proxy either', () => {
@@ -289,14 +233,13 @@ describe.skipIf(!LINUX)('a computer whose desktop carries the proxy, which no en
     expect(proxy.seen.filter((line) => /(pre|img|fetched|sock)\.eth/.test(line))).toEqual([])
   })
 
-  it('records the refusal in the log a bug report carries, without the name', () => {
-    expect(facts.refusals.length).toBeGreaterThan(0)
-    expect(facts.refusals[0]).toMatch(/refused a request for a \.eth name: its proxy \(PROXY\) would have carried it, and so seen the name/)
-    expect(facts.refusals.join('\n')).not.toMatch(/fixture\.eth|plain\.eth|decoy\.eth/)
+  it('refuses nothing for the proxy\'s sake, since nothing would have reached it; a plain-http request is refused whatever the proxy is', () => {
+    expect(facts.refusals.filter((line) => !line.includes('plain request'))).toEqual([])
+    expect(facts.refusals.some((line) => line.includes('plain request'))).toBe(true)
   })
 })
 
-describe.skipIf(!LINUX)('a computer whose desktop carries the proxy, the whole browser on a SOCKS5 tunnel', () => {
+describe.skipIf(!LINUX)('a computer whose desktop carries a manual proxy, the whole browser on a SOCKS5 tunnel', () => {
   let proxy: LoggingProxy
   let socks: Socks5Fixture
   let ordinaryServer: Server
@@ -343,10 +286,10 @@ describe.skipIf(!LINUX)('a computer whose desktop carries the proxy, the whole b
     expect(facts.fromMain).toBe('status 200')
   })
 
-  it('a .eth name of a website set to off, which runs in the direct profile on the desktop\'s proxy, is refused, not sent to it', () => {
-    expect(facts.directEth).toMatchObject({ result: 'error', error: CANCELLED, sheet: PROXY_SHEET })
+  it('a .eth name of a website set to off, which runs in the direct profile on the desktop\'s proxy, loads, and the proxy is never asked about it', () => {
+    expect(facts.directEth.result, JSON.stringify(facts.directEth)).toBe('page')
     expect(verifierNames(proxy.seen)).toEqual([])
-    expect(facts.refusals.length).toBeGreaterThan(0)
+    expect(facts.refusals.filter((line) => !line.includes('plain request'))).toEqual([])
   })
 
   it('the tunnel never carried a name the verifier serves', () => {

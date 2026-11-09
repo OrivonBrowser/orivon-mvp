@@ -214,6 +214,8 @@ records the decision.
 
 - **Mechanism:** `--ignore-gpu-blocklist=186`, which ignores that entry and nothing else, set only when the GPU
   Chromium uses is on Orivon's tested list.
+- **The one exception is a game window**, which a site the person granted runs in a process of its own: it sets the
+  switch on every GPU (`d-0777`, [`game-window-plan.md`](game-window-plan.md)).
 - **Before `ready`:** main can read only each render node's vendor id and kernel driver from `/sys/class/drm` (plain
   `fs`, no native module).
 - **The driver version** comes from the previous run's `app.getGPUInfo('complete')`, kept in the profile. So a newly

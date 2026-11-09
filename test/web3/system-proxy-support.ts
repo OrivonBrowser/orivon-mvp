@@ -1,13 +1,16 @@
 // What the system-proxy specs share: a forward proxy on loopback that logs every request it is asked to make, the
-// environment that makes Chromium follow it as the computer's proxy, and a visit that reports what the tab showed.
+// environment that makes Chromium follow it as the computer's proxy, a launch of the shell with the verifier host up, and a
+// visit that reports what the tab showed.
 import { execFileSync } from 'node:child_process'
 import { connect, type AddressInfo } from 'node:net'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
+import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
-import { activeTabInfo, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { launchElectron, mainOutput } from '../support/launch-electron.mjs'
+import { activeTabInfo, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
 
 /** What the proxy was asked, in order: `CONNECT host:port`, or `METHOD absolute-url` for a plain-HTTP request. */
 export type ProxyLog = string[]
@@ -97,15 +100,20 @@ function gnomeKeyfile (dir: string): { readonly env: Record<string, string>, rea
 /**
  * A computer whose desktop (GNOME's settings) carries the proxy, in a keyfile settings backend of the test's own. Chromium reads
  * a desktop's settings and only then the environment, so no `no_proxy` in the environment exempts anything on such a computer.
- * `write` changes the setting the way the desktop's settings window would.
+ * `write` changes the port the way the desktop's settings window would, `off` turns the proxy off and `script` points the desktop at a script.
  */
-export function gnomeProxy (dir: string, port: number, ignore: readonly string[] = ['localhost', '127.0.0.0/8', '::1']): { env: Record<string, string>, write: (port: number) => void } {
+export function gnomeProxy (dir: string, port: number, ignore: readonly string[] = ['localhost', '127.0.0.0/8', '::1']): { env: Record<string, string>, write: (port: number) => void, off: () => void, script: (scriptUrl: string) => void } {
   const keyfile = gnomeKeyfile(dir)
   const write = (next: number): void => {
     keyfile.write(`[system/proxy]\nmode='manual'\nignore-hosts=[${ignore.map((host) => `'${host}'`).join(', ')}]\n\n[system/proxy/http]\nhost='127.0.0.1'\nport=${String(next)}\n\n[system/proxy/https]\nhost='127.0.0.1'\nport=${String(next)}\n`)
   }
   write(port)
-  return { env: keyfile.env, write }
+  return {
+    env: keyfile.env,
+    write,
+    off: () => { keyfile.write('[system/proxy]\nmode=\'none\'\n') },
+    script: (scriptUrl) => { keyfile.write(`[system/proxy]\nmode='auto'\nautoconfig-url='${scriptUrl}'\nignore-hosts=['localhost', '127.0.0.0/8', '::1']\n`) }
+  }
 }
 
 /** A computer whose desktop finds its proxy with a script (`mode='auto'`), which `write` points at another address the way the settings window would. */
@@ -245,3 +253,68 @@ export async function visitReporting (app: ElectronApplication, chrome: Page, ur
   }, timeoutMs)
   return found
 }
+
+export const ORDINARY = 'http://ordinary.test:8080/'
+export const SUBRESOURCES = 'http://subresources.test:8080/'
+/** A page the proxy serves that asks for names the verifier serves in every way a page can: a picture, a script's `fetch` and WebSocket, and a hint to connect ahead. It retitles itself once its requests have ended. */
+export const SUBRESOURCES_BODY = `<link rel="preconnect" href="https://pre.eth"><img src="https://img.eth/a.png"><script>
+Promise.allSettled([fetch('https://fetched.eth/a'), new Promise((done) => { const socket = new WebSocket('wss://sock.eth/'); socket.onclose = socket.onerror = () => { done() } })]).then(() => { document.title = 'subresources settled' })
+</script>`
+
+/** The lines of a proxy's log that name a host the verifier serves. */
+export const verifierNames = (log: readonly string[]): string[] => log.filter((line) => /\.(eth|orivon)\b/.test(line))
+
+export interface Running { app: ElectronApplication, chrome: Page }
+
+/** A shell whose verifier host is up, answering `fixture.eth` and `direct.eth` from `gateway`, launched with no desktop in its environment and `env` on top of it. */
+export async function launchShellOn (gateway: Awaited<ReturnType<typeof startFixtureGateway>>, env: Record<string, string>, seedProfile?: (dir: string) => void): Promise<Running> {
+  const app = await launchWithoutDesktop(async () => await launchElectron({
+    appPath: '.',
+    args: [HERMETIC_RESOLVER],
+    env: {
+      ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'fixture.eth': `ipfs://${gateway.roots['site']!}`, 'direct.eth': `ipfs://${gateway.roots['site']!}` }),
+      ORIVON_TEST_IPFS_GATEWAYS: gateway.url,
+      ...env
+    },
+    ...(seedProfile === undefined ? {} : { seedProfile })
+  }))
+  const listening = await waitFor(async () => await app.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 30_000)
+  if (!listening) throw new Error('the verifier host never reported listening')
+  await recordLoadFailures(app)
+  return { app, chrome: findChrome(app) }
+}
+
+/** What each session kind reports as the proxy for `url`: the answer of `session.resolveProxy`, by partition. */
+export async function resolved (app: ElectronApplication, url: string): Promise<Record<string, string>> {
+  return await app.evaluate(async ({ session }, target) => {
+    const partitions: Array<[string, Electron.Session]> = [
+      ['default', session.defaultSession],
+      ['direct-profile', session.fromPartition('persist:direct-profile')],
+      ['proxy-profile', session.fromPartition('persist:proxy-profile')],
+      ['tunnel-profile', session.fromPartition('persist:tunnel-profile')]
+    ]
+    const out: Record<string, string> = {}
+    for (const [name, one] of partitions) out[name] = await one.resolveProxy(target)
+    return out
+  }, url)
+}
+
+export const report = (label: string, facts: unknown): void => { console.log(`[system-proxy] ${label}: ${JSON.stringify(facts)}`) }
+
+/** What the sheet gives for a name the system's proxy would see, for one the session could not say about, and for one asked for over plain http. */
+export const ADVICE = 'Names like this open when your system has no proxy, when the proxy\'s exceptions list names like *.eth, or with a tunnel turned on.'
+export const PROXY_SHEET = `This name was not opened Your system proxy would see this name, so Orivon did not open it. ${ADVICE}`
+export const UNSURE_SHEET = `This name was not opened Orivon could not tell whether your system proxy would see this name, so it did not open it. Trying again may help. ${ADVICE}`
+export const PLAIN_SHEET = 'This name opens only over https A name like this opens only over a secure connection, so Orivon did not open it over plain http.'
+/** Chromium's name for a request Orivon cancelled before it was sent. */
+export const CANCELLED = 'ERR_BLOCKED_BY_CLIENT'
+
+/** Opens the page of `SUBRESOURCES` and waits for its requests to end, then for the connections a hint may still open. */
+export async function visitSubresources (app: ElectronApplication, chrome: Page): Promise<Visit> {
+  const visit = await visitReporting(app, chrome, SUBRESOURCES, 'subresources settled')
+  await new Promise((resolve) => { setTimeout(resolve, 2_000) })
+  return visit
+}
+
+/** The lines of the main process's log that say a request was refused for the proxy's sake: what a bug report carries. */
+export const refusalLines = (app: ElectronApplication): string[] => mainOutput(app).split('\n').filter((line) => line.includes('[route] refused a '))
