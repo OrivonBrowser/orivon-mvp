@@ -93,7 +93,8 @@ it('shows the literal report, sends it only on Send, and deletes it from the ser
 
     await page.fill('#report-what', 'The  toolbar jumps when I open a tab')
     await page.fill('#report-contact', 'someone@example.org')
-    const shown = await previewWhere(page, (report) => report['description'] === 'The  toolbar jumps when I open a tab')
+    // Each field rebuilds the preview on its own, so wait for both: a preview of the description alone has no contact yet.
+    const shown = await previewWhere(page, (report) => report['description'] === 'The  toolbar jumps when I open a tab' && report['contact'] === 'someone@example.org')
     expect(Object.keys(shown)).toEqual(TOP_LEVEL)
     expect(shown).toMatchObject({ schema: 1, contact: 'someone@example.org', crash: null, page: null, dump: null })
     expect(shown['diagnostics']).not.toBeNull()
