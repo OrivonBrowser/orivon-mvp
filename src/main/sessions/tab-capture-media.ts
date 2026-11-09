@@ -5,53 +5,12 @@ import type { WebContents } from 'electron'
 import { extensionIdFromChromeExtensionOrigin, isTabCaptureMediaRequestAllowed, markTabCaptureGrantConsumed } from './tab-capture-grants.js'
 
 /**
- * `media` stays denied by default (a page asking for camera/microphone) --
- * this is the one carve-out, for chrome.tabCapture's own `getUserMedia({
- * audio: { mandatory: { chromeMediaSource: 'tab', ... } } })` call. Measured
- * directly (docs/planning's tabCapture/offscreen probe): the request
- * handler's OWN `contents` argument is the CAPTURED TAB's webContents, not
- * the requester's, for this exact call shape -- only `details.securityOrigin`
- * names the requesting `chrome-extension://` origin.
- *
- * `contents` is exactly the fact that makes this carve-out
- * safe to check tightly: a real device request -- `getUserMedia({ audio:
- * true, video: true })`, called by the extension on its OWN page to reach
- * the real microphone/camera -- hands `contents` as the CALLING page
- * itself, never the captured tab, and carries `mediaTypes` naming what it
- * asked for (`['audio','video']`), where a tab-capture request's own
- * `mediaTypes` measures empty (`[]`). `isTabCaptureMediaRequestAllowed`
- * checks `contents.id` against the exact tab the extension's own
- * `getMediaStreamId()` call named, `mediaTypes` empty, AND
- * `details.isMainFrame`. Without the first two, an extension holding one
- * live tabCapture grant (minted once, for whichever tab it was invoked on)
- * could call `getUserMedia({audio:true,video:true})` on its own page and
- * silently receive the real mic and camera. `isMainFrame` closes a
- * SEPARATE gap those two cannot: `getUserMedia({mandatory:
- * {chromeMediaSource:'desktop'}})` ALSO measures `mediaTypes: []`, and a
- * web-accessible extension page injected as an `<iframe>` into the SAME
- * tab a grant names shares that tab's own `contents.id` (a page and its
- * iframes are one `WebContents`) -- `tab-capture-grants.ts`'s own doc has
- * the full measurement.
- *
- * Allowing the REQUEST (never the check) is also the one real signal that a
- * genuine `getUserMedia('tab')` call is in flight for this grant -- marked
- * consumed on the way out, so `tab-capture.ts`'s own safety net stops
- * treating this (extension, tab) pair as "maybe never redeemed" the moment
- * Electron actually asks permission for it, however long the real capture
- * goes on to run. MEASURED why the check handler must never mark this, and
- * must never allow `'media'` at all: `setPermissionCheckHandler` fires
- * repeatedly and speculatively for a `chrome-extension://` page (camera/
- * microphone availability probing this library's own preload, or
- * Chromium's own media-device enumeration) with no `getUserMedia()` call
- * behind it at all, and carries no captured-tab identity to check against
- * even when it does correspond to a real call -- `wc`/`origin` there are
- * the REQUESTER's own, and `details.mediaType` (singular) cannot
- * distinguish "tab capture asking for audio" from "a device asking for
- * audio" the way the request handler's `mediaTypes` (plural, an exact
- * list) can. `setPermissionRequestHandler` fires only for an actual,
- * one-time media-access attempt with the tab identity this file needs;
- * that is the one Chromium contract this file leans on, so `'media'` is
- * refused outright in the check handler.
+ * `media` stays denied by default; this is the one carve-out, for the `getUserMedia` call
+ * `chrome.tabCapture` itself makes. The request handler's `contents` is the CAPTURED tab, never
+ * the requester, and only `details.securityOrigin` names the extension, so the grant must name
+ * exactly that tab, `mediaTypes` must be empty and the request must be from the main frame.
+ * Allowing the request, never the check, is what marks the grant consumed. See README.md's Design
+ * notes for why each of the three conditions is there and why the check handler never allows `media`.
  */
 export function allowTabCaptureMediaRequest (contents: WebContents, details: object | undefined): boolean {
   const origin = details !== undefined && 'securityOrigin' in details && typeof details.securityOrigin === 'string'
