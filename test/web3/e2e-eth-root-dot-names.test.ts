@@ -290,6 +290,25 @@ describe('a website routed through a SOCKS5 tunnel of its own', () => {
   })
 })
 
+/**
+ * Behind a proxy Orivon copied, the root-dot name is excepted as the dotless one is, so every session sends it direct and the
+ * resolver refuses it. The spelling with two dots, which no exception covers, is cancelled before the proxy is asked.
+ */
+function expectDirectBehindACopiedProxy (facts: Facts, proxy: LoggingProxy): void {
+  expect(facts.control.result, JSON.stringify(facts.control)).toBe('page')
+  expect(facts.controlLog.requests, 'the net log covers the run').toBeGreaterThan(0)
+  expect(facts.log.requests, 'the net log saw the requests for the root-dot names').toBeGreaterThan(0)
+  expect(facts.log.lookups, 'host-resolution events for a root-dot name').toEqual([])
+  expect(facts.log.tunnelled, 'a proxy asked to tunnel to a root-dot name').toEqual([])
+  expect(facts.double.lookups, 'host-resolution events for the name with two dots').toEqual([])
+  expect(facts.double.tunnelled, 'a proxy asked to tunnel to the name with two dots').toEqual([])
+  expect(proxy.seen.filter(named)).toEqual([])
+  expectNotFoundDirect(facts)
+  expect(Object.values(facts.ordinarySessions).length, 'sessions asked about an ordinary site').toBeGreaterThan(0)
+  for (const [kind, answer] of Object.entries(facts.ordinarySessions)) expect(answer, `${kind} follows the copied proxy for an ordinary site`).toMatch(/^PROXY /)
+  for (const [asked, outcome] of Object.entries(facts.own)) expect(outcome, `the shell's own request: ${asked}`).not.toBe('answered')
+}
+
 /** A root-dot name is cancelled before it is sent where the system's proxy would carry it, so a tab shows the refusal and the proxy hears nothing. */
 function expectRefusedBeforeTheProxy (facts: Facts, proxy: LoggingProxy): void {
   expect(facts.control.result, JSON.stringify(facts.control)).toBe('page')
@@ -320,8 +339,8 @@ describe.skipIf(!LINUX)('a computer whose desktop carries a proxy that excepts t
     await proxy.close()
   })
 
-  it('a root-dot name is not covered by the exception, and is refused before the proxy is asked about it', () => {
-    expectRefusedBeforeTheProxy(facts, proxy)
+  it('a root-dot name is excepted like the dotless one, goes direct, is refused by the resolver and never reaches the proxy', () => {
+    expectDirectBehindACopiedProxy(facts, proxy)
   })
 })
 
