@@ -42,7 +42,7 @@ export interface PickerGuardRoots {
    * to speak of (a test with no private-session concept).
    */
   readonly privateSessions?: {
-    /** The directory every private session sits directly under (`os.tmpdir()`). */
+    /** The directory every private session sits directly under (`os.tmpdir()`): also the account's own temporary folder, whose contents the system-folder rule never refuses. */
     readonly tempDir: string
     /** True for a directory name shaped like a private session's own (`../../main/launch/private-session.ts`'s `isPrivateDirName`). */
     readonly isPrivateDirName: (name: string) => boolean
@@ -75,6 +75,19 @@ function isAncestorOrEqual (parent: string, child: string, flavour: PlatformPath
   if (parent === child) return true
   const rel = flavour.relative(parent, child)
   return rel !== '' && rel !== '..' && !rel.startsWith(`..${flavour.sep}`) && !flavour.isAbsolute(rel)
+}
+
+/**
+ * Whether `picked` lies inside the account's own temporary folder, which is not a system folder
+ * although the system may keep it under one. Never so for a temporary folder that is a filesystem
+ * root or holds a system directory (`TMPDIR=/var` must not open `/var/lib`): that one is a
+ * misconfiguration, not a folder the person owns. README.md's Design notes say why.
+ */
+function insideOwnTemp (picked: string, guard: PickerGuardRoots, systemDirectories: readonly string[], flavour: PlatformPath, realpath: (p: string) => string): boolean {
+  if (guard.privateSessions === undefined) return false
+  const temp = resolved(guard.privateSessions.tempDir, realpath)
+  if (flavour.parse(temp).root === temp || systemDirectories.some((dir) => isAncestorOrEqual(temp, dir, flavour))) return false
+  return temp !== picked && isAncestorOrEqual(temp, picked, flavour)
 }
 
 /**
@@ -120,8 +133,10 @@ export function pickerBlockReason (picked: string, guard: PickerGuardRoots, real
     return "this is the account's home folder"
   }
   if (flavour.parse(picked).root === picked) return 'this is a filesystem root'
-  for (const dir of guard.systemDirectories) {
-    if (isAncestorOrEqual(resolved(dir, realpath), picked, flavour)) return 'this is a system folder'
+  const systemDirectories = guard.systemDirectories.map((dir) => resolved(dir, realpath))
+  if (insideOwnTemp(picked, guard, systemDirectories, flavour, realpath)) return null
+  for (const dir of systemDirectories) {
+    if (isAncestorOrEqual(dir, picked, flavour)) return 'this is a system folder'
   }
   return null
 }
