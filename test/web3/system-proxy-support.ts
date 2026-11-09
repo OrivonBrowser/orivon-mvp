@@ -46,6 +46,8 @@ export async function startLoggingProxy (): Promise<LoggingProxy> {
   server.on('connect', (request: IncomingMessage, client) => {
     const target = request.url ?? ''
     seen.push(`CONNECT ${target}`)
+    // A tunnel with no answer here gets a refusal, and a program that resets its socket meanwhile (a proxy set in macOS's settings is every program's) must not end the run.
+    client.on('error', () => { client.destroy() })
     const local = tunnels.get(target.replace(/:\d+$/, ''))
     if (local === undefined) { client.end('HTTP/1.1 502 Bad Gateway\r\nconnection: close\r\n\r\n'); return }
     const upstream = connect(local, '127.0.0.1', () => {
