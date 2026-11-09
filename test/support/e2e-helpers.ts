@@ -418,12 +418,18 @@ export async function waitForKeyboardAt (app: ElectronApplication, urlPart: stri
   }, urlPart))
 }
 
-/** Waits until a tab's start page has finished loading. The page takes the keyboard when it runs (src/renderer/newtab/main.ts),
- * so text typed in the address bar before then is cut off, and the suggestions popup closes under it, on a runner slow
- * enough to run the page after the keys. */
-export async function waitForStartPageLoaded (app: ElectronApplication): Promise<boolean> {
-  return await waitFor(async () => await app.evaluate(({ webContents }) =>
-    webContents.getAllWebContents().some((contents) => contents.getURL().includes('/newtab/') && !contents.isLoading())))
+/** The ids of the start pages the app holds now. Read before opening a tab, so `waitForStartPageLoaded` waits for that tab's own page. */
+export async function startPagesHeld (app: ElectronApplication): Promise<number[]> {
+  return await app.evaluate(({ webContents }) => webContents.getAllWebContents().filter((contents) => contents.getURL().includes('/newtab/')).map((contents) => contents.id))
+}
+
+/** Waits until the start page of a tab opened since `held` was read has finished loading. The page takes the keyboard when it runs
+ * (src/renderer/newtab/main.ts) and its first commit counts as a navigation of the active tab, so text typed in the address bar
+ * before then is cut off, and the suggestions popup closes under it, on a runner slow enough to run the page after the keys.
+ * A start page that was already loaded (a tab left open behind) says nothing about the new one, so it is not counted. */
+export async function waitForStartPageLoaded (app: ElectronApplication, held: readonly number[]): Promise<boolean> {
+  return await waitFor(async () => await app.evaluate(({ webContents }, known) =>
+    webContents.getAllWebContents().some((contents) => contents.getURL().includes('/newtab/') && !contents.isLoading() && !known.includes(contents.id)), [...held]))
 }
 
 /** Switches the whole app to a colour scheme at run time, the way the OS theme flipping would. `nativeTheme`

@@ -139,8 +139,9 @@ passes the name on unresolved and a resolver that is asked for one learns which 
 A name the verifier serves (`.eth`, any other top-level domain a protocol serves, and `.orivon`) is answered on this
 computer: the resolver rules send it to the verifier's loopback server. Those rules bind Chromium's own resolution
 only; a proxy is asked before the resolver is. The default session and a website's own session are given the suffixes as a
-bypass at their front when they are on a tunnel; an app's routed session and a temporary routed tab are not, and send the
-name to the front, which is the person's own tunnel and not the system's proxy. A session that follows the system's proxy cannot
+bypass at their front when they are on a tunnel; an app's routed session, a temporary routed tab and the requests made with no
+session are given the root-dot spelling alone (below), and send the name itself to the front, which is the person's own
+tunnel and not the system's proxy. A session that follows the system's proxy cannot
 be given a bypass list (`{ mode: 'system' }` takes none), so the proxy would be asked to carry `CONNECT name.eth:443`, would
 learn the name, and could answer a plain `http://name.eth/` with a page of its own that loads under the `.eth` address (the
 HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse). Three things keep the names from it
@@ -154,8 +155,8 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
 - **A manual proxy in GNOME's settings (and the desktops that share them).** `src/main/route/proxy-mirror/` reads the settings
   (`gsettings list-recursively org.gnome.system.proxy`, run without a shell, three seconds at most, its output never logged) and
   sets every session that would follow the system to the same servers and exceptions, plus `*.suffix` for every
-  routed suffix, so Chromium resolves those names direct. The root-dot spelling (`name.eth.`) gets no rule, because the resolver rules
-  do not map it to the verifier: it stays on the proxy and the guard refuses it. A copy reaches a session only after `orivon-system-check`, a session of the
+  routed suffix in both spellings (`*.eth` and `*.eth.`), so Chromium resolves those names direct, and the root-dot spelling
+  (`name.eth.`) fails there as not found, because the resolver rules refuse it. A copy reaches a session only after `orivon-system-check`, a session of the
   mirror's own set to it, answers as `orivon-system-proxy` (Chromium's own answer, never leaving `{ mode: 'system' }`) does for
   two ordinary addresses and up to three the system's exceptions cover; a difference, read again at once, leaves every session
   on `{ mode: 'system' }`. Settings that name a script or detection, cannot be carried exactly or cannot be read stay on it
@@ -176,7 +177,9 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   automatic discovery alone stay on `{ mode: 'system' }`. Nothing is read or run on other desktops.
 - **Any session that follows the system.** `src/main/route/verifier-name-guard.ts` is registered on the default session and
   on every website session the runtime announces (`forEachWebsiteSession`: the tunnel, proxy and direct profiles and a
-  temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`. A session on a tunnel, or held
+  temporary routed tab), through the shared request owner, for `http`, `https`, `ws` and `wss`: its filter lists the four schemes under
+  every host and `namesVerifierHost` selects, so the guard rests on no other handler's filter and on no matcher's treatment of
+  trailing dots. A session on a tunnel, or held
   shut, is not the system's to answer for and is skipped; a session whose proxy is being set counts as following the system,
   since the tunnel recorded for it may not be the one it has. For a request to a name the verifier serves, the guard:
   1. waits until no change of the session's proxy is under way (ten seconds at most);
@@ -210,6 +213,27 @@ name. This is the whole of what the guard leaves open for these schemes, and it 
 **What this leaves.** Behind a proxy that macOS settings provide, or KDE settings with reversed exceptions, a name the verifier serves does not
 open while the proxy would carry it, and the sheet says why. Adding the routed suffixes (`*.eth` and the rest) to the proxy's
 exceptions opens them ([`known-limitations.md`](../known-limitations.md)).
+
+## The root-dot spelling of a name the verifier serves
+
+A name written with the DNS root dot (`vitalik.eth.`) is a host of its own to Chromium. The resolver rule `MAP *.eth` and a
+proxy's bypass rule `*.eth` do not match it, and the verifier does not serve it. Left alone, Chromium would look it up with
+its own resolver (DNS-over-HTTPS or the system's), or send it to a proxy, a tunnel's front or its far end (`CONNECT
+vitalik.eth.:443`), and the name would leave this computer ([T92](security-model.md)). Every way out refuses it, and each
+rule is generated from the same list of routed suffixes as the rules for the dotless name:
+
+| Way out | What it does with a root-dot name |
+|---|---|
+| Any name Chromium would resolve itself, from any session, process or code path | The `--host-resolver-rules` switch ends with `MAP *.suffix. ~NOTFOUND` and `MAP *.suffix..* ~NOTFOUND` for every routed suffix (`resolver-rules.ts`), after the rules already given, as for onion names; the second finds a host with more than one trailing dot, an empty label no valid name has. Neither matches the dotless spelling, which keeps `MAP *.suffix` to the verifier. This is the floor under the rows below |
+| A session pointed at a front, and the requests made with no session while the whole browser is on a tunnel | The bypass rules carry `*.suffix.` (`rootDotBypass`, and `sharedBypass` and a website's `bypass` in both spellings: `route-subsystem.ts`, `route-controller.ts`), so the name goes direct and fails as not found. An app's routed session, a temporary routed tab and the requests made with no session carry the root-dot spelling alone |
+| A front, asked for a root-dot name anyway | `front.ts` answers 403 and never asks the route, however many dots the host ends in: no bypass list names more than one, and Chromium keeps `vitalik.eth..` as a host of its own, so a session that sends it to the front would otherwise hand it to the route's far end |
+| A session that follows the system | `namesVerifierHost` names the root-dot spelling too, so the guard above cancels the request while the session's proxy would carry it; a request the proxy answers `DIRECT` for meets the resolver clause, as every one does behind a proxy Orivon copies from the system's settings, whose exceptions carry `*.suffix.` |
+| The verifier host's CCIP-Read fetch | `egress.ts` refuses a CCIP-Read address at a root-dot name (`namesThisComputer`), with or without a proxy and through a tunnel, so neither the system's resolver nor the tunnel's far end is asked |
+| A server address typed in Settings, a manifest's host | Refused: a trailing dot is not an address of a server on the internet, and a host with one is not a bare host name |
+| An app's `orivon.net` | The broker reads the root dot away and asks Chromium's resolver (`chromium-resolver.ts`), which the clause above covers |
+| Orivon's own requests (`request-fetch.ts`, `direct-fetch.ts`, `routed-fetch.ts`, `own-requests.ts`, the loader's reads, a tab icon, the Web3 Score provider) | They go through a session, so the bypass rules and the clause above apply; the ones that ask first whether a proxy would carry a name (`refuseWhenProxySees`) do so for the root-dot spelling too |
+
+[`e2e-eth-root-dot-names`](../../test/web3/e2e-eth-root-dot-names.test.ts) proves it from Chromium's own net log.
 
 ## What the scan cannot see
 
