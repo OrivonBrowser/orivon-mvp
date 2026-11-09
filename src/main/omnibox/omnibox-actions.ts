@@ -98,7 +98,12 @@ export const omniboxClose: ChromeAction = (payload, ctx) => {
 export function pickRow (ctx: WindowContext, index: number, disposition: Disposition, seq: number | undefined, rev?: number): boolean {
   const service = existingOmnibox(ctx.window)
   const outcome = service?.pick(index, disposition, seq, rev)
-  if (service === undefined || outcome === undefined) return false
+  if (service === undefined || outcome === undefined) {
+    // Numbers only, never the rows: a report shows why a click did nothing (the dropdown had closed or moved on) without what was typed.
+    const held = service?.snapshot()
+    console.warn(`[omnibox] a choice was refused: row ${String(index)} of list ${String(seq)}/${String(rev)}, held list ${held === undefined ? 'none' : `${String(held.seq)}/${String(held.rev)} with ${String(held.rows.length)} rows`}`)
+    return false
+  }
   service.reset()
   ctx.window.overlays.close(OMNIBOX_OVERLAY)
   perform(ctx, outcome)

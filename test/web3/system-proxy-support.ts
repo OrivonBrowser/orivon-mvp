@@ -355,11 +355,11 @@ export const verifierNames = (log: readonly string[]): string[] => log.filter((l
 
 export interface Running { app: ElectronApplication, chrome: Page }
 
-/** A shell whose verifier host is up, answering `fixture.eth` and `direct.eth` from `gateway`, launched with no desktop in its environment and `env` on top of it. */
-export async function launchShellOn (gateway: Awaited<ReturnType<typeof startFixtureGateway>>, env: Record<string, string>, seedProfile?: (dir: string) => void): Promise<Running> {
+/** A shell whose verifier host is up, answering `fixture.eth` and `direct.eth` from `gateway`, launched with no desktop in its environment and `env` on top of it, under `resolver` (every name hidden unless a spec says otherwise). */
+export async function launchShellOn (gateway: Awaited<ReturnType<typeof startFixtureGateway>>, env: Record<string, string>, seedProfile?: (dir: string) => void, resolver = HERMETIC_RESOLVER): Promise<Running> {
   const app = await launchWithoutDesktop(async () => await launchElectron({
     appPath: '.',
-    args: [HERMETIC_RESOLVER],
+    args: [resolver],
     env: {
       ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'fixture.eth': `ipfs://${gateway.roots['site']!}`, 'direct.eth': `ipfs://${gateway.roots['site']!}` }),
       ORIVON_TEST_IPFS_GATEWAYS: gateway.url,
