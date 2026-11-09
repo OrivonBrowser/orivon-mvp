@@ -1,19 +1,18 @@
 // What a Node dependency bundled into a page counts on from the shim: the `constants` module and
 // `process.execPath` read as it loads, `fs` opening a file with O_CREAT and no O_TRUNC, and file calls that
-// keep completing while many socket dials hang. The hanging dials go to a listener whose process is stopped, so
-// its backlog fills and further connections get no answer, as a peer that has gone silent would not answer.
+// keep completing while many socket dials hang. The hanging dials go to an address that never answers
+// (`hung-dial.ts`), as a peer that has gone silent would not answer.
 //
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/node-runtime/e2e-node-gaps.test.ts
 import { afterAll, expect, it } from 'vitest'
-import { spawn } from 'node:child_process'
 import { createServer } from 'node:http'
-import type { ChildProcess } from 'node:child_process'
 import type { AddressInfo } from 'node:net'
 import { fileURLToPath } from 'node:url'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { evaluateRetrying, HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, runPhase, waitForPageGlobal } from '../support/e2e-helpers.js'
+import { startHungDial } from './hung-dial.js'
 import { bundleForApp, serveApp } from './pinned-app.js'
 import type { NodeGapsResults } from './node-gaps-entry.js'
 import type { Manifest } from '../../src/contracts/index.js'
@@ -24,20 +23,8 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-/** A loopback listener with a backlog of one whose process is then stopped: after a few connections the rest hang. */
-async function startSilentListener (): Promise<{ port: number, stop: () => void }> {
-  const script = "const s = require('node:net').createServer(); s.listen({ port: 0, host: '127.0.0.1', backlog: 1 }, () => console.log(s.address().port))"
-  const child: ChildProcess = spawn('node', ['-e', script], { stdio: ['ignore', 'pipe', 'ignore'] })
-  const port = await new Promise<number>((resolve, reject) => {
-    child.once('error', reject)
-    child.stdout?.once('data', (chunk: Buffer) => { resolve(Number(chunk.toString().trim())) })
-  })
-  child.kill('SIGSTOP')
-  return { port, stop: () => { child.kill('SIGCONT'); child.kill('SIGKILL') } }
-}
-
 it('[app:node-constants-and-exec-path] [app:fs-open-create-in-place] [app:file-calls-complete-beside-hung-dials] [app:url-parse-escapes-like-node] [app:node-random-int-in-range] [app:node-fs-copies-files-and-trees-and-makes-temp-folders] a bundled dependency reads constants and execPath, creates files in place, draws random integers, copies files and trees and makes temp folders, and its file calls complete while many dials hang, and a request path from url.parse is percent-encoded', async () => {
-  const silent = await startSilentListener()
+  const silent = await startHungDial()
   const seen: string[] = []
   const server = createServer((request, response) => { seen.push(request.url ?? ''); response.end('ok') })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
@@ -49,16 +36,16 @@ it('[app:node-constants-and-exec-path] [app:fs-open-create-in-place] [app:file-c
     version: '1.0.0',
     entry: 'index.html',
     assets: ['app.js'],
-    capabilities: { fs: { quotaBytes: 4_194_304 }, net: { tcp: { connect: [`127.0.0.1:${String(silent.port)}`, `127.0.0.1:${String(httpPort)}`] }, concurrentSockets: 512 } }
+    capabilities: { fs: { quotaBytes: 4_194_304 }, net: { tcp: { connect: [silent.pattern, `127.0.0.1:${String(httpPort)}`] }, concurrentSockets: 512 } }
   }
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER] })
   try {
     await runPhase('node gaps', async (check) => {
-      const html = `<!doctype html><html><head><title>node gaps fixture</title><meta name="silent-port" content="${String(silent.port)}"><meta name="http-port" content="${String(httpPort)}"><script src="/app.js"></script></head><body><h1>node gaps fixture</h1></body></html>`
+      const html = `<!doctype html><html><head><title>node gaps fixture</title><meta name="silent-host" content="${silent.host}"><meta name="silent-port" content="${String(silent.port)}"><meta name="http-port" content="${String(httpPort)}"><script src="/app.js"></script></head><body><h1>node gaps fixture</h1></body></html>`
       const served = await serveApp(app, ORIGIN, manifest, 'fs', {
         '/index.html': new TextEncoder().encode(html),
         '/app.js': await bundleForApp(fileURLToPath(new URL('./node-gaps-entry.ts', import.meta.url)))
-      }, [], [{ capability: 'tcp.connect', patterns: [`127.0.0.1:${String(silent.port)}`, `127.0.0.1:${String(httpPort)}`] }])
+      }, [], [{ capability: 'tcp.connect', patterns: [silent.pattern, `127.0.0.1:${String(httpPort)}`] }])
       check('the fixture is granted fs and tcp.connect and registered for serving', served.granted && served.registered, JSON.stringify(served))
 
       const view = await navigateToFixture(app, `${ORIGIN}/`, 'node gaps fixture')
