@@ -7,7 +7,9 @@
 #                                    releases, refuses one whose CID differs from its ipfs.json, pins it as
 #                                    orivon-release-<tag>, and unpins the older releases it pinned. With
 #                                    LATEST_KEY set, points that IPNS key at the newest release it keeps,
-#                                    with a start page that downloads the package for the visitor's system.
+#                                    with a start page that downloads the package for the visitor's system,
+#                                    each file also under its name with "latest" in place of the version,
+#                                    and the release's ipfs.json.
 #
 # Needs bash, curl, jq, sha256sum and Kubo's `ipfs`. Settings come from the environment, below.
 set -euo pipefail
@@ -53,7 +55,8 @@ refused () { grep -qxF "$1 $2" "$WORK/.refused" 2>/dev/null; }
 refuse () { echo "$1 $2" >> "$WORK/.refused"; log "release $1: $3; not pinned, and not retried for this CID"; }
 
 # Downloads one release's files, checks each against its ipfs.json, and adds and pins them. Returns
-# non-zero when the release cannot be kept; a download that fails is retried on the next run.
+# non-zero when the release cannot be kept; a download that fails is retried on the next run. Returns 2
+# when the add did not finish: Kubo may still be adding it, so its pin is left for the next run to find.
 keep_release () {
   local tag=$1 cid=$2 manifest=$3 release=$4 dir name sha url got
   if ipfs pin ls --type=recursive "$cid" >/dev/null 2>&1; then return 0; fi
@@ -69,7 +72,17 @@ keep_release () {
       rm -rf "$dir"; refuse "$tag" "$cid" "$name does not match its SHA-256 in ipfs.json"; return 1
     fi
   done < <(jq -r '.files[] | [.name, .sha256] | @tsv' <<<"$manifest")
-  got=$(ipfs add -r -Q --pin=true --pin-name="$PIN_PREFIX$tag" "${ADD_FLAGS[@]}" "$dir")
+  # A client error (a timeout, a dropped connection) says nothing about the files: only a CID the add printed can
+  # prove them wrong.
+  if ! got=$(ipfs add -r -Q --pin=true --pin-name="$PIN_PREFIX$tag" "${ADD_FLAGS[@]}" "$dir") || [ -z "$got" ]; then
+    rm -rf "$dir"
+    if ipfs pin ls --type=recursive "$cid" >/dev/null 2>&1; then
+      log "release $tag pinned as ipfs://$cid, although the add reported an error"
+      return 0
+    fi
+    log "release $tag: the add did not finish; retried on the next run"
+    return 2
+  fi
   rm -rf "$dir"
   if [ "$got" != "$cid" ]; then
     ipfs pin rm "$got" >/dev/null 2>&1 || true
@@ -80,7 +93,7 @@ keep_release () {
 }
 
 sync () {
-  local releases kept='' newest_tag='' tag cid manifest_url manifest name
+  local releases kept='' adding='' newest_tag='' newest_manifest='' tag cid manifest_url manifest name
   mkdir -p "$WORK"
   # Newest first; a release counts once the workflow has attached its ipfs.json.
   releases=$(curl -fsSL --retry 3 "$RELEASES_URL" | jq -c '[.[] | select(.draft | not)
@@ -94,19 +107,35 @@ sync () {
     manifest_url=$(jq -r '.assets[] | select(.name == "ipfs.json") | .browser_download_url' <<<"$release")
     manifest=$(curl -fsSL --retry 3 "$manifest_url")
     cid=$(jq -r .cid <<<"$manifest")
-    if keep_release "$tag" "$cid" "$manifest" "$release"; then kept+="$cid"$'\n'; newest_tag=${newest_tag:-$tag}; fi
+    if keep_release "$tag" "$cid" "$manifest" "$release"; then
+      kept+="$cid"$'\n'
+      if [ -z "$newest_tag" ]; then newest_tag=$tag; newest_manifest=$manifest; fi
+    elif [ $? -eq 2 ]; then
+      adding+="$cid"$'\n'
+    fi
   done <<<"$releases"
 
   # Only the newest KEEP releases stay pinned. A pin this script did not name is never touched.
   while read -r cid _ name; do
     [[ ${name:-} == "$PIN_PREFIX"* ]] || continue
-    if ! grep -qxF "$cid" <<<"$kept"; then
+    if ! grep -qxF "$cid" <<<"$kept$adding"; then
       ipfs pin rm "$cid" >/dev/null
       log "release ${name#"$PIN_PREFIX"} unpinned (ipfs://$cid): only the newest $KEEP stay pinned"
     fi
   done < <(ipfs pin ls --type=recursive --names)
 
-  if [ -n "${LATEST_KEY:-}" ] && [ -n "$kept" ]; then point_latest "$(head -n 1 <<<"$kept")" "$newest_tag"; fi
+  if [ -n "${LATEST_KEY:-}" ] && [ -n "$kept" ]; then point_latest "$(head -n 1 <<<"$kept")" "$newest_tag" "$newest_manifest"; fi
+}
+
+# The name a file of release <version> also has in the newest-release folder, with "latest" in place of the version
+# (Orivon-Setup-0.1.0-x64.exe -> Orivon-Setup-latest-x64.exe, orivon_0.1.0_amd64.deb -> orivon_latest_amd64.deb), so a
+# link to it never goes stale. Prints nothing for a name without the version.
+latest_name () {
+  local version=$1 name=$2
+  case $name in
+    *"-$version-"*) echo "${name/"-$version-"/-latest-}" ;;
+    *"_${version}_"*) echo "${name/"_${version}_"/_latest_}" ;;
+  esac
 }
 
 # The index.html of the newest-release folder: starts the download of the package for the visitor's system and
@@ -175,19 +204,33 @@ EOF
 }
 
 # One ipns:// address (and the .eth name set to it) that always opens the newest release this node keeps: the
-# release's files, the same blocks, plus a start page (start_page). The folder is composed in MFS and pinned as
-# LATEST_PIN; the folder it replaces is unpinned once the key has moved.
+# release's files, the same blocks, each also under its latest_name, plus a start page (start_page) and the release's
+# ipfs.json (the manifest its files were checked against). The folder is composed in MFS and pinned as LATEST_PIN; the
+# folder it replaces is unpinned once the key has moved.
 point_latest () {
-  local cid=$1 tag=$2 id listing target old size name
+  local cid=$1 tag=$2 manifest=$3 id listing target old size name alias
   id=$(ipfs key list -l --ipns-base=base36 | awk -v k="$LATEST_KEY" '$2 == k { print $1 }') || true
   if [ -z "$id" ]; then echo "[pin-releases] no IPNS key named $LATEST_KEY; create it with ipfs key gen" >&2; return 0; fi
   listing=$(ipfs ls --resolve-type=false "$cid" | awk '{ size = $2; sub(/^[^ \t]+[ \t]+[^ \t]+[ \t]+/, ""); print size, $0 }')
   while read -r size name; do
-    if ! safe_name "$name" || [ "$name" = index.html ]; then log "release $tag: file name '$name' refused for the start page"; return 0; fi
+    if ! safe_name "$name" || [ "$name" = index.html ] || [ "$name" = ipfs.json ]; then
+      log "release $tag: file name '$name' refused for the start page"
+      return 0
+    fi
   done <<<"$listing"
   ipfs files rm -r --force "$LATEST_DRAFT" >/dev/null 2>&1 || true
   ipfs files cp "/ipfs/$cid" "$LATEST_DRAFT"
+  while read -r size name; do
+    alias=$(latest_name "${tag#v}" "$name")
+    [ -n "$alias" ] || continue
+    if ! safe_name "$alias" || ipfs files stat "$LATEST_DRAFT/$alias" >/dev/null 2>&1; then
+      echo "[pin-releases] release $tag: $name gets no version-free name, $alias is refused or taken" >&2
+      continue
+    fi
+    ipfs files cp "$LATEST_DRAFT/$name" "$LATEST_DRAFT/$alias"
+  done <<<"$listing"
   start_page "$tag" <<<"$listing" | ipfs files write --create --truncate --cid-version=1 --raw-leaves "$LATEST_DRAFT/index.html"
+  printf '%s\n' "$manifest" | ipfs files write --create --truncate --cid-version=1 --raw-leaves "$LATEST_DRAFT/ipfs.json"
   target=$(ipfs files stat --hash "$LATEST_DRAFT")
   ipfs files rm -r "$LATEST_DRAFT"
   ipfs pin add --name="$LATEST_PIN" "$target" >/dev/null
