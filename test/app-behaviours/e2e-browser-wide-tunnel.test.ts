@@ -20,6 +20,7 @@ import { shoot } from '../support/auth-support.js'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { delay, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { openTabWithNoChoice } from '../support/tunnel-popup.js'
 
 /** A title with markup in it, as a website may write: the prompt must show it as the text it is. */
 const BANK_TITLE = 'Bank <b>tab</b>'
@@ -174,8 +175,16 @@ it('[app:browser-wide-tunnel-panel-opens-where-the-tab-stands] with the whole br
     expect(await popover.locator('#tunnel-switch-nodes').isDisabled()).toBe(false)
     await closeList(app, chrome)
 
-    // A tab opened now has no choice, so it opens on Browser-wide.
+    // A tab opened from it keeps its direct choice, so it opens on its own panel with Nym off.
     await chrome.click('#new-tab')
+    expect(await waitFor(async () => await chrome.locator('#tunnel-btn').isVisible())).toBe(true)
+    popover = await openList(app, chrome)
+    expect(await selectedPanel(popover), 'a tab opened from a direct tab is direct too').toBe('This tab')
+    expect(await checked(popover, 'tunnel-switch-nym')).toBe(false)
+    await closeList(app, chrome)
+
+    // A tab with no choice of its own opens on Browser-wide.
+    await openTabWithNoChoice(app, chrome)
     expect(await waitFor(async () => await chrome.locator('#tunnel-btn').isVisible())).toBe(true)
     popover = await openList(app, chrome)
     expect(await selectedPanel(popover)).toBe('Browser-wide')
@@ -198,7 +207,7 @@ it('[app:browser-wide-tunnel-asks-before-tabs-keep-their-own] turning a tunnel o
     expect((await waitForTab(chrome, { address: bankUrl(), title: BANK_TITLE }, 60_000)).ok).toBe(true)
 
     // Another tab follows the browser, and turns the browser-wide tunnel off: nothing is asked.
-    await chrome.click('#new-tab')
+    await openTabWithNoChoice(app, chrome)
     expect(await waitFor(async () => await chrome.locator('#tunnel-btn').isVisible())).toBe(true)
     popover = await openList(app, chrome)
     expect(await selectedPanel(popover)).toBe('Browser-wide')

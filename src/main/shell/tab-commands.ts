@@ -75,12 +75,12 @@ export function togglePin (tabs: TabManager, id: string): void {
 }
 
 /** A new tab, in front, right of the tab (and of the one it is joined to): an unpinned one, so beside a pinned
- * tab it opens where the pinned run ends. `url` absent opens the new-tab page. */
+ * tab it opens where the pinned run ends. `url` absent opens the new-tab page. Either keeps the tunnel choice of the tab it comes
+ * from; the new-tab page also takes the tunnel of the entry of the website the tab shows (`newTabTunnelChoice`). */
 export function openBeside (tabs: TabManager, id: string, url?: string): string | undefined {
   if (!tabs.hasRoom()) return undefined
   const at = endOf(tabs.getState(), id) + 1
-  // An address opened beside (a copy of the tab) keeps the tab's tunnel choice; the new-tab page does not.
-  const created = tabs.createTab(url, true, undefined, url === undefined ? undefined : tabs.record(id)?.tunnelChoice)
+  const created = tabs.createTab(url, true, undefined, url === undefined ? tabs.newTabTunnelChoice(id) : tabs.record(id)?.tunnelChoice)
   // Beside a tab of a group, it is in that group too.
   const fresh = tabs.record(created)
   if (fresh !== undefined && created !== id) fresh.groupId = tabs.record(id)?.groupId ?? null

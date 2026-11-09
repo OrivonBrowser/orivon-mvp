@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { alwaysState, entryToSave, planAlwaysOff, planAlwaysOn, planMove, tabKeepsSession } from '../site-always.js'
+import { alwaysState, choiceForBlankTab, entryToSave, planAlwaysOff, planAlwaysOn, planMove, tabKeepsSession } from '../site-always.js'
 import type { AlwaysFacts, RoutePlan } from '../site-always.js'
 import { profileForTab, tunnelOfPage } from '../tab-tunnel.js'
 import type { TabTunnelChoice } from '../tab-tunnel.js'
@@ -163,6 +163,31 @@ describe('the session a tab holds once the website\'s entry is gone', () => {
         const was = profileOf(entry)
         expect(tabKeepsSession(choice, entry), `tab ${String(choice)}, entry ${String(entry)}`).toBe(was !== undefined && profileForTab(choice, 'https://news.example', undefined) === was)
       }
+    }
+  })
+})
+
+describe('the choice a blank tab opened from a tab takes', () => {
+  it('is the tab\'s own choice, direct included, whatever the website\'s entry says', () => {
+    for (const choice of ['nym', 'socks5', 'direct'] as const) {
+      for (const entry of ENTRIES) expect(choiceForBlankTab({ choice, entry }), `tab ${choice}, entry ${String(entry)}`).toBe(choice)
+    }
+  })
+
+  it('is the tunnel of the entry the tab follows when the tab has no choice', () => {
+    expect(choiceForBlankTab({ choice: undefined, entry: 'nym' })).toBe('nym')
+    expect(choiceForBlankTab({ choice: undefined, entry: 'socks5' })).toBe('socks5')
+  })
+
+  it('is none for a tab with no choice on a website with no entry or an off entry, so the new tab follows the browser as the tab does', () => {
+    expect(choiceForBlankTab({ choice: undefined, entry: undefined })).toBeUndefined()
+    expect(choiceForBlankTab({ choice: undefined, entry: 'off' })).toBeUndefined()
+  })
+
+  it('leaves the website the tab shows by the tunnel it leaves by in the tab, whatever the tab, the entry and the browser are', () => {
+    for (const choice of CHOICES) for (const entry of ENTRIES) for (const everywhere of [false, true]) {
+      const taken = choiceForBlankTab({ choice, entry })
+      expect(leavesBy(taken, entry, everywhere), `tab ${String(choice)}, entry ${String(entry)}, browser ${String(everywhere)}`).toBe(leavesBy(choice, entry, everywhere))
     }
   })
 })

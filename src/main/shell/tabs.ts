@@ -24,6 +24,8 @@ import { TabOpener } from './tab-open.js'
 import { KeyboardWaiters, watchNewTab } from './new-tab-focus.js'
 import { TabPanes } from './tab-panes.js'
 import { setTabTunnelChoice } from './tab-tunnel-choice.js'
+import { choiceForNewTabFrom } from './new-tab-tunnel.js'
+import { addressOfTab, openingAddressOf } from './tunnel-popover-tab.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
@@ -141,7 +143,7 @@ export class TabManager {
       activate: (id) => { this.activateTab(id) },
       focus: (id) => { this.liveWebContents(id)?.focus() },
       changed: () => { this.panes.sync(); this.changed() },
-      openTab: () => this.atCapacity() ? undefined : this.createTab(),
+      openTab: (from) => this.atCapacity() ? undefined : this.createTab(undefined, true, undefined, this.newTabTunnelChoice(from)),
       area: getTabBounds,
       isPinned: (id) => this.isPinned(id)
     })
@@ -237,6 +239,24 @@ export class TabManager {
 
   /** The tunnel choice of the tab in front, for what asks on its behalf before it navigates (the address bar's suggestions). */
   activeTunnelChoice (): TabTunnelChoice | undefined { return this.activeId === null ? undefined : this.tabs.get(this.activeId)?.tunnelChoice }
+
+  /**
+   * The tunnel choice a blank tab opened from the tab `from` (the one in front when absent) takes, to pass to `createTab`: the tab's own, or the tunnel of the
+   * entry of the website it shows (new-tab-tunnel.ts), so the new tab's tunnel button shows it and its first address leaves by it.
+   */
+  newTabTunnelChoice (from?: string): TabTunnelChoice | undefined {
+    const id = from ?? this.activeId
+    const record = id === null ? undefined : this.tabs.get(id)
+    if (id === null || record === undefined) return undefined
+    const routes = this.ctx.routes
+    return choiceForNewTabFrom({
+      choice: record.tunnelChoice,
+      address: addressOfTab(this.getState(), id, openingAddressOf(this)),
+      partition: record.partition,
+      isApp: this.shell?.services?.tunnel.isApp ?? (() => false),
+      entryOf: (origin) => routes === undefined || routes.hub.unreadable() ? undefined : routes.store.stateOf(origin)
+    })
+  }
 
   /** A local file in a new tab of the local-files session; undefined for anything `localFileKey` refuses. */
   openLocalFile (url: string, active = true): Promise<string | undefined> { return this.opener.openLocalFile(url, active) }

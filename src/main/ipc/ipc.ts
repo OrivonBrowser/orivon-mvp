@@ -186,7 +186,7 @@ export function registerShellIpc (
 
     switch (command.type) {
       case 'newTab':
-        tabs.createTab(command.url)
+        tabs.createTab(command.url, true, undefined, tabs.newTabTunnelChoice())
         return
       case 'runCommand':
         if (isCommandId(command.id)) actions.runCommand(command.id)

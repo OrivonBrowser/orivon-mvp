@@ -31,8 +31,8 @@ export interface SplitHost {
   focus: (id: string) => void
   /** The panes or their sizes changed: put the views right and tell the chrome. */
   changed: () => void
-  /** A tab that holds nothing, opened for a split; returns its id, or undefined when the window is full. */
-  openTab: () => string | undefined
+  /** A tab that holds nothing, opened for a split beside the tab `from`; returns its id, or undefined when the window is full. */
+  openTab: (from: string) => string | undefined
   /** The area the panes share. */
   area: () => Bounds
   /** A pinned tab stays out of a split: a pair must sit side by side, and the pinned run leads the strip. Absent reads as none pinned. */
@@ -110,7 +110,7 @@ export class SplitController {
     const after = order.slice(order.indexOf(id) + 1).find(free)
     const before = order.slice(0, order.indexOf(id)).reverse().find(free)
     const existing = after ?? before
-    const partner = existing ?? this.host.openTab()
+    const partner = existing ?? this.host.openTab(id)
     if (partner === undefined) return
     this.split(id, partner, 'right')
     // The person stays where they were, unless the other pane is a new page they will want to use.
