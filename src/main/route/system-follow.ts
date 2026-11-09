@@ -26,8 +26,8 @@ export interface SystemFollow<S extends object> {
   put: (session: S) => Promise<void>
   /** `session` was just created and follows the system: it is set to the config one microtask on, once its maker has marked it as one that sets a proxy of its own. */
   adopted: (session: S) => void
-  /** The config changed: `sessions` and every mirrored session are set to it where they are not kept. Resolves when every set ended; a failed one is logged and tried again by the next call. */
-  changed: (sessions: Iterable<S>) => Promise<void>
+  /** The config changed: `sessions` and every mirrored session are set to it where they are not kept. Resolves when every set ended, with whether all of them did so cleanly; a failed one is logged and tried again by the next call. */
+  changed: (sessions: Iterable<S>) => Promise<boolean>
   /** `session` takes the config whatever else was done to it, now and at every `changed`. Rejects when the first set fails. */
   mirror: (session: S) => Promise<void>
 }
@@ -52,11 +52,13 @@ export function createSystemFollow<S extends object> (deps: SystemFollowDeps<S>)
     await put(session)
   }
 
-  async function followInTurn (session: S): Promise<void> {
+  async function followInTurn (session: S): Promise<boolean> {
     try {
       await deps.inTurn(session, async () => { await follow(session) })
+      return true
     } catch (error) {
       console.error('[route] could not set a session to the system\'s config:', error)
+      return false
     }
   }
 
@@ -67,7 +69,7 @@ export function createSystemFollow<S extends object> (deps: SystemFollowDeps<S>)
         void followInTurn(session) // orivon:floating-ok -- followInTurn catches everything it awaits
       })
     },
-    changed: async (sessions) => { await Promise.all([...new Set([...mirrored, ...sessions])].map(followInTurn)) },
+    changed: async (sessions) => (await Promise.all([...new Set([...mirrored, ...sessions])].map(followInTurn))).every(Boolean),
     mirror: async (session) => {
       mirrored.add(session)
       await deps.inTurn(session, async () => { await put(session) })
