@@ -28,6 +28,11 @@ export function relayHandlerFor (origin: string): AppRequestHandler | undefined 
   return isRelayable(origin) ? servingHandlerFor(origin) : undefined
 }
 
+/** Whether the host hands requests for `origin` to the shell: the shell serves it and the host could be told so. */
+export function isHandedToShell (origin: string): boolean {
+  return relayHandlerFor(origin) !== undefined
+}
+
 /** What the host is started with: the secret that marks a read of the shell's own, and the origins it hands to the shell. */
 export function hostShell (): NonNullable<HostConfig['shell']> {
   return { ownReadToken: ownReadToken(), origins: relayableOrigins() }

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Session } from 'electron'
 import { registerAppOrigin, retireAppOrigin } from '../../../loader/electron/app-partitions.js'
 import { ownReadToken } from '../../../loader/fetch/own-read.js'
-import { announceServed, hostShell, isRelayable, relayHandlerFor, relayableOrigins, serveShell } from '../shell-serves.js'
+import { announceServed, hostShell, isHandedToShell, isRelayable, relayHandlerFor, relayableOrigins, serveShell } from '../shell-serves.js'
 
 // Which of the origins the shell serves the verifier's server may hand over: the hosts it answers, on its one port.
 
@@ -44,6 +44,18 @@ describe('what the host is told and asked for', () => {
     retireAppOrigin(session, 'https://ordinary.example')
     expect(relayableOrigins()).not.toContain('https://relayed.eth')
     expect(relayHandlerFor('https://relayed.eth')).toBeUndefined()
+  })
+
+  it('is handed to the shell only while the shell serves a host the server answers', () => {
+    const session = fakeSession()
+    expect(isHandedToShell('https://handed.eth')).toBe(false)
+    registerAppOrigin(session, 'https://handed.eth', async () => new Response('kept'))
+    registerAppOrigin(session, 'https://elsewhere.example', async () => new Response('other'))
+    expect(isHandedToShell('https://handed.eth')).toBe(true)
+    expect(isHandedToShell('https://elsewhere.example')).toBe(false)
+    retireAppOrigin(session, 'https://handed.eth')
+    retireAppOrigin(session, 'https://elsewhere.example')
+    expect(isHandedToShell('https://handed.eth')).toBe(false)
   })
 })
 

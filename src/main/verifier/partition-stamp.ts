@@ -10,7 +10,8 @@ import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import { failedFiles } from './failed-files-store.js'
 import { noteCompletedFile } from './failed-files.js'
-import { requestPartition, withPartition, withRoute } from './partition.js'
+import { headerValue, isOfOwnSite, requestPartition, withPartition, withoutHttpCache, withRoute } from './partition.js'
+import { isHandedToShell } from './shell-serves.js'
 
 /** Only a request whose host a protocol actually routes to the verifier --
  * `verifiedHostFilter` below builds Electron's own coarse `{ urls }` filter
@@ -45,6 +46,9 @@ export function verifiedHostFilter (): WebRequestFilter {
  * The same handler marks every request of a tunnel profile's session with that tunnel, whatever frame it
  * came from or whether it has one, and strips the mark from every other session's: the verifier fetches for it only
  * through that tunnel.
+ * A request the verifier hands to the shell (a site's own, for a host the shell serves from a copy it keeps) is also kept out of the
+ * HTTP cache, read and write: the session's cache may hold bytes from before the site was served that the shell's check never
+ * saw (see README.md's Design notes).
  */
 export function installPartitionStamp (target: Session, tunnel: TunnelRoute | undefined): void {
   webRequestOwnerFor(target).onBeforeSendHeaders(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
@@ -54,8 +58,10 @@ export function installPartitionStamp (target: Session, tunnel: TunnelRoute | un
     } catch {
       frame = undefined
     }
-    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
-    return { ...current, requestHeaders: withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnel) }
+    const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url, fetchSite: headerValue(current.requestHeaders, 'sec-fetch-site') })
+    const stamped = withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnel)
+    const handedToShell = tunnel === undefined && isOfOwnSite(partition, details.url) && isHandedToShell(partition)
+    return { ...current, requestHeaders: handedToShell ? withoutHttpCache(stamped) : stamped }
   })
 }
 

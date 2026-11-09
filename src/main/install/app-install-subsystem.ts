@@ -44,8 +44,9 @@ import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
-import { hasOwnPartition } from '../shell/app-session.js'
+import { beforeAppSessionServes, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { couldRunAsWebsite, hasOwnPartition } from '../shell/app-session.js'
+import { forgetWebsiteWorkers } from '../sessions/website-workers.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
 import { ownFetch } from '../route/own-requests.js'
 import { blockOpenTabs } from '../app-setup/block-tabs.js'
@@ -160,6 +161,10 @@ export const appInstallSubsystem: Subsystem = {
         if (checked.outcome === 'rejected') console.warn(`[app-updates] the check of the open app ${origin} failed: ${checked.reason}`)
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
+    })
+    // An app let in for the first time runs where its website ran: the workers and response caches that page installed go before the tab loads as the app.
+    beforeAppSessionServes(async (_appSession, origin, from) => {
+      if (from === 'verifier' && couldRunAsWebsite(origin)) await forgetWebsiteWorkers(session.defaultSession, origin)
     })
     // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.

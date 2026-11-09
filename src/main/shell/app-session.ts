@@ -14,7 +14,12 @@ import { isRelayable } from '../verifier/shell-serves.js'
  * leave by its own route).
  */
 export function runsAsWebsite (origin: string): boolean {
-  return isOriginServedFromCacheSync(origin) && isRelayable(origin) && sharedSessionRoutesLike(origin)
+  return isOriginServedFromCacheSync(origin) && couldRunAsWebsite(origin)
+}
+
+/** Whether the allowed app at `origin` would run in the shared session once the shell serves it: `runsAsWebsite` without the serving. */
+export function couldRunAsWebsite (origin: string): boolean {
+  return isRelayable(origin) && sharedSessionRoutesLike(origin)
 }
 
 /** Whether the allowed app at `origin` runs in a partition of its own: every served origin the shared session cannot serve. */

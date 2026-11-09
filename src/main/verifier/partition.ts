@@ -10,6 +10,8 @@ export interface PageRequest {
   readonly url: string
   readonly resourceType: string
   readonly topUrl: string | undefined
+  /** The request's `Sec-Fetch-Site`, which the browser sets and no script can: `same-origin` when the context that made it is of the URL's own origin. */
+  readonly fetchSite?: string | undefined
 }
 
 function originOf (url: string): string | undefined {
@@ -23,12 +25,37 @@ function originOf (url: string): string | undefined {
 
 /**
  * A navigation of the top-level page belongs to the page it opens; anything
- * else to the page on top. Undefined when there is no frame to ask, or it
- * has no origin: the verifier then decides from the request itself.
+ * else to the page on top. A request with no frame to ask (a worker's) belongs
+ * to the origin it is for when a worker of that origin made it, which the
+ * browser's own `Sec-Fetch-Site` says and nothing else does, so an allowed
+ * app's service worker is answered as its pages are. Undefined otherwise, or
+ * when the origin is none: the verifier then decides from the request itself.
  */
 export function requestPartition (request: PageRequest): string | undefined {
   if (request.resourceType === 'mainFrame') return originOf(request.url)
-  return request.topUrl === undefined ? undefined : originOf(request.topUrl)
+  if (request.topUrl === undefined) return request.fetchSite === 'same-origin' ? originOf(request.url) : undefined
+  return originOf(request.topUrl)
+}
+
+/** Whether `partition` is the origin `url` is for: a request of a site's own, the kind the verifier may hand to the shell. */
+export function isOfOwnSite (partition: string | undefined, url: string): partition is string {
+  return partition !== undefined && originOf(url) === partition
+}
+
+/**
+ * `headers` with a condition no cache can answer, which Chromium's HTTP cache reads as "neither read nor write this
+ * request": the answer comes from the server or not at all. A conditional header the page set itself is replaced.
+ */
+export function withoutHttpCache (headers: Readonly<Record<string, string>>): Record<string, string> {
+  const out = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== 'if-match'))
+  out['If-Match'] = '*'
+  return out
+}
+
+/** The value of the header `name` (lower case) in `headers`, whatever case it was sent in. */
+export function headerValue (headers: Readonly<Record<string, string>>, name: string): string | undefined {
+  for (const [key, value] of Object.entries(headers)) if (key.toLowerCase() === name) return value
+  return undefined
 }
 
 /**
