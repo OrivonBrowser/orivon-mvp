@@ -113,8 +113,9 @@ jobs:
 
       # The runner's 1024x768 screen carries the Dock, and AppKit keeps a window's height inside the screen minus the
       # menu bar and the Dock (a window may still be wider than the screen), so every window stops at 677 px, on a
-      # screen no Mac sold. With the Dock hidden a window gets the screen's height less the menu bar. The screen and
-      # its visible frame go to cross-os/screen.txt; the frame's reading is best effort.
+      # screen no Mac sold. With the Dock hidden a window gets the screen's height less the menu bar. The screen's
+      # visible frame and system_profiler's display report (empty on this runner) go to cross-os/screen.txt; the
+      # frame's reading is best effort.
       - name: Hide the Dock, record the screen
         if: runner.os == 'macOS'
         run: |

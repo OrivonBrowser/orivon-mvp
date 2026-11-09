@@ -67,7 +67,7 @@ skill says. Pixel baselines are never compared there (`CI=true`): read the scree
 
 The macOS runner's screen is 1024x768 and AppKit keeps a window's height inside the screen less the menu bar and the
 Dock, so the workflow hides the Dock before `smoke`: a window gets the height a Mac without a Dock gives it, not 677 px.
-The screen and its visible frame are in `cross-os/screen.txt` of the evidence.
+The screen's visible frame is in `cross-os/screen.txt` of the evidence.
 
 ### Live sessions
 
