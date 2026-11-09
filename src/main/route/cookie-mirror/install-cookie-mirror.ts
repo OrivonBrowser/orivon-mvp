@@ -76,8 +76,10 @@ export function installCookieMirror (options: { readonly settings: CookieMirrorS
       mirror.stop().catch(() => {})
       return
     }
+    // Asked first, so a profile made just below is joined as one the first merge holds its first request for.
+    const started = mirror.start()
     bringInKeptProfiles()
-    mirror.start().catch(() => {})
+    started.catch(() => {})
   }
   if (!separate()) apply()
   options.settings.onChange(({ key }) => { if (key === KEY) apply() })

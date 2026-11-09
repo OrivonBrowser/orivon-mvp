@@ -30,6 +30,7 @@ import type { ProviderVerdict } from '../../trust/score-provider.js'
 import type { PinRecord } from '../../broker/policy/pin.js'
 import type { NameEvidence } from '../verifier/name-evidence.js'
 import { canTunnel } from '../route/site-partition.js'
+import { cookieMirrorStatus } from '../route/cookie-mirror/mirror-status.js'
 import { isTemporaryRouteSession } from '../route/leaving-routes.js'
 import { parseProxyAddress } from '../settings/proxy-checks.js'
 import type { ProxyTestReply } from '../route/route-domain.js'
@@ -254,6 +255,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
       blocked,
       notices,
       ...profileOf(origin),
+      ...(cookieMirrorStatus().state === 'mirroring' ? { signInsShared: true as const } : {}),
       swarm: BUILTIN_ADDRESSES.servedName(new URL(origin).hostname)?.namespace === 'bzz:',
       unreadable: routes.hub.unreadable(),
       defaultKind: routes.defaultKind(),

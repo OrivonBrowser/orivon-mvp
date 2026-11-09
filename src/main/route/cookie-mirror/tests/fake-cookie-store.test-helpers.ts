@@ -12,17 +12,26 @@ type Listener = (cookie: StoredCookie, cause: ChangeCause, removed: boolean) => 
  */
 export class FakeCookieStore implements CookieStore {
   readonly cookies = new Map<string, StoredCookie>()
+  /** Cookies listed beside another of the same name, domain and path, as Electron lists a partitioned cookie: it carries no mark of it. */
+  private readonly shadows: StoredCookie[] = []
   readonly writes: Array<{ readonly kind: 'set' | 'remove', readonly name: string }> = []
   private readonly listeners = new Set<Listener>()
   /** A store that stores every value changed, so a mirror that trusts it would write for ever. */
   corrupts = false
   /** Rejects the next `set` with the message. */
   failNextSet: string | undefined
+  /** Rejects the next `clear`. */
+  failNextClear = false
 
   constructor (readonly label: string) {}
 
   list (): StoredCookie[] {
-    return [...this.cookies.values()]
+    return [...this.cookies.values(), ...this.shadows]
+  }
+
+  /** Adds a cookie the listing shows twice: one of the two is a partitioned cookie. */
+  shadow (cookie: StoredCookie): void {
+    this.shadows.push(cookie)
   }
 
   get (name: string, domain?: string): StoredCookie | undefined {
@@ -116,6 +125,7 @@ export class FakeCookieStore implements CookieStore {
   }
 
   async clear (): Promise<void> {
+    if (this.failNextClear) { this.failNextClear = false; throw new Error('busy') }
     this.cookies.clear()
   }
 

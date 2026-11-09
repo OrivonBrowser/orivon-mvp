@@ -37,9 +37,11 @@ profiles; a change in the default session is written to every profile. The defau
 removal. `overwrite` is the removal half of a change of value and is followed by an insert; `expired` and `evicted` go from each store by themselves.
 
 **`remove(url, name)` can take more than the cookie it was meant for.** It removes every cookie of that name the address would send, a host-only
-cookie and a domain cookie of the same host among them. After a removal the source's other cookies of that name are written back.
+cookie and a domain cookie of the same host among them. After a removal the source's other cookies of that name that the address would send (`wouldSend`) are written back; the rest were not touched.
 
-**Electron 44's cookie API carries no partition key**, so a partitioned cookie cannot be read or written with its key and is not mirrored.
+**Electron 44's cookie API carries no partition key, and lists a partitioned cookie like any other**, so one cannot be told from an ordinary cookie, or written back
+with its key. Where a listing shows two cookies of one name, domain and path (only partitioned cookies share them) neither is carried, in either direction (`distinct`,
+`holds` in `cookie-mirror.ts`); a lone partitioned cookie is carried as an ordinary one.
 
 **Profiles with data on disk are made when the mirror starts.** A profile session is made lazily, and a sign-out in normal browsing while it did
 not exist would otherwise return from its stale copy at its first use. A profile made later has an empty store and joins as it is announced;

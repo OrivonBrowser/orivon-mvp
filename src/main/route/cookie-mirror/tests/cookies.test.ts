@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { followsChange, identityOf, planSet, sameCookie } from '../cookies.js'
+import { addressOf, followsChange, identityOf, planSet, sameCookie, wouldSend } from '../cookies.js'
 import { signIn } from './fake-cookie-store.test-helpers.js'
 
 const NOW = 1_800_000_000
@@ -31,6 +31,37 @@ describe('planning one cookie for another session', () => {
 
   it('writes an IPv6 host in brackets', () => {
     expect(planSet(signIn({ domain: '::1' }), NOW)).toMatchObject({ kind: 'set', cookie: { url: 'https://[::1]/' } })
+  })
+})
+
+describe('the address a cookie is removed by', () => {
+  it('keeps a ? or # in the path from ending the address there', () => {
+    expect(addressOf(signIn({ path: '/a?b#c' }))).toBe('https://example.com/a%3Fb%23c')
+  })
+})
+
+describe('which cookies a removal by address takes along', () => {
+  const address = 'https://example.com/app/page'
+  it('takes the host\'s own cookies and those of a parent domain, on a path the address is under', () => {
+    expect(wouldSend(signIn({ path: '/' }), address)).toBe(true)
+    expect(wouldSend(signIn({ path: '/app' }), address)).toBe(true)
+    expect(wouldSend(signIn({ path: '/app/' }), address)).toBe(true)
+    expect(wouldSend(signIn({ domain: '.example.com', hostOnly: false }), 'https://api.example.com/')).toBe(true)
+  })
+
+  it('leaves cookies of another host, a sibling path, a subdomain of a host-only cookie, or a name-sharing path prefix', () => {
+    expect(wouldSend(signIn({ domain: 'other.test' }), address)).toBe(false)
+    expect(wouldSend(signIn({ path: '/other' }), address)).toBe(false)
+    expect(wouldSend(signIn({ path: '/ap' }), address)).toBe(false)
+    expect(wouldSend(signIn(), 'https://api.example.com/')).toBe(false)
+    expect(wouldSend(signIn({ domain: '.example.com', hostOnly: false }), 'https://notexample.com/')).toBe(false)
+  })
+
+  it('leaves a secure cookie out of an address that is not https, and a bad address or a cookie with no domain out of everything', () => {
+    expect(wouldSend(signIn({ secure: true }), 'http://example.com/')).toBe(false)
+    expect(wouldSend(signIn(), 'not an address')).toBe(false)
+    const { domain: _domain, ...bare } = signIn()
+    expect(wouldSend(bare, address)).toBe(false)
   })
 })
 

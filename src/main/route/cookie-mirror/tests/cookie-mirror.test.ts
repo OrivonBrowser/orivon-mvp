@@ -148,6 +148,49 @@ describe('following the sessions', () => {
     expect(nym.get('sid', 'example.com')).toBeUndefined()
   })
 
+  it('does not put back a cookie of that name which the removal would not have sent, over a value that changed meanwhile', async () => {
+    const { main, nym, mirror } = rig(['nym'])
+    main.seed(signIn({ name: 'sid', value: 'old', domain: 'other.test' }))
+    nym.seed(signIn({ name: 'sid', value: 'old', domain: 'other.test' }))
+    main.seed(signIn({ name: 'sid', value: 'one' }))
+    nym.seed(signIn({ name: 'sid', value: 'one' }))
+    await mirror.start(); await mirror.idle()
+    nym.siteExpires('sid', 'example.com')
+    main.siteSets(signIn({ name: 'sid', value: 'newer', domain: 'other.test' }))
+    await mirror.idle()
+    expect(main.get('sid', 'other.test')?.value).toBe('newer')
+    expect(nym.get('sid', 'other.test')?.value, 'the newer value reached the profile, not overwritten by the older one').toBe('newer')
+    expect(main.get('sid', 'example.com')).toBeUndefined()
+  })
+
+  it('leaves alone cookies that share a name, domain and path, which only partitioned cookies do, and says so once without naming one', async () => {
+    const { main, nym, mirror, logs } = rig(['nym'])
+    main.seed(signIn({ name: 'embed', value: 'under-site-a', domain: 'widget.test', sameSite: 'no_restriction' }))
+    main.shadow(signIn({ name: 'embed', value: 'under-site-b', domain: 'widget.test', sameSite: 'no_restriction' }))
+    main.seed(signIn({ name: 'plain', value: 'kept' }))
+    nym.seed(signIn({ name: 'tunnelled-embed', value: 'x', domain: 'widget.test' }))
+    nym.shadow(signIn({ name: 'tunnelled-embed', value: 'y', domain: 'widget.test' }))
+    await mirror.start(); await mirror.idle()
+    expect(nym.get('embed'), 'not copied into the profile').toBeUndefined()
+    expect(main.get('tunnelled-embed'), 'not copied into the default session').toBeUndefined()
+    expect(nym.get('plain')?.value).toBe('kept')
+    main.siteSets(signIn({ name: 'embed', value: 'changed', domain: 'widget.test', sameSite: 'no_restriction' }))
+    await mirror.idle()
+    expect(nym.get('embed')).toBeUndefined()
+    expect(logs.filter((line) => line.includes('share a name')).length).toBe(1)
+    expect(logs.join('\n')).not.toContain('embed')
+  })
+
+  it('says why a clearing failed even after an earlier write already failed on that session', async () => {
+    const { main, nym, mirror, logs } = rig(['nym'])
+    await mirror.start(); await mirror.idle()
+    nym.failNextSet = 'invalid cookie'
+    main.siteSets(signIn({ name: 'first-cookie' })); await mirror.idle()
+    nym.failNextClear = true
+    await mirror.stop()
+    expect(logs.filter((line) => line.includes('could not be cleared')).length).toBe(1)
+  })
+
   it('reports a write that failed, names no cookie, and carries on with the next one', async () => {
     const { main, nym, mirror, logs } = rig(['nym'])
     await mirror.start(); await mirror.idle()
@@ -221,6 +264,12 @@ describe('a session that joins after the mirror started', () => {
     expect(nym.list()).toEqual([])
     await mirror.start(); await mirror.idle()
     expect(nym.list()).toHaveLength(1)
+  })
+
+  it('is joined once for a session announced again with a store of its own', async () => {
+    const { mirror } = rig(['nym'])
+    mirror.join({ label: 'tunnel-profile', store: new FakeCookieStore('same session, new handle') })
+    expect(mirror.status().sessions).toBe(1)
   })
 
   it('is joined once however often it is announced', async () => {

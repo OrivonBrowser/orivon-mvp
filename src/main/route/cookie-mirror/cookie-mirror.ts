@@ -1,7 +1,7 @@
 // Keeps the default session's cookies and those of the profile sessions in step, in both directions. Electron-free over the stores it
 // is handed.
 
-import { addressOf, followsChange, identityOf, planSet, sameCookie } from './cookies.js'
+import { addressOf, followsChange, identityOf, planSet, sameCookie, wouldSend } from './cookies.js'
 import type { CookieStore, StoredCookie } from './cookies.js'
 import type { CookieMirrorStatus } from './mirror-status.js'
 
@@ -58,9 +58,30 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
 
   const failed = (side: MirrorSide, what: string): void => {
     counts.failed += 1
-    if (warned.has(side.label)) return
-    warned.add(side.label)
-    deps.log(`[cookie-mirror] ${what} ${side.label}; further failures there are counted, not logged`)
+    const once = `${side.label}\u0000${what}`
+    if (warned.has(once)) return
+    warned.add(once)
+    deps.log(`[cookie-mirror] ${what} ${side.label}; further failures of that kind there are counted, not logged`)
+  }
+
+  /** Electron lists a partitioned cookie with nothing to say it is one, beside the cookie of the same name, domain and path that another top-level site set; those are left alone. */
+  const leftAlone = (): void => {
+    if (warned.has('shared identity')) return
+    warned.add('shared identity')
+    deps.log('[cookie-mirror] cookies that share a name, domain and path (partitioned cookies do) are not carried between sessions')
+  }
+
+  /** The cookies by identity, and the identities a listing shows more than once. */
+  function distinct (cookies: readonly StoredCookie[]): { readonly cookies: Map<string, StoredCookie>, readonly shared: Set<string> } {
+    const found = new Map<string, StoredCookie>()
+    const shared = new Set<string>()
+    for (const cookie of cookies) {
+      const identity = identityOf(cookie)
+      if (found.has(identity)) shared.add(identity)
+      found.set(identity, cookie)
+    }
+    if (shared.size > 0) leftAlone()
+    return { cookies: found, shared }
   }
 
   /** Whether one more write of this cookie into `target` is within its budget: a store that changes what it is given would otherwise be written to for ever. */
@@ -99,27 +120,38 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
     }
   }
 
-  const holds = async (side: MirrorSide, cookie: StoredCookie): Promise<StoredCookie | undefined> =>
-    (await side.store.find(cookie.name, cookie.domain)).find((held) => identityOf(held) === identityOf(cookie))
+  /** The cookie a side holds of this identity: none, the one, or `shared` when the listing shows several. */
+  async function holds (side: MirrorSide, cookie: StoredCookie): Promise<StoredCookie | undefined | 'shared'> {
+    const wanted = identityOf(cookie)
+    const held = (await side.store.find(cookie.name, cookie.domain)).filter((candidate) => identityOf(candidate) === wanted)
+    if (held.length > 1) { leftAlone(); return 'shared' }
+    return held[0]
+  }
 
-  /** A removal by address and name takes every cookie of that name the address would send; the source's others of that name are put back. */
-  async function restore (source: MirrorSide, target: MirrorSide, name: string): Promise<void> {
-    for (const kept of await source.store.find(name)) {
-      const there = await holds(target, kept)
-      if (there === undefined || !sameCookie(kept, there)) await put(target, kept)
+  /** A removal by address and name takes every cookie of that name the address would send; the source's others of those are put back. */
+  async function restore (source: MirrorSide, target: MirrorSide, name: string, address: string): Promise<void> {
+    const kept = distinct(await source.store.find(name))
+    for (const [identity, cookie] of kept.cookies) {
+      if (kept.shared.has(identity) || !wouldSend(cookie, address)) continue
+      const there = await holds(target, cookie)
+      if (there === 'shared') continue
+      if (there === undefined || !sameCookie(cookie, there)) await put(target, cookie)
     }
   }
 
   /** Makes the other side(s) hold what `source` holds now of the cookie `seen`: read again, so a change that has been overtaken carries what is true. */
   async function reconcile (source: MirrorSide, seen: StoredCookie): Promise<void> {
     const current = await holds(source, seen)
+    if (current === 'shared') return
     for (const target of source === main ? [...profiles] : [main]) {
       if (!running) return
       const there = await holds(target, seen)
+      if (there === 'shared') continue
       if (current === undefined) {
         if (there === undefined) continue
         await take(target, there)
-        await restore(source, target, seen.name)
+        const address = addressOf(there)
+        if (address !== undefined) await restore(source, target, seen.name, address)
       } else if (there === undefined || !sameCookie(current, there)) {
         await put(target, current)
       }
@@ -158,13 +190,16 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
    * lacks give the one joined first.
    */
   async function merge (targets: readonly MirrorSide[]): Promise<void> {
-    const known = new Map<string, StoredCookie>()
-    for (const cookie of await main.store.all()) known.set(identityOf(cookie), cookie)
+    const mine = distinct(await main.store.all())
+    const known = new Map(mine.cookies)
+    const skipped = new Set(mine.shared)
     const toMain: StoredCookie[] = []
     for (const side of targets) {
-      for (const cookie of await side.store.all()) {
-        if (known.has(identityOf(cookie))) continue
-        known.set(identityOf(cookie), cookie)
+      const theirs = distinct(await side.store.all())
+      for (const identity of theirs.shared) skipped.add(identity)
+      for (const [identity, cookie] of theirs.cookies) {
+        if (known.has(identity) || skipped.has(identity)) continue
+        known.set(identity, cookie)
         toMain.push(cookie)
       }
     }
@@ -173,10 +208,11 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
       await put(main, cookie)
     }
     for (const side of targets) {
-      const held = new Map((await side.store.all()).map((cookie) => [identityOf(cookie), cookie]))
+      const held = distinct(await side.store.all())
       for (const [identity, cookie] of known) {
         if (!asked) return
-        const there = held.get(identity)
+        if (skipped.has(identity) || held.shared.has(identity)) continue
+        const there = held.cookies.get(identity)
         if (there === undefined || !sameCookie(cookie, there)) await put(side, cookie)
       }
     }
@@ -209,7 +245,7 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
 
   return {
     join: async (side) => {
-      if (side === main || profiles.some((known) => known.store === side.store)) return
+      if (side === main || profiles.some((known) => known.label === side.label || known.store === side.store)) return
       profiles.push(side)
       if (!running) return await (asked ? starting : Promise.resolve())
       watching.set(side, follow(side))

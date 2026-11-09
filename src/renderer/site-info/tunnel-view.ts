@@ -22,7 +22,8 @@ export const SWARM_HINT = 'Swarm content loads only from the Swarm node Orivon r
 const PROFILE_WORDS: Readonly<Record<SiteTunnelProfile, string>> = { nym: 'tunnel', socks5: 'tunnel', direct: 'direct' }
 
 /** Shown before a website first moves into a profile: Confirm makes the change, Cancel leaves everything as it was. */
-export function storageNotice (profile: SiteTunnelProfile): string {
+export function storageNotice (profile: SiteTunnelProfile, signInsShared = false): string {
+  if (signInsShared) return `This site moves to your ${PROFILE_WORDS[profile]} profile. You'll stay signed in as in normal browsing, and what else it stores stays apart from your normal browsing.`
   return `This site moves to your ${PROFILE_WORDS[profile]} profile. You'll sign in to it again once, and what it stores stays apart from your normal browsing.`
 }
 
@@ -274,7 +275,7 @@ export function renderTunnelsPage (container: HTMLElement, info: SiteInfo, model
     const notice = document.createElement('div')
     notice.className = 'tunnel-notice'
     notice.setAttribute('role', 'alertdialog')
-    notice.append(paragraph('tunnel-notice-text', storageNotice(view.notice)))
+    notice.append(paragraph('tunnel-notice-text', storageNotice(view.notice, info.tunnel?.signInsShared === true)))
     const buttons = document.createElement('div')
     buttons.className = 'staged-buttons'
     buttons.append(button('tunnel-notice-cancel', 'btn-secondary', 'Cancel', callbacks.onCancel), button('tunnel-notice-confirm', 'btn-primary', 'Confirm', callbacks.onConfirm))

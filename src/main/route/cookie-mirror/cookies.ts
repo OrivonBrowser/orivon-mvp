@@ -62,7 +62,21 @@ export function identityOf (cookie: StoredCookie): string {
 export function addressOf (cookie: StoredCookie): string | undefined {
   const host = hostOf(cookie)
   if (host === '') return undefined
-  return `https://${host.includes(':') ? `[${host}]` : host}${cookie.path === undefined || cookie.path === '' ? '/' : cookie.path}`
+  const path = cookie.path === undefined || cookie.path === '' ? '/' : cookie.path
+  // A `?` or `#` in the path would end the address's path there.
+  return `https://${host.includes(':') ? `[${host}]` : host}${path.replace(/\?/g, '%3F').replace(/#/g, '%23')}`
+}
+
+/** Whether `cookie` is one a request to `address` would send: what `remove(address, name)` takes along with the cookie it was asked for. */
+export function wouldSend (cookie: StoredCookie, address: string): boolean {
+  let url: URL
+  try { url = new URL(address) } catch { return false }
+  const host = url.hostname.replace(/^\[|\]$/g, '')
+  const domain = hostOf(cookie)
+  if (domain === '' || !(cookie.hostOnly === true ? host === domain : host === domain || host.endsWith(`.${domain}`))) return false
+  const path = cookie.path === undefined || cookie.path === '' ? '/' : cookie.path
+  const pathMatches = url.pathname === path || (url.pathname.startsWith(path) && (path.endsWith('/') || url.pathname.charAt(path.length) === '/'))
+  return pathMatches && (cookie.secure !== true || url.protocol === 'https:')
 }
 
 /**

@@ -119,7 +119,7 @@ const rows: readonly Row[] = [
   {
     id: 'route-separate-sign-ins',
     label: 'Keep tunneled sites separate',
-    help: 'Sites in a tunnel get their own sign-ins, so they can\'t link your tunneled visits to your accounts. Turn off to stay signed in to the same accounts in tunneled tabs: the cookies of your tunnel profiles and of normal browsing are then kept the same, both ways (a site\'s other storage stays apart). Turning it back on clears the cookies of the tunnel profiles, so each site asks you to sign in once.',
+    help: 'Sites in a tunnel get their own sign-ins, so they can\'t link your tunneled visits to your accounts. Turn off to stay signed in to the same accounts in tunneled tabs: the cookies of your tunnel profiles and of normal browsing are then kept the same, both ways, and what the profiles already hold is added to normal browsing (a site\'s other storage stays apart). Removing a tunneled site\'s storage below then removes its cookies from normal browsing too. Turning it back on clears the cookies of the tunnel profiles, so each site asks you to sign in once.',
     keywords: ['tunnel', 'separate', 'sign in', 'signed in', 'login', 'accounts', 'cookies', 'identity', 'same accounts', 'profile', 'link', 'tracking', 'share'],
     group: SITES,
     control: { type: 'toggle', key: 'network.tunnel.separateSignIns' }
