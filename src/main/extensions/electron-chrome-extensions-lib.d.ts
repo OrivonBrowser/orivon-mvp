@@ -237,10 +237,6 @@ declare module 'orivon:crx-extensions-browser-action' {
 
 declare module 'orivon:crx-extensions-tab-capture' {
   export function setTabCaptureInvocationCheck (check: (extensionId: string, tabId: number) => boolean): void
-  /** True refuses the capture outright -- a granted app's own tab
-   * (extension-host.ts wires this to `broker.app.hasGrantsSync`, the same
-   * predicate shell-services.ts's own DevTools prompt uses). */
-  export function setTabCaptureAppRefusalCheck (check: (tab: Electron.WebContents) => boolean): void
   /** Called once per successful getMediaStreamId, so permission-gate.ts's
    * own 'media' carve-out (tab-capture-grants.ts) knows to allow it, for
    * this exact (extensionId, targetTabId) pair -- never extension alone, so

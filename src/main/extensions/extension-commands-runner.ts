@@ -37,10 +37,8 @@ export interface CommandKeysDeps {
   } | undefined
   /** Counts the key press as an invocation of the extension on the tab, as a click on its icon would. */
   readonly recordInvocation: (extensionId: string, tab: WebContents) => void
-  /** A tab no extension is told about: a registered app's, or one that is not a page of the extensions' own session (an internal page). */
+  /** A tab no extension can see (`isVisibleExtensionTab`): an Orivon page, or a tab in a session with no extensions. A named command still reaches the extension, with no tab, and the action key opens its popup with none. */
   readonly isHiddenTab: (tab: WebContents) => boolean
-  /** A page no extension instance tracks and no app owns, an Orivon page: the action key opens the popup over one with no tab. */
-  readonly isUntrackedPage: (tab: WebContents) => boolean
   /** Where a popup opens for `extensionId` in `window`: under its icon, else under the Extensions button. */
   readonly anchorFor: (window: ShellWindow, extensionId: string) => Promise<Rectangle>
   /** The page that recorded a key hears what came of it. */
@@ -214,8 +212,7 @@ export function createExtensionCommandKeys (deps: CommandKeysDeps): ExtensionCom
       const tab = tabFor(window)
       const visible = tab !== undefined && !deps.isHiddenTab(tab) ? tab : undefined
       if (entry.kind === 'action') {
-        const opensOver = tab !== undefined && (visible !== undefined || deps.isUntrackedPage(tab))
-        if (!opensOver || !host.listActions().some((action) => action.id === entry.extensionId)) return false
+        if (tab === undefined || !host.listActions().some((action) => action.id === entry.extensionId)) return false
         activate(window, entry.extensionId)
         return true
       }

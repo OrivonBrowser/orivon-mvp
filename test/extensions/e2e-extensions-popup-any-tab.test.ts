@@ -13,7 +13,7 @@ import { createServer, type Server } from 'node:http'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { activeTabInfo, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
-import { closeElectronApp, navigateToFixture, runPhase, waitForStartPageLoaded } from '../support/e2e-helpers.js'
+import { closeElectronApp, navigateToFixture, runPhase, startPagesHeld, waitForStartPageLoaded } from '../support/e2e-helpers.js'
 import { closePopup, openExtensionPage, popupView, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
 const TEST_TIMEOUT_MS = 180_000
@@ -138,8 +138,9 @@ it('opens an extension\'s popup from the toolbar over an ordinary page, the new 
       await closePopup(live, id)
 
       // 4. The new tab page, a tab the extension's instance tracks: its query finds that page, and not the ordinary one behind.
+      const startPages = await startPagesHeld(live)
       await chrome.click('#new-tab')
-      await waitForStartPageLoaded(live)
+      await waitForStartPageLoaded(live, startPages)
       check('the toolbar button names a tab again', await waitFor(async () => { const named = await buttonTab(); return named !== null && Number(named) >= 0 }), String(await buttonTab()))
       const overNewTab = await clickAction()
       check('over the new tab page the toolbar click opens the popup', overNewTab !== undefined)

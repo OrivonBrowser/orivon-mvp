@@ -14,7 +14,7 @@ const chord = (text: string): Chord => parseBinding(text, 'linux') as Chord
 const MANIFEST_A = { commands: { _execute_action: { suggested_key: 'Ctrl+Shift+Y' }, mark: { suggested_key: 'Alt+Shift+K', description: 'Mark' }, clash: { suggested_key: 'Ctrl+T' } } }
 const MANIFEST_B = { commands: { other: { suggested_key: 'Alt+Shift+K' } } }
 
-function setup (options: { extensions?: CommandKeysDeps['extensions'], withSidePanel?: boolean, appTab?: boolean, internalPage?: boolean, activeTab?: WebContents | undefined } = {}) {
+function setup (options: { extensions?: CommandKeysDeps['extensions'], withSidePanel?: boolean, hiddenTab?: boolean, activeTab?: WebContents | undefined } = {}) {
   const prefs = createExtensionPrefsStore(null)
   const sendCommand = vi.fn()
   const activateAction = vi.fn()
@@ -38,8 +38,7 @@ function setup (options: { extensions?: CommandKeysDeps['extensions'], withSideP
     onExtensionsChanged: (l) => { loaded.add(l); return () => { loaded.delete(l) } },
     host: () => ({ sendCommand, activateAction, listActions: () => [{ id: A }] }),
     recordInvocation,
-    isHiddenTab: () => options.appTab === true || options.internalPage === true,
-    isUntrackedPage: () => options.internalPage === true,
+    isHiddenTab: () => options.hiddenTab === true,
     anchorFor: async () => ({ x: 1, y: 2, width: 3, height: 4 }),
     recorded,
     keyChanged,
@@ -104,8 +103,8 @@ describe('running a command key', () => {
     expect(sendCommand).not.toHaveBeenCalled()
   })
 
-  it('activates the action over an Orivon page too: the popup opens in the window with no tab', async () => {
-    const { keys, env, activateAction, sendCommand, recordInvocation, tab, baseWindow } = setup({ internalPage: true })
+  it('activates the action over a hidden page (an Orivon page) too: the popup opens in the window with no tab', async () => {
+    const { keys, env, activateAction, sendCommand, recordInvocation, tab, baseWindow } = setup({ hiddenTab: true })
     keys.ready(env)
     expect(keys.run(chord('Mod+Shift+Y'), tab)).toBe(true)
     await flush()
@@ -114,11 +113,8 @@ describe('running a command key', () => {
     expect(recordInvocation).not.toHaveBeenCalled()
   })
 
-  it('leaves the action key to an app\'s page, and to a window with no page', () => {
-    const app = setup({ appTab: true })
-    app.keys.ready(app.env)
-    expect(app.keys.run(chord('Mod+Shift+Y'), app.tab)).toBe(false)
-    const empty = setup({ activeTab: undefined, internalPage: true })
+  it('leaves the action key to the page in a window with no page', () => {
+    const empty = setup({ activeTab: undefined, hiddenTab: true })
     empty.keys.ready(empty.env)
     expect(empty.keys.run(chord('Mod+Shift+Y'), empty.tab)).toBe(false)
   })
@@ -132,13 +128,12 @@ describe('running a command key', () => {
     expect(activateAction).not.toHaveBeenCalled()
   })
 
-  it('tells an extension nothing of a hidden tab (an app\'s or an internal page), and leaves the action key to the page', () => {
-    const { keys, env, sendCommand, recordInvocation, tab } = setup({ appTab: true })
+  it('tells an extension nothing of a hidden tab (an internal page, or one outside the extensions\' own session)', () => {
+    const { keys, env, sendCommand, recordInvocation, tab } = setup({ hiddenTab: true })
     keys.ready(env)
     expect(keys.run(chord('Alt+Shift+K'), tab)).toBe(true)
     expect(sendCommand).toHaveBeenCalledWith(A, 'mark', undefined)
     expect(recordInvocation).not.toHaveBeenCalled()
-    expect(keys.run(chord('Mod+Shift+Y'), tab)).toBe(false)
   })
 
   it('still fires onCommand when no tab is active', () => {

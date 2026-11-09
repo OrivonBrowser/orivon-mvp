@@ -6,9 +6,8 @@ import { webContents } from 'electron'
 import type { Session } from 'electron'
 import type { ElectronChromeExtensions } from 'orivon:crx-extensions'
 import { setPermissionCheck } from 'orivon:crx-extensions-router'
-import { originFromUrl } from '../../../broker/policy/origin.js'
 import type { SubsystemContext } from '../../registry.js'
-import { hostForSession, shellServices, whenShellServices } from '../extension-host.js'
+import { hostForSession, isVisibleExtensionTab, shellServices, whenShellServices } from '../extension-host.js'
 import { createBaseManifestCache, setBaseManifestSource } from '../base-manifest-source.js'
 import { readBaseManifestText } from '../effective-manifest-runner.js'
 import { getCachedStrippedPermissions, slotDirForLoadedExtension } from '../extensions-dnr.js'
@@ -39,11 +38,8 @@ function dependenciesOf (options: InstallApisOptions, held: PermissionHeld): Ext
     extensions: () => ctx.extensions,
     prefs,
     held,
-    isAppOrigin: (url) => {
-      const origin = originFromUrl(url)
-      return origin !== null && ctx.broker?.app.hasGrantsSync(origin) === true
-    },
     webContentsFromId: (id) => webContents.fromId(id),
+    visibleTab: isVisibleExtensionTab,
     popupParent: (contents) => parentOf(contents) ?? sidePanelWindowOf(contents)
   }
 }

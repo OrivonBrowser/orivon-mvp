@@ -18,7 +18,7 @@ import { extensionOpenedUrl } from './extension-url-policy.js'
 import { readExtensionFacts } from './extensions-view-runner.js'
 import { createPanelDriver } from './side-panel-driver.js'
 import type { PanelDriver, PanelPage, PanelPageEvents } from './side-panel-driver.js'
-import { createSidePanelApi, isOrdinaryTab } from './side-panel-api.js'
+import { createSidePanelApi } from './side-panel-api.js'
 import type { SidePanelDriver } from './side-panel-api.js'
 import { createBehaviorStore } from './side-panel-behavior-file.js'
 import { sidePanelGestures, sidePanelTabGestures } from './side-panel-gesture.js'
@@ -120,7 +120,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
     hostOf: (window) => panelOf(window),
     frontTab: (window) => {
       const front = window.tabs.activeWebContents()
-      return front === undefined || front.isDestroyed() || ctx.tab(front.id) === undefined || !isOrdinaryTab(ctx, front) ? undefined : front.id
+      return front === undefined || front.isDestroyed() || ctx.tab(front.id) === undefined || !ctx.visibleTab(front) ? undefined : front.id
     },
     candidates: () => ctx.session.extensions.getAllExtensions().map((extension) => extension.id).filter((id) => ctx.held(id, 'sidePanel')),
     facts: (id) => facts.get(id) ?? { title: ctx.session.extensions.getExtension(id)?.name ?? id },
@@ -185,7 +185,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
     const window = ctx.shell()?.windows.focused()
     const front = window?.tabs.activeWebContents()
     if (window === undefined || front === undefined || front.isDestroyed()) return undefined
-    const tabId = isOrdinaryTab(ctx, front) ? front.id : undefined
+    const tabId = ctx.visibleTab(front) ? front.id : undefined
     if (options.panelFor(extensionId, tabId) === undefined || panelOf(window)?.canShow() !== true) return undefined
     return () => { driver.openFromMenu(extensionId, window, tabId) }
   }
@@ -193,7 +193,7 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
   setActionClickInterceptor((extensionId, tab, base) => {
     const window = ctx.shell()?.windows.all().find((candidate) => candidate.window === base)
     if (window == null) return false
-    return driver.actionClick(extensionId, window, tab !== undefined && isOrdinaryTab(ctx, tab) ? tab.id : undefined)
+    return driver.actionClick(extensionId, window, tab !== undefined && ctx.visibleTab(tab) ? tab.id : undefined)
   })
 
   return {
