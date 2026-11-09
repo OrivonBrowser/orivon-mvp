@@ -72,8 +72,7 @@ words `extensions-view.ts` reuses for the page),
 (durable: the Chrome match-pattern matcher `extension-host-access.ts` uses for chrome.cookies'
 and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's own popups),
 [`../../broker/policy/origin.ts`](../../broker/policy/origin.ts)'s `originFromUrl` (durable;
-`extension-tab-capture-invocation.ts`'s own recorder and `extension-host.ts`'s `chrome.tabCapture`
-app-refusal check both key on it),
+`extension-tab-capture-invocation.ts`'s own recorder keys on it),
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts)'s
 `writeFileAtomic`, [`../pages/internal-ipc.ts`](../pages/internal-ipc.ts)'s `InternalDomain`,
 [`../channels.ts`](../channels.ts)'s `EXTENSION_SANDBOX_PAGE_QUERY_CHANNEL`,
@@ -89,9 +88,6 @@ app-refusal check both key on it),
 [`../site-settings/electron-names.ts`](../site-settings/electron-names.ts), `kinds.ts` and `site-prompt-text.ts` (which devices a `media` request names, the settings key of each, the words of the question), [`../sessions/site-asks.ts`](../sessions/site-asks.ts) (the registry `extension-media-asker.ts` joins first), [`../shell/showing-window.ts`](../shell/showing-window.ts) (the window a page is on screen in),
 [`../shell/window.ts`](../shell/window.ts)'s `createShellWindow`,
 [`../shell/shell-services.ts`](../shell/shell-services.ts)'s `ShellServices` type and
-[`../shell/devtools-app-origin.ts`](../shell/devtools-app-origin.ts)'s `appOrigin` (the same
-granted-app-origin question the DevTools prompt answers, reused for the `chrome.tabCapture`
-refusal above),
 [`../registry.ts`](../registry.ts)'s `Subsystem`/`SubsystemContext` types and
 `publishExtensions`, [`../../protocols/builtin.ts`](../../protocols/builtin.ts)'s
 `BUILTIN_ADDRESSES`, and two vendored libraries.
@@ -252,8 +248,10 @@ that runs a command is consumed; every other key still reaches the page. `_execu
 the popup as a click on the icon does, under the icon or else the Extensions button
 (`extension-action-anchor.ts`); a named command reaches `chrome.commands.onCommand` through
 `ElectronChromeExtensions.sendCommand` with the active tab, and counts as an invocation of the
-extension on that tab. A tab no extension is told about (a registered app's, or an internal page)
-is passed as no tab. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
+extension on that tab. A tab no extension can see (an Orivon page, or a tab in a session with no extensions, such as an app run from
+its pinned copy) is passed as no tab: a named command still reaches the extension and the key is consumed,
+while `_execute_action` and `_execute_side_panel` do nothing and leave the key with the page. A site that holds
+Orivon permissions is a tab like any other. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
 table is empty until `installShortcuts` says the saved shortcuts are read, because a lookup before
 that would cache the defaults. The macOS reading of `Command` and `MacCtrl` is *provisional*: it
 is unit-tested and has not run on a Mac.
@@ -280,16 +278,20 @@ The extension's hidden offscreen document is never navigated.
 
 **[`site-reach.ts`](site-reach.ts) returns none for an app that runs in a partition of its own,
 without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
-including a granted app, and an allowed Web3 site runs in the session websites run in
-(`../shell/app-session.ts`), so they reach it as they reach any website. The one exception
-`GRANTED_APPS_CLAUSE` (`../../broker/policy/extension-manifest.ts`) carries is an app that runs
-in a session of its own: a plain `https` host or a loopback address the shell serves from a kept
-copy. An allowed web3 site with a tunnel entry runs in that entry's profile session, as a website does, and
-the extensions loaded there reach it. Naming extensions
-on such an origin's site-info popup or grant prompt would say something false, so this file
-matches that exception exactly rather than letting its own answer drift from what the install
-prompt and the extensions page already say. The check is an injected predicate (`runsApart`,
-real implementation `hasOwnPartition` in `../shell/app-session.ts`), so this file stays pure
+including a site that holds grants, with its page menu entries, command keys, side panel,
+`webRequest` and `declarativeNetRequest` rules and `chrome.tabCapture`, and an allowed Web3 site
+runs in the session websites run in (`../shell/app-session.ts`), so they reach it as they reach any
+website; one with a tunnel entry of its own runs in that entry's profile session, as a website does, and the
+extensions loaded there reach it. An app that runs in a partition of its own (a plain `https` host or a
+loopback address the shell serves from a kept copy) has a session that no extension reaches: no content
+script, request, menu entry, tab API or side panel, and a named command key reaches an extension with no tab.
+Only history is shared, since it is the person's one list for every session: `chrome.history` and
+`chrome.topSites` list that app's pages. `GRANTED_APPS_CLAUSE`
+(`../../broker/policy/extension-manifest.ts`) carries the one exception: "except an app that runs in a
+session of its own". Naming extensions on such an origin's site-info popup or grant prompt would say
+something false, so this file matches that exception exactly rather than letting its own answer drift from
+what the install prompt and the extensions page already say. The check is an injected predicate
+(`runsApart`, real implementation `hasOwnPartition` in `../shell/app-session.ts`), so this file stays pure
 and testable against a fake, the same shape
 [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts)'s
 `SiteTrustSources` already uses it in.
@@ -362,13 +364,9 @@ crash all tear it down the same way; `chrome.runtime.getContexts` (`api/runtime.
 currently open popup (`browser-action.ts`'s new `getOpenPopup`) and the running service worker to
 answer for real, instead of leaving an extension's own existence check to fall back to
 `clients.matchAll()`, which does not see a document this library creates.
-`chrome.tabCapture.getMediaStreamId` (`api/tab-capture.ts`) refuses a tab six ways before
+`chrome.tabCapture.getMediaStreamId` (`api/tab-capture.ts`) refuses a tab in four cases before
 calling Electron's own `webContents.getMediaSourceId`: a tab outside this session, a non-`http(s)`
-tab (another extension's own page included -- `appOrigin` returns null for one, so the app-refusal
-check alone never caught it), a granted app's own tab (`setTabCaptureAppRefusalCheck`, wired to
-the same `broker.app.hasGrantsSync` question `shell-services.ts`'s DevTools prompt asks, re-checked
-on the tab's own navigation and again inside `permission-gate.ts`'s own `'media'` request handler),
-a tab the extension was never invoked on (`setTabCaptureInvocationCheck`,
+tab (another extension's own page included), a tab the extension was never invoked on (`setTabCaptureInvocationCheck`,
 `extension-tab-invocation.ts`'s ledger, filled ONLY by a real toolbar click reaching
 `browser-action.ts`'s `activateClick` over `crx-msg-remote` -- never a local `crx-msg` call, and
 never `chrome.action.openPopup()`, which reaches the same code with no click at all -- and cleared

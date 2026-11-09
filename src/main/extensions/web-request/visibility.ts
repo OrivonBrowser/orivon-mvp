@@ -74,18 +74,15 @@ function initiatorHidden (initiator: URL, extensionId: string): boolean {
 }
 
 /**
- * `isAppOrigin` answers for a registered app's origin: a request whose URL, initiator or page is one is hidden from every extension.
  * `servesHost` answers for a host Orivon's protocols serve: the error of a navigation to one is hidden from every extension.
  */
 export function requestVisibleTo (
   extensionId: string,
   request: VisibleRequest,
   hasHostAccess: (url: string) => boolean,
-  isAppOrigin: (url: string) => boolean = () => false,
   servesHost: (hostname: string) => boolean = () => false
 ): boolean {
   if (!request.fromPage) return false
-  if ([request.url, request.initiator, request.pageUrl].some((url) => url !== undefined && isAppOrigin(url))) return false
   const url = parse(request.url)
   if (url === undefined) return false
   const initiator = request.initiator === undefined ? undefined : parse(request.initiator)
