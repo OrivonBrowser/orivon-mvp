@@ -41,8 +41,8 @@ What follows from the table:
   setting tried changes nothing. A tab cannot be given any of them alone.
 - **Lifting the tiers is a privacy cost, not a memory-safety one.** Chromium rounds the limits so a site learns less
   about the GPU (Dawn commit `2e48f011`); the real limits tell it more precisely which GPU this is.
-- **The Intel GPU's 4 storage textures per stage was a tier, not the hardware:** the GPU gives 8. Whether 8 is what
-  the engine demo asked for is step 1.
+- **The Intel GPU's 4 storage textures per stage was a tier, not the hardware:** the GPU gives 8, and with 8 the
+  engine demo runs on it (step 1).
 - **Turning validation off is real.** A switch on the command line reaches Dawn, so with it a page's commands reach
   the driver unchecked.
 
@@ -74,7 +74,10 @@ What follows from the table:
   - Linux on X11: the X11 graphics mode's switches, whatever the main browser runs with, so a granted game needs no
     restart of Orivon;
   - Linux on Wayland: `--ignore-gpu-blocklist=186`, which alone gave an adapter on this machine
-    ([`webgpu-plan.md`](webgpu-plan.md) section Where WebGPU stands in this build).
+    ([`webgpu-plan.md`](webgpu-plan.md) section Where WebGPU stands in this build). On a computer with two GPUs the
+    process also sees only the Vulkan driver of the GPU the desktop draws with (`VK_DRIVER_FILES` in the environment
+    it is started with), named by the previous run's ANGLE renderer, because an adapter on the other GPU draws
+    nothing (step 1). The faster GPU is then unused; *provisional* until a fix in Chromium's import makes it usable.
 - **It shows one origin.** A top-level navigation to another origin opens in the main browser, handed over under T55's
   rules (an http(s) address, after the process's own switches); a same-site popup stays.
 - **It starts with the site's tunnel** (`ADR-0089`) and the profile's settings, as a private session's seed does.
@@ -101,12 +104,20 @@ reads the main profile's ledger.
 
 ## Steps
 
-1. **Measure before building.** Run the engine demo in the game process's configuration:
-   - the Intel GPU alone, tiered against untiered (does it start where it refused?);
-   - the NVIDIA GPU in the X11 mode;
-   - Wayland on the hybrid laptop with entry 186 ignored, where the demo's canvas failed with the Vulkan feature alone.
+1. **Measure before building: done, 2026-11-09.** The engine demo ran in plain Electron 44.7.0 with a scratch
+   profile and an in-memory session. Its start control sits inside an iframe and was clicked there. Each run lasted
+   two minutes, with screenshots at 30, 60, 90 and 120 s. The Vulkan driver was limited to one GPU's (`VK_DRIVER_FILES`).
 
-   A *no* on the Intel run means the limits are not what holds that demo back, and the plan is weighed again.
+   | GPU | Chromium's tiers | Real limits |
+   |---|---|---|
+   | Intel, X11 mode, virtual display | refused 3 s in: "The selected GPU does not meet the required WebGPU limits (maxStorageTexturesPerShaderStage)" | runs: the scene draws and animates, 43 to 57 FPS |
+   | NVIDIA, X11 mode, virtual display | runs, 38 to 41 FPS | runs, 40 to 41 FPS |
+   | Intel, Wayland (a private headless GNOME session), entry 186 ignored | no adapter without entry 186 ignored | runs, 39 to 47 FPS |
+   | NVIDIA, picked by Chromium, Wayland, entry 186 ignored, the desktop drawn on Intel | the same | loads, then every frame fails as the canvas reaches the screen ("Requested allocation size (1597440) is smaller than the image requires (1703936)", Dawn's `ImportMemory`); nothing is drawn |
+
+   On a virtual display the numbers say that frames are drawn, not how fast a real screen would show them. The
+   limits are what held the demo back on Intel: the plan stands. On a Wayland hybrid laptop the adapter must sit on
+   the GPU the desktop draws with, which the game process's shape below provides.
 2. **The contract, alone.** The `orivon.*` function, its ADR, a catalogue row and its spec in
    [`test/app-behaviours/`](../../test/app-behaviours/README.md), and the contracts surface snapshot.
 3. **The game process.** The launch switch, the data directory per origin, the switches per platform, the navigation
