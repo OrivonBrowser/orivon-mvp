@@ -120,7 +120,9 @@ test uses the same driver. **Check this early**, not the day the test is due.
 On a macOS runner, Playwright 1.62 sometimes never attaches a page opened in a later tab: Electron has it loaded
 and on screen, and `app.windows()` does not list it, with or without window focus (measured in a live session). A
 spec that looks such a page up through `findViewShowing` or `app.windows()` can fail there for that reason alone.
-Read the failure's `views.json` and window composite before treating it as a product failure.
+Read the failure's `views.json` and window composite before treating it as a product failure. A spec that does not
+need the page itself drives it from the main process, through `app.evaluate` (`webContents.executeJavaScript`,
+`sendInputEvent`, `debugger`): `visitWithoutPage` and `hoverWithoutPage` in `support/qa-helpers.ts` do that.
 
 Reading `webContents.mainFrame` from the main process while a main-frame navigation is pending can crash Electron
 44 under load (a breakpoint in `electron.exe`, traced on a Windows runner). A spec that polls frames from
