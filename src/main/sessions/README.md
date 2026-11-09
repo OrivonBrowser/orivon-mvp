@@ -197,9 +197,13 @@ was found to be at its own last main-frame `did-navigate`, and trusting that rec
 lets an already-attributed document keep calling successfully until it next navigates -- the same
 navigation that already triggers `../shell/tab-view.ts`'s own partition swap for any other
 cross-origin move. A cache-served (pinned) origin is the one exception, checked live and strictly
-regardless of any record, because its bundle is only ever intercepted inside its own partition
-(`ADR-0007`): a document attributed to it must run there at every call, not merely at whatever
-moment it committed. A local file is the other: the path of a document is fixed for its life, so
+regardless of any record, because its bundle is only ever intercepted in the session it is served in
+(`ADR-0007`): a document attributed to it must run in that session at every call, not merely at whatever
+moment it committed. That session is the app's own partition, or the shared one for an app the verifier
+hands to the shell (`../shell/app-session.ts`'s `runsAsWebsite`, `ADR-0108`). In the shared session a page
+of the origin that committed before the origin was served is a website, not the app, so it is denied: the
+record keeps whether the origin was served at the commit, and a first visit's page left open in another tab
+does not gain the grants an Allow in the first. A local file is the other: the path of a document is fixed for its life, so
 only its session can be wrong, and that must be the one `localPartitionFor` names at this call (a
 record removed since the commit denies the document at once).
 

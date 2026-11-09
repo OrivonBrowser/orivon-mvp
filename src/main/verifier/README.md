@@ -130,6 +130,8 @@ random secret of this run that only main and the host it starts hold (`HostConfi
 favicon fetch and the Web3 Score provider reads (`../browsing/`), so a read main makes about a site is answered by the verifier whether or not an app is served at that name. The mark is added to a request for a host a protocol serves and to no other, so the secret reaches no server
 but the verifier's. The `expect-leaf` and `content-root` headers cannot do this job: a live read carries the first only for a file the declared tree lists and the second only once the version is known, and a page can send either.
 
+**An allowed app whose host the host answers runs in the shared session, served through this relay** (`../shell/app-session.ts`'s `runsAsWebsite`, `ADR-0108`). The tab, its extensions, its tunnel setting and its site data are a website's; the page's `window.orivon` and grants come from the grants held for its origin and from `../sessions/session-attribution.ts`, which expects the shared session for it. A tunnel profile's requests are never handed to the shell, so an app with a tunnel entry of its own keeps a partition (*provisional*, until the host hands those requests over too).
+
 **A request to a host the verifier serves waits until the host listens.** The host forks, reads its config and binds, so a
 request that finds it asleep would reach a closed port and leave the tab on the connection-refused page, for good.
 [`listening-gate.ts`](listening-gate.ts) is the wait: an `onBeforeRequest` handler on the default

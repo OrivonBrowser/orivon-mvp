@@ -76,7 +76,7 @@ interface: `test/sites/e2e-global-privacy-control.test.ts` fails on a build that
 
 **The other network controls cover the default session only.** That is where ordinary tabs and network-served apps
 run. Extension pages and `orivon:` pages are never filtered (the filters name `http` and `https`, and a request
-whose top document is not a web page is treated as first party), and an app's own partition is not covered.
+whose top document is not a web page is treated as first party), and a partition an app runs in on its own is not covered; an allowed Web3 app that runs in the default session is.
 
 **A handler is on the owner only while a setting needs it, and reads its setting per request.** The HTTPS upgrade is
 registered while `privacy.httpsOnly` is on, the request-header handler while Do Not Track is on or third-party cookies are

@@ -28,7 +28,7 @@ response, and nothing reads grants from disk, A158) are documented in [`serve.ts
 
 **The handler an origin is answered with is kept beside its partition.** `registerAppOrigin` records `origin -> handler`
 (`servingHandlerFor`, `servedOrigins`) and `retireAppOrigin` removes it, and `onServingChange` calls its listener when an origin starts or stops
-being served (not when its handler is replaced in place, since the set is the same). The partition is where the app's own page runs; the record is
+being served (not when its handler is replaced in place, since the set is the same). The partition is where the app's own page runs when it has one of its own; the record is
 how the same handler answers a request for the origin made anywhere else, which [`../../main/verifier/README.md`](../../main/verifier/README.md) describes.
 `fetch.ts` marks every read of a host the verifier serves as the shell's own (`../fetch/own-read.ts`), so a live-served handler's read of the verifier is never answered by a handler.
 

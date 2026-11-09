@@ -71,7 +71,7 @@ every site, and that survives a restart.
 
 12. **Where content scripts run.** An extension's content scripts run in every website frame its site
     access covers, sandboxed frames included, and its storage is one store for all sites. They do not
-    load in a cache-served app's partition or in the shell's sessions (T49, T50). An extension that
+    load in a partition an app runs in on its own or in the shell's sessions (T49, T50); an allowed Web3 app that runs in the shared session is a website to them. An extension that
     learns from what pages show (dark-theme detection, colour-scheme reports, site lists it fills by
     itself) can be steered by any page, for every site. Orivon cannot fix the extension. It decides
     where content scripts run, and a change to that is reviewed against this page.

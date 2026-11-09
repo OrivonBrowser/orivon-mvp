@@ -200,12 +200,10 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       localFiles: () => allLocalPartitions().map((partition) => session.fromPartition(partition)),
       // A website with a tunnel setting keeps its storage in a profile, which the shared session's clearing never reaches; a profile session nothing has made is not created to be cleared.
       siteSessions: () => profilePartitionsToClear((profile) => routes.store.apart(profile).length > 0, madeSiteSessions()).map((partition) => session.fromPartition(partition)),
-      // Only a CACHE-SERVED app still has a partition of its own to clear:
-      // a granted-without-install app shares session.defaultSession, which
-      // `websites` above already reaches. Calling session.fromPartition on
-      // the others would only mint a fresh, never-used, empty partition for
-      // each -- ADR-0018's own warning against probing session.fromPartition
-      // speculatively.
+      // Every CACHE-SERVED app has a partition registered, which holds what the app stored there: all of it for an app with its own
+      // route, and what an earlier run left for one that now runs in the shared session, whose storage `websites` above reaches.
+      // A granted-without-install app has none, and calling session.fromPartition on it would only mint a fresh, never-used,
+      // empty partition for each -- ADR-0018's own warning against probing session.fromPartition speculatively.
       appSessions: async () => (await permissions.list())
         .filter((app) => isOriginServedFromCacheSync(app.origin))
         .map((app) => session.fromPartition(partitionFor(app.origin))),

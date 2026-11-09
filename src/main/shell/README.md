@@ -11,7 +11,7 @@ popovers, and the extension popup's panel for the overlay host) and `shell-state
 the `{ window, services }` pair a hook or an overlay handler receives.
 `tabs.ts` owns the tab collection, with `tab-state.ts` (the state a tab reports, plus what each
 `TAB_SIGNALS` entry adds), `tab-navigation.ts`, `tab-open.ts` (every way a tab is created) and
-`tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`,
+`tab-panes.ts` (which views show where) as its parts; `tab-view.ts`, `tab-partition.ts`, `app-session.ts` (which session an allowed app runs in),
 `app-tab-watch.ts`, `tab-signals.ts`, `tab-types.ts`, `tab-factory.ts`, `tab-lifecycle.ts` and
 `tab-parking.ts` are the per-tab view; `load-in-tab.ts` is the one test that opens an address in the tab's own view or in a view of the session it needs, shared by the address bar and a link followed inside a tab, and the step Back or Forward past the view's own list. `tab-outer-history.ts` (no `electron`) holds the pages of a tab's history that its view does not hold. `eth-gateway-redirect.ts` opens an ENS gateway address (`<name>.eth.limo`, `<name>.eth.link`) as the `.eth` name it stands for: the web-request handler, which shares the rule in `eth-gateway-rule.ts` (`gatewayRedirectFor`, `gatewayEntries`; no `electron`) with the tab hooks below. `tab-origin-liveness.ts` is `tab-view.ts`'s own per-origin
 live-document counter. A local file's tab is always in a local-files session ([`../local-files/`](../local-files/)): `tab-partition.ts` routes it there, `tab-factory.ts`'s `localFile` makes it, and a tab that reached a file by history or a reload moves to the session it belongs in, on a 404 (`did-navigate`) or on the fence's -20 (`pre-partition.ts`'s `repartitionOnFileBlock`). `tab-order.ts` is where a tab sits in the strip, `tab-move.ts` moves one between windows keeping the
@@ -119,6 +119,8 @@ never use one of their exports at the top level of another.
 
 **A tab's tunnel choice reaches every place that picks its session, through `partitionForTab`.** `tab-partition.ts` answers "which session does this address belong in, in this tab?" from the address and the tab's choice together; the typed address, the checks before a navigation commits and the swap after it, a wake, a popup, a restored tab and the move when a website's entry changes all ask it and none asks `partitionForTarget` for a tab. A new way of creating a tab passes the choice of the tab it comes from through `TabViewHost`, or the tab opens with none.
 
+**An allowed app runs in the shared session when the verifier can hand its requests to the shell, and `app-session.ts` is the one place that says so.** `runsAsWebsite` is true for an origin the shell serves from a copy it keeps, that the verifier's server answers on its default port over https (`../verifier/shell-serves.ts`'s `isRelayable`), and that the shared session sends the way the app's own route would; `hasOwnPartition` is every other cache-served origin. `partitionForTab` returns the app's own partition only for those, `../sessions/session-attribution.ts` expects the shared session for the others, and the block, the extensions' reach and the site-info popover ask the same predicates, so no reader decides it a second time. An app with a tunnel entry of its own keeps its partition because the server never hands a tunnel profile's requests to the shell (*provisional*, until it does). The tab's tunnel choice is ignored for an app, as before. See [`ADR-0108`](../../../docs/decisions/ADR-0108-an-allowed-web3-site-runs-where-websites-run-and-its-kept-copy-is-served-there-through-the-verifier.md).
+
 **The tunnel button reads a tab's choice twice, for the page and for the new tab.** `tunnel-look.ts` is the one place that turns "this page, in this tab, with this choice" (`pageTunnelLook`) or "the new tab with this choice" (`newTabTunnelLook`) into the button's look; the page's own state follows the tab's profile when the tab has a choice, and the new tab, which loads nothing, follows the choice or, with none, what the shared session will do for its next address. `tunnel-popover-tab.ts` decides, from the front tab's record and its session, whether the tunnels popup opens for the tab or for a site: it is the tab's for a new tab and for every website in a tab, with or without a choice; a page of the shell shows no website, so it has the new tab's look (the tab's choice, else the browser's, `state/tunnel.ts`) and a popup for the browser alone (`shellPageTabForTunnelPopover`), which main serves as the Browser-wide panel with no tab choice and no entry (`../permissions/`); the main process never reads a field the chrome sent, an installed app stays a site, and so does a page in a session an app or a temporary route made for it, which keeps that session's tunnel whatever the tab chose, and a page that cannot go through a tunnel. A tab whose first page has not committed has an empty address, so main reads the one its navigation leads to off its record (`TabRecord.inflightTarget`, which follows redirects; `openingAddressOf`, `addressOfFrontTab`): the press is read as the page it opens, so it gets the list the page will have once it has come, for a tab main opened itself. A popup a page opened is not read so: it shows an empty document the opener writes into until the website answers, so it has no button until its first page commits (`popup-with-opener.ts`: `TabRecord.popupWithOpener` keeps that it held its opener when it was adopted or began its first navigation, since the opening page can cut `opener` afterwards and keep writing; a link with a target opens its tab with none). The chrome's `tunnelByTab` and the press read the tab through the same arguments of `tabForTunnelPopover`. A blank page in a tab that is not the dashboard's, in whatever session (`TabState.blankPage`, a popup a page opened with no address or with its first page still to come, which the page writes into as freely as into its own), is no new tab: it gets no new-tab look and no button. With the tunnel settings unreadable both looks take the one tunnel every website takes then (`tabWebsitesTunnel` in `../route/tab-tunnel.ts`), a direct choice included.
 
 **A tab's own state is a record and a list of signals, not a method on `TabManager`.** A feature that
@@ -209,10 +211,10 @@ survivor has the whole area. A page holds the window in HTML fullscreen only whi
 front, and a tab that closes or is left has no claim on it. `forgetTab()` takes the record out before it
 closes the view, because closing announces its own end at once and that call must find nothing to do.
 
-**[`tab-parking.ts`](tab-parking.ts): a view leaving an app's partition is parked, not closed.** A
+**[`tab-parking.ts`](tab-parking.ts): a view leaving an app is parked, not closed.** A
 page's `sessionStorage` lives in its view, not its partition (measured in Electron 44), so a
 fresh view would break an OIDC login that keeps its state there while the provider has the tab.
-Only app partitions are parked. A returning parked view is left holding only the page it came back
+Only app tabs are parked: under the app's partition, or under its origin when it runs in the shared session. A returning parked view is left holding only the page it came back
 to (`tab-history.ts`'s `settleOuterHistory`): the pages before it are the tab's outer history, and
 the page the app left for, which committed in the parked view, would otherwise load in its session.
 
@@ -236,13 +238,13 @@ not `critical`.
 A popup that keeps `window.opener` is Chromium's own webContents, created in its opener's
 partition, and moving it would sever `opener`, which a sign-in popup needs to report back. The
 cost is an `ADR-0018` residual (A230): until its opener closes, an open-web page an app opens this
-way runs in the app's partition. It does not keep its opener when the opener's session would send
+way runs in the app's session. It does not keep its opener when the opener's session would send
 the address less tunnelled than the shared session would (not through the tunnel for an address that is, as a
 direct profile or an app set to off does while the whole browser is on the tunnel): a sized
 `window.open` to such an address then opens as a window of its own, and a popup that navigates
 there moves, cutting `window.opener` (`site-routes.ts`'s `sessionRoutesLike`). The other direction is never allowed: a popup into an isolated
-app from any other session opens as an ordinary tab in the app's own session, the only place its
-pinned bundle is served (`ADR-0007`). A popup's app-tab flag follows its own URL, not its
+app from any other session opens as an ordinary tab in the app's own session, where its
+pinned bundle is served (`ADR-0007`; an app that runs as a website is served in the shared session too, through the verifier). A popup's app-tab flag follows its own URL, not its
 opener's. A window a page
 opens without the person's own click or key press is refused before any of this, by the pop-up blocker
 in [`../site-settings/`](../site-settings/) that `PopupHost.popupBlocked` asks. A window opened at an address
@@ -250,8 +252,8 @@ another program handles (`mailto:`, `magnet:`) is never opened: `PopupHost.openE
 question to the person that a click on a link to it raises, and a tab at that address would stay blank.
 
 **`routePopup`'s `isApp` catches a gap `targetPartition === opener.partition` alone cannot see.**
-A held grant alone puts no origin in its own partition (`ADR-0044`), so a granted,
-network-served app and an ordinary site both commonly carry `partition: undefined` -- the two
+A held grant alone puts no origin in its own partition (`ADR-0044`), and an app that runs as a website has none, so a granted,
+network-served app, such an app and an ordinary site all commonly carry `partition: undefined` -- they
 would otherwise look identical to the partition comparison above, adopting a popup from any site
 straight into a granted app's own window with `window.opener` intact. `isApp` (`routePopup`'s own
 arg, `popupTargetIsApp` in `tab-view.ts`) checks the thing the partition check cannot: a held
@@ -264,7 +266,7 @@ ITSELF (`w.location = ...`) into a different, granted or cache-served app never 
 `routePopup` again. `tab-view.ts`'s did-navigate handler re-asks `popupTargetIsApp` of the
 committed URL (`openerCutNeeded`), and rebuilds the view when it answers yes and the opener's own
 origin differs -- even when the partition string is not actually changing (two granted,
-network-served apps both carry `partition: undefined`), since a freshly built WebContents is the
+network-served apps both carry `partition: undefined`, and so does an app that runs as a website), since a freshly built WebContents is the
 only thing that drops `window.opener` at all. This is also the one case `keepsOpenerSession`
 exempts: the opener link is exactly what must not survive here.
 
