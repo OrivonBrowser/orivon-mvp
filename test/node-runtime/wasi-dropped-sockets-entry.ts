@@ -29,7 +29,10 @@ const SECOND_BATCH = 140
 
 const wait = async (ms: number): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, ms)) }
 const orivon = (): PageOrivon => (globalThis as unknown as { orivon: PageOrivon }).orivon
-const address = (port: number): IpSocketAddress => ({ tag: 'ipv4', val: { port, address: [127, 0, 0, 1] } })
+const address = (port: number, host = '127.0.0.1'): IpSocketAddress => {
+  const [a = 0, b = 0, c = 0, d = 0] = host.split('.').map(Number)
+  return { tag: 'ipv4', val: { port, address: [a, b, c, d] } }
+}
 
 function createSocket (): TcpSocket {
   const interfaces = socketInterfaces(orivon().net, { dropGraceMs: DROP_GRACE_MS })
@@ -72,12 +75,12 @@ async function roundsOfDroppedSockets (livePort: number): Promise<NonNullable<Dr
 }
 
 /** Past the in-flight bound the broker makes a file call wait for a slot; dropping the sockets has to hand slots back at once. */
-async function droppedDials (silentPort: number): Promise<NonNullable<DroppedSocketsResults['hung']>> {
+async function droppedDials (silentHost: string, silentPort: number): Promise<NonNullable<DroppedSocketsResults['hung']>> {
   const sockets: TcpSocket[] = []
   const start = (count: number): void => {
     for (let i = 0; i < count; i++) {
       const socket = createSocket()
-      socket.startConnect({}, address(silentPort))
+      socket.startConnect({}, address(silentPort, silentHost))
       sockets.push(socket)
     }
   }
@@ -99,9 +102,10 @@ async function droppedDials (silentPort: number): Promise<NonNullable<DroppedSoc
 
 async function run (): Promise<DroppedSocketsResults> {
   const livePort = Number(document.querySelector('meta[name=live-port]')?.getAttribute('content'))
+  const silentHost = document.querySelector('meta[name=silent-host]')?.getAttribute('content') ?? ''
   const silentPort = Number(document.querySelector('meta[name=silent-port]')?.getAttribute('content'))
   // The dials first: hung dials only hang while the allowance has room for them, which the rounds would use up.
-  const hung = await droppedDials(silentPort)
+  const hung = await droppedDials(silentHost, silentPort)
   return { rounds: await roundsOfDroppedSockets(livePort), hung }
 }
 
