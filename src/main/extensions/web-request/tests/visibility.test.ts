@@ -79,21 +79,23 @@ describe('requestVisibleTo', () => {
     expect(requestVisibleTo(ME, page({ initiator: 'null' }), all)).toBe(true)
   })
 
-  describe('apps', () => {
-    const isApp = (url: string): boolean => url.startsWith('https://app.example')
+  describe('a site that holds Orivon permissions', () => {
+    const granted = 'https://granted.example'
+    const holdsGrants = (): boolean => true
+    // The function takes no grant input today. Every optional predicate after host access answers "yes" here, so a check that
+    // asks whether the origin holds grants, in whichever position it comes back, hides these requests and fails the tests.
+    // Neither answer changes a request that is not the error of a navigation to a name Orivon serves.
+    const onGrantedSite = (request: VisibleRequest, hasHostAccess: (url: string) => boolean = all): boolean =>
+      (requestVisibleTo as (...args: unknown[]) => boolean)(ME, request, hasHostAccess, holdsGrants, holdsGrants)
 
-    it('hides a request for a registered app\'s URL', () => {
-      expect(requestVisibleTo(ME, page({ url: 'https://app.example/api.js', initiator: undefined }), all, isApp)).toBe(false)
-      expect(requestVisibleTo(ME, page({ url: 'https://app.example/api.js', initiator: undefined }), all)).toBe(true)
+    it('shows a request for its URL, one it initiated and one made from its page, like any other', () => {
+      expect(onGrantedSite(page({ url: `${granted}/api.js`, initiator: undefined }))).toBe(true)
+      expect(onGrantedSite(page({ initiator: granted }))).toBe(true)
+      expect(onGrantedSite(page({ pageUrl: `${granted}/index.html` }))).toBe(true)
     })
 
-    it('hides a request an app initiated', () => {
-      expect(requestVisibleTo(ME, page({ initiator: 'https://app.example' }), all, isApp)).toBe(false)
-    })
-
-    it('hides a request made from a page that is an app, whatever the initiator says', () => {
-      expect(requestVisibleTo(ME, page({ pageUrl: 'https://app.example/index.html' }), all, isApp)).toBe(false)
-      expect(requestVisibleTo(ME, page({ pageUrl: 'https://site.example/index.html' }), all, isApp)).toBe(true)
+    it('still needs host access to it', () => {
+      expect(onGrantedSite(page({ url: `${granted}/api.js`, initiator: granted }), (url) => !url.startsWith(granted))).toBe(false)
     })
   })
 })
@@ -115,24 +117,24 @@ describe('requestVisibleTo for a navigation to a host Orivon serves', () => {
 
   it('hides the error of a main-frame or sub-frame load, over http and https', () => {
     for (const url of ['https://vitalik.eth/', 'http://vitalik.eth/', 'https://bafy.ipfs.orivon/a', 'https://vitalik.eth:1/']) {
-      expect(requestVisibleTo(ME, failed(url), all, none, served)).toBe(false)
+      expect(requestVisibleTo(ME, failed(url), all, served)).toBe(false)
     }
-    expect(requestVisibleTo(ME, failed('https://vitalik.eth/', { type: 'sub_frame', initiator: 'https://site.example' }), all, none, served)).toBe(false)
+    expect(requestVisibleTo(ME, failed('https://vitalik.eth/', { type: 'sub_frame', initiator: 'https://site.example' }), all, served)).toBe(false)
   })
 
   it('shows every other event of the same load', () => {
     for (const event of ['onBeforeRequest', 'onBeforeSendHeaders', 'onSendHeaders', 'onHeadersReceived', 'onResponseStarted', 'onBeforeRedirect', 'onCompleted'] as const) {
-      expect(requestVisibleTo(ME, failed('https://vitalik.eth/', { event }), all, none, served)).toBe(true)
+      expect(requestVisibleTo(ME, failed('https://vitalik.eth/', { event }), all, served)).toBe(true)
     }
   })
 
   it('shows the error of a subresource, since only a navigation can take the tab', () => {
-    expect(requestVisibleTo(ME, failed('https://vitalik.eth/app.js', { type: 'script', initiator: 'https://vitalik.eth' }), all, none, served)).toBe(true)
+    expect(requestVisibleTo(ME, failed('https://vitalik.eth/app.js', { type: 'script', initiator: 'https://vitalik.eth' }), all, served)).toBe(true)
   })
 
   it('shows the error of a host no protocol serves', () => {
-    expect(requestVisibleTo(ME, failed('https://site.example/'), all, none, served)).toBe(true)
-    expect(requestVisibleTo(ME, failed('https://other.eth/'), all, none, served)).toBe(true)
+    expect(requestVisibleTo(ME, failed('https://site.example/'), all, served)).toBe(true)
+    expect(requestVisibleTo(ME, failed('https://other.eth/'), all, served)).toBe(true)
   })
 
   it('serves nothing by default, so the rule is the caller\'s to switch on', () => {
