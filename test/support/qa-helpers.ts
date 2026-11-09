@@ -53,6 +53,26 @@ export async function visitWithoutPage (app: ElectronApplication, chrome: Page, 
     webContents.getAllWebContents().some((wc) => wc.getURL() === target && !wc.isLoading()), url))).toBe(true)
 }
 
+/** Moves the pointer onto the middle of the element `selector` in the page whose address is `url`, from the main process, and waits for the element for as long as the page takes to draw it.
+ * For a spec that never uses the tab's own page: it does not need Playwright to have attached that page, which it
+ * sometimes never does for a tab opened later on macOS (test/README.md, Known risk). */
+export async function hoverWithoutPage (app: ElectronApplication, url: string, selector: string): Promise<void> {
+  await app.evaluate(async ({ webContents }, [target, css]) => {
+    const middle = `(() => { const box = document.querySelector(${JSON.stringify(css)})?.getBoundingClientRect(); return box === undefined ? null : { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) } })()`
+    const deadline = Date.now() + 10_000
+    for (;;) {
+      const wc = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL() === target)
+      const at = wc === undefined ? null : await wc.executeJavaScript(middle).catch(() => null) as { x: number, y: number } | null
+      if (wc !== undefined && at !== null) {
+        wc.sendInputEvent({ type: 'mouseMove', x: at.x, y: at.y })
+        return
+      }
+      if (Date.now() > deadline) throw new Error(`no ${css as string} in a page at ${target as string}`)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+  }, [url, selector] as const)
+}
+
 /** Types `url` into the address bar, waits for the tab to report it, and returns that tab's own page. */
 export async function visit (app: ElectronApplication, chrome: Page, url: string): Promise<Page> {
   await clickAddressBarRetrying(chrome, url)
