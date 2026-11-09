@@ -300,8 +300,8 @@ describe.skipIf(!ON_RUNNER)('a computer whose macOS settings carry a manual prox
     expect(facts.ordinary.result).toBe('page')
     expect(first.seen).toContain(`GET ${ORDINARY}`)
     expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
+    // The proxy is the whole computer's, so other programs' tunnels (Apple's services, Safe Browsing) reach it too: only a name the verifier serves matters.
     expect(verifierNames(first.seen)).toEqual([])
-    expect(first.seen.filter((line) => line.startsWith('CONNECT') && !line.includes('gvt1.com'))).toEqual([])
   })
 
   it('answers DIRECT for a name the verifier serves in every session kind, in both spellings of the name, and the proxy for an ordinary one', () => {
