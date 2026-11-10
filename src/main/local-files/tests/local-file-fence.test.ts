@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const GRANTED = 'file:///home/u/notes/app.html'
-const GRANTED_PARTITION = `persist:local-${originHash(GRANTED)}`
+const GRANTED_PARTITION = `persist:local-${originHash(GRANTED).slice(0, 32)}`
 const PLAIN = 'file:///home/u/notes/plain.html'
 
 let dir: string | undefined

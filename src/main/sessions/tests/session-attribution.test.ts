@@ -515,7 +515,7 @@ describe('senderAttributed -- a local file belongs in the session localPartition
   const FILE = 'file:///home/u/app/index.html'
   const SIBLING = 'file:///home/u/app/other.html'
   const sharedSession = session.fromPartition(LOCAL_FILES_PARTITION)
-  const ownSession = session.fromPartition(`persist:local-${originHash(FILE)}`)
+  const ownSession = session.fromPartition(`persist:local-${originHash(FILE).slice(0, 32)}`)
   let dir: string | undefined
 
   afterEach(() => {
