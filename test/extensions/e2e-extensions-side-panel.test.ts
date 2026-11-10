@@ -11,7 +11,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
-import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 import { closeElectronApp, navigateToFixture, pressKey, runPhase } from '../support/e2e-helpers.js'
 import { answeringWith, noNativeDialogs, stubNativeDialogs } from '../support/question-support.js'
 import { FIXTURES_DIR } from '../support/extensions-fixtures.js'
@@ -269,6 +269,18 @@ it('shows, drives and closes an extension\'s side panel the way the extension as
       await (pageOf(live, id, 'panel.html') as Page).evaluate(() => { document.getElementById('back')?.click() }).catch(() => {})
       check('window.close() from the panel closes it', await waitFor(async () => !(await isOpen())))
       check('and the extension heard onClosed', await waitFor(async () => (await events()).includes('onClosed')), JSON.stringify(await log()))
+
+      // 8b. An Orivon page in front, which no extension instance tracks: the click still opens the panel in the window.
+      await call('chrome.sidePanel.setPanelBehavior', { openPanelOnActionClick: true })
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string) => void } }).orivonShell.openInternal('settings') })
+      check('the settings page is in front', await waitFor(async () => String((await activeTabInfo(chrome) as { address?: string }).address).startsWith('orivon://settings')))
+      check('and the toolbar button names no tab', await waitFor(async () => await chrome.evaluate((i: string) => document.querySelector('browser-action-list')?.shadowRoot?.querySelector(`#${i}`)?.getAttribute('tab') === '-1', id)))
+      await chrome.click(actionSelector)
+      check('over an Orivon page a click opens the panel on the extension', await waitFor(async () => (await isOpen()) && (await viewNow()) === `ext:${id}`) && await panelShows('panel.html'))
+      check('and no popup opens', pageOf(live, id, 'popup.html') === undefined)
+      await chrome.click(actionSelector)
+      check('a second click closes it', await waitFor(async () => !(await isOpen())))
+      await call('chrome.sidePanel.setPanelBehavior', { openPanelOnActionClick: false })
 
       // 9. Disabling the extension takes the entry and the view away.
       await panel(live, 'open', `ext:${id}`)
