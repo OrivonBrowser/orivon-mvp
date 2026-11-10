@@ -26,6 +26,7 @@ const { webContentsCreatedListeners, sessionsByPartition, DEFAULT_SESSION } = vi
 
 vi.mock('electron', () => ({
   WebContentsView: vi.fn(),
+  ipcMain: { on: vi.fn() },
   app: {
     on: (name: string, listener: (event: unknown, wc: unknown) => void) => {
       if (name === 'web-contents-created') webContentsCreatedListeners.push(listener)
@@ -50,6 +51,7 @@ const { setTabTunnelSource } = await import('../../route/tab-tunnel.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
 const { profilePartitionFor } = await import('../../route/site-partition.js')
 const { noteMainFrameResponse } = await import('../shell-answered.js')
+const { noteWorkerControl } = await import('../worker-control.js')
 const { appTabContents } = await import('../../shell/tab-partition.js')
 
 const APP = 'https://app.example'
@@ -226,7 +228,7 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
     expect(attributed(tab.wc, KEPT)).toBe(false)
   })
 
-  it('denies a document no response was seen for (the cache, a worker), and a sender with no commit record at all', () => {
+  it('denies a document no response was seen for and no worker controls, and a sender with no commit record at all', () => {
     served.add(KEPT)
     const { attributed, register } = attributionRig()
     const made = fakeWebContents(DEFAULT_SESSION)
@@ -237,6 +239,112 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
     expect(attributed(made.wc, KEPT)).toBe(false)
 
     expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, KEPT)).toBe(false)
+  })
+
+  describe('a document the app\'s own service worker answers', () => {
+    /** A tab whose navigation to `url` is answered by no response the session sees, as a worker's answer is, with the preload's report of a controller. */
+    function workerAnswered (attributed: (sender: unknown, origin: string) => boolean, register: (wc: FakeWebContents) => void, options: { report?: 'before' | 'after' | 'none', reportUrl?: string, flagged?: boolean, inSession?: unknown } = {}): { wc: FakeWebContents, commit: () => void } {
+      const made = fakeWebContents(options.inSession ?? DEFAULT_SESSION)
+      register(made.wc)
+      if (options.flagged !== false) appTabContents.add(made.wc as never)
+      void attributed
+      const url = `${KEPT}/`
+      const report = (): void => { noteWorkerControl(made.wc, options.reportUrl ?? url) }
+      return {
+        wc: made.wc,
+        commit: () => {
+          made.start()
+          if (options.report === 'before') report()
+          made.commit(url)
+          if (options.report === undefined || options.report === 'after') report()
+        }
+      }
+    }
+
+    it('attributes it: the preload says a worker controls the document, and no response was seen for it', () => {
+      served.add(KEPT)
+      const { attributed, register } = attributionRig()
+      const tab = workerAnswered(attributed, register)
+      tab.commit()
+
+      expect(attributed(tab.wc, KEPT)).toBe(true)
+    })
+
+    it('attributes it whichever of the commit and the preload\'s report arrives first', () => {
+      served.add(KEPT)
+      const { attributed, register } = attributionRig()
+      const reportFirst = workerAnswered(attributed, register, { report: 'before' })
+      reportFirst.commit()
+
+      expect(attributed(reportFirst.wc, KEPT)).toBe(true)
+    })
+
+    it('denies a document the preload reported nothing for: no controller, so nothing is known of how it came', () => {
+      served.add(KEPT)
+      const { attributed, register } = attributionRig()
+      const tab = workerAnswered(attributed, register, { report: 'none' })
+      tab.commit()
+
+      expect(attributed(tab.wc, KEPT)).toBe(false)
+    })
+
+    it('denies a report made for another address than the document that committed', () => {
+      served.add(KEPT)
+      const { attributed, register } = attributionRig()
+      const tab = workerAnswered(attributed, register, { reportUrl: `${KEPT}/other.html` })
+      tab.commit()
+
+      expect(attributed(tab.wc, KEPT)).toBe(false)
+    })
+
+    it('denies a controlled document the network or the HTTP cache answered: only a commit no response came for is a worker\'s', () => {
+      served.add(KEPT)
+      const { attributed, register } = attributionRig()
+      const tab = appTab(attributed, register, DEFAULT_SESSION, { answered: false })
+      tab.commit()
+      noteWorkerControl(tab.wc, `${KEPT}/`)
+
+      expect(attributed(tab.wc, KEPT)).toBe(false)
+    })
+
+    it('forgets the report when a navigation starts: a later commit nothing answered is not the earlier document\'s', () => {
+      served.add(KEPT)
+      const { attributed, register } = attributionRig()
+      const tab = workerAnswered(attributed, register)
+      tab.commit()
+      expect(attributed(tab.wc, KEPT)).toBe(true)
+
+      const made = fakeWebContents(DEFAULT_SESSION)
+      register(made.wc)
+      appTabContents.add(made.wc as never)
+      made.start()
+      noteWorkerControl(made.wc, `${KEPT}/`)
+      made.start() // a second navigation begins: the report was of the document before it
+      made.commit(`${KEPT}/`)
+      expect(attributed(made.wc, KEPT)).toBe(false)
+    })
+
+    it('still needs the app\'s tab view and the session a website at the origin runs in', () => {
+      served.add(KEPT)
+      const { attributed, register } = attributionRig()
+      const popup = workerAnswered(attributed, register, { flagged: false })
+      popup.commit()
+      const oldPartition = workerAnswered(attributed, register, { inSession: keptOldPartition })
+      oldPartition.commit()
+
+      expect(attributed(popup.wc, KEPT)).toBe(false)
+      expect(attributed(oldPartition.wc, KEPT)).toBe(false)
+    })
+
+    it('does not make a document of an origin the shell does not serve the app\'s', () => {
+      const { attributed, register } = attributionRig()
+      const tab = workerAnswered(attributed, register)
+      tab.commit()
+
+      expect(attributed(tab.wc, KEPT)).toBe(true) // a website at that origin, attributed as any website is: the report changed nothing
+      served.add(KEPT)
+      expect(attributed(tab.wc, KEPT)).toBe(false)
+    })
   })
 
   it('denies a document the shell answered in a view that was not built as an app tab: a popup of a website page, say', () => {

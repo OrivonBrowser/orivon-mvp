@@ -6,6 +6,7 @@ import { webContents } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import { PARTITION_HEADER, ROUTE_HEADER, SHELL_ANSWERED_HEADER } from '../../loader/fetch/content-root.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { refusesWorkerScript } from '../sessions/app-workers.js'
 import { noteMainFrameResponse } from '../sessions/shell-answered.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import type { TunnelRoute } from '../../protocols/verifier-host/protocol.js'
@@ -84,6 +85,20 @@ export function installShellAnswerWatch (target: Session): void {
   webRequestOwnerFor(target).onResponseStarted(verifiedHostFilter(), targetsVerifiedHost, (details) => {
     if (details.resourceType !== 'mainFrame' || details.webContents === undefined || details.webContents === null) return
     noteMainFrameResponse(details.webContents, details.url, !details.fromCache && carriesShellMark(details.responseHeaders))
+  })
+}
+
+/**
+ * Refuses a service worker script (or one it imports) of an origin the shell serves where websites run, unless the shell
+ * answered it (`../sessions/app-workers.ts`). A worker registered in the moment the host has not yet learned the app is served
+ * would otherwise be one the check never saw, and would answer the app's navigations with the grants of its document.
+ */
+export function installWorkerScriptGuard (target: Session): void {
+  webRequestOwnerFor(target).onHeadersReceived(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
+    const refused = refusesWorkerScript({ url: details.url, resourceType: details.resourceType, hasPage: details.webContents !== undefined && details.webContents !== null, answeredByShell: carriesShellMark(details.responseHeaders) })
+    if (!refused) return current
+    console.warn('[verifier] refused a service worker script the shell did not serve:', details.url)
+    return { ...current, cancel: true }
   })
 }
 

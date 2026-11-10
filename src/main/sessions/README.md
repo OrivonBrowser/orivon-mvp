@@ -31,7 +31,7 @@ from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](..
 media request for `/orivon/app/<path>` to the `orivon-file:` scheme and answers that scheme with the app's own
 file (`app-file-response.ts`, no Electron in it), with the pure decision in
 [`../../broker/policy/app-files-by-url.ts`](../../broker/policy/app-files-by-url.ts).
-`shell-answered.ts` notes which main-frame document the shell answered, for `session-attribution.ts`. `stale-pages.ts` loads the website pages of an origin again when the shell starts to serve it: such a page shares the app's storage and any worker it started, and nothing the shell checked ever ran in it.
+`shell-answered.ts` notes which main-frame document the shell answered, for `session-attribution.ts`. `worker-control.ts` keeps what a tab's top frame reported about a controlling service worker (`../../preload/worker-control.ts`), and `app-workers.ts` is the rule that, for an origin the shell serves where websites run, only a worker script the shell served may be registered (`ADR-0110`; the response hook is `../verifier/partition-stamp.ts`'s `installWorkerScriptGuard`). `stale-pages.ts` loads the website pages of an origin again when the shell starts to serve it: such a page shares the app's storage and any worker it started, and nothing the shell checked ever ran in it.
 `website-sessions.ts` is the list of sessions a website runs in (the default one, and the tunnel profile and the direct profile a website with an entry of its own lives in, `../route/`): a control that guards or adjusts a website's requests installs through `forEachWebsiteSession`, so a website that moves into a profile keeps it, and a session missing one is refused.
 `session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
@@ -210,8 +210,15 @@ if the shell's own handler answered it ([`shell-answered.ts`](shell-answered.ts)
 the session's response watch notes the mark of a page's main-frame response, and the commit takes it once) and the view
 was built as the app's tab (`../shell/tab-partition.ts`'s `appTabContents`). A page that committed before the origin was
 served, a first visit's page left open in another tab, and a document the host answered itself before it was told the
-shell serves the app are websites, not the app, so they are denied. The record keeps whether the shell answered the
-document, and an origin served where websites run attributes nothing else, even after it stops being served. A local file is the other: the path of a document is fixed for its life, so
+shell serves the app are websites, not the app, so they are denied. The record keeps what answered the document (the shell,
+the network or the HTTP cache, or no response the session saw), and an origin served where websites run attributes nothing
+else, even after it stops being served. The one other document attributed is a page the app's own service worker answered
+(`ADR-0110`): a navigation a worker handles reaches no web-request hook, so the record says no response was seen, and the tab's
+preload reports that a worker controls the document (`worker-control.ts`; the page's scripts cannot change what the
+isolated world reads, and main takes the report only from the top frame, for the committed address, until the next navigation
+starts). That is enough because no worker script the shell did not serve can be registered at a served origin
+(`app-workers.ts`, armed before the website's workers are removed). A document the network or the cache answered is denied
+whatever controls it, and so is one with no response and no controller. A local file is the other: the path of a document is fixed for its life, so
 only its session can be wrong, and that must be the one `localPartitionFor` names at this call (a
 record removed since the commit denies the document at once).
 

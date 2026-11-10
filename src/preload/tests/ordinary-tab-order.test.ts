@@ -10,6 +10,7 @@ vi.mock('../expose-shim-globals.js', () => ({ exposeShimGlobals: () => { order.p
 vi.mock('../embed-event-relay.js', () => ({ installEmbedEventRelay: () => { order.push('embed-event-relay') } }))
 vi.mock('../display-capture.js', () => ({ installDisplayCapture: () => { order.push('display-capture') } }))
 vi.mock('../permission-query.js', () => ({ installPermissionQuery: () => { order.push('permission-query') } }))
+vi.mock('../worker-control.js', () => ({ installWorkerControlReport: () => { order.push('worker-control') } }))
 vi.mock('../webgpu-ask.js', () => ({ installWebGpuAsk: () => { order.push('webgpu-ask') } }))
 vi.mock('../hid-announce.js', () => ({ installHidAnnounce: () => { order.push('hid-announce') } }))
 vi.mock('../page-visibility.js', () => ({ installPageVisibility: () => { order.push('page-visibility') } }))
@@ -26,7 +27,8 @@ it('installs the children bridge after window.orivon and before the routed insta
   }
   expect(order.indexOf('no-drag-regions')).toBe(0)
   expect(order.indexOf('page-visibility')).toBe(1)
-  expect(order.indexOf('orivon')).toBe(2)
+  expect(order.indexOf('worker-control')).toBe(2)
+  expect(order.indexOf('orivon')).toBe(3)
   expect(order.indexOf('children')).toBeGreaterThan(order.indexOf('orivon'))
   expect(order.indexOf('children')).toBeLessThan(order.indexOf('fetch-route'))
 })
@@ -49,4 +51,9 @@ it('asks the person before a page keeps a WebGPU adapter, in every ordinary tab'
 
 it('keeps a page from declaring window drag regions in every ordinary tab', async () => {
   expect(order).toContain('no-drag-regions')
+})
+
+it('tells main which document a service worker controls, in every ordinary tab, before the page has anything to run', async () => {
+  expect(order).toContain('worker-control')
+  expect(order.indexOf('worker-control')).toBeLessThan(order.indexOf('orivon'))
 })

@@ -17,7 +17,7 @@ import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { PARTITION_HEADER, ROUTE_HEADER } from '../../loader/fetch/content-root.js'
 import { noteCertificate } from '../auth/note-certificate.js'
 import { ACCEPT, CHROMIUM_VERDICT, REJECT, refusalNote, verifierCertificateVerdict } from './certificate-check.js'
-import { installFileFailureWatch, installPartitionStamp, installShellAnswerWatch, targetsVerifiedHost, verifiedHostFilter } from './partition-stamp.js'
+import { installFileFailureWatch, installPartitionStamp, installShellAnswerWatch, installWorkerScriptGuard, targetsVerifiedHost, verifiedHostFilter } from './partition-stamp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { contentAddressOf } from './content-address.js'
@@ -374,7 +374,7 @@ export const verifierSubsystem: Subsystem = {
     BUILTIN_ADDRESSES.learnSchemes((name) => verifierStore().nameScheme(name))
     installCertificateCheck(session.defaultSession)
     // The shared session and each session of its own a website gets: any of them can load a `.eth` page.
-    forEachWebsiteSession((target, tunnel) => { installPartitionStamp(target, tunnel); installShellAnswerWatch(target); installFileFailureWatch(target); installListeningGate(target) })
+    forEachWebsiteSession((target, tunnel) => { installPartitionStamp(target, tunnel); installShellAnswerWatch(target); installWorkerScriptGuard(target); installFileFailureWatch(target); installListeningGate(target) })
     const host = new HostSupervisor({
       fork: hostForker({ module: join(__dirname, 'verifier-host.js'), serviceName: 'Orivon verifier', prefix: '[verifier]', unlimited: process.env['ORIVON_VERIFIER_LOG'] === '1' }),
       config: hostConfig,

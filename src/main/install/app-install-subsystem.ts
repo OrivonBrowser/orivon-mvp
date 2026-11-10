@@ -50,6 +50,7 @@ import { isCarryPageUrl } from '../../loader/electron/carry-page.js'
 import { beforeAppSessionServes, isOriginServedFromCacheSync, onAppOriginRetired } from '../../loader/electron/serve.js'
 import { couldRunAsWebsite, hasOwnPartition, runsAsWebsite } from '../shell/app-session.js'
 import { appTabContents } from '../shell/tab-partition.js'
+import { guardWorkerScripts, releaseWorkerScripts } from '../sessions/app-workers.js'
 import { clearedOriginsIn, clearedOriginsInMemory, prepareWebsiteWorkers } from '../sessions/website-workers.js'
 import { enteringPage, isEnteringPage, reloadStalePage, reloadStalePagesOfNewlyServed } from '../sessions/stale-pages.js'
 import type { Profile } from '../route/site-partition.js'
@@ -187,9 +188,11 @@ export const appInstallSubsystem: Subsystem = {
     })
     // An app that runs where its website ran: the workers and response caches that page installed go before the tab loads as the app (`../sessions/website-workers.ts` says when).
     const clearedWorkers = ctx.privateSession ? clearedOriginsInMemory() : clearedOriginsIn(join(ctx.app.getPath('userData'), 'website-workers-cleared'))
-    onAppOriginRetired((origin) => { clearedWorkers.forget(origin) })
+    onAppOriginRetired((origin) => { clearedWorkers.forget(origin); releaseWorkerScripts(origin) })
     beforeAppSessionServes(async (_appSession, origin, from) => {
       if (!couldRunAsWebsite(origin)) return
+      // Before the website's workers go: from here a worker script the shell does not serve is refused, so none is registered between the removal and the serving.
+      guardWorkerScripts(origin)
       try {
         await prepareWebsiteWorkers(websiteSessionsOf(origin, ctx.routes?.store), origin, from, clearedWorkers)
       } catch (error) {
