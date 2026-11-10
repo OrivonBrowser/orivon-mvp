@@ -1,4 +1,4 @@
-import { originHash } from '../../broker/grants/origin-hash.js'
+import { hashedPartitionName, partitionPrefix } from '../../broker/grants/origin-hash.js'
 import { localFileKey } from '../../broker/policy/origin.js'
 import { isRecordedLocalFile, localFileApps } from './local-file-apps.js'
 
@@ -9,7 +9,7 @@ import { isRecordedLocalFile, localFileApps } from './local-file-apps.js'
  */
 export const LOCAL_FILES_PARTITION = 'persist:orivon-local-files'
 
-const PER_FILE_PREFIX = 'persist:local-'
+const PER_FILE_PREFIX = partitionPrefix('local')
 
 /**
  * The session `url`, a local file, belongs in: a session of its own once the file is recorded
@@ -19,7 +19,7 @@ const PER_FILE_PREFIX = 'persist:local-'
 export function localPartitionFor (url: string): string | undefined {
   const key = localFileKey(url)
   if (key === null) return undefined
-  return isRecordedLocalFile(key) ? `${PER_FILE_PREFIX}${originHash(key)}` : LOCAL_FILES_PARTITION
+  return isRecordedLocalFile(key) ? hashedPartitionName('local', key) : LOCAL_FILES_PARTITION
 }
 
 /** Whether `partition` is the shared local-files session or a recorded file's own. */

@@ -87,6 +87,8 @@ const SPECS = {
   'network.tunnel.everywhere': { kind: 'bool', default: false },
   // Whether the IPFS and Swarm nodes Orivon runs go through the tunnel too while the whole browser does. Off: they connect directly, so IPFS and Swarm pages load at a normal speed, and the networks they ask see this computer's address (docs/architecture/security-model.md T86). Applied at once.
   'network.tunnel.nodes': { kind: 'bool', default: false },
+  // Whether a site in a tunnel profile has sign-ins of its own. On: the profiles' cookies are apart from the default session's. Off: they are kept in step (route/cookie-mirror/), and turning it back on clears the profiles' cookies. Applied at once.
+  'network.tunnel.separateSignIns': { kind: 'bool', default: true },
   // What a site may do without being asked about it, one default per kind (site-settings/kinds.ts lists them). A site's own answer overrides.
   'sites.camera': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },
   'sites.microphone': { kind: 'enum', options: ['ask', 'block'], default: 'ask' },

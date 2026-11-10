@@ -13,12 +13,13 @@ A session that follows the system takes the copy through the route controller's 
 | `read-kde.ts` | The `[Proxy Settings]` section of every `kioslaverc` read, merged and turned into `SystemSettings` the way Chromium's KDE reader makes the same files of them; reads only the keys it needs, so a credential in a server entry reaches nothing | Durable: pure |
 | `read-kde-files.ts` | Finds the `kioslaverc` files where Chromium looks for them (by `KDEHOME`, `HOME`, `XDG_CONFIG_DIRS` and the KDE generation) and opens them: a file read of at most a megabyte, three seconds | Tied to the operating system: it reads files |
 | `read-windows.ts` | `reg query` of the per-user Internet Settings key, its connection blob and the machine policy turned into `SystemSettings`, by the rule Chromium's reader follows; reads only the values it needs | Durable: pure |
+| `read-environment.ts` | The environment's `auto_proxy` turned into `SystemSettings` the way Chromium's environment reader takes it, once, and no reader at all when it is not set; the manual variables are not read | Durable: pure |
 | `run-readers.ts` | Runs `gsettings`, `reg.exe` and `/usr/sbin/scutil` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments) | Tied to the operating system: it starts a program |
 | `mirrored-config.ts` | The config for manual settings (the system's rules and exceptions, then `*.suffix` for every routed suffix) and for a script (its wrapped text as a `data:` address) | Durable: pure |
 | `pac-wrapper.ts` | The system's proxy script made into a script of Orivon's own that answers `DIRECT` for every routed name before the system's text runs, and runs that text where it cannot reach what decides it | Durable: pure text, which Chromium's PAC context runs |
 | `pac-fetch.ts` | Fetches the text of the script the system names, direct, with no cookies or credentials, at most a megabyte and 30 seconds, decoded as Chromium decodes it | Tied to Electron: it makes a session of its own and asks it |
 | `canaries.ts` | The addresses the copy is checked with: two ordinary sites and up to three the system's exceptions cover | Durable: pure |
-| `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, fetches the script the settings name when it is due, checks a copy before applying it, sets the sessions again until each has taken it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, fetch, carry or check (a copy already applied outlasts a failed read or a check with no answer) | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
+| `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, fetches the script the settings name when it is due, checks a copy before applying it, sets the sessions again until each has taken it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, fetch, carry or check (a copy already applied outlasts a failed read or a check with no answer); after each pass it tells its listeners (`onPass`) the status and Chromium's base answers | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
 | `mirror-status.ts` | What `orivon://report` and the log say about the mirror: four fixed words | Durable: pure |
 
 **What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), and
@@ -168,9 +169,23 @@ URL: the scheme and the credentials are dropped, and a `socks` server is SOCKS5 
 commas and spaces, and Chromium turns every hostname among them into a suffix match by putting a `*` in front (`corp.test` is
 `*corp.test`, which also matches `xcorp.test`); `setProxy` does not do that to the exceptions it is given, so the reader does, and leaves
 a rule for an address, a block of addresses and `<local>` as it is. No `kioslaverc`, or no type in it, is no proxy (`none`): Chromium then reads the
-environment, which Orivon already keeps the names out of. Reversed exceptions, a type 4 (the servers are names of environment variables)
+environment, whose manual variables Orivon already keeps the names out of (`no_proxy`) and whose `auto_proxy` script is not copied from here (the paragraph on the environment says why). Reversed exceptions, a type 4 (the servers are names of environment variables)
 and a server or exception that could not be written into a rule are `unsupported`.
 
-**The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`, `kde`, `windows`, `macos`), what the read came to (`manual`,
+**The environment's `auto_proxy` is the one variable read, and Chromium reads it before all the others, measured.** The source is `environment` on a desktop Chromium reads no proxy settings of its
+own for (XFCE, LXQt, any other, or none). `GetConfigFromEnv` (`net/proxy_resolution/proxy_config_service_linux.cc`, read at Chromium 152.0.7977.167) looks at `auto_proxy` first and returns at once, so measured in Electron
+44.9.3 on a session on `{ mode: 'system' }`: the script's answer holds for `http:`, `https:`, `.eth` and `.eth.` alike; it wins over `http_proxy`, `https_proxy` and `all_proxy` beside it; and `no_proxy`, which
+Orivon adds the routed suffixes to, does not apply to it (the same variables without `auto_proxy` answer `DIRECT` for `.eth` and `PROXY` for `.eth.`). The name is taken in lower case, else upper case
+(`AUTO_PROXY` alone works; both set, the lower case wins), and a variable that is set and empty is set: it shadows an upper-case one that holds an address, and it is automatic
+detection, which beats the manual variables beside it (`DIRECT` against `PROXY` without it), so it is `detect` and stays on `{ mode: 'system' }`. A value that is not an address Chromium can parse
+(a path, an address with no scheme, white space) leaves a configuration with nothing in it: the script is never asked for and every request goes direct (`none`). An address with spaces
+around it works, as does an upper-case scheme; one with `user:password@` is fetched without them by Chromium, and refused by `pac-fetch.ts` (`unfetched`). The value is read from `process.env` once, since a
+running process's environment does not change and Chromium reads it once as well; without `auto_proxy` there is no reader and the mirror polls nothing, so the manual variables stay with the
+system, where `no_proxy` leaves the names out of them. **Chromium also reads the environment when the desktop's own reader gives it no proxy, which this source does not follow.** Measured with
+`auto_proxy` set: GNOME in mode `none` answers `DIRECT`; GNOME in mode `manual` with no server, or in mode `auto` with an address that does not parse, and KDE with no `kioslaverc` or with no
+proxy type in it, answer with the script; KDE with type 0 answers `DIRECT`. The GNOME and KDE readers report those cases as `none` or `script` of the desktop's own, so a script in
+`auto_proxy` behind them is left to the system and the guard decides. A reader that falls back to `environmentSettings` when Chromium does would close it.
+
+**The report says which word, never which address.** `mirror-status.ts` holds the source (`gnome`, `kde`, `windows`, `macos`, `environment`), what the read came to (`manual`,
 `none`, `script`, `detect`, `unsupported`, `unreadable`, `unknown`), whether the sessions are mirrored or on the system's own, and why. The address of a script and its text reach neither the log nor the report.
 `gsettings` prints an `authentication-password` line, and a KDE server entry can hold `user:password@`, so no output is logged and neither parser has a field a password could reach.

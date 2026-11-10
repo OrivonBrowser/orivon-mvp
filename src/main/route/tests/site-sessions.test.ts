@@ -7,8 +7,9 @@ const TUNNEL = 'persist:tunnel-profile'
 const DIRECT = 'persist:direct-profile'
 const SITE = 'https://news.example'
 
-function setup (prepare: () => Promise<void> = async () => {}, wake: (session: SiteSession) => Promise<void> | undefined = () => undefined) {
+function setup (prepare: () => Promise<void> = async () => {}, wake: (session: SiteSession) => Promise<void> | undefined = () => undefined, fitWait: () => Promise<void> | void = () => {}) {
   const log: string[] = []
+  const fits: string[] = []
   const sessions = new Map<string, SiteSession>()
   const sessionFor = (partition: string): SiteSession => {
     let one = sessions.get(partition)
@@ -31,11 +32,11 @@ function setup (prepare: () => Promise<void> = async () => {}, wake: (session: S
     sessionFor,
     bypass: () => '*.eth',
     hold: (session, ready) => { const one = { session, ready, watched: 0 }; held.push(one); return () => { one.watched += 1 } },
-    fit: () => { log.push('fit') },
+    fit: (_session, profile, partition) => { log.push('fit'); fits.push(`${profile} ${partition}`); return fitWait() },
     prepare: (_session, persistable) => { log.push(`prepare-extensions ${String(persistable)}`) },
     wake: (session) => { log.push('wake'); return wake(session) }
   }
-  return { sites: createSiteSessions(deps), deps, held, log }
+  return { sites: createSiteSessions(deps), deps, held, log, fits }
 }
 
 describe('the sessions made in this run', () => {
@@ -50,6 +51,27 @@ describe('the sessions made in this run', () => {
 })
 
 describe('making a profile session ready', () => {
+  it('holds the session\'s requests until what the fit asked to wait for is done', async () => {
+    let release: () => void = () => {}
+    const { sites, held } = setup(undefined, undefined, async () => { await new Promise<void>((resolve) => { release = resolve }) })
+    sites.ensure(TUNNEL, true)
+    let ready = false
+    const waiting = held[0]?.ready().then(() => { ready = true })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(ready, 'the requests still wait').toBe(false)
+    release()
+    await waiting
+    expect(ready).toBe(true)
+  })
+
+  it('fits the session knowing the profile it belongs to and its own name', () => {
+    const { sites, fits } = setup()
+    sites.ensure(TUNNEL, false)
+    sites.ensure(DIRECT, false)
+    sites.ensure('direct-profile-memory', false)
+    expect(fits).toEqual(['nym persist:tunnel-profile', 'direct persist:direct-profile', 'direct direct-profile-memory'])
+  })
+
   it('prepares the tunnel profile under its own identity, with the verifier\'s names, then loads the extensions, and holds its requests until then', async () => {
     const { sites, held, log } = setup()
 

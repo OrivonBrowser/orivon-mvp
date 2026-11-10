@@ -52,6 +52,8 @@ export interface ClearDeps {
   readonly forgetNodeData?: () => Promise<void>
   /** The Website level each site last earned, which stays while a site cannot be looked at again: forgotten with site data, the cache and all history. */
   readonly forgetEarnedLevels?: () => void
+  /** The sites opened in tunnels whose sign-ins the browser keeps the same as normal browsing's (Settings, Tunnels), and the copies of their cookies in the tunnel profiles: forgotten with any history, since the list carries no times. */
+  readonly forgetMirroredSites?: () => Promise<void>
   readonly now: () => number
 }
 
@@ -107,6 +109,7 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
   if (request.cache || request.history === 'all') await attempt('nameSchemes', async () => { await deps.forgetNameSchemes() })
   if (request.cache || request.history === 'all') await attempt('nodeData', async () => { await deps.forgetNodeData?.() })
   if (request.siteData || request.cache || request.history === 'all') await attempt('earnedLevels', () => { deps.forgetEarnedLevels?.() })
+  if (request.history !== 'none') await attempt('tunnelSignIns', async () => { await deps.forgetMirroredSites?.() })
   if (request.zoomLevels) await attempt('zoomLevels', () => { deps.zoom.clear() })
   if (request.siteSettings) await attempt('siteSettings', () => { deps.siteSettings.resetAll() })
   if (request.appData) {

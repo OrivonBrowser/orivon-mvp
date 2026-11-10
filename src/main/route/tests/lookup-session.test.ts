@@ -35,4 +35,24 @@ describe('answering the front\'s challenge for a request made from main', () => 
     expect(signedIn).toHaveBeenCalledWith('orivon', 'secret')
     expect(cancelled).toHaveBeenCalledWith()
   })
+
+  it('signs in only where the given source answers, never to a front the route source would answer for', async () => {
+    const { answerChallengeOnly, setRouteChallengeSource } = await import('../lookup-session.js')
+    setRouteChallengeSource((info) => info.isProxy && info.port === 4040 ? { username: 'orivon', password: 'front' } : undefined)
+    let relay: ((info: { isProxy: boolean, host: string, port: number }) => { username: string, password: string } | undefined) | undefined
+    const answer = answerChallengeOnly(() => relay)
+    const front = vi.fn()
+    const none = vi.fn()
+    const relayed = vi.fn()
+
+    answer({ isProxy: true, host: '127.0.0.1', port: 4040 }, front)
+    answer({ isProxy: true, host: '127.0.0.1', port: 6060 }, none)
+    relay = (info) => info.isProxy && info.port === 6060 ? { username: 'orivon', password: 'relay' } : undefined
+    answer({ isProxy: true, host: '127.0.0.1', port: 6060 }, relayed)
+    answer({ isProxy: true, host: '127.0.0.1', port: 4040 }, front)
+
+    expect(front.mock.calls).toEqual([[], []])
+    expect(none).toHaveBeenCalledWith()
+    expect(relayed).toHaveBeenCalledWith('orivon', 'relay')
+  })
 })
