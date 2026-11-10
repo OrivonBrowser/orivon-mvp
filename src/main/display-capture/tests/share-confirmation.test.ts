@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createDisplayAsker } from '../display-asker.js'
 import { createDisplayGate } from '../display-gate.js'
 import { createDisplayHandler } from '../display-handler.js'
-import { createDisplayTickets, QUIET_WINDOW_MS, SUSPECT_MS } from '../display-tickets.js'
+import { CANARY_WAIT_MS, createDisplayTickets, QUIET_WINDOW_MS, SUSPECT_MS } from '../display-tickets.js'
 import { mainFrameKey } from '../frame-key.js'
 import { createShareRegistry } from '../share-registry.js'
 import type { DisplayChoice } from '../types.js'
@@ -66,9 +66,12 @@ function assemble (choice: DisplayChoice = SCREEN): {
       if (reply.type !== 'go') throw new Error('the pick was refused')
       return reply.nonce
     },
-    // The preload's step for `nonce`, answered the way Electron does: the request, then the handler inside the grant.
+    // The preload's step for `nonce`, answered the way Electron does: its canary, refused and reported, then the request,
+    // then the handler inside the grant.
     async serve (nonce) {
       gate.arm(contents, nonce)
+      if (await asker.request?.(contents, 'media', DISPLAY) === true) throw new Error('the canary was served')
+      gate.canary(contents, nonce)
       const asked = asker.request?.(contents, 'media', DISPLAY)
       gate.called(contents, nonce, false)
       await vi.advanceTimersByTimeAsync(QUIET_WINDOW_MS)
@@ -144,6 +147,24 @@ describe('a share the preload confirms or reports failed', () => {
     expect(registry.list()).toEqual([])
   })
 
+  it('never serves a request of the page\'s that reaches main after the ticket opened and ahead of the preload\'s calls: no share starts, nothing is handed to the page, and no renderer needs ending', async () => {
+    const { pick, asked, ticketless, gate, contents, registry, crashed } = assemble()
+    const nonce = await pick()
+    // The page asked in the same step as its wrapped call; the request reaches main only now, with the ticket open.
+    expect(await asked()).toBe(false)
+    gate.arm(contents, nonce)
+    // The preload's canary came behind it: it waits for a report that cannot come until it is answered.
+    const canary = asked()
+    gate.called(contents, nonce, false)
+    await vi.advanceTimersByTimeAsync(CANARY_WAIT_MS)
+    expect(await canary).toBe(false)
+    // The preload's real call, queued behind the canary, meets no ticket.
+    expect(await ticketless()).toBe(false)
+    gate.failed(contents, nonce, 'NotAllowedError')
+    expect(registry.list()).toEqual([])
+    expect(crashed).not.toHaveBeenCalled()
+  })
+
   it('does not end the renderer for a refusal of a call that never had a share', async () => {
     const { pick, gate, contents, crashed } = assemble()
     const nonce = await pick()
@@ -151,7 +172,7 @@ describe('a share the preload confirms or reports failed', () => {
     expect(crashed).not.toHaveBeenCalled()
   })
 
-  it('keeps a picked tab attached until the share starts, and lets it go when the ticket ends unused (two requests)', async () => {
+  it('keeps a picked tab attached until the share starts, and lets it go when the ticket ends unused (a canary that is never reported)', async () => {
     const tab = { id: 2, isDestroyed: () => false, mainFrame: { processId: 11, routingId: 3 } } as never
     const { pick, serve, asked, registry } = assemble({ kind: 'tab', tab, audio: false, label: 'A tab' })
     const kept = await pick()
@@ -164,6 +185,8 @@ describe('a share the preload confirms or reports failed', () => {
     void asked()
     void asked()
     expect(lost).not.toBe(kept)
+    expect(registry.capturePending(tab)).toBe(true)
+    await vi.advanceTimersByTimeAsync(CANARY_WAIT_MS)
     expect(registry.capturePending(tab)).toBe(false)
   })
 })
