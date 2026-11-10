@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { reloadStalePage, reloadStalePagesOfNewlyServed } from '../stale-pages.js'
+import { enteringPage, isEnteringPage, reloadStalePage, reloadStalePagesOfNewlyServed } from '../stale-pages.js'
 
 // An origin the shell starts to serve where websites run: the pages the website left open must not stay as they were.
 
@@ -101,5 +101,16 @@ describe('reloading one stale page', () => {
     page.isDestroyed.mockReturnValue(true)
     reloadStalePage(page as never)
     expect(page.reloadIgnoringCache).not.toHaveBeenCalled()
+  })
+})
+
+describe('the page a visit is sending into the app', () => {
+  it('is marked while the visit has it, and the pages that load again can leave it out', () => {
+    const page = {}
+    expect(isEnteringPage(page)).toBe(false)
+    const release = enteringPage(page)
+    expect(isEnteringPage(page)).toBe(true)
+    release()
+    expect(isEnteringPage(page)).toBe(false)
   })
 })

@@ -4,6 +4,19 @@
 // is the app's takes the app tab's place (`../shell/tab-view.ts`).
 import type { WebContents } from 'electron'
 
+const entering = new WeakSet<object>()
+
+/** `page` is being sent into the app by the visit that serves it: a load of its own follows, so the pages that load again leave it out. Returns the end of that. */
+export function enteringPage (page: object): () => void {
+  entering.add(page)
+  return () => { entering.delete(page) }
+}
+
+/** Whether `page` is being sent into the app (`enteringPage`). */
+export function isEnteringPage (page: object): boolean {
+  return entering.has(page)
+}
+
 export interface StalePagesDeps<Page> {
   /** The origins that run where websites run and are served now, whole each time. */
   readonly served: () => readonly string[]

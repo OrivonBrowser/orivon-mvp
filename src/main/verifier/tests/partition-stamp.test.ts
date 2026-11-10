@@ -17,8 +17,7 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
 const { registerAppOrigin, retireAppOrigin } = await import('../../../loader/electron/app-partitions.js')
 const { installPartitionStamp, installShellAnswerWatch } = await import('../partition-stamp.js')
 const { takeShellAnswered, forgetShellAnswered } = await import('../../sessions/shell-answered.js')
-const { OWN_READ_HEADER, SHELL_ANSWERED_HEADER } = await import('../../../loader/fetch/content-root.js')
-const { ownReadToken } = await import('../../../loader/fetch/own-read.js')
+const { SHELL_ANSWERED_HEADER } = await import('../../../loader/fetch/content-root.js')
 
 const HOST_ORIGIN = 'https://stamped.eth'
 
@@ -57,18 +56,6 @@ describe('the HTTP cache a request of a served app is kept out of', () => {
   it('leaves everything in the cache for an origin the shell does not serve', () => {
     const request = send(`${HOST_ORIGIN}/`, undefined, { 'Sec-Fetch-Site': 'none', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' })
     expect(request['If-Match']).toBeUndefined()
-  })
-})
-
-describe('the shell\'s own reads and the HTTP cache', () => {
-  it('keeps a read of the shell\'s own out of the cache of the session it is made in, which a profile\'s live read would otherwise fill and read', () => {
-    const own = send(`${HOST_ORIGIN}/app.js`, undefined, { 'Sec-Fetch-Site': 'none', [OWN_READ_HEADER]: ownReadToken() })
-    expect(own['If-Match']).toBe('*')
-  })
-
-  it('leaves a request that only claims to be the shell\'s own in the cache rules of any other request', () => {
-    const claim = send(`${HOST_ORIGIN}/app.js`, 'https://evil.example/', { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'no-cors', 'Sec-Fetch-Dest': 'script', [OWN_READ_HEADER]: 'a-guess' })
-    expect(claim['If-Match']).toBeUndefined()
   })
 })
 

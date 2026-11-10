@@ -4,9 +4,7 @@
 
 import { webContents } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
-import { OWN_READ_HEADER, PARTITION_HEADER, ROUTE_HEADER, SHELL_ANSWERED_HEADER } from '../../loader/fetch/content-root.js'
-import { requestHeader } from '../../loader/fetch/own-site-request.js'
-import { ownReadToken } from '../../loader/fetch/own-read.js'
+import { PARTITION_HEADER, ROUTE_HEADER, SHELL_ANSWERED_HEADER } from '../../loader/fetch/content-root.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { noteMainFrameResponse } from '../sessions/shell-answered.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
@@ -51,8 +49,7 @@ export function verifiedHostFilter (): WebRequestFilter {
  * through that tunnel.
  * A request the verifier hands to the shell (`shell-serves.ts`'s `isHandedToShell`) is also kept out of the
  * HTTP cache, read and write: the session's cache may hold bytes from before the site was served that the shell's check never
- * saw (see README.md's Design notes). So is a read of the shell's own: in a tunnel profile's session its live reads would
- * otherwise fill and read the cache the profile's pages share.
+ * saw (see README.md's Design notes).
  */
 export function installPartitionStamp (target: Session, tunnel: TunnelRoute | undefined): void {
   webRequestOwnerFor(target).onBeforeSendHeaders(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
@@ -65,8 +62,7 @@ export function installPartitionStamp (target: Session, tunnel: TunnelRoute | un
     const partition = requestPartition({ url: details.url, resourceType: details.resourceType, topUrl: frame?.top?.url })
     const stamped = withRoute(withPartition(current.requestHeaders, PARTITION_HEADER, partition), ROUTE_HEADER, tunnel)
     // The stamped headers: the host decides on what it receives, and the stamp is part of its rule.
-    const kept = isHandedToShell(details.url, stamped) || requestHeader(stamped, OWN_READ_HEADER) === ownReadToken()
-    return { ...current, requestHeaders: kept ? withoutHttpCache(stamped) : stamped }
+    return { ...current, requestHeaders: isHandedToShell(details.url, stamped) ? withoutHttpCache(stamped) : stamped }
   })
 }
 

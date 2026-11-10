@@ -107,8 +107,7 @@ session where the extensions are.
   host awake, a request for its host waits until the host listens, and the shell sends the host the hosts it serves
   before any held request is let go, on a start and on a restart alike.
 - A request the host relays never touches the shared session's HTTP cache, so bytes a website cached at the same address
-  cannot answer the app's request; neither does a read the shell makes of its own, so a profile's live read never fills
-  or reads the cache that profile's pages share. The service workers and Cache Storage the origin held as a website are removed each
+  cannot answer the app's request. The service workers and Cache Storage the origin held as a website are removed each
   time the app is served live there, and once at a start for an app served from its pin (one that moved from a partition of
   its own finds them in the shared session), because they would run code nothing checked.
 - A website's page that was open when its origin became an app keeps no `window.opener` link to a popup it opens to the

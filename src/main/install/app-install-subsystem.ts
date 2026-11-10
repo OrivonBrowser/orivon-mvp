@@ -50,7 +50,7 @@ import { beforeAppSessionServes, isOriginServedFromCacheSync, onAppOriginRetired
 import { couldRunAsWebsite, hasOwnPartition, runsAsWebsite } from '../shell/app-session.js'
 import { appTabContents } from '../shell/tab-partition.js'
 import { clearedOriginsIn, clearedOriginsInMemory, prepareWebsiteWorkers } from '../sessions/website-workers.js'
-import { reloadStalePage, reloadStalePagesOfNewlyServed } from '../sessions/stale-pages.js'
+import { enteringPage, isEnteringPage, reloadStalePage, reloadStalePagesOfNewlyServed } from '../sessions/stale-pages.js'
 import type { Profile } from '../route/site-partition.js'
 import { profilePartitionsHolding } from '../route/site-partition.js'
 import { sitePartitionForOrigin } from '../route/site-routes.js'
@@ -58,6 +58,7 @@ import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
 import { ownFetch } from '../route/own-requests.js'
 import { blockOpenTabs } from '../app-setup/block-tabs.js'
 import { pagesOfOrigin } from '../app-setup/pages-of-origin.js'
+import { enteringTab } from '../app-setup/entering-tab.js'
 import { asOwnRead } from '../../loader/fetch/own-read.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
@@ -195,14 +196,14 @@ export const appInstallSubsystem: Subsystem = {
       }
     })
     // The website's pages still open when the app starts to be served load again, so none of them stays as the website left it (`../sessions/stale-pages.ts`).
-    reloadStalePagesOfNewlyServed({ served: () => servedOrigins().filter(runsAsWebsite), pagesOf: pagesOfOrigin, isAppPage: (page) => appTabContents.has(page), reload: reloadStalePage, onServingChange })
+    reloadStalePagesOfNewlyServed({ served: () => servedOrigins().filter(runsAsWebsite), pagesOf: pagesOfOrigin, isAppPage: (page) => appTabContents.has(page) || isEnteringPage(page), reload: reloadStalePage, onServingChange })
     // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
     // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     const firstVisit = createFirstVisit({
-      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
+      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), entering: enteringTab, askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     })
