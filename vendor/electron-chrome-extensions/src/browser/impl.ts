@@ -42,6 +42,14 @@ export interface ChromeExtensionImpl {
   windowOf?(contents: Electron.WebContents): Electron.BaseWindow | undefined
 
   /**
+   * Orivon patch (UPSTREAM.md patch 76): whether the page in front of `window` is a tab that some library
+   * instance tracks (this one or another's). A click or `chrome.action.openPopup()` with no tab of this
+   * instance in front opens a popup with no tab only when this answers false (an Orivon page, a tab of a
+   * session no extension is in). Unset: false.
+   */
+  frontTracked?(window: Electron.BaseWindow): boolean
+
+  /**
    * Orivon patch (UPSTREAM.md patch 70): the pages of the extension that are not tabs and not its popup, such
    * as a side panel's page, with the window each one belongs to. `chrome.runtime.getContexts` lists them.
    */

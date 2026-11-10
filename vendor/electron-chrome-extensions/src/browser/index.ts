@@ -282,12 +282,12 @@ export class ElectronChromeExtensions extends EventEmitter {
   }
 
   /**
-   * Orivon patch (UPSTREAM.md patch 46): click `extensionId`'s action on
-   * `tab`, counted as an invocation. Orivon's own trusted code only: no
-   * extension message reaches it.
+   * Orivon patch (UPSTREAM.md patch 46): click `extensionId`'s action
+   * in `window`, counted as an invocation. Orivon's own trusted code only: no
+   * extension message reaches it. Patch 76: it acts on what is in front of `window`.
    */
-  activateAction(extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void {
-    this.api.browserAction.activateFromMain(extensionId, tab, anchor)
+  activateAction(extensionId: string, window: Electron.BaseWindow, anchor: Electron.Rectangle): void {
+    this.api.browserAction.activateFromMain(extensionId, window, anchor)
   }
 
   /** Orivon patch (UPSTREAM.md patch 46): tells the toolbar its list changed. */

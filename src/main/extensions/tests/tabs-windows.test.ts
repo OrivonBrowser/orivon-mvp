@@ -166,6 +166,32 @@ describe('which tab is active in each window', () => {
     expect(active.sort()).toEqual([tabA.id, tabB2.id].sort())
   })
 
+  it('reports no tab active in a window the host says has none in front (UPSTREAM.md patch 76)', () => {
+    const { store, call } = setup()
+    const win = fakeWindow()
+    const other = fakeWindow()
+    const tab = fakeTab()
+    const elsewhere = fakeTab()
+    store.addTab(tab, win)
+    store.addTab(elsewhere, other)
+    call('tabs.query', extensionEvent(), {})
+    store.clearActiveTab(win)
+    expect(call('tabs.query', extensionEvent(), { active: true }).map((t: any) => t.id)).toEqual([elsewhere.id])
+    expect(call('tabs.query', extensionEvent(), { active: false }).map((t: any) => t.id)).toEqual([tab.id])
+  })
+
+  it('gives the front place to a tab added after the window had none in front, with the old one inactive', () => {
+    const { store, tabs, call } = setup()
+    const win = fakeWindow()
+    const old = fakeTab()
+    const fresh = fakeTab()
+    store.addTab(old, win)
+    store.clearActiveTab(win)
+    store.addTab(fresh, win)
+    tabs.onActivated(fresh.id)
+    expect(call('tabs.query', extensionEvent(), { active: true }).map((t: any) => t.id)).toEqual([fresh.id])
+  })
+
   it('keeps the front tab when another opens behind it, and says nothing of the new one', () => {
     const { store, events } = setup()
     const win = fakeWindow()
