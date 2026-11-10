@@ -2,15 +2,7 @@
 // proxies it may use, in order, a first `DIRECT`, or a reason to refuse. Pure: no `electron`.
 
 import { isIP } from 'node:net'
-
-export type ProxyKind = 'http' | 'https' | 'socks5' | 'socks4'
-
-/** One proxy of the answer. `host` has no brackets, so an IPv6 literal can be handed to `node:net` as it is. */
-export interface ProxyEntry {
-  readonly kind: ProxyKind
-  readonly host: string
-  readonly port: number
-}
+import type { ProxyEntry } from './proxied-lookup.js'
 
 export type ProxyAnswer =
   /** The system sends this connection outside any proxy. */
@@ -22,13 +14,13 @@ export type ProxyAnswer =
   /** Not an answer Chromium gives, so Orivon cannot tell what the system says. */
   | { readonly kind: 'junk' }
 
-const SCHEMES: Readonly<Record<string, { readonly kind: ProxyKind, readonly port: number } | 'quic'>> = {
-  PROXY: { kind: 'http', port: 80 },
-  HTTP: { kind: 'http', port: 80 },
-  HTTPS: { kind: 'https', port: 443 },
-  SOCKS: { kind: 'socks4', port: 1080 },
-  SOCKS4: { kind: 'socks4', port: 1080 },
-  SOCKS5: { kind: 'socks5', port: 1080 },
+const SCHEMES: Readonly<Record<string, { readonly scheme: ProxyEntry['scheme'], readonly port: number } | 'quic'>> = {
+  PROXY: { scheme: 'http', port: 80 },
+  HTTP: { scheme: 'http', port: 80 },
+  HTTPS: { scheme: 'https', port: 443 },
+  SOCKS: { scheme: 'socks4', port: 1080 },
+  SOCKS4: { scheme: 'socks4', port: 1080 },
+  SOCKS5: { scheme: 'socks5', port: 1080 },
   QUIC: 'quic'
 }
 
@@ -77,7 +69,7 @@ export function parseProxyAnswer (answer: string): ProxyAnswer {
     const target = hostAndPort(fields[2] ?? '', scheme === 'quic' ? 443 : scheme.port)
     if (target === undefined) return { kind: 'junk' }
     proxiesSeen += 1
-    if (scheme !== 'quic') entries.push({ kind: scheme.kind, ...target })
+    if (scheme !== 'quic') entries.push({ scheme: scheme.scheme, ...target })
   }
   if (proxiesSeen === 0) return { kind: 'junk' }
   return entries.length === 0 ? { kind: 'refused' } : { kind: 'proxies', entries }
@@ -96,5 +88,5 @@ function onThisComputer (host: string): boolean {
  * Provisional: an anonymity network on other ports cannot be recognised.
  */
 export function onAnonymityPort (entry: ProxyEntry): boolean {
-  return (entry.kind === 'socks5' || entry.kind === 'socks4') && TOR_PORTS.has(entry.port) && onThisComputer(entry.host)
+  return (entry.scheme === 'socks5' || entry.scheme === 'socks4') && TOR_PORTS.has(entry.port) && onThisComputer(entry.host)
 }

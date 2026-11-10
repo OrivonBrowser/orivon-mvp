@@ -11,7 +11,9 @@ import { ROUTED_NAME_NOT_CARRIED } from '../front.js'
 import type { FrontTarget } from '../front.js'
 import { keepResolverOrder, MAX_ADDRESSES, orderForProxy } from './addresses.js'
 import { onAnonymityPort, parseProxyAnswer } from './proxy-answer.js'
-import type { ProxyAnswer, ProxyEntry } from './proxy-answer.js'
+import type { ProxyAnswer } from './proxy-answer.js'
+import { LookupRefusal } from './proxied-lookup.js'
+import type { LookupAnswer, NameLookup, ProxyEntry } from './proxied-lookup.js'
 import { RelayRefusal } from './relay-failures.js'
 import type { RelayFailures } from './relay-failures.js'
 import { abandoned, connectDirect, connectThroughProxy, UpstreamFailure } from './upstream.js'
@@ -20,28 +22,16 @@ import type { UpstreamOptions } from './upstream.js'
 /** How many connections the relay carries at once, the opening ones included. */
 export const RELAY_MAX_OPEN = 512
 
-export interface RelayLookupQuery {
-  readonly host: string
-  readonly family: 4 | 6
-  /** The proxy the connection will leave by: the lookup is sent through it and answered for where it leaves. */
-  readonly via: ProxyEntry
-  readonly signal: AbortSignal
-}
-
-/**
- * The addresses `host` has in one family, empty when it has none. It rejects with a `RelayRefusal` to say why it could not
- * answer: `not-found`, `no-answer`, `sign-in`, or `unreachable` when `via` cannot be passed through (the next proxy of the
- * list is tried); any other rejection counts as `no-answer`.
- */
-export type RelayLookup = (query: RelayLookupQuery) => Promise<readonly string[]>
-
 /** The addresses this computer gives `host`, for a connection the system sends outside any proxy. A rejection counts as no address. */
 export type DirectLookup = (host: string, signal: AbortSignal) => Promise<readonly string[]>
 
 export interface RelayOpenerDeps {
   /** Which proxy the system names for a URL: T20's `resolveProxy` string. */
   readonly systemAnswer: (url: string) => Promise<string>
-  readonly lookup: RelayLookup
+  /** Looks a name up through the proxy it will leave by: IPv4 first, and the IPv6 addresses in `more` when the answer did not wait for them. A `LookupRefusal` with `unreachable` says the proxy cannot be passed through, and the next of the list is tried. */
+  readonly lookup: NameLookup
+  /** Forgets what the lookup knows of `host` through `via`, for a connection whose every address failed. */
+  readonly drop: (host: string, via: ProxyEntry) => void
   readonly lookupDirect: DirectLookup
   readonly failures: RelayFailures
   readonly maxOpen?: number
@@ -67,9 +57,6 @@ function asChromiumReads (target: FrontTarget): FrontTarget | undefined {
 /** This proxy cannot be used, and the next of the list is worth a try. */
 class ProxyDown extends Error {}
 
-/** What a lookup of one family came to; it never rejects. */
-type Settled = { readonly addresses: readonly string[] } | { readonly refusal: RelayRefusal }
-
 async function untilAbandoned<T> (work: Promise<T>, signal: AbortSignal): Promise<T> {
   return await new Promise((resolve, reject) => {
     if (signal.aborted) { reject(abandoned()); return }
@@ -79,11 +66,13 @@ async function untilAbandoned<T> (work: Promise<T>, signal: AbortSignal): Promis
   })
 }
 
-async function settle (ask: () => Promise<readonly string[]>, signal: AbortSignal): Promise<Settled> {
+/** The addresses of a round of the answer; a round that fails to arrive has none. */
+async function addressesOf (round: Promise<readonly string[]>, signal: AbortSignal): Promise<readonly string[]> {
   try {
-    return { addresses: await untilAbandoned(ask(), signal) }
-  } catch (error) {
-    return { refusal: error instanceof RelayRefusal ? error : new RelayRefusal('no-answer') }
+    return await untilAbandoned(round, signal)
+  } catch {
+    if (signal.aborted) throw abandoned()
+    return []
   }
 }
 
@@ -91,21 +80,33 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
   const maxOpen = deps.maxOpen ?? RELAY_MAX_OPEN
   let active = 0
 
+  /** What the lookup found for `host` through `entry`, or why it found nothing. */
+  async function lookUp (host: string, entry: ProxyEntry, signal: AbortSignal): Promise<LookupAnswer> {
+    try {
+      return await untilAbandoned((async () => await deps.lookup(host, entry))(), signal)
+    } catch (error) {
+      if (signal.aborted) throw abandoned()
+      const word = error instanceof LookupRefusal ? error.word : 'no-answer'
+      if (word === 'unreachable') throw new ProxyDown()
+      throw new RelayRefusal(word)
+    }
+  }
+
   async function throughProxy (target: FrontTarget, entry: ProxyEntry): Promise<Socket> {
     const { host, port, signal } = target
-    // SOCKS4 carries IPv4 only, so an IPv6 lookup would be asked for nothing.
-    const families: Array<Promise<Settled>> = isIP(host) !== 0
-      ? [Promise.resolve({ addresses: [host] })]
-      : (entry.kind === 'socks4' ? [4 as const] : [4 as const, 6 as const]).map((family) => settle(async () => await deps.lookup({ host, family, via: entry, signal }), signal))
+    const named = isIP(host) === 0
+    const found: LookupAnswer = named ? await lookUp(host, entry, signal) : { addresses: [host] }
+    const rounds = [Promise.resolve(found.addresses), ...(found.more === undefined ? [] : [found.more])]
     let tried = 0
     let inside = 0
-    const refusals: RelayRefusal[] = []
-    // A family is awaited only once the addresses before it have failed, so the first answer to arrive starts the connecting.
-    for (const family of families) {
-      const settled = await family
-      if (signal.aborted) throw abandoned()
-      if ('refusal' in settled) { refusals.push(settled.refusal); continue }
-      const ordered = orderForProxy(settled.addresses, MAX_ADDRESSES - tried)
+    let unsupported = 0
+    // The IPv6 addresses are awaited only once the IPv4 ones have failed, so the first answer to arrive starts the connecting.
+    for (const round of rounds) {
+      const answered = await addressesOf(round, signal)
+      // SOCKS4 carries IPv4 only.
+      const carried = entry.scheme === 'socks4' ? answered.filter((address) => isIP(address) === 4) : answered
+      unsupported += answered.length - carried.length
+      const ordered = orderForProxy(carried, MAX_ADDRESSES - tried)
       inside += ordered.inside
       for (const address of ordered.usable) {
         tried += 1
@@ -119,11 +120,12 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
         }
       }
     }
-    if (tried > 0) throw new RelayRefusal('unreachable')
+    if (tried > 0) {
+      if (named) deps.drop(host, entry)
+      throw new RelayRefusal('unreachable')
+    }
     if (inside > 0) throw new RelayRefusal('inside')
-    const unanswered = refusals.find((refusal) => refusal.word !== 'not-found')
-    if (unanswered?.word === 'unreachable') throw new ProxyDown()
-    throw unanswered ?? new RelayRefusal('not-found')
+    throw new RelayRefusal(unsupported > 0 ? 'unreachable' : 'not-found')
   }
 
   async function openDirect (target: FrontTarget): Promise<Socket> {

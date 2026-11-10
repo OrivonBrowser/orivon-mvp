@@ -8,7 +8,7 @@ import { connect as tlsConnect, getCACertificates } from 'node:tls'
 import { SocksClient } from 'socks'
 import { createSocks5Provider } from '../../../broker/route/socks5.js'
 import { nextAddressAfterSocks, nextAddressAfterStatus } from './addresses.js'
-import type { ProxyEntry } from './proxy-answer.js'
+import type { ProxyEntry } from './proxied-lookup.js'
 
 /** How long each step of reaching an address (connecting, then the proxy's answer) may take. */
 export const UPSTREAM_TIMEOUT_MS = 15_000
@@ -72,7 +72,7 @@ function trustedRoots (): string[] | undefined {
 
 async function dialProxy (proxy: ProxyEntry, signal: AbortSignal, options: UpstreamOptions): Promise<Socket> {
   const timeoutMs = options.timeoutMs ?? UPSTREAM_TIMEOUT_MS
-  if (proxy.kind === 'https') {
+  if (proxy.scheme === 'https') {
     const ca = options.roots === undefined ? trustedRoots() : [...options.roots]
     const secure = tlsConnect({ host: proxy.host, port: proxy.port, ...(isIP(proxy.host) === 0 ? { servername: proxy.host } : {}), ...(ca === undefined ? {} : { ca }) })
     return await readied(secure, 'secureConnect', signal, timeoutMs, 'proxy')
@@ -183,9 +183,9 @@ async function viaSocks5 (proxy: ProxyEntry, address: string, port: number, sign
  * `AbortError` when `signal` fires first. SOCKS4 carries IPv4 only.
  */
 export async function connectThroughProxy (proxy: ProxyEntry, address: string, port: number, signal: AbortSignal, options: UpstreamOptions = {}): Promise<Socket> {
-  if (proxy.kind === 'socks4' && isIP(address) !== 4) throw new UpstreamFailure('address', 'unreachable')
-  if (proxy.kind === 'socks5') return await viaSocks5(proxy, address, port, signal, options)
-  if (proxy.kind === 'socks4') return await viaSocks4(proxy, address, port, signal, options)
+  if (proxy.scheme === 'socks4' && isIP(address) !== 4) throw new UpstreamFailure('address', 'unreachable')
+  if (proxy.scheme === 'socks5') return await viaSocks5(proxy, address, port, signal, options)
+  if (proxy.scheme === 'socks4') return await viaSocks4(proxy, address, port, signal, options)
   return await tunnel(await dialProxy(proxy, signal, options), address, port, signal, options.timeoutMs ?? UPSTREAM_TIMEOUT_MS)
 }
 
