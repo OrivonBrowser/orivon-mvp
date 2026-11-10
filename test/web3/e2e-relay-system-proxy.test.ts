@@ -34,9 +34,13 @@ const MACOS = process.platform === 'darwin'
 /** The macOS case writes the computer's network settings, so it runs only on a runner that is thrown away. */
 const ON_RUNNER = MACOS && process.env['GITHUB_ACTIONS'] === 'true'
 const SETUP_TIMEOUT_MS = 480_000
+/** Closing the shell and five servers, one of them with tunnels open, on a loaded runner. */
+const CLEANUP_TIMEOUT_MS = 60_000
 
 /** The site's name, the address the fake DNS server gives it (a documentation address: nothing answers there), and the DNS host the lookups go to. */
 const NAME = 'site.relay.test'
+/** A name never visited before the switch is turned off: an idle tunnel from an earlier visit may carry a later request to the same name without a new CONNECT. */
+const BACK = 'back.relay.test'
 const ADDRESS = '203.0.113.7'
 const DOH_HOST = 'dns.relay.test'
 /** Where the page's icon is: another host, which the shell reads for the tab (a caller that checks the address before it reads). */
@@ -160,6 +164,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     directSite = await startFakeSite('direct host')
     // Behind this proxy a connection to the site's name and one to its address both reach the site, and the DNS host reaches the fake server.
     proxy.tunnelTo(NAME, tlsSite.port)
+    proxy.tunnelTo(BACK, tlsSite.port)
     proxy.tunnelTo(`${ADDRESS}:443`, tlsSite.port)
     proxy.tunnelTo(`${ADDRESS}:80`, plainSite.port)
     proxy.tunnelTo(`${ICON_ADDRESS}:443`, tlsSite.port)
@@ -230,7 +235,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     const dohBefore = doh.asked.length
     await setRelaySwitch(app, chrome, false)
     const answer = await waitForAnswer(app, `https://${NAME}/`, new RegExp(`^PROXY 127\\.0\\.0\\.1:${String(proxy.port)}$`), 30_000)
-    const again = await visit(app, chrome, `https://${NAME}/again`, 'relayed site /again')
+    const again = await visit(app, chrome, `https://${BACK}/again`, 'relayed site /again')
     const reported = await reportedRelay(app, chrome, (fact) => fact.state === 'off')
     const after = { visit: again, seen: asked(proxy.seen.slice(afterMark)), answer, rtc: await rtcPolicies(app), dohAsked: doh.asked.length - dohBefore, reported }
     facts = { off, on, refusals: { missing, broken, unreachable, signIn }, reportedOn, after }
@@ -245,7 +250,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     await plainSite.close()
     await directSite.close()
     settings.restore()
-  })
+  }, CLEANUP_TIMEOUT_MS)
 
   it('with the setting off, asks the proxy for the site by name, as before', () => {
     expect(facts.off.visit.result, JSON.stringify(facts.off.visit)).toBe('page')
@@ -344,7 +349,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
   it('brings names back to the proxy when it is turned off in the middle of a run', () => {
     expect(facts.after.answer).toBe(`PROXY 127.0.0.1:${String(proxy.port)}`)
     expect(facts.after.visit.result, JSON.stringify(facts.after.visit)).toBe('page')
-    expect(facts.after.seen).toContain(`CONNECT ${NAME}:443`)
+    expect(facts.after.seen).toContain(`CONNECT ${BACK}:443`)
     expect(facts.after.dohAsked).toBe(0)
     expect(facts.after.reported.fact?.state).toBe('off')
     expect(facts.after.reported.fact?.resolver).toBe('setting')
