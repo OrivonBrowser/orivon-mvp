@@ -1,14 +1,11 @@
 # Orivon Browser: agent operating instructions
 
-The human documentation is the map; this file holds only what an agent needs on every turn.
-**Load the `orivon-workflow` skill at the start of a build step and before opening a PR**: it
-holds the tooling table, the review shape, the build-step-end checklist and the `gh` workarounds.
-**Load the `orivon-qa` skill before changing the shell UI, a user flow, or anything at a security
-boundary, and again before calling such a change done**: it says which QA to run, how to read a
-failure and a screenshot, and why a check is never weakened to pass. Compiling is not done.
+The human documentation is the map; this file holds only what an agent needs on every turn.  
+**Load the `orivon-workflow` skill at the start of a build step and before opening a PR**: it holds the tooling table, the review shape, the build-step-end checklist and the `gh` workarounds.
 
-Status: `README.md`. What is next: `docs/roadmap.md`. What ships: `docs/features.md`. What works
-today: `docs/planning/compatibility-matrix.md`.
+**Load the `orivon-qa` skill before changing the shell UI, a user flow, or anything at a security boundary, and again before calling such a change done**: it says which QA to run, how to read a failure and a screenshot, and why a check is never weakened to pass. Compiling is not done.
+
+Status: `README.md`. What is next: `docs/roadmap.md`. What ships: `docs/features.md`. What works today: `docs/planning/compatibility-matrix.md`.
 
 ## Read before
 
@@ -31,56 +28,39 @@ today: `docs/planning/compatibility-matrix.md`.
 
 ## The load-bearing idea
 
-The durable asset is the capability API (`orivon.*`), written as types in `src/contracts/`. A
-shortcut in `src/main/` costs a refactor of code tied to Electron; a shortcut in
-`src/contracts/` costs every app ever written for Orivon.
+The durable asset is the capability API (`orivon.*`), written as types in `src/contracts/`.  
+A shortcut in `src/main/` costs a refactor of code tied to Electron;
+A shortcut in `src/contracts/` costs every app ever written for Orivon.
 
 ## Rules
 
 Other pages cite these by number: a new rule goes at the end, and none is renumbered.
 
-1. **Do not silently promote assumptions into architecture.** A choice that is load-bearing and
-   reversible only at cost gets an ADR (`docs/decisions/ADR-0000-template.md`).
-2. **Public code and docs say how Orivon works now: never who decided it, never how it got
-   there.** Dates, decision IDs and names go in `docs/decisions/`; history stays in git. No
-   "used to", no "corrected <date>", no PR numbers, no struck-through rows. A rejected
-   alternative may stay as a reason, never as a story. Mark an unconfirmed call *provisional*
-   and say what would settle it. Exempt: `CHANGELOG.md`, `docs/decisions/`,
-   `docs/open-questions.md`, the readability and review-coverage logs, `devlog/`, and
-   `docs/planning/` except `compatibility-matrix.md`.
-3. **Surface contradictions, never smooth them over.** One you can settle from the repository is
-   fixed in place and named in the PR. One that blocks you, because only the owner can answer it,
-   is filed in `docs/open-questions.md` in its fixed shape (12 lines at most); a resolved entry
-   becomes one row in `docs/decisions/resolved-questions.md`. A page found wrong is rewritten to
-   be right, never given a correction block.
-4. **Build a feature when a need calls for it**: a real app, a user, a roadmap item, or the
-   success metric (its numbers are kept in `CLAUDE.local.md`). Name the need first;
-   `docs/features.md` records what lands. When scope is why you stop, say so plainly.
+1. **Do not silently promote assumptions into architecture.** A choice that is load-bearing and reversible only at cost gets an ADR at docs/decisions/ADR-0000-template.md
+2. **Public code and docs say how Orivon works now: never who decided it, never how it got there,** dates, decision IDs and names go in `docs/decisions/`; history stays in git. A rejected alternative may stay as a reason, never as a story. Mark an unconfirmed call *provisional* and say what would settle it
+Exempt: `CHANGELOG.md`, `docs/decisions/`, `docs/open-questions.md`, the readability and review-coverage logs, `devlog/`, and `docs/planning/` except `compatibility-matrix.md`.
+3. **Surface contradictions, never smooth them over.** One you can settle from the repository is fixed in place and named in the PR. One that blocks you, because only the owner can answer it, is filed in `docs/open-questions.md` in its fixed shape (12 lines at most); a resolved entry becomes one row in `docs/decisions/resolved-questions.md`. A page found wrong is rewritten to be right, never given a correction block.
+4. **Propose to build a feature when a need calls for it**: `docs/features.md` records what lands. When scope is why you stop, say so plainly.
 5. **Label every component durable or tied to Electron** (`ARCHITECTURE.md` section Where things live).
-6. **Prefer mature components.** Build, use a library, fork, embed, or define an interface; do
-   not reinvent without a written reason.
+6. **Prefer mature components.** Build, use a library, fork, embed, or define an interface; do not reinvent without a written reason.
 7. **Don't over-document trivia**, and don't create abstractions for elegance alone.
-8. **No native modules in Orivon's own dependencies**: they break run-from-source on Windows and
-   macOS. JavaScript and WebAssembly pass. This bounds this repository's `npm install`, never
-   the apps Orivon runs (ADR-0036).
-9. **Say which scope a sentence bounds**: this build, this repository, or the project. Never
-   state a boundary of this build as permanent, or an aspiration as a plan here. Worked
-   examples: `docs/development/readability-log.md` section What these rounds changed.
+8. **No native modules in Orivon's own dependencies**: they break run-from-source on Windows and macOS. JavaScript and WebAssembly pass. This bounds this repository's `npm install`, never the apps Orivon runs (ADR-0036).
+9. **Say which scope a sentence bounds**: this build, this repository, or the project. Never state a boundary of this build as permanent, or an aspiration as a plan here. Worked examples: `docs/development/readability-log.md` section What these rounds changed.
 10. **Remove worktrees once their work is on `main`**: `node scripts/worktree-gc.mjs --remove`.
-11. **A rule the owner states twice goes into the repository in the same session**: a hook, a
-    guard or a line here, never only memory. Memory is keyed to the checkout path and stops
-    loading after a move.
-12. **If you create a PR, always ensure it has no merge conflicts and its CI checks pass**: `check`, and the e2e shards CI selected for what changed. A shard that fails on a spec your change cannot reach is rerun and named a flake in the PR, never ignored.
-13. **Ask questions trough the tool** and never stop working until feedback/decision from owner is the only real bottleneck, owner may be sleeping, and his response should not be the reason for you to stop unless there is no other way around.
-14. **Merge session changes in a PR's by yourself**, unless owner decision is critical. Same for orivon-ports repo operations as well. This is preferred for faster development. Most of the times if you wait for my approval to merge a PR to main you will end un in a conflict loop, since development goes so fast. If you don't merge it state it very clearly at the end of the prompt. Don't do it when the user just asks for a quick reply.
-15. **Prevent heavy work from crashing VSCodium**, you should still stay highly productive, but pay attention on heavy tasks that may crash VSCodium at all, that shouldn't never happen
-16. **Use always latest Opus for planning/orchestration, latest Sonnet for execution/coding agent and latest Haiku as the reader, scribe, donkey work agent to save tokens (behave somewhat like opusplan but automatically)**
-17. **Fix long-term AI optimization issues**, if you find any issue you incur as AI and wastes too many tokens, ensure that the future AI's doesn't fall for the same issue as well, apply a long term automated or simpler solution to that problem or procedure
-22. **Always ask owner confirm before updating the CLAUDE.md**
-23. **Testing and debugging major changes/features includes testing interactively Windows and MacOS by default**
-24. **Every functionality should be debuggable when a problem incurs user reports a problem on orivon://report**
-25. **Batch reads, and hand searches to the `reader` agent.** Every turn re-reads the whole context, so independent reads, greps and `git` queries go in one turn, and a search of three or more steps goes to `reader` (Haiku), which returns file:line and the quoted lines.
-26. **Give each implementer one PR's worth of work.** A longer brief grows its context past the compaction point, and a compacted agent loses the detail it was working from.
+11. **If you create a PR, always ensure it has no merge conflicts and its CI checks pass**: `check`, and the e2e shards CI selected for what changed. A shard that fails on a spec your change cannot reach is rerun and named a flake in the PR, never ignored.
+12. **Ask questions trough the tool** and never stop working until feedback/decision from owner is the only real bottleneck, owner might be sleeping, and his response should not be the reason for you to stop unless there is no other way around.
+13. **Merge session changes in a PR's by yourself**, unless owner decision is critical. Same for orivon-ports repo operations as well. This is preferred for faster development. Most of the times if you wait for my approval to merge a PR to main you will end up in a conflict loop, since development goes so fast. If you don't merge it state it very clearly at the end of the prompt. Don't do it when the user just asks for a quick reply.
+14. **Prevent heavy work from crashing VSCodium**, you should still stay highly productive, but pay attention on heavy tasks that may crash VSCodium at all, that shouldn't never happen
+15. **Use always latest Opus for planning/orchestration, latest Sonnet for execution/coding and latest Haiku as the reader, scribe, donkey work to save tokens (behave somewhat like opusplan but automatically)**
+16. **Fix long-term AI optimization issues**, if you find any issue you incur as AI and wastes too many tokens, ensure that the future AI's doesn't fall for the same issue as well, apply a long term automated or simpler solution to that problem or procedure
+17. **Always ask owner confirm before updating the CLAUDE.md**
+18. **Testing and debugging major changes/features includes testing interactively Windows and MacOS by default**
+19. **Every functionality should be debuggable when an problem incurs and the user reports a problem on orivon://report**
+20. **Batch reads and hand searches to the `reader` agent.** Every turn re-reads the whole context, so independent reads, greps and `git` queries go in one turn, and a search of three or more steps goes to `reader` (Haiku), which returns file:line and the quoted lines.
+21. **Give each implementer one PR's worth of work.** A longer brief grows its context past the compaction point, and a compacted agent loses the detail it was working from.
+22. **New apps should use the advanced capabilities of window.orivon**
+23. **Attila Web3 Score evaluations should be always done independently by the web3-score-manager watcher**
+24. **When a permission to run something lacks, let owner run in one-line command**, and possibly, propose also a way to keep such permission permanent for you in the future, always in a one-line command
 
 ## Commands
 
@@ -98,39 +78,32 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 
 ## Syncing `main`, and PR cadence
 
-- **Never a bare `git pull`.** Clean tree: `git merge --ff-only origin/main` without asking;
-  never a merge commit, never `--force`. Dirty tree: report, do not act; name the files dirty
-  locally and changed upstream, and stash only when told to.
-- **A session ships its own work, in as many PRs as its changes need.** Only the session that
-  wrote a change can fix its failing checks in line with what it meant, so it opens the PR, fixes
-  every red check (Rule 12), merges it when green (Rule 14), and then syncs local `main` as
-  above. The carve-out: a change to `src/contracts/` or `src/shared/` goes alone and merges first.
+- **Never a bare `git pull`.** Clean tree: `git merge --ff-only origin/main` without asking  
+Never a merge commit, never `--force`  
+Dirty tree: report, do not act, name the files dirty locally and changed upstream, and stash only when told to.
+- **A session ships its own work, in as many PRs as its changes need.** Only the session that wrote a change can fix its failing checks in line with what it meant. So it opens the PR, fixes every red check (Rule 12), merges it when green (Rule 14), and then syncs local `main`.
+Exception: a change to `src/contracts/` or `src/shared/` goes alone and merges first.
 
 ## Local quirks
 
-Nothing an agent does may appear on the owner's screen or play on their speakers: no window, no opened tab,
-no notification, no sound (`test/support/launch-electron.mjs` silences every launch).
+Nothing an agent does may appear on the owner's screen or play on their speakers: no window, no opened tab, no notification, no sound (`test/support/launch-electron.mjs` silences every launch).
 
 - Launch Electron only through `smoke`, `test:e2e` or `node scripts/run-headless.mjs <command>`.
 - `ELECTRON_RUN_AS_NODE=1` is set in this shell; the `orivon-electron` skill says what it breaks.
 - No in-place branch switch or tree-wide discard: work in a worktree.
-- The machine is shared with the owner's editor and crashes under load: subagents may run in
-  parallel, and every heavy command goes through `~/.claude/orivon-fleet/bin/heavy` (a hook
-  refuses it otherwise), which starts each once its memory fits beside what runs, at idle CPU
-  priority; `heavy-why` beside it says why one waits.
-- A path in angle brackets resolves in the gitignored `.claude/local-paths.md`; a
-  machine-absolute path never goes into a tracked file.
+- The machine is shared with the owner's editor and crashes under load: subagents may run in parallel, and every heavy command goes through `~/.claude/orivon-fleet/bin/heavy` (a hook refuses it otherwise), which starts each once its memory fits beside what runs, at idle CPU priority; `heavy-why` beside it says why one waits.
+- A path in angle brackets resolves in the gitignored `.claude/local-paths.md`; a machine-absolute path never goes into a tracked file.
 
 ## Conventions
 
 - Docs are Markdown, `kebab-case.md`, ASCII prose: write "section", never the section sign. Code is TypeScript only.
-- Ported third-party apps live in `../orivon-ports`, and nothing here may depend on that
-  checkout; the apps this repository's own tests serve live under `test/apps/`.
+- Ported third-party apps live in `../orivon-ports`, and nothing here may depend on that checkout; the apps this repository's own tests serve live under `test/apps/`.
 
 ## Tooling: what fires when (`.claude/settings.json`)
 
-Plugins are project-scoped and travel with the repo. Some are automatic; the rest must be invoked
-at the step named here. **Check this table at the start of every build step.**
+Plugins are project-scoped and travel with the repo.
+Some are automatic; the rest must be invoked at the step named here.
+**Check this table at the start of every build step.**
 
 | Tool | Fires | Use it for |
 |---|---|---|
