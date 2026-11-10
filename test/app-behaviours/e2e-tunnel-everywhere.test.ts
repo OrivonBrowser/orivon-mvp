@@ -186,6 +186,9 @@ it('[app:tunnel-everywhere-carries-a-plain-website] a website with no setting of
 it('[app:tunnel-everywhere-leaves-a-site-set-to-off-direct] a site set to off moves to the direct profile and arrives direct, from its own storage', async () => {
   await open(offUrl(), 'tunnelled')
   expect(await cookies(undefined, OFF)).toEqual(['who=tunnel'])
+  // Main fetches the tab icon as a second connection to the site after the title shows. The fixture records a connection before it
+  // connects upstream, so once the icon has been served that connection is counted and cannot read as the page coming again.
+  expect(await waitFor(() => hosts.offReal.paths.includes('/icon.png')), 'the tab icon came through the tunnel before the count').toBe(true)
   const tunnelled = asked(OFF, hosts.offDecoy.port)
 
   const popover = await openPopover()
