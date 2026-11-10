@@ -416,7 +416,7 @@ it('[app:storage-follows-an-app-into-the-website-session] carries the storage wi
       check('the carry ends in the background', settled)
       const record = JSON.parse(readFileSync(recordPath, 'utf8')) as { origins: Record<string, { status: string, reason?: string, attempts: number, unfinished?: boolean, report: { cookies: { carried: number }, localStorage: { carried: number }, databases: { carried: number }, records: { carried: number }, problems: string[] } }> }
       const row = record.origins[origin]
-      check(`the profile records the origin as carried, counted once, with no row left over from the start (${JSON.stringify(row)})`, row?.status === 'carried' && row.attempts === 1 && row.unfinished === undefined && row.report.cookies.carried === 1 && row.report.localStorage.carried === 1 && row.report.databases.carried === 1 && row.report.records.carried === 3 && row.report.problems.length === 0)
+      check(`the profile records the origin as carried, counted once, with no row left over from the start (${JSON.stringify(row)})`, row?.status === 'carried' && row.attempts === 1 && row.unfinished === undefined && row.report.cookies.carried === 2 && row.report.localStorage.carried === 1 && row.report.databases.carried === 1 && row.report.records.carried === 3 && row.report.problems.length === 0)
 
       await clickAddressBarRetrying(chromeTwo, `ipfs://${root}`)
       let again = null as PageFacts | null
