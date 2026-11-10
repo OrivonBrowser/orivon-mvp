@@ -15,6 +15,12 @@ describe('the notice before a website moves into a profile', () => {
     expect(storageNotice('socks5')).toBe('This site moves to your tunnel profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.')
   })
 
+  it('says the sign-ins stay as in normal browsing, and only the rest apart, while the cookies are shared', () => {
+    expect(storageNotice('nym', true)).toBe('This site moves to your tunnel profile. You\'ll stay signed in as in normal browsing, and what else it stores stays apart from your normal browsing.')
+    expect(storageNotice('direct', true)).toContain('your direct profile')
+    expect(storageNotice('nym', false)).toBe(storageNotice('nym'))
+  })
+
   it('names the direct profile the same way', () => {
     expect(storageNotice('direct')).toBe('This site moves to your direct profile. You\'ll sign in to it again once, and what it stores stays apart from your normal browsing.')
   })
