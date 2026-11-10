@@ -55,6 +55,7 @@ function rig (over: Partial<RelaySwitchDeps> = {}): Rig {
     holdResolver: (held) => { state.events.push(held ? 'hold' : 'release') },
     sessionsChanged: async () => { state.events.push('sessions'); state.seenConfig.push(state.relay.link.config()); return state.sessionsOk },
     confine: () => { state.events.push('confine') },
+    callers: (on) => { state.events.push(on ? 'callers on' : 'callers off') },
     forgetLookups: async () => { state.events.push('forget') },
     mirrorConfig: () => state.mirrorConfig,
     mirrorStatus: () => state.mirror,
@@ -85,7 +86,7 @@ describe('turning the relay on', () => {
   it('listens, holds Chromium\'s resolver, sets the sessions, then confines their pages, in that order', async () => {
     const r = rig()
     await turnOn(r)
-    expect(r.events).toEqual(['listen', 'hold', 'sessions', 'confine'])
+    expect(r.events).toEqual(['listen', 'hold', 'sessions', 'confine', 'callers on'])
   })
 
   it('has the sessions set to the relay\'s port, with the mirror\'s exceptions while it copied them', async () => {
@@ -122,7 +123,7 @@ describe('turning the relay on', () => {
     expect(r.relay.status().state).toBe('idle')
     r.relay.onPass(pass(PLAIN, ['PROXY a:1', 'DIRECT']))
     await r.relay.settled()
-    expect(r.events).toEqual(['listen', 'hold', 'sessions', 'confine'])
+    expect(r.events).toEqual(['listen', 'hold', 'sessions', 'confine', 'callers on'])
     expect(r.relay.status().state).toBe('relaying')
   })
 
@@ -131,7 +132,7 @@ describe('turning the relay on', () => {
     r.mirror = { source: 'environment', mode: 'unknown', state: 'system', reason: 'no-reader' }
     r.relay.setEnabled(true)
     await r.relay.settled()
-    expect(r.events).toEqual(['listen', 'hold', 'sessions', 'confine'])
+    expect(r.events).toEqual(['listen', 'hold', 'sessions', 'confine', 'callers on'])
   })
 
   it('never starts in a window held to Nym', async () => {
@@ -163,7 +164,7 @@ describe('turning the relay on', () => {
     expect(r.relay.link.config()).toBeUndefined()
     await vi.advanceTimersByTimeAsync(1000)
     await r.relay.settled()
-    expect(r.events).toEqual(['listen', 'listen', 'listen', 'hold', 'sessions', 'confine'])
+    expect(r.events).toEqual(['listen', 'listen', 'listen', 'hold', 'sessions', 'confine', 'callers on'])
   })
 
   it('writes one line for each state it comes to, with words only', async () => {
@@ -174,14 +175,14 @@ describe('turning the relay on', () => {
 })
 
 describe('turning the relay off', () => {
-  it('sets the sessions back first, then lifts the confinement and the resolver hold, forgets the lookups and stops accepting', async () => {
+  it('points the callers that check addresses back at their own lookup, sets the sessions back, then lifts the confinement and the resolver hold, forgets the lookups and stops accepting', async () => {
     const r = rig()
     await turnOn(r)
     r.events.length = 0
     r.seenConfig.length = 0
     r.relay.setEnabled(false)
     await r.relay.settled()
-    expect(r.events).toEqual(['sessions', 'confine', 'release', 'forget', 'stop 4001'])
+    expect(r.events).toEqual(['callers off', 'sessions', 'confine', 'release', 'forget', 'stop 4001'])
     expect(r.seenConfig).toEqual([undefined])
     expect(r.relay.status().state).toBe('off')
   })
@@ -192,7 +193,7 @@ describe('turning the relay off', () => {
     r.mirror = PLAIN
     r.relay.onPass(pass(PLAIN))
     await r.relay.settled()
-    expect(r.events.slice(-5)).toEqual(['sessions', 'confine', 'release', 'forget', 'stop 4001'])
+    expect(r.events.slice(-6)).toEqual(['callers off', 'sessions', 'confine', 'release', 'forget', 'stop 4001'])
     expect(r.relay.status().state).toBe('idle')
   })
 
@@ -303,6 +304,6 @@ describe('dispose', () => {
     await turnOn(r)
     r.events.length = 0
     await r.relay.dispose()
-    expect(r.events).toEqual(['release', 'close 4001'])
+    expect(r.events).toEqual(['callers off', 'release', 'close 4001'])
   })
 })

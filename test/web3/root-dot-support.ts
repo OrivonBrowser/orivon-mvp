@@ -59,3 +59,10 @@ export async function readPacAlerts (path: string): Promise<string[]> {
   const names = new Map(Object.entries(log.constants.logEventTypes).map(([name, id]) => [id, name]))
   return log.events.filter((event) => names.get(event.type) === 'PAC_JAVASCRIPT_ALERT').map((event) => JSON.stringify(event.params ?? {}))
 }
+
+/** Every address Chromium's own sockets tried to connect to (`ip:port`), from the connection attempts the net log recorded: the proof of where a run's traffic left this computer. */
+export async function readConnectedAddresses (path: string): Promise<string[]> {
+  const log = JSON.parse(await readFile(path, 'utf8')) as RawNetLog
+  const names = new Map(Object.entries(log.constants.logEventTypes).map(([name, id]) => [id, name]))
+  return log.events.filter((event) => names.get(event.type) === 'TCP_CONNECT_ATTEMPT').map((event) => (event.params as { address?: string } | undefined)?.address).filter((address): address is string => typeof address === 'string')
+}

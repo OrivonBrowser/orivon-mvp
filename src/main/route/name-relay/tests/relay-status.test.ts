@@ -43,7 +43,7 @@ describe('the counts', () => {
 
   it('holds only fixed words and numbers, whatever the facts hold', () => {
     const text = JSON.stringify(nameRelayStatus(facts({ refused: { ...NONE, unreachable: 7 } })))
-    expect(text).toBe('{"state":"relaying","provider":"quad9","resolver":"held","refused":{"not-found":0,"no-answer":0,"sign-in":0,"refused":0,"unreachable":7,"inside":0,"anonymity":0,"unsure":0}}')
+    expect(text).toBe('{"state":"relaying","provider":"quad9","resolver":"held","refused":{"not-found":0,"no-answer":0,"sign-in":0,"refused":0,"unreachable":7,"inside":0,"anonymity":0,"unsure":0,"unpinned":0}}')
   })
 })
 

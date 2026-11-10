@@ -35,7 +35,7 @@ describe('buildDiagnostics', () => {
   })
 
   it('states what the name relay is doing as one state, the provider, whether Chromium\'s resolver is held and a count for each refusal, and nothing else', () => {
-    expect(diagnostics.browser.nameRelay).toEqual({ state: 'relaying', provider: 'quad9', resolver: 'held', refused: { 'not-found': 2, 'no-answer': 0, 'sign-in': 0, refused: 0, unreachable: 1, inside: 0, anonymity: 0, unsure: 0 } })
+    expect(diagnostics.browser.nameRelay).toEqual({ state: 'relaying', provider: 'quad9', resolver: 'held', refused: { 'not-found': 2, 'no-answer': 0, 'sign-in': 0, refused: 0, unreachable: 1, inside: 0, anonymity: 0, unsure: 0, unpinned: 0 } })
     expect(Object.keys(diagnostics.browser.nameRelay)).toEqual(['state', 'provider', 'resolver', 'refused'])
     expect(Object.values(diagnostics.browser.nameRelay.refused).every((count) => Number.isInteger(count))).toBe(true)
   })

@@ -1,6 +1,7 @@
 // When the name relay runs, and what turning it on and off does, in the order that keeps this computer's address from showing:
 // the listener first, then Chromium's resolver held at this computer's DNS (so none of its probes goes to a DNS provider), then
-// the sessions that follow the system set to the relay, then their pages confined. Off is the reverse, and the listener stops
+// the sessions that follow the system set to the relay, then their pages confined, then the callers that check addresses pointed at
+// the relay's lookup. Off is the reverse, and the listener stops
 // accepting last, so a tunnel in flight finishes. A listener that stops by itself is started again on another port, and until
 // then the sessions are pointed at the dead end, never back at the proxy's own lookup. Electron-free over the calls it is handed.
 
@@ -76,6 +77,8 @@ export interface RelaySwitchDeps {
   readonly sessionsChanged: () => Promise<boolean>
   /** The pages of the sessions that follow the system take, or lose, the WebRTC confinement `link.config()` implies. */
   readonly confine: () => void
+  /** The callers in main that check an address before they read (a tab's icon, a CCIP-Read gateway) use the relay's lookup and its pinned endpoint while this is `true`, and their own lookup and road when it is `false`. */
+  readonly callers: (on: boolean) => void
   /** Forgets every answer the lookups hold and closes their sessions' connections. */
   readonly forgetLookups: () => Promise<void>
   /** The config the mirror has applied, and what it says of the settings: its exceptions go to the relay's sessions only while it copied them. */
@@ -213,12 +216,14 @@ export function createRelaySwitch (deps: RelaySwitchDeps): RelaySwitch {
     active = true
     await apply()
     deps.confine()
+    deps.callers(true)
     say()
   }
 
   async function turnOff (): Promise<void> {
     if (!active) return
     if (restartTimer !== undefined) { clearTimeout(restartTimer); restartTimer = undefined }
+    deps.callers(false)
     active = false
     await apply()
     deps.confine()
@@ -267,6 +272,7 @@ export function createRelaySwitch (deps: RelaySwitchDeps): RelaySwitch {
     dispose: async () => {
       disposed = true
       if (restartTimer !== undefined) clearTimeout(restartTimer)
+      if (active) deps.callers(false)
       active = false
       listener = undefined
       await queue.catch(() => {})

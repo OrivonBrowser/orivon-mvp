@@ -4,13 +4,12 @@
 
 import type { Session, WebContents } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
-import { originHash } from '../../broker/grants/origin-hash.js'
 import { SHARED_ORIGIN, type RouteChangeCause, type RouteHub } from './route-hub.js'
 import { trackProxySet } from './proxy-answers.js'
 import type { TunnelKind } from './route-state.js'
-import { profilePartitionFor } from './site-partition.js'
-import { ensureSiteSession } from './site-routes.js'
 import { pinnedCredentials } from './name-relay/pinned-endpoint.js'
+import { createFetchSessions } from './fetch-sessions.js'
+import { createRelayConfinement } from './relay-confinement.js'
 import type { NameRelayLink } from './name-relay/relay-link.js'
 import { createSystemFollow } from './system-follow.js'
 import { within } from './within.js'
@@ -154,9 +153,6 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   const unpoint = (session: RouteSession): void => { pointedAt.delete(session); pointedVia.delete(session) }
   /** Web contents given the policy here, which are the only ones restored. */
   const confined = new WeakSet<RouteContents>()
-  /** Web contents confined because their session is on the name relay: restored when it is not. */
-  const relayConfined = new WeakSet<RouteContents>()
-  const fetchSessions = new Map<string, RouteSession>()
   /** The host rules a session reaches directly besides this machine. */
   const bypasses = new Map<RouteSession, string>()
   const isApp = deps.isApp ?? (() => true)
@@ -191,21 +187,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     for (const [origin, sessions] of known) if (!hub.isRouted(origin) && sessions.get(session as RouteSession) === true) return true
     return false
   }
-  /** Gives the policy to the pages that are on the relay and takes it from those that no longer are. A page an app's route already confines keeps that policy. */
-  const confineRelayed = (): void => {
-    if (deps.relay === undefined) return
-    for (const contents of deps.allContents()) {
-      if (contents.isDestroyed()) continue
-      if (onRelay(contents.session)) {
-        if (confined.has(contents) || relayConfined.has(contents)) continue
-        relayConfined.add(contents)
-        contents.setWebRTCIPHandlingPolicy(CONFINED)
-      } else if (relayConfined.has(contents)) {
-        relayConfined.delete(contents)
-        if (!confined.has(contents)) contents.setWebRTCIPHandlingPolicy('default')
-      }
-    }
-  }
+  const fetchSessions = createFetchSessions<RouteSession>({ hub, isApp, sessionFor: deps.sessionFor, defaultSession: deps.defaultSession, prepare: async (origin, session) => { await prepare(origin, session, { webrtc: false }) } })
+  const relayPages = createRelayConfinement<RouteContents>({ allContents: () => deps.allContents(), onRelay, confinedByRoute: confined, policy: CONFINED })
 
   /** One change to a session at a time: two callers must not both see it unpointed and both point it. */
   const turns = new Map<RouteSession, Promise<void>>()
@@ -364,7 +347,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     for (const contents of contentsIn(origin, true)) {
       if (routed) {
         confined.add(contents)
-        relayConfined.delete(contents)
+        relayPages.routed(contents)
         contents.setWebRTCIPHandlingPolicy(CONFINED)
       } else if (confined.has(contents)) {
         confined.delete(contents)
@@ -372,7 +355,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       }
     }
     // A session an app's route let go of follows the system again, on the relay's config while it has one.
-    confineRelayed()
+    relayPages.sync()
     // What was opened before the switch is on the old route (or none), whatever the proxy now says. The sessions are
     // already on the new one, so nothing new opens on the old while the broker's handles are closed.
     await Promise.allSettled(sessions.map(async ([session]) => { await within(session.closeAllConnections(), callMs) }))
@@ -400,10 +383,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       confined.add(contents)
       contents.setWebRTCIPHandlingPolicy(CONFINED)
     }
-    if (onRelay(contents.session)) {
-      relayConfined.add(contents)
-      contents.setWebRTCIPHandlingPolicy(CONFINED)
-    }
+    relayPages.created(contents)
     for (const [origin, sessions] of known) {
       if (sessions.get(contents.session as RouteSession) === true && hub.isRouted(origin)) {
         confined.add(contents)
@@ -467,28 +447,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
         await prepare(SHARED_ORIGIN, session)
       })
     },
-    fetchSessionFor: async (origin) => {
-      if (!hub.isRouted(origin)) return undefined
-      if (!isApp(origin)) {
-        // A website is looked up about through the session it runs in, which is already prepared with the identity it shares: the tunnel profile's, or the default session when the whole browser is on the tunnel.
-        const profile = hub.profileFor(origin)
-        if (profile !== undefined && profile !== 'direct') {
-          // Made ready as a tab's view would: held shut until it is pointed at its front, never left on the system's proxy. No view is coming, so the extensions are not woken.
-          const partition = profilePartitionFor(profile, origin)
-          ensureSiteSession(partition, false)
-          return deps.sessionFor(partition)
-        }
-        const shared = deps.defaultSession?.()
-        if (profile === undefined && shared !== undefined && hub.isRouted(SHARED_ORIGIN)) return shared
-      }
-      let session = fetchSessions.get(origin)
-      if (session === undefined) {
-        session = deps.sessionFor(`orivon-route-fetch-${originHash(origin)}`)
-        fetchSessions.set(origin, session)
-      }
-      await prepare(origin, session, { webrtc: false })
-      return session
-    },
+    fetchSessionFor: fetchSessions.forOrigin,
     forget: (origin) => {
       enqueue(origin, async () => {
         const sessions = sessionsOf(origin)
@@ -498,7 +457,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
           if (!pointedAt.has(session)) { sessions.delete(session); bypasses.delete(session); pointedVia.delete(session) }
         }
         if (sessions.size === 0) known.delete(origin)
-        fetchSessions.delete(origin)
+        fetchSessions.forget(origin)
       })
     },
     prepareTemporary: async (session, front, kind) => {
@@ -514,7 +473,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       temporaryFronts.delete(front.port)
       unpoint(session)
     },
-    relayChanged: confineRelayed,
+    relayChanged: relayPages.sync,
     sharedSettled: async () => {
       await hub.settled()
       let seen: Promise<void> | undefined

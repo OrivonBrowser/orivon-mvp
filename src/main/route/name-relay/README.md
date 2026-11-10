@@ -4,7 +4,8 @@
 address itself while the system names a proxy, sending each lookup through that proxy and never from this computer, and
 connect through the proxy to the address, so the proxy is asked for an address and never for a name. A connection Chromium
 asks a loopback listener ([`../front.ts`](../front.ts), given an `open`) to make reaches `relay-opener.ts`, which asks the system
-which proxy applies, has the name looked up through it and connects. Nothing here is wired to a session yet.
+which proxy applies, has the name looked up through it and connects. `relay-switch.ts` runs it while the switch is on and a
+proxy applies (`route-subsystem.ts` wires it), and the callers in main that check an address use its lookup while it runs.
 
 | File | Job | Durable or tied to Electron |
 |---|---|---|
@@ -17,6 +18,9 @@ which proxy applies, has the name looked up through it and connects. Nothing her
 | `proxy-answer.ts` | The system's answer to "which proxy for this URL?" read into the proxies in order (`PROXY`, `HTTPS`, `SOCKS`, `SOCKS4`, `SOCKS5`, lists), a first `DIRECT`, or a reason to refuse; a `DIRECT` after a proxy is never among them; a SOCKS proxy on this computer at a port Tor listens on | Durable: pure |
 | `relay-link.ts` | What the route controller takes of the relay: the config sessions that follow the system are set to while it is active, and the credentials its listener's proxy challenge is answered with. Types only | Durable: no `electron` import |
 | `relay-failures.ts` | The fixed words for why a connection was not carried (`RefusalWord`, a superset of `LookupWord`), the `RelayRefusal` the listener answers with, the sentence for each (`unpinned` is a pinned endpoint's, for a host and port nobody pinned), and the reason noted for a host and port for 30 seconds, which the load-error sheet reads | Durable: pure |
+| `relay-listener.ts` | The listener assembled: `front.ts` on loopback with a secret of its own, whose `open` is the relay's opener over the system's answer and the lookups it is handed; each refusal is counted, worded and logged as a word; it stops by draining, so a tunnel in flight finishes | Durable: no `electron` import |
+| `relay-status.ts` | What the relay is doing as fixed words and counts (`off`, `idle`, `relaying`, `held`, `down`; the provider; whether Chromium's resolver is held; one count per refusal word) for `orivon://report`, the line for a change of state, at most one refusal line a minute for each word, and the reason noted for a host and port, which the load-error sheet reads | Durable: pure |
+| `relay-switch.ts` | When the relay runs (the activation table per mirror mode, the system's answer for ordinary addresses, the environment and a private window held to Nym) and what turning it on and off does, in the order that keeps this computer's address from showing: the listener, the resolver hold, the sessions that follow the system, the WebRTC confinement of their pages, the callers that check addresses. A listener that stops by itself is started again on a new port, and until then the sessions are pointed at the dead end | Durable: Electron-free over the calls it is handed |
 | `relay-lookup.ts` | The relay's lookup for a caller that checks an address first: the same steps, through the proxy entry the system names for the URL, as a relayed connection; every address comes back (IPv4 first), so the caller judges all of them; a routed or onion name refused, an IP literal as it is | Free of Electron, over the calls it is handed |
 | `relay-opener.ts` | `front.ts`'s `open`: reads the host from the target's URL (the name Chromium dials and the one the system is asked about, not the text on the request line), refuses a routed or onion name first, asks the system's answer, looks the name up through the proxy it will leave by (`proxied-lookup.ts`'s answer: IPv4 first, connecting before IPv6 has answered), goes through the proxies in order, has the lookup forget a name every address of which failed, reports each connection it made (the address and the road), and bounds the connections it carries | Free of Electron, over the system's answer and the lookups it is handed |
 | `utility-login.ts` | Answers a utility process's proxy challenge in main: the sign-in an Electron utility process forked with `respondToAuthRequestsFromMainProcess` raises is read by position, as it arrives with four arguments where the typings list three | Tied to Electron (a utility process's event) |
@@ -26,7 +30,7 @@ which proxy applies, has the name looked up through it and connects. Nothing her
 **What it depends on.** [`../own-proxy.ts`](../own-proxy.ts) (a lookup session and a pinned session set their own proxy, so the shared identity
 leaves them alone), [`../../privacy/secure-dns.ts`](../../privacy/secure-dns.ts) (the value that names the provider, as a type),
 [`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) and [`../../../broker/route/onion.ts`](../../../broker/route/onion.ts)
-(which names are never looked up), [`../front.ts`](../front.ts) (`FrontTarget`, `FrontRefusal`), [`../lookup-session.ts`](../lookup-session.ts) (the type of a challenge's answer), [`../system-follow.ts`](../system-follow.ts) (the type of a session's config), [`../verifier-name-guard.ts`](../verifier-name-guard.ts) (the names a session keeps off the proxy),
+(which names are never looked up), [`../front.ts`](../front.ts) (`FrontTarget`, `FrontRefusal`), [`../lookup-session.ts`](../lookup-session.ts) (the type of a challenge's answer), [`../system-follow.ts`](../system-follow.ts) (the type of a session's config), [`../proxy-mirror/`](../proxy-mirror/) (the types of a pass and of the mirror's status, which `relay-switch.ts` reads), [`../verifier-name-guard.ts`](../verifier-name-guard.ts) (the names a session keeps off the proxy),
 [`../../../broker/route/socks5.ts`](../../../broker/route/socks5.ts) (the SOCKS5 provider), `node:net`, `node:tls`, the `socks` package
 and `@dnsquery/dns-packet` (the message). `electron` for types only: the sessions are handed in.
 
@@ -72,3 +76,8 @@ left; a log line or a report text holds counts and these fixed words, never a na
 `respondToAuthRequestsFromMainProcess: true` raises `login` in main with four arguments at run time (the event, the request, the
 proxy's description and the callback) where the typings list three, so the listener reads by position from the second and calls
 the callback it finds last.
+
+**The connection upstream carries no header but the one a proxy needs.** Chromium's request and its headers (`User-Agent`, cookies and
+the rest) travel inside the tunnel, to the site, which is where they belong; the proxy is sent `CONNECT <address>:<port>` and
+`Host: <address>:<port>` and nothing else, so it learns neither the site nor the browser from the request. `FrontTarget` therefore
+carries no request headers, and a proxy that wants a `User-Agent` on a `CONNECT` does not get one.

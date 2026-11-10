@@ -60,6 +60,9 @@ import { profileIsolationSecret } from './isolation-secret.js'
 import { startDeadEnd } from './dead-end.js'
 import { createProxiedLookup, providerFor } from './name-relay/proxied-lookup.js'
 import { createRelayFailures } from './name-relay/relay-failures.js'
+import type { RefusalWord } from './name-relay/relay-failures.js'
+import { installRelayCallers } from './name-relay/pinned-endpoint.js'
+import { createRelayLookup } from './name-relay/relay-lookup.js'
 import { startRelayListener } from './name-relay/relay-listener.js'
 import type { NameRelayLink } from './name-relay/relay-link.js'
 import { createRefusalLog, setNameRelayStatusSource, setRelayReasonSource } from './name-relay/relay-status.js'
@@ -235,21 +238,33 @@ export const routeSubsystem: Subsystem = {
     setMirrorStatusSource(proxyMirror.status)
     const relayFailures = createRelayFailures()
     const refusalLog = createRefusalLog()
+    const relayDirect = async (host: string): Promise<string[]> => (await systemMirrorSession().resolveHost(host)).endpoints.map((endpoint) => endpoint.address)
+    // A refusal is logged as a word, at most one line a minute for each; the listener counts its own, a pinned endpoint's are counted here.
+    const logRefusal = (word: RefusalWord): void => {
+      const line = refusalLog(word)
+      if (line !== undefined) console.info(line)
+    }
     const relay = createRelaySwitch({
       environment: process.env,
       heldToNym,
-      // The system's answer for the URL a connection is for: never put a name the verifier serves to a script of the system's, and failing on the states `settingsMayRunCode` names (`system-proxy.ts`).
       listen: async (onClosed) => await startRelayListener({
+        // The system's answer for the URL a connection is for: never put a name the verifier serves to a script of the system's, and failing on the states `settingsMayRunCode` names (`system-proxy.ts`).
         systemAnswer: systemProxyFor,
         lookup: relayLookups.lookup,
         drop: relayLookups.drop,
-        lookupDirect: async (host) => (await systemMirrorSession().resolveHost(host)).endpoints.map((endpoint) => endpoint.address),
+        lookupDirect: relayDirect,
         failures: relayFailures,
-        onRefused: (word) => {
-          const line = refusalLog(word)
-          if (line !== undefined) console.info(line)
-        }
+        onRefused: logRefusal
       }, onClosed),
+      callers: (on) => {
+        installRelayCallers(on
+          ? {
+              lookup: createRelayLookup({ systemAnswer: systemProxyFor, lookup: relayLookups.lookup, lookupDirect: relayDirect }),
+              systemAnswer: systemProxyFor,
+              onRefused: (word) => { relayFailures.tally(word); logRefusal(word) }
+            }
+          : undefined)
+      },
       holdResolver,
       sessionsChanged: async () => await routes.controller.systemChanged(),
       confine: () => { routes.controller.relayChanged() },
@@ -411,7 +426,7 @@ export const routeSubsystem: Subsystem = {
     })
     publishRoutes(ctx, routes)
     // Registered before the first read is awaited: a quit during it must not leave a pass that goes on to set sessions.
-    app.once('will-quit', () => { proxyMirror?.stop(); void relay.dispose() })
+    app.once('will-quit', () => { proxyMirror?.stop(); relay.dispose().catch((error: unknown) => { console.error('[route] the name relay did not stop cleanly:', error instanceof Error ? error.message : 'unexpected error') }) })
     // The first read of the system's settings comes before the sessions are waited for, so the first window finds them copied.
     await proxyMirror.start()
     // Whatever loads next (the person's extensions, the first window) finds the sessions already following the setting.

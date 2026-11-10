@@ -20,10 +20,14 @@ export interface LoggingProxy {
   readonly port: number
   readonly url: string
   readonly seen: ProxyLog
+  /** Each `CONNECT` as the proxy was sent it: its target and every header (names in lower case), which show what a client told the proxy beside the address. */
+  readonly connects: Array<{ readonly target: string, readonly headers: Readonly<Record<string, string | string[] | undefined>> }>
   /** Answers a plain-HTTP request for `host` (with its port, when it has one) with a page of this title, and this body (the title, when none is given). */
   serve: (host: string, title: string, body?: string) => void
-  /** Carries a `CONNECT` for `host:443` to a TLS server on this computer, as a proxy that terminates TLS for a name would. */
-  tunnelTo: (host: string, port: number) => void
+  /** Carries a `CONNECT` for `host` to a server on this computer, as a proxy that terminates TLS for a name would: any port of the host, or only the one given as `host:port`. A port of `null` takes the host's tunnel away, and the proxy refuses it again. */
+  tunnelTo: (host: string, port: number | null) => void
+  /** While on, answers every `CONNECT` with 407 and a challenge, as a proxy that wants a sign-in does. */
+  askForSignIn: (on: boolean) => void
   close: () => Promise<void>
 }
 
@@ -33,6 +37,8 @@ export interface LoggingProxy {
  */
 export async function startLoggingProxy (): Promise<LoggingProxy> {
   const seen: ProxyLog = []
+  const connects: LoggingProxy['connects'] = []
+  let signIn = false
   const pages = new Map<string, { title: string, body: string }>()
   const tunnels = new Map<string, number>()
   const sockets = new Set<import('node:net').Socket>()
@@ -47,9 +53,11 @@ export async function startLoggingProxy (): Promise<LoggingProxy> {
   server.on('connect', (request: IncomingMessage, client) => {
     const target = request.url ?? ''
     seen.push(`CONNECT ${target}`)
+    connects.push({ target, headers: { ...request.headers } })
     // A tunnel with no answer here gets a refusal, and a program that resets its socket meanwhile (a proxy set in macOS's settings is every program's) must not end the run.
     client.on('error', () => { client.destroy() })
-    const local = tunnels.get(target.replace(/:\d+$/, ''))
+    if (signIn) { client.end('HTTP/1.1 407 Proxy Authentication Required\r\nproxy-authenticate: Basic realm="proxy"\r\ncontent-length: 0\r\nconnection: close\r\n\r\n'); return }
+    const local = tunnels.get(target) ?? tunnels.get(target.replace(/:\d+$/, ''))
     if (local === undefined) { client.end('HTTP/1.1 502 Bad Gateway\r\nconnection: close\r\n\r\n'); return }
     const upstream = connect(local, '127.0.0.1', () => {
       client.write('HTTP/1.1 200 Connection Established\r\n\r\n')
@@ -66,8 +74,10 @@ export async function startLoggingProxy (): Promise<LoggingProxy> {
     port,
     url: `http://127.0.0.1:${String(port)}`,
     seen,
+    connects,
     serve: (host, title, body = title) => { pages.set(host, { title, body }) },
-    tunnelTo: (host, local) => { tunnels.set(host, local) },
+    tunnelTo: (host, local) => { if (local === null) tunnels.delete(host); else tunnels.set(host, local) },
+    askForSignIn: (on) => { signIn = on },
     close: async () => {
       for (const socket of sockets) socket.destroy()
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
@@ -379,11 +389,11 @@ export const tunnelsOpened = (log: readonly string[]): string[] =>
 
 export interface Running { app: ElectronApplication, chrome: Page }
 
-/** A shell whose verifier host is up, answering `fixture.eth` and `direct.eth` from `gateway`, launched with no desktop in its environment and `env` on top of it, under `resolver` (every name hidden unless a spec says otherwise). */
-export async function launchShellOn (gateway: Awaited<ReturnType<typeof startFixtureGateway>>, env: Record<string, string>, seedProfile?: (dir: string) => void, resolver = HERMETIC_RESOLVER): Promise<Running> {
+/** A shell whose verifier host is up, answering `fixture.eth` and `direct.eth` from `gateway`, launched with no desktop in its environment and `env` on top of it, under `resolver` (every name hidden unless a spec says otherwise), which may be several command-line switches. */
+export async function launchShellOn (gateway: Awaited<ReturnType<typeof startFixtureGateway>>, env: Record<string, string>, seedProfile?: (dir: string) => void, resolver: string | readonly string[] = HERMETIC_RESOLVER): Promise<Running> {
   const app = await launchWithoutDesktop(async () => await launchElectron({
     appPath: '.',
-    args: [resolver],
+    args: typeof resolver === 'string' ? [resolver] : [...resolver],
     env: {
       ORIVON_TEST_ETH_FIXTURES: JSON.stringify({ 'fixture.eth': `ipfs://${gateway.roots['site']!}`, 'direct.eth': `ipfs://${gateway.roots['site']!}` }),
       ORIVON_TEST_IPFS_GATEWAYS: gateway.url,

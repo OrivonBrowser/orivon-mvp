@@ -88,7 +88,7 @@ describe('a refusal', () => {
 describe('what is counted of the failures', () => {
   it('is how many connections each word stopped, a word never noted being zero', () => {
     const failures = createRelayFailures(() => 0)
-    expect(failures.counts()).toEqual({ 'not-found': 0, 'no-answer': 0, 'sign-in': 0, refused: 0, unreachable: 0, inside: 0, anonymity: 0, unsure: 0 })
+    expect(failures.counts()).toEqual({ 'not-found': 0, 'no-answer': 0, 'sign-in': 0, refused: 0, unreachable: 0, inside: 0, anonymity: 0, unsure: 0, unpinned: 0 })
     failures.note('a.example', 443, 'not-found')
     failures.note('b.example', 443, 'not-found')
     failures.note('a.example', 443, 'no-answer')

@@ -26,7 +26,7 @@ export type RefusalWord =
   | 'unpinned'
 
 /** Every word, in the order a report lists them. */
-export const REFUSAL_WORDS: readonly RefusalWord[] = ['not-found', 'no-answer', 'sign-in', 'refused', 'unreachable', 'inside', 'anonymity', 'unsure']
+export const REFUSAL_WORDS: readonly RefusalWord[] = ['not-found', 'no-answer', 'sign-in', 'refused', 'unreachable', 'inside', 'anonymity', 'unsure', 'unpinned']
 
 /** How long a failure is remembered for the sheet. */
 export const FAILURE_MEMORY_MS = 30_000
@@ -36,16 +36,23 @@ export interface RelayFailures {
   note: (host: string, port: number, word: RefusalWord) => void
   /** The word noted for `host` and `port` in the last half minute. */
   reasonFor: (host: string, port: number) => RefusalWord | undefined
+}
+
+/** What the relay keeps for the report beside what it notes for the sheet. */
+export interface CountingFailures extends RelayFailures {
+  /** Counts a connection a caller stopped for `word` without a host to note it for. */
+  tally: (word: RefusalWord) => void
   /** How many connections each word stopped in this run: counts only, for `orivon://report`. */
   counts: () => Readonly<Record<RefusalWord, number>>
 }
 
 const keyOf = (host: string, port: number): string => `${host.toLowerCase().replace(/\.$/, '')}:${String(port)}`
 
-export function createRelayFailures (now: () => number = Date.now): RelayFailures {
+export function createRelayFailures (now: () => number = Date.now): CountingFailures {
   const seen = new Map<string, { readonly word: RefusalWord, readonly at: number }>()
   const counted = Object.fromEntries(REFUSAL_WORDS.map((word) => [word, 0])) as Record<RefusalWord, number>
   return {
+    tally: (word) => { counted[word] += 1 },
     note: (host, port, word) => {
       counted[word] += 1
       const key = keyOf(host, port)
