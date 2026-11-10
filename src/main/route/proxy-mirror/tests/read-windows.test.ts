@@ -43,7 +43,7 @@ describe('Windows\' proxy settings', () => {
   })
 
   it.each([
-    [1, { kind: 'none' }], [3, { kind: 'manual', proxyRules: 'p.test:8080', exceptions: [] }], [5, { kind: 'script' }], [9, { kind: 'detect' }], [0x0b, { kind: 'manual', proxyRules: 'p.test:8080', exceptions: [] }]
+    [1, { kind: 'none' }], [3, { kind: 'manual', proxyRules: 'p.test:8080', exceptions: [] }], [5, { kind: 'script', url: 'http://pac.test/p.pac' }], [9, { kind: 'detect' }], [0x0b, { kind: 'manual', proxyRules: 'p.test:8080', exceptions: [] }]
   ])('read the blob\'s flags %i when no value says otherwise', (flags, expected) => {
     expect(parse({}, blobHex(flags, 'p.test:8080', '', 'http://pac.test/p.pac'))).toEqual(expected)
   })
@@ -71,11 +71,13 @@ describe('Windows\' proxy settings', () => {
   })
 
   it('are a script when a value names one or the blob does, beside a manual proxy too, since the script is what Chromium asks first', () => {
-    expect(parse({ enable: 0, scriptUrl: 'http://pac.test/p.pac' }, blobHex(1))).toEqual({ kind: 'script' })
-    expect(parse({ enable: 0, scriptUrl: 'http://pac.test/p.pac' })).toEqual({ kind: 'script' })
-    expect(parse({ enable: 0 }, blobHex(5, '', '', 'http://pac.test/p.pac'))).toEqual({ kind: 'script' })
-    expect(parse(MANUAL, blobHex(7, '127.0.0.1:3128', '<local>', 'http://pac.test/p.pac'))).toEqual({ kind: 'script' })
-    expect(parse({ ...MANUAL, scriptUrl: 'http://pac.test/p.pac' })).toEqual({ kind: 'script' })
+    const script = { kind: 'script', url: 'http://pac.test/p.pac' }
+    expect(parse({ enable: 0, scriptUrl: 'http://pac.test/p.pac' }, blobHex(1))).toEqual(script)
+    expect(parse({ enable: 0, scriptUrl: 'http://pac.test/p.pac' })).toEqual(script)
+    expect(parse({ enable: 0 }, blobHex(5, '', '', 'http://pac.test/p.pac'))).toEqual(script)
+    expect(parse(MANUAL, blobHex(7, '127.0.0.1:3128', '<local>', 'http://pac.test/p.pac'))).toEqual(script)
+    expect(parse({ ...MANUAL, scriptUrl: 'http://pac.test/p.pac' })).toEqual(script)
+    expect(parse({ enable: 0, scriptUrl: 'http://values.test/v.pac' }, blobHex(5, '', '', 'http://pac.test/p.pac'))).toEqual({ kind: 'script', url: 'http://values.test/v.pac' })
     expect(parse({ enable: 0, scriptUrl: '' })).toEqual({ kind: 'none' })
   })
 
