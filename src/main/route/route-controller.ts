@@ -1,6 +1,6 @@
 // What routing an app does to Chromium, Electron-free over the parts it drives: point each of the app's sessions at its
 // front (never at `direct`), keep UDP off the network with the WebRTC policy on every web contents in them, close what
-// the app held open when its route is switched, and answer the proxy challenge of its fronts and of the name relay's listener, for those alone.
+// the app held open when its route is switched, and answer the proxy challenge of its fronts, of the name relay's listener and of the name relay's pinned endpoints, for those alone.
 
 import type { Session, WebContents } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
@@ -10,6 +10,7 @@ import { trackProxySet } from './proxy-answers.js'
 import type { TunnelKind } from './route-state.js'
 import { profilePartitionFor } from './site-partition.js'
 import { ensureSiteSession } from './site-routes.js'
+import { pinnedCredentials } from './name-relay/pinned-endpoint.js'
 import type { NameRelayLink } from './name-relay/relay-link.js'
 import { createSystemFollow } from './system-follow.js'
 import { within } from './within.js'
@@ -57,7 +58,7 @@ export interface RouteControllerDeps {
   readonly deadEnd?: () => string
   /** What a session that follows the system is set to, answered from memory: `{ mode: 'system' }` when left out. */
   readonly systemConfig?: () => RouteProxyConfig
-  /** The name relay while one runs: its config, while it has one, is what a session that follows the system is set to instead of `systemConfig`'s, and its listener's proxy challenge is answered. */
+  /** The name relay while one runs: its config, while it has one, is what a session that follows the system is set to instead of `systemConfig`'s, and its listener's proxy challenge is answered. A pinned endpoint's challenge is answered whether or not a relay runs. */
   readonly relay?: () => NameRelayLink | undefined
 }
 
@@ -380,7 +381,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   const challengeCredentials: RouteController['challengeCredentials'] = (info) => {
     if (!info.isProxy || info.host !== '127.0.0.1') return undefined
     const temporary = temporaryFronts.get(info.port)
-    return temporary === undefined ? hub.credentialsForPort(info.port) ?? deps.relay?.()?.credentials(info) : { username: temporary.username, password: temporary.secret }
+    return temporary === undefined ? hub.credentialsForPort(info.port) ?? deps.relay?.()?.credentials(info) ?? pinnedCredentials(info) : { username: temporary.username, password: temporary.secret }
   }
 
   deps.onLogin((event, info, callback) => {

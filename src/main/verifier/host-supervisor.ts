@@ -22,6 +22,8 @@ export interface SupervisorEvents extends ProcessEvents {
   nodeTraffic?: (node: string, active: number, bytes: number) => void
   /** The host hands the shell a request for a host the shell serves, or says it wrote some of the answer, or that the client left. */
   relay?: (message: RelayFromHost) => void
+  /** The host asks for the addresses of a name as the name relay finds them, and waits for `address-answer`. */
+  addressLookup?: (id: number, host: string) => void
   /** The host is gone or asleep: every request it handed the shell is waiting for nothing. */
   abandoned?: () => void
 }
@@ -87,6 +89,7 @@ export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, Supe
       case 'node-traffic': events.nodeTraffic?.(message.node, message.active, message.bytes); break
       case 'swarm-feed-index': events.swarmFeedIndex(message.feed, message.index); break
       case 'name-scheme': events.nameScheme(message.host, message.scheme); break
+      case 'address-lookup': events.addressLookup?.(message.id, message.host); break
       case 'relay-request':
       case 'relay-abort':
       case 'relay-wrote': events.relay?.(message); break

@@ -21,6 +21,8 @@ import { createRoutedFetch } from './routed-fetch.js'
 import { answerForFront } from './front-login.js'
 import { startHeliosLightClient } from './light-client/light-client.js'
 import type { FromHost, ToHost } from './protocol.js'
+import { createRelayedAddresses } from './relayed-addresses.js'
+import type { RelayedAddresses } from './relayed-addresses.js'
 import { startHost } from './service.js'
 import type { RunningHost } from './service.js'
 
@@ -44,12 +46,18 @@ function main (): void {
   // A rejection nothing observed would end this process, and every `.eth` page with it; each request's own handler catches what it expects.
   process.on('unhandledRejection', (reason) => { console.error('[verifier] unhandled rejection:', reason) })
   let host: Promise<RunningHost> | undefined
+  let relayed: RelayedAddresses | undefined
   process.parentPort.on('message', (event) => {
     const message = event.data as ToHost
     if (message.type === 'start') {
       if (host !== undefined) return
       const { front } = message.config
       const tunnelFetch = front === undefined ? undefined : createRequestFetch({ net, answer: answerForFront(front) })
+      // A name is never resolved on this computer while the tunnel carries the host's requests: the far end resolves it.
+      const resolveHost = front === undefined
+        ? async (name: string): Promise<readonly string[]> => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)
+        : async (): Promise<readonly string[]> => { throw new Error('a name is resolved at the far end of the tunnel, not on this computer') }
+      relayed = createRelayedAddresses({ post, own: resolveHost })
       host = startHost(message.config, {
         // No HTTP cache: one would answer a block another site's pages fetched faster, and so tell a page where the person has been (A256).
         // No credentials: this process's fetches are gateways, RPCs and DNS-over-HTTPS endpoints, never a page's own request, so nothing here should carry a cookie or a client certificate a session might hold.
@@ -57,10 +65,9 @@ function main (): void {
         fetch: tunnelFetch === undefined
           ? async (url, init) => await net.fetch(url, { ...init, cache: 'no-store', credentials: 'omit' })
           : async (url, init) => await tunnelFetch(url, { ...init, cache: 'no-store' }),
-        // A name is never resolved on this computer while the tunnel carries the host's requests: the far end resolves it.
-        resolveHost: front === undefined
-          ? async (name) => (await net.resolveHost(name)).endpoints.map((endpoint) => endpoint.address)
-          : async () => { throw new Error('a name is resolved at the far end of the tunnel, not on this computer') },
+        resolveHost,
+        // The check of a CCIP-Read gateway judges a name by the name relay's lookup while the relay runs, main's to give.
+        resolveForCheck: relayed.resolve,
         post,
         startLightClient: startHeliosLightClient,
         fixturesAllowed: FIXTURES_ALLOWED,
@@ -91,6 +98,10 @@ function main (): void {
     }
     if (message.type === 'shell-serves' || message.type === 'relay-head' || message.type === 'relay-body' || message.type === 'relay-end' || message.type === 'relay-error') {
       host?.then((running) => { running.shell(message) }, () => {})
+      return
+    }
+    if (message.type === 'address-answer') {
+      relayed?.receive(message)
       return
     }
     const { id, request } = message

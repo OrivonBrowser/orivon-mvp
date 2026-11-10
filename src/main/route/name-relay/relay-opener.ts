@@ -10,7 +10,7 @@ import { BUILTIN_ADDRESSES } from '../../../protocols/builtin.js'
 import type { FrontTarget } from '../front.js'
 import { keepResolverOrder, MAX_ADDRESSES, orderForProxy } from './addresses.js'
 import { onAnonymityPort, parseProxyAnswer } from './proxy-answer.js'
-import type { ProxyAnswer, ProxyEntry } from './proxy-answer.js'
+import type { ProxyAnswer, ProxyEntry, ProxyKind } from './proxy-answer.js'
 import { RelayRefusal } from './relay-failures.js'
 import type { RelayFailures } from './relay-failures.js'
 import { abandoned, connectDirect, connectThroughProxy, UpstreamFailure } from './upstream.js'
@@ -45,7 +45,12 @@ export interface RelayOpenerDeps {
   readonly failures: RelayFailures
   readonly maxOpen?: number
   readonly upstream?: UpstreamOptions
+  /** Called once for each connection made, with the address it was made to and the road: the proxy's word (`PROXY`, `HTTPS`, `SOCKS5`, `SOCKS`) or `DIRECT`. */
+  readonly connected?: (target: FrontTarget, address: string, road: string) => void
 }
+
+/** The proxy's own word for a road, as the system writes it: all a report of a connection may say of the proxy. */
+const ROAD: Readonly<Record<ProxyKind, string>> = { http: 'PROXY', https: 'HTTPS', socks5: 'SOCKS5', socks4: 'SOCKS' }
 
 const ROUTED_NAME = 'Orivon opens this name itself, so it is never sent through your proxy.'
 const BUSY = 'Orivon is already carrying as many connections through your proxy as it allows. Try again in a moment.'
@@ -77,6 +82,15 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
   const maxOpen = deps.maxOpen ?? RELAY_MAX_OPEN
   let active = 0
 
+  /** Nothing a listener does with the report ends the connection it reports. */
+  function report (target: FrontTarget, address: string, road: string): void {
+    try {
+      deps.connected?.(target, address, road)
+    } catch {
+      // The connection is made; a listener that fails is its own.
+    }
+  }
+
   async function throughProxy (target: FrontTarget, entry: ProxyEntry): Promise<Socket> {
     const { host, port, signal } = target
     // SOCKS4 carries IPv4 only, so an IPv6 lookup would be asked for nothing.
@@ -95,14 +109,18 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
       inside += ordered.inside
       for (const address of ordered.usable) {
         tried += 1
+        let socket: Socket
         try {
-          return await connectThroughProxy(entry, address, port, signal, deps.upstream)
+          socket = await connectThroughProxy(entry, address, port, signal, deps.upstream)
         } catch (error) {
           if (signal.aborted) throw abandoned()
           if (!(error instanceof UpstreamFailure)) throw new RelayRefusal('unreachable')
           if (error.effect === 'proxy') throw new ProxyDown()
           if (error.effect === 'final') throw new RelayRefusal(error.word)
+          continue
         }
+        report(target, address, ROAD[entry.kind])
+        return socket
       }
     }
     if (tried > 0) throw new RelayRefusal('unreachable')
@@ -118,11 +136,15 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
     const addresses = keepResolverOrder(found)
     if (addresses.length === 0) throw new RelayRefusal('not-found')
     for (const address of addresses) {
+      let socket: Socket
       try {
-        return await connectDirect(address, port, signal, deps.upstream)
+        socket = await connectDirect(address, port, signal, deps.upstream)
       } catch {
         if (signal.aborted) throw abandoned()
+        continue
       }
+      report(target, address, 'DIRECT')
+      return socket
     }
     throw new RelayRefusal('unreachable')
   }

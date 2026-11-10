@@ -102,3 +102,19 @@ describe('isFromHost, for a request the host hands the shell', () => {
     expect(isFromHost({ type: 'relay-abort' })).toBe(false)
   })
 })
+
+describe('isFromHost, for a question about the addresses of a name', () => {
+  it('accepts a name and a number', () => {
+    expect(isFromHost({ type: 'address-lookup', id: 3, host: 'gateway.example' })).toBe(true)
+  })
+
+  it.each([
+    ['an id that is not a count', { id: -1 }],
+    ['an id that is missing', { id: undefined }],
+    ['a host that is not text', { host: 5 }],
+    ['an empty host', { host: '' }],
+    ['a host longer than any name', { host: `${'a'.repeat(254)}` }]
+  ])('refuses a question with %s', (_what, fields) => {
+    expect(isFromHost({ type: 'address-lookup', id: 3, host: 'gateway.example', ...fields })).toBe(false)
+  })
+})

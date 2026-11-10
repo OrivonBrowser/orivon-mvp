@@ -75,6 +75,18 @@ export type RelayToHost =
   | { readonly type: 'relay-end', readonly id: number }
   | { readonly type: 'relay-error', readonly id: number, readonly message: string }
 
+/** The host asks main for the addresses of `host` as the name relay finds them, to judge a CCIP-Read gateway before it reads it. Main answers with `address-answer`. */
+export interface AddressLookupAsk { readonly type: 'address-lookup', readonly id: number, readonly host: string }
+
+/** What main found for `address-lookup` `id`: the addresses, `none` while no relay runs (the host looks the name up as it always did), or `refused` when the relay could not (the host fails the check, and looks nothing up). */
+export type AddressAnswer =
+  | { readonly type: 'address-answer', readonly id: number, readonly kind: 'addresses', readonly addresses: readonly string[] }
+  | { readonly type: 'address-answer', readonly id: number, readonly kind: 'none' }
+  | { readonly type: 'address-answer', readonly id: number, readonly kind: 'refused' }
+
+/** The most addresses one answer may carry: a name with more is refused, never cut, since the check judges every one. */
+export const MAX_ANSWERED_ADDRESSES = 32
+
 /**
  * The origins the shell serves from a copy it keeps, whole each time: a request for one of their hosts is handed to the shell.
  */
@@ -213,6 +225,7 @@ export type ToHost =
   | { readonly type: 'ipfs-lookup', readonly allowed: boolean }
   | ShellServes
   | RelayToHost
+  | AddressAnswer
 
 export type FromHost =
   | { readonly type: 'listening', readonly fingerprint: string }
@@ -230,3 +243,4 @@ export type FromHost =
   /** A top-level-domain name was mounted from content of the protocol serving `scheme`, so the shell can show `<scheme>://<host>`. */
   | { readonly type: 'name-scheme', readonly host: string, readonly scheme: string }
   | RelayFromHost
+  | AddressLookupAsk

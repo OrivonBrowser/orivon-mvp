@@ -60,6 +60,8 @@ shield reads `pending` and the chrome asks again every two seconds. When the pro
 `unreachable` with `retryMs`, the shield's label says the provider could not be reached (not that there is no score yet), and the
 chrome asks again after that long (30 seconds, stretched by the route), eight times at most per site.
 
+**While the name relay runs, an icon from another host is read through a pinned endpoint.** `favicon-fetch.ts` asks the relay for the host's addresses (`relayLookup`), judges every one with the gate above, pins the host and port to one it cleared and reads through `../route/name-relay/pinned-session.ts`, so the system's proxy is asked for that address and never looks the name up again; each redirect is followed by the fetch itself and its host looked up and pinned before it is read. A page with a route, an own-origin icon and a loopback page keep the road they have. The relay does not run in this build, so no icon takes this path.
+
 **A routed app's lookups leave through its route.** A tab's icon from another host and the Web3 Score provider's answer are
 fetched from main, which would otherwise use the default session. For an app the person routed, `favicon-fetch.ts` and
 `score-provider-client.ts` ask `../route/lookup-session.ts` for the session of the app's route and use it for those
