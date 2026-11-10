@@ -14,7 +14,7 @@ describe('whether the system\'s settings may run code on a name', () => {
   it('does not when the system has no proxy, or a manual proxy whose copy the sessions took', () => {
     expect(settingsMayRunCode(status({}), {})).toBe(false)
     expect(settingsMayRunCode(status({ mode: 'manual', state: 'mirrored', reason: 'copied' }), {})).toBe(false)
-    for (const source of ['gnome', 'windows', 'macos'] as const) expect(settingsMayRunCode(status({ source }), { auto_proxy: 'http://wpad/x.pac' }), `${source} ignores the environment`).toBe(false)
+    for (const source of ['windows', 'macos'] as const) expect(settingsMayRunCode(status({ source }), { auto_proxy: 'http://wpad/x.pac' }), `${source} ignores the environment`).toBe(false)
   })
 
   it('does for a script and for automatic detection, whether or not a copy of the script was taken, since a session that did not take it still runs it', () => {
@@ -22,6 +22,14 @@ describe('whether the system\'s settings may run code on a name', () => {
       expect(settingsMayRunCode(status({ mode, reason: mode === 'script' ? 'unfetched' : 'detect' }), {}), `${mode} left to the system`).toBe(true)
       expect(settingsMayRunCode(status({ mode, state: 'mirrored', reason: 'copied' }), {}), `${mode} copied`).toBe(true)
     }
+  })
+
+  it('does for a script or detection the environment names, which the mirror reads as it does a desktop\'s', () => {
+    for (const source of ['environment', 'gnome', 'kde', 'windows', 'macos'] as const) {
+      expect(settingsMayRunCode(status({ source, mode: 'script', reason: 'unfetched' }), {}), `${source} script left to the system`).toBe(true)
+      expect(settingsMayRunCode(status({ source, mode: 'detect', reason: 'detect' }), {}), `${source} detection`).toBe(true)
+    }
+    expect(settingsMayRunCode(status({ source: 'environment', mode: 'unknown', reason: 'no-reader' }), {}), 'no auto_proxy, so no reader').toBe(false)
   })
 
   it('does when the mirror could not tell: settings it cannot carry or read, and a first read not made yet', () => {
@@ -43,9 +51,11 @@ describe('whether the system\'s settings may run code on a name', () => {
     expect(settingsMayRunCode(bare, { auto_proxy: 'http://wpad/proxy.pac' })).toBe(true)
     expect(settingsMayRunCode(bare, { auto_proxy: '' }), 'empty is automatic detection').toBe(true)
     expect(settingsMayRunCode(bare, { AUTO_PROXY: 'http://wpad/proxy.pac' })).toBe(true)
-    const kde = status({ source: 'kde' })
-    expect(settingsMayRunCode(kde, {})).toBe(false)
-    expect(settingsMayRunCode(kde, { auto_proxy: 'http://wpad/proxy.pac' })).toBe(true)
+    for (const source of ['kde', 'gnome'] as const) {
+      const desktop = status({ source })
+      expect(settingsMayRunCode(desktop, {}), `${source} with no proxy`).toBe(false)
+      expect(settingsMayRunCode(desktop, { auto_proxy: 'http://wpad/proxy.pac' }), `${source} with no proxy and a script in the environment`).toBe(true)
+    }
   })
 })
 
@@ -62,6 +72,15 @@ describe('whether a name put to a session would reach code of the system\'s', ()
     const session = {}
     await trackProxySet(session, async () => {}, 1_000, COPY)
     expect(wouldRunSystemCode(session)).toBe(false)
+  })
+
+  it('does not for a session on the wrapped copy of the script the environment names, and does once it is back on the system\'s config', async () => {
+    setMirrorStatusSource(() => status({ source: 'environment', mode: 'script', state: 'mirrored', reason: 'copied' }))
+    const session = {}
+    await trackProxySet(session, async () => {}, 1_000, { mode: 'pac_script' })
+    expect(wouldRunSystemCode(session)).toBe(false)
+    await trackProxySet(session, async () => {}, 1_000, { mode: 'system' })
+    expect(wouldRunSystemCode(session)).toBe(true)
   })
 
   it('does not when the settings run none, whatever the session is on', () => {

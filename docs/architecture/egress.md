@@ -83,7 +83,7 @@ and in tabs opened from it, runs in that tunnel's profile until the tab closes, 
 | `src/main/pages/serve.ts` | The renderer's dev server on loopback, in a source run only | Answering an `orivon://` page in development | Loopback |
 | `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
 | `src/main/route/dead-end.ts` | Listens on a random `127.0.0.1` port, accepts and closes; reads and sends nothing | The place a session is pointed at to stop it (a session made while the whole browser is on the tunnel, one that could not be pointed, the requests made with no session), so a stopped request fails at once and no other listener on this computer is shown a destination name | Loopback |
-| `src/main/route/proxy-mirror/pac-fetch.ts` | The address of the proxy script the system names, and only that (`http:` or `https:`, redirects to the same kinds followed), through a session of its own set to `{ mode: 'direct' }`, with no cookies or credentials and nothing cached, at most a megabyte and thirty seconds | Copying the system's proxy script into the sessions that follow the system | Not routed, by design: the script is fetched as the system's own settings would have Chromium fetch it, direct, and the session sets a proxy of its own, so no tunnel, front or system proxy takes the request. It happens only while the settings name a script; the address and the text reach neither the log nor `orivon://report` |
+| `src/main/route/proxy-mirror/pac-fetch.ts` | The address of the proxy script the system names (in its settings, or the environment's `auto_proxy`), and only that (`http:` or `https:`, redirects to the same kinds followed), through a session of its own set to `{ mode: 'direct' }`, with no cookies or credentials and nothing cached, at most a megabyte and thirty seconds | Copying the system's proxy script into the sessions that follow the system | Not routed, by design: the script is fetched as the system's own settings would have Chromium fetch it, direct, and the session sets a proxy of its own, so no tunnel, front or system proxy takes the request. It happens only while the settings or the environment name a script; the address and the text reach neither the log nor `orivon://report` |
 | `src/main/route/proxy-mirror/read-kde.ts` | Nothing: uses only `isIPv4` and `isIPv6` | Telling an address from a hostname in KDE's proxy exceptions | Loopback |
 | `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions, and of every other session the runtime creates while the whole browser is on the tunnel: the front, or the dead end (the moment a session is made or switched on, before the front is had); also `app.setProxy` for the requests made with no session | Where a session takes the tunnel; it marks a session as changing from before each `setProxy` until the call ends (`proxy-answers.ts`) | Routed (it makes sessions take it) |
 | `src/main/route/route-subsystem.ts` | Nothing of its own: wires the sessions, `app.setProxy`, the system-proxy session that T20 asks, the system-mirror session that Orivon's direct requests and the lookups about a site set to off use, and the system-check session where a copy of the system's proxy settings is tried (`proxy-mirror/`; it runs `gsettings`, and sets a proxy on the sessions that follow the system only after the check); registers the guard that keeps a name the verifier serves from a proxy the system sets, on every website session | Starting the routes | Routed (it makes the rest take the tunnel) |
@@ -151,8 +151,8 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
 - **A proxy of the environment (Linux, no desktop proxy setting).** Before Chromium starts, `src/main/verifier/no-proxy.ts`
   appends `.suffix` for every routed suffix to `no_proxy` and `NO_PROXY`, after whatever the person wrote. Chromium then
   resolves those names direct. A program Orivon starts inherits the variable, including one opened with `openExternal` or
-  `openPath`, and asks no proxy about these names either. A proxy found with a script (`auto_proxy`) is not exempted this
-  way; the guard below covers it.
+  `openPath`, and asks no proxy about these names either. `no_proxy` does not apply to a proxy found with a script (`auto_proxy`,
+  which Chromium reads before the manual variables and which wins over them): that script is copied, as the proxy-script item below says.
 - **A manual proxy in GNOME's settings (and the desktops that share them).** `src/main/route/proxy-mirror/` reads the settings
   (`gsettings list-recursively org.gnome.system.proxy`, run without a shell, three seconds at most, its output never logged) and
   sets every session that would follow the system to the same servers and exceptions, plus `*.suffix` for every
@@ -177,7 +177,8 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
   exceptions as listed, with `<local>` first when "Exclude simple hostnames" is ticked. Automatic discovery alone stays on
   `{ mode: 'system' }`; a script, even beside a manual proxy, is the next item's. Nothing is read or run on other desktops.
 - **A proxy script in the system's settings.** GNOME's `autoconfig-url`, KDE's `Proxy Config Script`, Windows' `AutoConfigURL` (or the
-  script of the connection blob) and macOS's `ProxyAutoConfigURLString` name one. `proxy-mirror/pac-fetch.ts` fetches its text from
+  script of the connection blob), macOS's `ProxyAutoConfigURLString` and, on a desktop Chromium reads no proxy settings of its own for,
+  the environment's `auto_proxy` (read once, as Chromium reads it) name one. `proxy-mirror/pac-fetch.ts` fetches its text from
   that address alone, and `pac-wrapper.ts` makes of it a script of Orivon's own that answers `DIRECT` for every name the verifier serves
   (any case, any number of root dots) before the system's text runs, and runs that text where it can neither reach that check
   nor replace the function Chromium asks; a text that fails to compile or throws answers `DIRECT`, as Chromium's own session does. The wrapped script
@@ -199,8 +200,9 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
      auto-configuration script is shown the whole URL of a plain request, which the question the guard asks (it has no path)
      cannot repeat;
   3. cancels the request without asking when the session is on the system's own config and the system's settings may run code of
-     their own (`src/main/route/system-code.ts`): a script, automatic detection, settings Orivon could not read or carry, a
-     manual proxy whose copy was not taken, or a first read not yet made. Such a session hands every URL it is asked about to
+     their own (`src/main/route/system-code.ts`): a script (a desktop's, or the environment's `auto_proxy`), automatic detection, settings Orivon could not read or carry, a
+     manual proxy whose copy was not taken, a desktop that gave Chromium no proxy while `auto_proxy` is set, or a first read not
+     yet made. Such a session hands every URL it is asked about to
      that code, which can resolve the host it is shown (`dnsResolve`) or send it anywhere, so the name is never put to it. A session
      that holds a copy (a manual proxy, or a wrapped script) is not on the system's own config and is asked in the next step,
      where the copy answers before any text of the system's runs;

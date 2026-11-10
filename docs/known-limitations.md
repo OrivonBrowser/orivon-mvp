@@ -27,9 +27,11 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   servers and exceptions into the sessions that follow the system, with the names it serves added to the exceptions, so they open and ordinary sites still go through the
   proxy. The copy is made only when a session of Orivon's own, set to it, answers as Chromium does for the same
   addresses; a proxy turned on, off or moved is followed within a few seconds, and an edit of the exceptions alone
-  within thirty. Behind a proxy script the settings name (GNOME's, KDE's, Windows' or macOS's), Orivon fetches the script, wraps it
+  within thirty. Behind a proxy script the settings name (GNOME's, KDE's, Windows' or macOS's) or that `auto_proxy` names in the
+  environment (on a desktop Chromium reads no proxy settings of its own for), Orivon fetches the script, wraps it
   so that the names it serves always go direct while every other name gets the script's own answer, and gives the sessions the
-  wrapped copy under the same check. Wherever the settings cannot be read or copied exactly, or the check disagrees, the sessions follow
+  wrapped copy under the same check. Chromium also reads `auto_proxy` when GNOME's or KDE's own settings give it no proxy to use
+  (GNOME's manual mode with no server, KDE with no `kioslaverc` or no proxy type); a script there is left to the system, as the next paragraph says. Wherever the settings cannot be read or copied exactly, or the check disagrees, the sessions follow
   the system and the next paragraph applies; KDE's reversed exceptions are one such case, and so are a script that cannot
   be fetched (not at an `http:` or `https:` address, over a megabyte, not answering) and one that answers differently at every
   question, by the clock or at random. A name written with a dot at the end (`name.eth.`) is not found behind a copied proxy or script,
