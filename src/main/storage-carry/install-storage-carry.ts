@@ -21,7 +21,7 @@ import { cookieJarOf, openCarryPage } from './carry-pages.js'
 import { carryStorage } from './carry-runner.js'
 import type { CarryOutcome } from './carry-runner.js'
 import { holdsRequest } from './hold-rule.js'
-import { MARKER_FILE, needsCarry, readMarker, withFinal, withOutcome, writeMarker } from './marker.js'
+import { MARKER_FILE, needsCarry, readMarker, withFinal, withOutcome, withWriteStarted, writeMarker } from './marker.js'
 import type { CarryMarker } from './marker.js'
 import { newReport } from './report.js'
 import { oldPartitionDirectory, storageKindsOnDisk, storageNotCarried } from './old-data.js'
@@ -100,6 +100,7 @@ export function installStorageCarry (options: StorageCarryOptions): CarryGate {
         signal,
         notCarried: storageNotCarried(directory),
         nowSeconds: () => Date.now() / 1000,
+        beforeWriting: () => { record((current) => withWriteStarted(current, origin, new Date())) },
         log: { info: (text) => { console.log(text) }, warn: (text) => { console.warn(text) } }
       })
     } catch (error) {

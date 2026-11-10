@@ -14,7 +14,7 @@ session websites run in, for an app that now runs there ([`../shell/app-session.
 | `hold-rule.ts` | Pure: which request the hold applies to (a main-frame page of a served origin, not the empty document) |
 | `carry-pages.ts` | The Electron half: a hidden view no window holds, at the shell's empty document ([`../../loader/electron/carry-page.ts`](../../loader/electron/carry-page.ts)), the port handed to it, and a cookie jar over a session |
 | `cookies.ts` | Pure: whether a cookie of the old partition is the app's own, and how it becomes a cookie to set |
-| `marker.ts` | Pure, apart from reading and writing the file: which origins were carried, tried and failed, with the report |
+| `marker.ts` | Pure, apart from reading and writing the file: which origins were carried, tried and failed, or began to write and did not end, with the report |
 | `old-data.ts` | What the old partition's folder shows was stored, read from disk without opening the session |
 | `report.ts` | Pure: the counts and the named problems one carry produced, and the line that sums them |
 
@@ -56,13 +56,25 @@ set of served origins changes. A page of an app opened before its turn takes its
 web-request owner for the carry to end, however long it takes: a page that loaded while the carry was still writing would meet half of
 it, and an app's own code would write beside it. One deadline covers an origin, `CARRY_DEADLINE_MS` (*provisional*, ten minutes; a
 profile with a database of several gigabytes would settle it), however many pages wait; each call to a hidden page has a cap of its own
-(`CALL_LIMIT_MS`). Past the deadline the carry stops, clears what it wrote and ends as failed, and the page loads. The carries cost
-a start of the verifier host for apps that were not opened; that is the price of a person's first visit not waiting for a carry.
+(`CALL_LIMIT_MS`). Past the deadline the carry stops, closes its hidden pages (one that finishes opening later is closed as it
+arrives), clears what it wrote and ends as failed, and the page loads. The page loads only when every part of that clearing has
+ended or failed, so it never meets a clearing in progress; a clearing that does neither within `CLEANUP_MS` (*provisional*, five
+minutes; the same several-gigabyte profile would settle it) is given up on, the carry ends as failed with "still being cleared"
+in its reason, and the page then loads while the clearing may still run, the one case where it can remove what the page
+writes. The carries cost a start of the verifier host for apps that were not opened; that is the price of a person's first visit
+not waiting for a carry.
 
 **A failed carry is tried again only while it cannot have been written over.** The record gets `failed` and the reason. At the next
 start the carry runs again, up to `MAX_ATTEMPTS`, unless a page of the app was let through after the failure: from then on the
 app may have written in the website session, and a carry replaces what that session holds, so the row is final. A record file that
 exists and cannot be read stops every carry, for the same reason. The old partition stays on disk either way.
+
+**A carry that takes the browser down is counted from the moment it starts to write.** Just before it first changes the website
+session (after the old partition was read and found to hold something), the carry writes a `failed` row marked `unfinished` and
+counts the try; its outcome replaces that row without counting it again. A browser that stopped in the middle therefore finds the
+row at the next start, and the carry is tried again until `MAX_ATTEMPTS` starts have been used, then not at all. A stop before
+that point leaves no row, so it is tried again whenever it happens. After `MAX_ATTEMPTS` stops in the middle, nothing clears what
+the last one wrote: the page loads over a part of the app's data, and the row's reason says the carry did not end.
 
 **The hold decides the kind of request itself.** The web-request owner registers one Electron listener per event with the union of
 every handler's filter, and offers a handler every request whose URL its `matches` accepts, whatever type its own filter named. A hold
@@ -111,7 +123,10 @@ it cannot.
 then each store is read in batches cut by about 1.5 MB or 200 records and written in one transaction each, continued from the last
 key. A record counts as written when its transaction completed; a transaction that aborts counts none of its records and fails the
 database, which is then removed. A database with a record that could not be moved (a value larger than 96 MB, or one structured
-clone refuses) is `partial`, never `carried`, and the problem names the record.
+clone refuses) is `partial`, never `carried`, and the problem names the record. A database whose carry failed is removed from
+the target at once; when it cannot be (the page says the removal was blocked, or does not answer it), the whole carry ends as
+failed and names the database, and the clearing of the website session that follows takes the half-made database away with the
+rest, so a database that is only partly the app's is never left behind under a `carried` row.
 
 **What is not carried, and what the log says.** Service workers and Cache Storage (the app registers and fills them again),
 the private file system (OPFS), session storage (it never outlives a tab), a value larger than 96 MB, a value structured clone refuses,

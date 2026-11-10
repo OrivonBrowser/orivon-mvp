@@ -14,6 +14,7 @@ class FakeJar implements CookieJar {
   readonly sets: CookieToSet[] = []
   readonly removed: string[] = []
   hangOn: string | undefined
+  failRemove = false
   constructor (private readonly held: OldCookie[] = []) {}
   async all (): Promise<readonly OldCookie[]> { return this.held }
   async set (cookie: CookieToSet): Promise<void> {
@@ -22,7 +23,10 @@ class FakeJar implements CookieJar {
     this.sets.push(cookie)
   }
 
-  async remove (_url: string, name: string): Promise<void> { this.removed.push(name) }
+  async remove (_url: string, name: string): Promise<void> {
+    if (this.failRemove) throw new Error('the cookie could not be removed')
+    this.removed.push(name)
+  }
 }
 
 function logOf (): CarryLog & { lines: string[] } {
@@ -305,7 +309,7 @@ describe('a carry that cannot finish', () => {
     await seedNotes(w.oldPage)
     const outcome = await carryStorage(w.request)
     expect(outcome.status).toBe('failed')
-    expect(outcome.reason).toContain('a hidden page stopped answering (the hidden page did not answer)')
+    expect(outcome.reason).toContain('database "notes" could not be removed after it failed (the hidden page did not answer)')
     expect(w.newJar.sets).toEqual([])
     expect(w.events.filter((event) => event === 'clear')).toHaveLength(2)
     expect(w.events.lastIndexOf('clear')).toBeGreaterThan(w.events.lastIndexOf('close new'))
@@ -356,7 +360,51 @@ describe('a carry that cannot finish', () => {
     w.controller.abort()
     const outcome = await running
     expect(outcome.status).toBe('failed')
-    expect(outcome.reason).toContain('the half copy could not be cleared (it took too long)')
+    expect(outcome.reason).toContain('the half copy could not be cleared (it was still being cleared after 20 ms)')
+  })
+
+  it('closes a page that finishes opening after the deadline has passed, as the carry no longer holds it', async () => {
+    const w = world({ oldCookies: [cookie('sid')] })
+    w.oldPage.localStorage.setItem('theme', 'dark')
+    let opens!: () => void
+    const late = new Promise<void>((resolve) => { opens = resolve })
+    const running = carryStorage({ ...w.request, target: { ...w.request.target, open: async (nonce) => { await late; return await w.request.target.open(nonce) } } })
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    w.controller.abort()
+    const outcome = await running
+    expect(outcome.status).toBe('failed')
+    expect(outcome.reason).toBe('the carry did not finish in time')
+    expect(w.events).not.toContain('open new')
+    opens()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(w.events).toContain('open new')
+    expect(w.newPage.closed).toBe(true)
+    expect(w.events).toContain('close new')
+  })
+
+  it('leaves no page open when a page cannot be opened at all', async () => {
+    const w = world({ oldCookies: [cookie('sid')] })
+    w.oldPage.localStorage.setItem('theme', 'dark')
+    const outcome = await carryStorage({ ...w.request, target: { ...w.request.target, open: async () => { throw new Error('the empty document did not load') } } })
+    expect(outcome.status).toBe('failed')
+    expect(outcome.reason).toContain('did not load')
+    expect(w.oldPage.closed).toBe(true)
+  })
+
+  it('does not release the page while the half copy is still being cleared, even when another part of the clearing has failed already', async () => {
+    let clearing = false
+    let cleared = false
+    const w = world({ oldCookies: [cookie('a'), cookie('b')], clear: async (call) => { if (call !== 2) return; clearing = true; await new Promise((resolve) => setTimeout(resolve, 80)); cleared = true } })
+    w.newJar.hangOn = 'b'
+    w.newJar.failRemove = true
+    const running = carryStorage(w.request)
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    w.controller.abort()
+    const outcome = await running
+    expect(clearing).toBe(true)
+    expect(cleared).toBe(true)
+    expect(outcome.status).toBe('failed')
+    expect(outcome.reason).toContain('the half copy could not be cleared (the cookie could not be removed)')
   })
 
   it('refuses to run in a page that defined the carry\'s name before the script came', async () => {
@@ -367,5 +415,90 @@ describe('a carry that cannot finish', () => {
     expect(outcome.reason).toContain('already defines the name')
     expect(w.newJar.sets).toEqual([])
     expect(w.events).not.toContain('clear')
+  })
+})
+
+describe('a database that fails to carry', () => {
+  /** A target page whose first batch is refused and whose answer to `dropDatabase` is `drop`. */
+  const refusing = (drop: (page: FakePage, code: string) => Promise<string>) => (page: FakePage): CarryPage => ({
+    give: page.give,
+    close: page.close,
+    run: async (code) => {
+      if (code.includes('.dropDatabase(')) return await drop(page, code)
+      const answer = await page.run(code)
+      return code.includes('.writeBatch(') ? JSON.stringify({ written: 0, problems: [], aborted: 'QuotaExceededError' }) : answer
+    }
+  })
+
+  it('ends the carry as failed, naming the database, when the half-made database could not be removed', async () => {
+    const w = world({ wrapNew: refusing(async () => JSON.stringify({ dropped: false, reason: 'the database is blocked' })) })
+    await seedNotes(w.oldPage)
+    const outcome = await carryStorage(w.request)
+    expect(outcome.status).toBe('failed')
+    expect(outcome.reason).toContain('database "notes" could not be removed after it failed (the database is blocked)')
+    expect(w.log.lines.join('\n')).toContain('database "notes" could not be removed after it failed')
+    expect(w.events.filter((event) => event === 'clear')).toHaveLength(2)
+    expect(await w.newPage.indexedDB.databases()).toEqual([])
+  })
+
+  it('ends the carry as failed, naming the database, when the page does not answer the removal', async () => {
+    const w = world({ wrapNew: refusing(async () => { throw new Error('the hidden page did not answer') }) })
+    await seedNotes(w.oldPage)
+    const outcome = await carryStorage(w.request)
+    expect(outcome.status).toBe('failed')
+    expect(outcome.reason).toContain('database "notes" could not be removed after it failed (the hidden page did not answer)')
+  })
+
+  it('ends the carry as failed when, after one database failed and was removed, the hidden pages no longer answer', async () => {
+    let connects = 0
+    const w = world({
+      wrapNew: (page) => ({
+        give: page.give,
+        close: page.close,
+        run: async (code) => {
+          if (code.includes('.connect(') && ++connects > 1) throw new Error('the hidden page did not answer')
+          const answer = await page.run(code)
+          return code.includes('.writeBatch(') ? JSON.stringify({ written: 0, problems: [], aborted: 'QuotaExceededError' }) : answer
+        }
+      })
+    })
+    await seedNotes(w.oldPage)
+    const outcome = await carryStorage(w.request)
+    expect(outcome.status).toBe('failed')
+    expect(outcome.reason).toContain('a hidden page stopped answering (the hidden page did not answer)')
+  })
+
+  it('goes on with the other databases when the failed one was removed', async () => {
+    const w = world({ wrapNew: refusing(async (page, code) => await page.run(code)) })
+    await seedNotes(w.oldPage)
+    const outcome = await carryStorage(w.request)
+    expect(outcome.status).toBe('carried')
+    expect(outcome.report.databases.failed).toBe(1)
+    expect(await w.newPage.indexedDB.databases()).toEqual([])
+  })
+})
+
+describe('when the carry starts to write', () => {
+  it('says so once, after the old partition has been read and before the website session is touched', async () => {
+    const w = world({ oldCookies: [cookie('sid')] })
+    w.oldPage.localStorage.setItem('theme', 'dark')
+    const outcome = await carryStorage({ ...w.request, beforeWriting: () => { w.events.push('begin') } })
+    expect(outcome.status).toBe('carried')
+    expect(w.events).toEqual(['open old', 'begin', 'clear', 'open new', 'set sid', 'close old', 'close new'])
+  })
+
+  it('does not say so when the old partition holds nothing for the origin', async () => {
+    const w = world()
+    let begun = 0
+    await carryStorage({ ...w.request, beforeWriting: () => { begun += 1 } })
+    expect(begun).toBe(0)
+  })
+
+  it('does not say so when the old partition cannot be read', async () => {
+    const w = world({ oldCookies: [cookie('sid')] })
+    let begun = 0
+    const outcome = await carryStorage({ ...w.request, source: { ...w.request.source, open: async () => { throw new Error('the empty document did not load') } }, beforeWriting: () => { begun += 1 } })
+    expect(outcome.status).toBe('failed')
+    expect(begun).toBe(0)
   })
 })
