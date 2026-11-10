@@ -52,3 +52,10 @@ export async function readNetLog (path: string, needle: string): Promise<NetLogF
     proxies: log.events.filter((event) => named(event) === 'PROXY_RESOLUTION_SERVICE_RESOLVED_PROXY_LIST' && requestSources.has(event.source?.id)).map(text)
   }
 }
+
+/** What the proxy scripts that ran said through `alert`, which Chromium's net log records as the script's own words: proof of the hosts a script was run with. */
+export async function readPacAlerts (path: string): Promise<string[]> {
+  const log = JSON.parse(await readFile(path, 'utf8')) as RawNetLog
+  const names = new Map(Object.entries(log.constants.logEventTypes).map(([name, id]) => [id, name]))
+  return log.events.filter((event) => names.get(event.type) === 'PAC_JAVASCRIPT_ALERT').map((event) => JSON.stringify(event.params ?? {}))
+}

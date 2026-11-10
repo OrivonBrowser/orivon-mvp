@@ -4,11 +4,13 @@
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
 import type { Net, Session } from 'electron'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createDirectFetch } from '../direct-fetch.js'
+import { forgetSystemSettings, systemSettingsAre } from './mirror-status.test-helpers.js'
 import { PROXY_WOULD_SEE_NAME } from '../verifier-name-guard.js'
 
-afterEach(() => { vi.restoreAllMocks() })
+beforeEach(() => { systemSettingsAre() })
+afterEach(() => { vi.restoreAllMocks(); forgetSystemSettings() })
 
 interface FakeRequest extends EventEmitter { end: () => void, abort: () => void, setHeader: (name: string, value: string) => void, write: (chunk: Buffer) => void }
 

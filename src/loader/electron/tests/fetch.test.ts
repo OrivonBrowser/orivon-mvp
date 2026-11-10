@@ -1,6 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { forgetSystemSettings, systemSettingsAre } from '../../../main/route/tests/mirror-status.test-helpers.js'
+
+beforeEach(() => { systemSettingsAre() })
+afterEach(() => { forgetSystemSettings() })
 
 // electronFetch and netFetch both dynamically import 'electron' (see
 // electron/fetch.ts's own header for why) -- mocked here so this file can
