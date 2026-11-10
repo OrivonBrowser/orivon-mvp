@@ -10,8 +10,8 @@ const A = 'a'.repeat(32)
 const ANCHOR = { x: 1, y: 2, width: 3, height: 4 }
 
 function twoWindows (): { api: any, ctx: any, chromeA: any, chromeB: any, tabA: any, tabB: any } {
-  const winA = { id: 1 }
-  const winB = { id: 2 }
+  const winA = { id: 1, isDestroyed: () => false }
+  const winB = { id: 2, isDestroyed: () => false }
   const tabA = { id: 10 }
   const tabB = { id: 20 }
   const chromeA = {}
@@ -51,6 +51,12 @@ describe('the toolbar of each window', () => {
   it('acts, with no tab named, on the active tab of the toolbar that was clicked', () => {
     const { api, ctx, chromeA } = twoWindows()
     api.activate({ type: 'frame', sender: chromeA, extension: undefined }, { eventType: 'click', extensionId: A, tabId: -1, anchorRect: ANCHOR })
+    expect(ctx.router.sendEvent).toHaveBeenCalledWith(A, 'browserAction.onClicked', { id: 10 })
+  })
+
+  it('acts on the active tab of its window, whatever tab id the toolbar holds', () => {
+    const { api, ctx, chromeA } = twoWindows()
+    api.activate({ type: 'frame', sender: chromeA, extension: undefined }, { eventType: 'click', extensionId: A, tabId: 20, anchorRect: ANCHOR })
     expect(ctx.router.sendEvent).toHaveBeenCalledWith(A, 'browserAction.onClicked', { id: 10 })
   })
 })

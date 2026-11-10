@@ -38,6 +38,8 @@ interface Rig {
   settingListeners: Array<(change: { key: string }) => void>
   tabs: Record<'openTrusted' | 'openInternal', ReturnType<typeof vi.fn>>
   activate: ReturnType<typeof vi.fn>
+  /** The window every tab of the rig is in. */
+  baseWindow: { isDestroyed: () => boolean }
 }
 
 function rig (): Rig {
@@ -49,13 +51,14 @@ function rig (): Rig {
   const settingListeners: Array<(change: { key: string }) => void> = []
   const tabs = { openTrusted: vi.fn(), openInternal: vi.fn() }
   const activate = vi.fn()
+  const baseWindow = { isDestroyed: () => false }
   const extensions = new Map<string, { name: string, manifest: Record<string, unknown> }>([
     [A, { name: 'Alpha', manifest: { options_page: 'o.html' } }],
     [B, { name: 'Beta', manifest: {} }]
   ])
   const services = {
     settings: { get: () => pinNew.value, onChange: (listener: (change: { key: string }) => void) => { settingListeners.push(listener); return () => {} } },
-    windows: { focused: () => ({ tabs }), all: () => [] }
+    windows: { focused: () => ({ tabs }), all: () => [], findTab: () => ({ window: { window: baseWindow, tabs } }) }
   } as unknown as ShellServices
   const ctx = {
     handle: (name: string, run: (event: ApiEvent) => unknown) => { handlers.set(name, run) },
@@ -77,7 +80,7 @@ function rig (): Rig {
   } as unknown as ExtensionApiContext
   actionUserSettingsApi.install(ctx)
   watchPinSetting(services)
-  return { ctx, prefs, handlers, sendEvent, notify, pinNew, settingListeners, tabs, activate }
+  return { ctx, prefs, handlers, sendEvent, notify, pinNew, settingListeners, tabs, activate, baseWindow }
 }
 
 const event = (id: string): ApiEvent => ({ type: 'frame', sender: undefined, extension: { id, manifest: {} } })
@@ -199,7 +202,7 @@ describe('the dependencies of the Extensions menu', () => {
     expect(deps?.canActivate(tab)).toBe(true)
     expect(deps?.canActivate({ session: {} } as never)).toBe(false)
     deps?.activate(A, tab, { x: 1, y: 2, width: 3, height: 4 })
-    expect(r.activate).toHaveBeenCalledWith(A, tab, { x: 1, y: 2, width: 3, height: 4 })
+    expect(r.activate).toHaveBeenCalledWith(A, r.baseWindow, { x: 1, y: 2, width: 3, height: 4 })
   })
 })
 
@@ -238,7 +241,7 @@ describe('a library instance of a profile session', () => {
     expect(deps?.canActivate(tab)).toBe(true)
     expect(deps?.actions(5).get(A)).toEqual({ hasPopup: false, badge: '' })
     deps?.activate(A, tab, { x: 1, y: 2, width: 3, height: 4 })
-    expect(profileHost.activateAction).toHaveBeenCalledWith(A, tab, { x: 1, y: 2, width: 3, height: 4 })
+    expect(profileHost.activateAction).toHaveBeenCalledWith(A, r.baseWindow, { x: 1, y: 2, width: 3, height: 4 })
     expect(r.activate).not.toHaveBeenCalled()
   })
 })
