@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const {
   TabCaptureAPI,
   setTabCaptureInvocationCheck,
-  setTabCaptureAppRefusalCheck,
   setTabCaptureGrantRecorder,
   setTabCaptureConsumedCheck,
 } = await import('../../../../vendor/electron-chrome-extensions/src/browser/api/tab-capture.js')
@@ -89,7 +88,6 @@ const HTTP_URL = 'http://example.test/'
 beforeEach(() => {
   vi.useFakeTimers()
   setTabCaptureInvocationCheck(() => true)
-  setTabCaptureAppRefusalCheck(() => false)
   setTabCaptureGrantRecorder(() => {})
   setTabCaptureConsumedCheck(() => true)
 })
@@ -200,7 +198,7 @@ describe('TabCaptureAPI: consumption/release tracked per (extension, target tab)
 })
 
 describe('TabCaptureAPI: re-checked on the captured tab\'s own navigation', () => {
-  it('ends the capture once the app-refusal check newly refuses, after navigation', async () => {
+  it('goes on capturing a tab that navigates to the page of a site that holds Orivon permissions, as to any other website', async () => {
     const { session } = fakeSession()
     const tab = new FakeWebContents(1, HTTP_URL, session)
     const consumer = new FakeWebContents(2, 'chrome-extension://ext-a/offscreen.html', session)
@@ -211,12 +209,11 @@ describe('TabCaptureAPI: re-checked on the captured tab\'s own navigation', () =
     await (api as any).getMediaStreamId({ extension: { id: EXT_A } }, { targetTabId: 1 })
     expect(tab.audioMuted).toBe(true)
 
-    // The tab navigates to what is now a granted app's own origin.
-    setTabCaptureAppRefusalCheck(() => true)
+    tab.setURL('https://granted.example/app')
     tab.emit('did-navigate')
 
-    expect(tab.audioMuted).toBe(false)
-    expect(ctx.router.sendEvent).toHaveBeenCalledWith(EXT_A, 'tabCapture.onStatusChanged', { tabId: 1, status: 'stopped', fullscreen: false })
+    expect(tab.audioMuted).toBe(true)
+    expect(ctx.router.sendEvent).not.toHaveBeenCalledWith(EXT_A, 'tabCapture.onStatusChanged', expect.objectContaining({ status: 'stopped' }))
   })
 
   it('ends the capture once the tab navigates to a non-http(s) URL', async () => {

@@ -32,12 +32,12 @@ describe('topSites.get', () => {
     expect(new Set(sites.map((site) => new URL(site.url).host)).size).toBe(10)
   })
 
-  it('leaves out an app\'s pages and what is not a web address', () => {
+  it('lists a granted site like any other, and leaves out what is not a web address', () => {
     const s = setup()
-    s.visit('https://app.example/inbox', 9)
+    s.visit('https://granted.example/inbox', 9)
     s.visit('ipfs://bafy/', 8)
     s.visit('https://a.test/', 1)
-    expect(topSites(s.ctx).map((site) => site.url)).toEqual(['https://a.test/'])
+    expect(topSites(s.ctx).map((site) => site.url)).toEqual(['https://granted.example/inbox', 'https://a.test/'])
   })
 
   it('answers an empty list for an empty history', () => {

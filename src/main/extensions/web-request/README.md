@@ -29,10 +29,13 @@ never reaches them by accident. A webRequest filter is not a permission: a block
 pattern and leaves every other pattern to the shared matcher. Whether the extension may then see
 the request is `visibility.ts`'s question, asked against the HTTP origin the WebSocket shares.
 
-**A registered app is out of every answer.** `visibility.ts` hides a request from every extension
-when its URL, its initiator or the page that made it is the origin of a registered app, the same
-rule the data APIs apply (`../api/README.md`). The predicate arrives as a function, like host
-access, so the file stays free of the grants.
+**A site that holds Orivon permissions is a website to a listener.** `visibility.ts` asks nothing
+about grants: a request from such a page, to its origin or with it as the initiator reaches an
+extension on the same rules as any other, host access included, the way the data APIs treat it
+(`../api/README.md`). A request from a page outside the default session never reaches a listener at
+all, because the listener is installed on that session only: an app run from its pinned copy, in a session
+of its own, has no request an extension hears, blocks or redirects, and no content script, menu entry or
+tab API either (only history and top sites list its pages).
 
 **A name Orivon serves loads and fails in Orivon, never in an extension.** `visibility.ts` hides `onErrorOccurred` of a
 `main_frame` or `sub_frame` request to a host a protocol serves (`.eth` and every other top-level domain a protocol
