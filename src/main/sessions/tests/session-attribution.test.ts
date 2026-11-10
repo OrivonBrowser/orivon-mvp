@@ -250,7 +250,7 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
       isOwnDocument: () => false,
       isEntering: () => false,
       reload: async () => {},
-      leftDocument: async () => {},
+      becameOwn: async () => {},
       clear: async () => {},
       limits: { hostMs: 50, pageMs: 50, enteringMs: 50, clearMs: 50 },
       log: () => {}
