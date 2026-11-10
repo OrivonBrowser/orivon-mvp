@@ -43,6 +43,7 @@ import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { copyPrivateExtensions } from './launch/private-extensions.js'
 import { copyPrivatePicture } from './launch/private-picture.js'
+import { moveLongNamedPartitionFolders } from './launch/partition-folders.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { configureVerifier, ethServersChanged, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
@@ -145,6 +146,8 @@ export function boot (runtime: Runtime): void {
   startDiagnostics({ dir: runtime.dir, isPrivate: runtime.isPrivate })
   // Read before any store or subsystem opens a file of the profile.
   decideDefaultProfile(runtime.dir, process.env)
+  // Before any session is made: a session opens the folder its name says, so the folders of the old names move first.
+  moveLongNamedPartitionFolders(runtime.dir)
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
   // Chromium reads the feature at start, so the saved choice is read here, before the settings store exists.
   applyGlobalPrivacyControl(app.commandLine, readSettingBeforeReady(join(runtime.dir, 'settings.json'), 'privacy.globalPrivacyControl'))

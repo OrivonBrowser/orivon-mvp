@@ -1,6 +1,6 @@
 # `src/main/route/cookie-mirror/`: the same sign-ins in the tunnel profiles and in normal browsing, for the sites a person opens, when the person asks for them
 
-**What lives here.** The part of [ADR-0110](../../../../docs/decisions/ADR-0110-a-person-can-keep-the-tunnel-profiles-sign-ins-the-same-as-normal-browsing-and-a-cookie-mirror-keeps-them-in-step.md)
+**What lives here.** The part of [ADR-0111](../../../../docs/decisions/ADR-0111-a-person-can-keep-the-tunnel-profiles-sign-ins-the-same-as-normal-browsing-and-a-cookie-mirror-keeps-them-in-step.md)
 that copies cookies between the default session and the kept sessions of the three profiles
 ([`../site-partition.ts`](../site-partition.ts)) while "Keep tunneled sites separate" (`network.tunnel.separateSignIns`) is off. Only the cookies of a site
 a tunnelled tab has opened as its top-level page are copied (its registrable domain, `mirror-site.ts`); no other cookie is.

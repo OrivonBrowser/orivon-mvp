@@ -205,7 +205,7 @@ describe('TabManager -- an installed app gets its own session at creation (ADR-0
   it('every real app partition is persist:-prefixed -- ADR-0003 requires storage to survive a restart', () => {
     const manager = newManager(ctxWithRegisteredOrigins('https://app.example'))
     manager.createTab('https://app.example/')
-    expect(partitionOf(createdViews[0] as RecordedView)).toMatch(/^persist:app-[0-9a-f]{64}$/)
+    expect(partitionOf(createdViews[0] as RecordedView)).toMatch(/^persist:app-[0-9a-f]{32}$/)
   })
 
   it('the fresh-tab dashboard gets NO partition, even though its own dev-mode URL is a real http(s) address', () => {

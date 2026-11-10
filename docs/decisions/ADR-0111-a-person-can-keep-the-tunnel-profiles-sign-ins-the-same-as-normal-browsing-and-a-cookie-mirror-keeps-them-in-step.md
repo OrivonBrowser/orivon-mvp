@@ -1,6 +1,6 @@
-# ADR-0110: A person can keep the tunnel profiles' sign-ins the same as normal browsing, and a cookie mirror keeps them in step
+# ADR-0111: A person can keep the tunnel profiles' sign-ins the same as normal browsing, and a cookie mirror keeps them in step
 
-- **Status:** accepted. Amends [`ADR-0084`](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md) (where a website's sign-ins live while the new setting is off) and carries out `d-0783`. *Provisional* on the scope rule (which cookies are shared), settled by the owner's word after first use; see Reversibility.
+- **Status:** accepted. Amends [`ADR-0084`](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md) (where a website's sign-ins live while the new setting is off) and carries out `d-0784`. *Provisional* on the scope rule (which cookies are shared), settled by the owner's word after first use; see Reversibility.
 - **Date:** 2026-11-09; the scope narrowed 2026-11-10 after a review found that the first version shared the whole cookie jar, and the rule for adding a site narrowed the same day after a second review found that a redirect hop could add a tracker.
 - **Type:** product / security
 - **Decided by:** owner
