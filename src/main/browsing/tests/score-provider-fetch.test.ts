@@ -3,7 +3,11 @@
 import { EventEmitter } from 'node:events'
 import { Readable } from 'node:stream'
 import type { Session } from 'electron'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { forgetSystemSettings, systemSettingsAre } from '../../route/tests/mirror-status.test-helpers.js'
+
+beforeEach(() => { systemSettingsAre() })
+afterEach(() => { forgetSystemSettings() })
 
 vi.mock('electron', () => ({ net: { fetch: vi.fn(), request: vi.fn() }, session: { defaultSession: { resolveProxy: vi.fn() } } }))
 

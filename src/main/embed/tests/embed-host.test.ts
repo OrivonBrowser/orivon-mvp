@@ -1,6 +1,10 @@
 import { EventEmitter } from 'node:events'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { forgetSystemSettings, systemSettingsAre } from '../../route/tests/mirror-status.test-helpers.js'
 import type { Broker } from '../../../broker/broker-contracts.js'
+
+beforeEach(() => { systemSettingsAre() })
+afterEach(() => { forgetSystemSettings() })
 
 // embed-host.ts imports `app`/`session` from 'electron' at module scope,
 // so even a pure-logic test cannot import it without mocking first (same

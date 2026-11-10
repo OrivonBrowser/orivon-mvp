@@ -38,6 +38,7 @@ import { environmentReader } from './proxy-mirror/read-environment.js'
 import { readKdeSettings } from './proxy-mirror/read-kde-files.js'
 import { readGnomeSettings, readMacosSettings, readWindowsSettings } from './proxy-mirror/run-readers.js'
 import { sourceOf } from './proxy-mirror/settings-source.js'
+import { askHolderOfCopy } from './system-code.js'
 import { guardOfSession, namesVerifierHost, rootDotBypassRules, routedBypassRules, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
@@ -168,11 +169,12 @@ export const routeSubsystem: Subsystem = {
         systemSession = made
         markOwnProxy(made)
         markFollowsSystem(made)
-        trackProxySet(made, async () => { await made.setProxy({ mode: 'system' }) }).catch((error: unknown) => { console.error('[route] could not put the system-proxy session on the system\'s proxy:', error) })
+        trackProxySet(made, async () => { await made.setProxy({ mode: 'system' }) }, undefined, { mode: 'system' }).catch((error: unknown) => { console.error('[route] could not put the system-proxy session on the system\'s proxy:', error) })
       }
       return systemSession
     }
-    setSystemProxyProbe(async (url) => await systemProxySession().resolveProxy(url))
+    // Ordinary hosts only: a name the verifier serves is asked of the session that holds the copy below, which is never this one.
+    setSystemProxyProbe(async (url) => await systemProxySession().resolveProxy(url), async (url) => await askHolderOfCopy(systemMirrorSession(), url))
     // Made now, so that the first question finds its proxy set.
     systemProxySession()
     // Orivon's own direct requests and the lookups about a website set to off go through a session of their own that follows the system as the controller sets it (`systemConfig`), never the one above.

@@ -1,5 +1,8 @@
 // The addresses the mirror asks both Chromium's own answer and its copy about, to see that the copy sends them where the system does.
-// Pure.
+// Never a name the verifier serves: Chromium's own answer comes from a session on the system's config, which hands a URL to any script
+// the system names, and the copy sends those names direct whatever the exceptions say. Pure.
+
+import { namesVerifierHost } from '../verifier-name-guard.js'
 
 /** Two ordinary sites the system's rules send to the proxy or past it by scheme alone. */
 export const BASE_CANARIES: readonly string[] = ['https://example.com/', 'http://example.com/']
@@ -9,7 +12,7 @@ const MOST_FROM_EXCEPTIONS = 3
 const NAME = /^[A-Za-z0-9][A-Za-z0-9.-]*$/
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?:\/\d{1,2})?$/
 
-/** An address an exception covers, or undefined for one that says nothing a plain question can show (a port, a scheme, `<local>`, `*`, a loopback address, an IPv6 range). */
+/** An address an exception covers, or undefined for one that says nothing a plain question can show (a port, a scheme, `<local>`, `*`, a loopback address, an IPv6 range, a name the verifier serves). */
 function coveredBy (exception: string): string | undefined {
   const ip = IPV4.exec(exception)
   if (ip !== null) {
@@ -19,7 +22,8 @@ function coveredBy (exception: string): string | undefined {
   }
   const suffix = exception.replace(/^\*\.?/, '').replace(/^\./, '')
   if (!NAME.test(suffix) || suffix === 'localhost') return undefined
-  return /^[*.]/.test(exception) ? `https://probe.${suffix}/` : `https://${suffix}/`
+  const url = /^[*.]/.test(exception) ? `https://probe.${suffix}/` : `https://${suffix}/`
+  return namesVerifierHost(url) ? undefined : url
 }
 
 /** Up to three addresses the system's exceptions cover, in their order. */
