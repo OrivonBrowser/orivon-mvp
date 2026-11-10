@@ -16,7 +16,7 @@ import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
-import { delay, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
+import { activeTabInfo, delay, evaluateRetrying, findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
 import { keyCapsOf, navigateToFixture, pressBinding, pressCommand, pressKey } from '../support/e2e-helpers.js'
 import { openExtensionPage, rpc, seedFixture, waitRecovered } from './extensions-e2e-helpers.js'
 
@@ -164,6 +164,22 @@ it('binds suggested keys, runs them through the dispatcher, and lets the shortcu
     await pressKey(app, `chrome-extension://${ids.first}/popup.html`, 'K', ['alt', 'shift'])
     expect(await waitFor(async () => (await commandLog(app, rpcWc)).length === 2)).toBe(true)
     await popupOpen()?.close()
+    expect(await waitFor(() => popupOpen() === undefined)).toBe(true)
+
+    // The same key over an Orivon page, which no extension instance tracks: the popup opens in the window all the same, with no tab.
+    const activeOf = async (): Promise<{ activeId?: string, address?: string }> => await activeTabInfo(chrome) as { activeId?: string, address?: string }
+    const fixtureTab = (await activeOf()).activeId as string
+    await chrome.evaluate(() => { (window as unknown as { orivonShell: { openInternal: (page: string) => void } }).orivonShell.openInternal('settings') })
+    expect(await waitFor(async () => String((await activeOf()).address).startsWith('orivon://settings'))).toBe(true)
+    await pressBinding(app, 'orivon://settings', 'Mod+Shift+Y')
+    expect(await waitFor(() => popupOpen() !== undefined)).toBe(true)
+    const overSettings = popupOpen() as Page
+    expect(await evaluateRetrying(overSettings, async () => (await chrome.tabs.query({ active: true, currentWindow: true })).length)).toBe(0)
+    expect(String((await activeOf()).address).startsWith('orivon://settings')).toBe(true)
+    await popupOpen()?.close()
+    expect(await waitFor(() => popupOpen() === undefined)).toBe(true)
+    await chrome.click(`.tab[data-id="${fixtureTab}"]`)
+    expect(await waitFor(async () => (await activeOf()).activeId === fixtureTab)).toBe(true)
 
     // Orivon's key is still Orivon's: the extension that suggested it never hears of it.
     const before = (await tabIds(chrome)).length

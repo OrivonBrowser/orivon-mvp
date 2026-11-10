@@ -207,6 +207,19 @@ right end (`extension-action-anchor.ts`). A virtual display never reports a page
 so the library measures the page's content after half a second, and again while it still renders; a real display's size, and the placement
 on Wayland, are *provisional* until a person's desktop shows them.
 
+**A toolbar click opens the popup whatever page is in front.** A click, `chrome.action.openPopup()` and a command key
+(`_execute_action`) act on what is in front of the window they belong to when they run, not on the tab a toolbar last
+drew. An `orivon:` page, or a tab of a session no extension is in, is in none of the instances' tabs, and
+`extension-host.ts`'s `tabActivated` tells every instance that no tab of theirs is in front of that window (the cached
+`active` of the window's tabs goes false with it); its `frontTracked` answers whether the front page is a tab any
+instance tracks. Over a page none tracks the popup opens under that window with no tab (UPSTREAM.md patch 76): its
+`chrome.tabs.query({ active: true, currentWindow: true })` finds no tab, and `getContexts` reports it with tab `-1`, as in
+Chrome on a `chrome://` page. `onClicked` carries a tab, so an action with no popup hears nothing; no tab-capture
+invocation is recorded; and the side panel's click interceptor (`side-panel-runner.ts`) is given the window, so an
+`openPanelOnActionClick` extension's panel opens in it. Over a tab of another instance (a profile session's) an instance
+opens nothing: the toolbar speaks to the instance of the front tab, `openPopup` returns, and a command key, which speaks to
+the default session's instance alone, finds no popup to open.
+
 **The Chrome Web Store page keeps its own `chrome.webstorePrivate`.** Every extension load makes the
 renderer rebuild `chrome.*`; the preload defines `webstorePrivate` and `management` as accessors that
 refuse redefinition (UPSTREAM.md of `vendor/electron-chrome-web-store`, patch 8), because the native
@@ -250,7 +263,8 @@ the popup as a click on the icon does, under the icon or else the Extensions but
 `ElectronChromeExtensions.sendCommand` with the active tab, and counts as an invocation of the
 extension on that tab. A tab no extension can see (an Orivon page, or a tab in a session with no extensions, such as an app run from
 its pinned copy) is passed as no tab: a named command still reaches the extension and the key is consumed,
-while `_execute_action` and `_execute_side_panel` do nothing and leave the key with the page. A site that holds
+`_execute_action` opens the popup in the window with no tab, as a click on the icon does there (UPSTREAM.md patch 76),
+and `_execute_side_panel` does nothing and leaves the key with the page. A site that holds
 Orivon permissions is a tab like any other. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
 table is empty until `installShortcuts` says the saved shortcuts are read, because a lookup before
 that would cache the defaults. The macOS reading of `Command` and `MacCtrl` is *provisional*: it

@@ -136,6 +136,32 @@ describe('extension-host: tabActivated on an untracked tab (an orivon: page or a
   })
 })
 
+describe('extension-host: frontTracked, which lets a popup open with no tab', () => {
+  beforeEach(() => {
+    capturedOptions = undefined
+    lastInstance = undefined
+    getExtension.mockReset()
+  })
+
+  it('is true for a window whose front page is a tab an instance tracks, false for any other page, and false for a window it does not know', () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed, shellWindow } = buildShell()
+    const front: { current: WebContents | undefined } = { current: undefined }
+    shellWindow.tabs.activeWebContents = () => front.current
+    const tracked = { session: mockedSession.defaultSession, isDestroyed: () => false } as unknown as WebContents
+    subscribed.tabCreated(tracked, shellWindow.window)
+
+    front.current = tracked
+    expect(capturedOptions.frontTracked(shellWindow.window)).toBe(true)
+    front.current = fakeWc({ different: true })
+    expect(capturedOptions.frontTracked(shellWindow.window)).toBe(false)
+    front.current = undefined
+    expect(capturedOptions.frontTracked(shellWindow.window)).toBe(false)
+    expect(capturedOptions.frontTracked({ id: 99 })).toBe(false)
+  })
+})
+
 describe('extension-host: viewReplaced adds the new tab before removing the old one', () => {
   beforeEach(() => {
     capturedOptions = undefined
