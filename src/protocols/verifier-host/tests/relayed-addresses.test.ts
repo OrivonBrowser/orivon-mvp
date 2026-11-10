@@ -17,7 +17,8 @@ function rig (options: { timeoutMs?: number } = {}) {
   return { relayed, own, asks }
 }
 
-const answer = (id: number, rest: Omit<AddressAnswer, 'type' | 'id'>): AddressAnswer => ({ type: 'address-answer', id, ...rest } as AddressAnswer)
+type Body = AddressAnswer extends infer Each ? (Each extends AddressAnswer ? Omit<Each, 'type' | 'id'> : never) : never
+const answer = (id: number, rest: Body): AddressAnswer => ({ type: 'address-answer', id, ...rest } as AddressAnswer)
 
 describe('a name the check asks about', () => {
   it('is the addresses main answers with while the relay runs, and the host looks nothing up', async () => {

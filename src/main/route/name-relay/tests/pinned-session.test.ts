@@ -1,5 +1,6 @@
 // The session a caller in main reads through a pinned endpoint.
 
+import type { Session } from 'electron'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hasOwnProxy } from '../../own-proxy.js'
 import { pinnedEndpoint } from '../pinned-endpoint.js'
@@ -15,7 +16,7 @@ async function endpoint (): Promise<PinnedEndpoint> {
   return made
 }
 
-const fakeSession = (): { setProxy: ReturnType<typeof vi.fn> } => ({ setProxy: vi.fn(async () => {}) })
+const fakeSession = () => ({ setProxy: vi.fn<Session['setProxy']>(async () => {}) })
 
 describe('the session a pinned endpoint is read through', () => {
   it('is made in memory, left alone by the shared identity, and set to the endpoint\'s config before it is handed back', async () => {
@@ -49,7 +50,7 @@ describe('the session a pinned endpoint is read through', () => {
 
   it('is made again by the next caller when it could not be set', async () => {
     const pinned = await endpoint()
-    const broken = { setProxy: vi.fn(async () => { throw new Error('no proxy set') }) }
+    const broken = { setProxy: vi.fn<Session['setProxy']>(async () => { throw new Error('no proxy set') }) }
     await expect(sessionThrough(pinned, () => broken)).rejects.toThrow('no proxy set')
     const good = fakeSession()
     expect(await sessionThrough(pinned, () => good)).toBe(good)

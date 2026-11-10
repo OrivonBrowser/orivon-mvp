@@ -445,7 +445,7 @@ export const verifierSubsystem: Subsystem = {
         },
         nodeTraffic: (name, active, bytes) => { ledger.record(name, active, bytes) },
         relay: (message) => { responder.receive(message) },
-        addressLookup: (id, name) => { void answerAddressLookup(relayLookup(), id, name).then((answer) => host.send(answer)) },
+        addressLookup: (id, name) => { void answerAddressLookup(relayLookup(), id, name).then((answer) => host.send(answer)).catch(() => { console.error('[verifier] an address answer could not be sent to the host') }) },
         abandoned: () => { responder.abortAll() },
         nodeWanted: (name) => {
           const node = NODES.get(name)
