@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { buildDiagnostics } from '../diagnostics-facts.js'
+import { formatArgs, logLines } from '../log-ring.js'
+import type { LogLevel } from '../log-ring.js'
 import { buildPayload, cut, fitDiagnostics, isSendable, LIMITS, previewText, wireBody, wireVersion } from '../report-payload.js'
 import { forgetSecrets, noteSecret } from '../secret-scrub.js'
 import { CHOICES, CRASH, FACTS, HOME, sources } from './report-fixtures.js'
@@ -51,22 +53,42 @@ describe('buildPayload', () => {
   })
 
   describe('the address of a page in a log line', () => {
-    const electron = '2026-11-10T23:46:50.823Z ERROR (node:2722343) electron: Failed to load URL: https://bank.example/account/12345?token=abc with error: ERR_NAME_NOT_RESOLVED'
+    const AT = new Date('2026-11-10T23:46:50.823Z')
+    const logOf = (level: LogLevel, ...args: unknown[]): string[] => logLines(level, formatArgs(args), AT)
 
-    it('is cut after its site in the log, whoever printed the line, and the error stays', () => {
-      const payload = buildPayload(sources({ log: [electron, '2026-11-10T23:46:51.000Z LOG [verifier] opened ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/notes?x=1 from /home/ann/x'] }))
-      expect(payload.log).toEqual([
-        '2026-11-10T23:46:50.823Z ERROR (node:2722343) electron: Failed to load URL: https://bank.example/•••• with error: ERR_NAME_NOT_RESOLVED',
-        '2026-11-10T23:46:51.000Z LOG [verifier] opened ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/•••• from ~/x'
-      ])
-      expect(previewText(payload)).not.toContain('account/12345')
+    it('is cut to its scheme and kind of site in the line Electron prints for a failed or refused load, and the error stays', () => {
+      const payload = buildPayload(sources({ log: logOf('error', '(node:2722343) electron: Failed to load URL: https://bank.example/account/12345?token=abc with error: ERR_BLOCKED_BY_CLIENT') }))
+      expect(payload.log).toEqual(['2026-11-10T23:46:50.823Z ERROR (node:2722343) electron: Failed to load URL: https://••••.example/•••• with error: ERR_BLOCKED_BY_CLIENT'])
+      expect(previewText(payload)).not.toContain('bank')
       expect(previewText(payload)).not.toContain('token=abc')
+    })
+
+    it('is cut in the line a first visit that failed writes, which names the origin and the error', () => {
+      const failure = new Error('could not read https://shop.example/.well-known/manifest.json?v=2')
+      const lines = logOf('error', '[first-visit] the visit failed; the page stays an ordinary website', 'https://shop.example', failure)
+      const payload = buildPayload(sources({ log: lines }))
+      expect(payload.log?.[0]).toBe('2026-11-10T23:46:50.823Z ERROR [first-visit] the visit failed; the page stays an ordinary website https://••••.example Error: could not read https://••••.example/••••')
+      expect(JSON.stringify(payload.log)).not.toContain('shop')
+      expect(payload.log?.length).toBe(lines.length)
+    })
+
+    it('is cut in every kind of line, whoever wrote it, and the home directory still goes', () => {
+      const payload = buildPayload(sources({ log: [
+        '2026-11-10T23:46:51.000Z WARN [verifier] refused a service worker script the shell did not serve: https://app.example/sw.js?id=9',
+        '2026-11-10T23:46:52.000Z LOG [loader] ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/notes?x=1 opened from /home/ann/x',
+        '2026-11-10T23:46:53.000Z LOG [orivon] http://exampleonionaddressexampleonionaddressexampleonionaddre.onion/forum and file:///home/ann/Documents/tax.html'
+      ] }))
+      expect(payload.log).toEqual([
+        '2026-11-10T23:46:51.000Z WARN [verifier] refused a service worker script the shell did not serve: https://••••.example/••••',
+        '2026-11-10T23:46:52.000Z LOG [loader] ipfs://••••/•••• opened from ~/x',
+        '2026-11-10T23:46:53.000Z LOG [orivon] http://••••.onion/•••• and file:///••••'
+      ])
     })
 
     it('leaves no part of the path in a line that runs past the limit', () => {
       const long = `${'x'.repeat(LIMITS.logLine - 60)} https://bank.example/${'secret-path/'.repeat(20)}`
       const line = buildPayload(sources({ log: [long] })).log?.[0] ?? ''
-      expect(line).toContain('https://bank.example/••••')
+      expect(line).toContain('https://••••.example/••••')
       expect(line).not.toContain('secret-path')
     })
 
@@ -92,7 +114,7 @@ describe('buildPayload', () => {
       }))
       expect(JSON.stringify(payload)).not.toContain(KEY)
       expect(payload.description).toBe('It broke on https://mainnet.infura.io/••••')
-      expect(payload.log?.[0]).toBe('2026-10-07T11:00:00.000Z ERROR [verifier] https://mainnet.infura.io/•••• answered 401')
+      expect(payload.log?.[0]).toBe('2026-10-07T11:00:00.000Z ERROR [verifier] https://••••.io/•••• answered 401')
       expect(previewText(payload)).not.toContain(KEY)
     })
 
