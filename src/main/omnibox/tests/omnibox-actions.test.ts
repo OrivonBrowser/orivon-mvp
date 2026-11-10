@@ -262,6 +262,20 @@ describe('the omnibox chrome actions', () => {
       expect(here.overlays.close).toHaveBeenCalledWith('omnibox')
     })
 
+    it('says in the log why a choice was refused, with numbers and no text', () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      try {
+        const { run, anchor } = setup({ history })
+        const { seq } = run('omnibox.query', { text: 'exa', typing: false, anchor }) as { seq: number }
+        run('omnibox.query', { text: 'exam', typing: false, anchor })
+        run('omnibox.pick', { index: 1, disposition: 'current', seq })
+        expect(warn).toHaveBeenCalledTimes(1)
+        const line = String(warn.mock.calls[0]?.[0])
+        expect(line).toContain(`[omnibox] a choice was refused: row 1 of list ${String(seq)}/undefined, held list ${String(seq + 1)}/`)
+        expect(line).not.toContain('exa')
+      } finally { warn.mockRestore() }
+    })
+
     it('can be made through the overlay by an index alone', () => {
       const { run, here, anchor } = setup({ history })
       run('omnibox.query', { text: 'exa', typing: false, anchor })

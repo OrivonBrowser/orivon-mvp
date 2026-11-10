@@ -27,8 +27,8 @@ function fakeDeps (over: Partial<ExtensionApiDeps> = {}) {
     extensions: () => undefined,
     prefs: createExtensionPrefsStore(null),
     held: () => true,
-    isAppOrigin: (url) => url.startsWith('https://app.example'),
     webContentsFromId: () => undefined,
+    visibleTab: () => true,
     popupParent: () => undefined,
     ...over
   }
@@ -112,18 +112,12 @@ describe('createApiContext: tab lookup', () => {
   })
 })
 
-describe('createApiContext: canSee and isAppOrigin', () => {
+describe('createApiContext: canSee', () => {
   it('canSee asks the host access of the tab current URL for that extension', () => {
     const ctx = createApiContext(fakeDeps().deps, MODULE)
     expect(ctx.canSee(ID, { getURL: () => 'https://a.example/x', id: 1 } as never)).toBe(true)
     expect(ctx.canSee(ID, { getURL: () => 'https://b.example/x', id: 1 } as never)).toBe(false)
     expect(ctx.canSee('b'.repeat(32), { getURL: () => 'https://a.example/x', id: 1 } as never)).toBe(false)
-  })
-
-  it('passes the app-origin predicate through', () => {
-    const ctx = createApiContext(fakeDeps().deps, MODULE)
-    expect(ctx.isAppOrigin('https://app.example/')).toBe(true)
-    expect(ctx.isAppOrigin('https://a.example/')).toBe(false)
   })
 })
 
@@ -193,5 +187,15 @@ describe('createApiContext: callerWindow', () => {
     expect(ctxWith(null, undefined).callerWindow(frameEvent)).toBeUndefined()
     expect(ctxWith(null, winA).callerWindow({ type: 'service-worker', sender: undefined, extension: { id: ID, manifest: {} } })).toBeUndefined()
     expect(createApiContext(fakeDeps().deps, MODULE).callerWindow(frameEvent)).toBeUndefined()
+  })
+})
+
+describe('createApiContext: visibleTab', () => {
+  it('is the answer of the one rule the host gives, and asks nothing about grants', () => {
+    const asked: unknown[] = []
+    const tab = { id: 9 }
+    const ctx = createApiContext(fakeDeps({ visibleTab: (contents) => { asked.push(contents); return false } }).deps, MODULE)
+    expect(ctx.visibleTab(tab as never)).toBe(false)
+    expect(asked).toEqual([tab])
   })
 })

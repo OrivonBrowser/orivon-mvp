@@ -111,6 +111,30 @@ jobs:
       - name: Build as npm start does
         run: node scripts/build-ordinary.mjs
 
+      # The runner's 1024x768 screen carries the Dock, and AppKit keeps a window's height inside the screen minus the
+      # menu bar and the Dock (a window may still be wider than the screen), so every window stops at 677 px, on a
+      # screen no Mac sold. With the Dock hidden a window gets the screen's height less the menu bar. The screen's
+      # visible frame and system_profiler's display report (empty on this runner) go to cross-os/screen.txt; the
+      # frame's reading is best effort.
+      - name: Hide the Dock, record the screen
+        if: runner.os == 'macOS'
+        run: |
+          before=$(pgrep -x Dock || true)
+          defaults write com.apple.dock autohide -bool true
+          killall Dock
+          for _ in $(seq 1 30); do
+            now=$(pgrep -x Dock || true)
+            if [ -n "$now" ] && [ "$now" != "$before" ]; then break; fi
+            sleep 1
+          done
+          sleep 3
+          {
+            system_profiler SPDisplaysDataType 2>&1 || echo "system_profiler failed"
+            echo "Dock pid before: ${before:-none}, now: ${now:-none}"
+            echo -n "Visible frame (x, y, width, height): "
+            osascript -l JavaScript -e 'ObjC.import("AppKit"); const f = $.NSScreen.mainScreen.visibleFrame; [f.origin.x, f.origin.y, f.size.width, f.size.height].join(", ")' 2>&1 || echo "not readable"
+          } | tee cross-os/screen.txt
+
       # Its JSON result goes to cross-os/smoke.out; the failure list is printed to the log as well.
       - name: Smoke
         run: node scripts/run-headless.mjs node scripts/smoke.mjs > cross-os/smoke.out

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { mirroredConfig, routedBypassRules } from '../mirrored-config.js'
+import { routedBypassRules } from '../../verifier-name-guard.js'
+import { mirroredConfig } from '../mirrored-config.js'
 import { parseMacosSettings } from '../read-macos.js'
 import * as printed from './scutil-output.test-helpers.js'
 
