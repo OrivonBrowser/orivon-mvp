@@ -24,4 +24,20 @@ describe('runFirstVisit and the tab it enters', () => {
     expect(result.outcome).toBe('failed')
     expect(released).toHaveBeenCalledOnce()
   })
+
+  it('waits for the host to say it was told the app is served, and only then loads the tab as the app', async () => {
+    const h = harness()
+    const hostTold = vi.fn(async () => { h.events.push('host-told'); return true })
+    const result = await runFirstVisit({ ...depsOf(h), hostTold }, h.origin, h.url, present, h.host)
+    await settled(result)
+    expect(h.events.indexOf('serve-live')).toBeLessThan(h.events.indexOf('host-told'))
+    expect(h.events.indexOf('host-told')).toBeLessThan(h.events.indexOf('enter'))
+  })
+
+  it('loads the tab as the app even when the host never said so, so the app opens; the page the host answered has no grants', async () => {
+    const h = harness()
+    const result = await runFirstVisit({ ...depsOf(h), hostTold: async () => false }, h.origin, h.url, present, h.host)
+    await settled(result)
+    expect(h.events).toContain('enter')
+  })
 })

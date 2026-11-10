@@ -44,6 +44,7 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
     onBeforeRequest: (_order: number, _filter: unknown, _matches: unknown, run: (details: unknown, current: unknown) => Promise<unknown>) => { registered.beforeRequest.push(run); return { remove } },
     onCompleted: () => ({ remove }),
     onResponseStarted: () => ({ remove }),
+    onHeadersReceived: () => ({ remove }),
     onErrorOccurred: () => ({ remove })
   })
 }))

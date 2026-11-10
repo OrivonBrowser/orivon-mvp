@@ -309,3 +309,17 @@ describe('installDnrWebRequestHandlers', () => {
     })
   })
 })
+
+describe('the headers Orivon sets between the shell and its pages, for declarativeNetRequest', () => {
+  it('are never set, appended or removed on a response', () => {
+    const base = { 'x-orivon-shell-answered': ['1'], 'content-type': ['text/html'] }
+    expect(applyResponseHeaders({ 'content-type': ['text/html'] }, [{ header: 'X-Orivon-Shell-Answered', operation: 'set', value: '1' }])).toEqual({ 'content-type': ['text/html'] })
+    expect(applyResponseHeaders(base, [{ header: 'x-orivon-shell-answered', operation: 'remove' }])).toEqual(base)
+    expect(applyResponseHeaders(base, [{ header: 'x-orivon-shell-answered', operation: 'append', value: '0' }, { header: 'x-extra', operation: 'set', value: 'a' }])).toEqual({ ...base, 'x-extra': ['a'] })
+  })
+
+  it('are never set, appended or removed on a request', () => {
+    expect(applyRequestHeaders({ Accept: '*/*' }, [{ header: 'X-Orivon-Partition', operation: 'set', value: 'x' }])).toEqual({ Accept: '*/*' })
+    expect(applyRequestHeaders({ 'x-orivon-partition': 'p' }, [{ header: 'x-orivon-partition', operation: 'remove' }])).toEqual({ 'x-orivon-partition': 'p' })
+  })
+})

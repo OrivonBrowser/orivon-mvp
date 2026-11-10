@@ -20,4 +20,10 @@ describe('the order subsystems start in', () => {
   it('keeps the route above the broker, which reads what it publishes', () => {
     expect(at('routeSubsystem')).toBeLessThan(at('brokerIpcSubsystem'))
   })
+
+  it('prepares the pinned apps the loader restores at start-up with the website workers cleared and their scripts guarded', () => {
+    expect(at('websiteWorkersSubsystem')).toBeGreaterThan(-1)
+    expect(at('websiteWorkersSubsystem')).toBeLessThan(at('loaderSubsystem'))
+    expect(at('websiteWorkersSubsystem')).toBeGreaterThan(at('routeSubsystem'))
+  })
 })
