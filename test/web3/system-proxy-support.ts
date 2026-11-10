@@ -11,6 +11,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { activeTabInfo, findChrome, HERMETIC_RESOLVER, popoverShown, waitFor } from '../support/smoke-helpers.mjs'
+import { expect } from 'vitest'
 
 /** What the proxy was asked, in order: `CONNECT host:port`, or `METHOD absolute-url` for a plain-HTTP request. */
 export type ProxyLog = string[]
@@ -276,6 +277,20 @@ export function windowsManualProxy (form: WindowsProxyForm, first: WindowsProxy)
 }
 
 /**
+ * A computer whose Windows settings point at a proxy script, as a tool that writes only the values does (`AutoConfigURL`, with the proxy and
+ * detection off and no connection blob). `write` points them at another address, `off` removes the script and `restore` puts the user's own settings back.
+ */
+export function windowsScriptProxy (first: string): { write: (url: string) => void, off: () => void, restore: () => void } {
+  const restore = rememberIeSettings()
+  const write = (url: string | undefined): void => {
+    setIeBlob(null)
+    setIeValues({ ProxyEnable: 0, ProxyServer: null, ProxyOverride: null, AutoConfigURL: url ?? null, AutoDetect: 0 })
+  }
+  write(first)
+  return { write, off: () => { write(undefined) }, restore }
+}
+
+/**
  * Runs `launch` with this process's environment stripped of the desktop and of every proxy variable, so the launch
  * inherits neither the machine's desktop settings nor a stray proxy, and puts them back at once: `launchElectron` copies
  * the environment in its first synchronous step, so the strip only has to last that long.
@@ -352,6 +367,15 @@ Promise.allSettled([fetch('https://fetched.eth/a'), new Promise((done) => { cons
 
 /** The lines of a proxy's log that name a host the verifier serves. */
 export const verifierNames = (log: readonly string[]): string[] => log.filter((line) => /\.(eth|orivon)\b/.test(line))
+
+/**
+ * The `CONNECT` lines of `log` that the shell could have sent. On macOS every program of the computer follows the system-wide proxy a
+ * spec sets, and Apple's own services (iCloud, CloudKit, software updates, certificate checks) tunnel through it at moments no spec
+ * controls, so there a tunnel counts only when it names a host the verifier serves; elsewhere any tunnel counts but the component
+ * updater of Chromium.
+ */
+export const tunnelsOpened = (log: readonly string[]): string[] =>
+  log.filter((line) => line.startsWith('CONNECT') && (process.platform === 'darwin' ? verifierNames([line]).length > 0 : !line.includes('gvt1.com')))
 
 export interface Running { app: ElectronApplication, chrome: Page }
 
@@ -433,6 +457,8 @@ export interface MacosProxy {
   readonly manual: (port: number, exceptions?: readonly string[]) => Promise<void>
   /** A SOCKS proxy at `127.0.0.1:port`, and no web proxy. */
   readonly socks: (port: number) => Promise<void>
+  /** The proxy script at `url` ("Automatic proxy configuration"), and no web, secure web or SOCKS proxy. */
+  readonly script: (url: string) => Promise<void>
   /** Every proxy off. */
   readonly off: () => Promise<void>
   /** "Exclude simple hostnames" ticked or not. */
@@ -463,6 +489,11 @@ export function macosProxy (): MacosProxy {
   const exceptions = (): string[] => read('-getproxybypassdomains', service).split('\n').filter((line) => line.trim() !== '' && !line.startsWith('There aren\'t any'))
   const setExceptions = (list: readonly string[]): void => { networksetup('-setproxybypassdomains', service, ...(list.length === 0 ? ['Empty'] : list)) }
   const exceptionsBefore = exceptions()
+  const autoBefore = ((): { on: boolean, url: string } => {
+    const text = read('-getautoproxyurl', service)
+    const url = field(text, 'URL')
+    return { on: field(text, 'Enabled') === 'Yes', url: url === '(null)' ? '' : url }
+  })()
   const serviceId = /PrimaryService : (\S+)/.exec(execFileSync('/usr/sbin/scutil', [], { input: 'show State:/Network/Global/IPv4\n', encoding: 'utf8' }))?.[1] ?? ''
   const simplePath = `:NetworkServices:${serviceId}:Proxies:ExcludeSimpleHostnames`
   const plist = (command: string): string => execFileSync('/usr/bin/sudo', ['-n', '/usr/libexec/PlistBuddy', '-c', command, '/Library/Preferences/SystemConfiguration/preferences.plist'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
@@ -478,6 +509,7 @@ export function macosProxy (): MacosProxy {
   const flagOn = (dictionary: string, key: string): boolean => new RegExp(`^ {2}${key} : [1-9]`, 'm').test(dictionary)
   return {
     manual: async (port, list) => {
+      networksetup('-setautoproxystate', service, 'off')
       networksetup(socks.state, service, 'off')
       networksetup(web.set, service, '127.0.0.1', String(port))
       networksetup(secure.set, service, '127.0.0.1', String(port))
@@ -485,14 +517,22 @@ export function macosProxy (): MacosProxy {
       await shown('the proxy', (dictionary) => flagOn(dictionary, 'HTTPSEnable') && dictionary.includes(`HTTPSPort : ${String(port)}`) && !flagOn(dictionary, 'SOCKSEnable') && (list === undefined || list.every((entry) => dictionary.includes(` : ${entry}\n`))))
     },
     socks: async (port) => {
+      networksetup('-setautoproxystate', service, 'off')
       networksetup(web.state, service, 'off')
       networksetup(secure.state, service, 'off')
       networksetup(socks.set, service, '127.0.0.1', String(port))
       await shown('the SOCKS proxy', (dictionary) => flagOn(dictionary, 'SOCKSEnable') && dictionary.includes(`SOCKSPort : ${String(port)}`) && !flagOn(dictionary, 'HTTPEnable') && !flagOn(dictionary, 'HTTPSEnable'))
     },
-    off: async () => {
+    script: async (url) => {
       for (const { state } of servers) networksetup(state, service, 'off')
-      await shown('every proxy off', (dictionary) => !flagOn(dictionary, 'HTTPEnable') && !flagOn(dictionary, 'HTTPSEnable') && !flagOn(dictionary, 'SOCKSEnable'))
+      networksetup('-setautoproxyurl', service, url)
+      networksetup('-setautoproxystate', service, 'on')
+      await shown('the proxy script', (dictionary) => flagOn(dictionary, 'ProxyAutoConfigEnable') && dictionary.includes(`ProxyAutoConfigURLString : ${url}`) && !flagOn(dictionary, 'HTTPEnable') && !flagOn(dictionary, 'HTTPSEnable') && !flagOn(dictionary, 'SOCKSEnable'))
+    },
+    off: async () => {
+      networksetup('-setautoproxystate', service, 'off')
+      for (const { state } of servers) networksetup(state, service, 'off')
+      await shown('every proxy off', (dictionary) => !flagOn(dictionary, 'HTTPEnable') && !flagOn(dictionary, 'HTTPSEnable') && !flagOn(dictionary, 'SOCKSEnable') && !flagOn(dictionary, 'ProxyAutoConfigEnable'))
     },
     simpleHostnames: async (excluded) => {
       setSimple(excluded ? '1' : '0')
@@ -505,8 +545,41 @@ export function macosProxy (): MacosProxy {
         if (on && host !== '') networksetup(server.set, service, host, port)
         else networksetup(server.state, service, 'off')
       }
+      if (autoBefore.url !== '') networksetup('-setautoproxyurl', service, autoBefore.url)
+      networksetup('-setautoproxystate', service, autoBefore.on ? 'on' : 'off')
       setSimple(simpleBefore)
       setExceptions(exceptionsBefore)
     }
   }
+}
+
+export interface SystemProxyFact { readonly source: string, readonly mode: string, readonly state: string, readonly reason: string }
+
+/** Opens `orivon://report` and reads the mirror's fact, the log lines it wrote and the whole preview text, once main has built the preview. The log is read from the report because the lines a launch prints first reach a test's capture of the output only by chance. */
+export async function reportedMirror (app: ElectronApplication, chrome: Page): Promise<{ fact: SystemProxyFact | undefined, lines: string[], text: string }> {
+  await chrome.evaluate(() => { (window as unknown as { orivonShell: { runCommand: (id: string) => void } }).orivonShell.runCommand('report.open') })
+  expect(await waitFor(() => app.windows().some((w) => w.url().startsWith('orivon://report') && !w.isClosed()))).toBe(true)
+  const page = app.windows().find((w) => w.url().startsWith('orivon://report') && !w.isClosed()) as Page
+  await page.waitForSelector('#report-what')
+  let text = ''
+  let fact: SystemProxyFact | undefined
+  let lines: string[] = []
+  await waitFor(async () => {
+    text = await page.locator('#report-preview').textContent() ?? ''
+    try {
+      const shown = JSON.parse(text === '' ? '{}' : text) as { log?: string[] | null, diagnostics?: { browser?: { systemProxy?: SystemProxyFact } } }
+      fact = shown.diagnostics?.browser?.systemProxy
+      lines = (shown.log ?? []).filter((line) => line.includes('[route] system proxy:')).map((line) => line.slice(line.indexOf('[route]')))
+    } catch { fact = undefined }
+    return fact !== undefined
+  }, 15_000)
+  return { fact, lines, text }
+}
+
+/** Waits until the default session answers `url` as `expected` says, which is how a change of the copy shows. A change is followed within a few seconds (the question to Chromium is asked every 2 s; the settings are read every 30 s), so the bound is far under the read's. */
+export async function waitForAnswer (app: ElectronApplication, url: string, expected: RegExp, timeoutMs = 15_000): Promise<string> {
+  let last = ''
+  const settled = await waitFor(async () => { last = (await resolved(app, url))['default'] ?? ''; return expected.test(last) }, timeoutMs)
+  if (!settled) throw new Error(`the default session still answers ${last} for ${url}`)
+  return last
 }
