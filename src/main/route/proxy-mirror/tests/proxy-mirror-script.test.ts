@@ -10,6 +10,13 @@ import type { SystemSettings } from '../settings-source.js'
 import type { PacRun } from './pac-vm.test-helpers.js'
 import { runPac } from './pac-vm.test-helpers.js'
 
+/** How many times a script was wrapped and encoded, which is what a megabyte of text makes costly. */
+const wrapped = vi.hoisted(() => ({ count: 0 }))
+vi.mock('../mirrored-config.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../mirrored-config.js')>()
+  return { ...original, mirroredScriptConfig: (text: string) => { wrapped.count += 1; return original.mirroredScriptConfig(text) } }
+})
+
 const ADDRESS = 'http://wpad.test/proxy.pac'
 const OTHER = 'http://wpad.test/other.pac'
 const sendsAll = (server: string): string => `function FindProxyForURL(url, host) { return "PROXY ${server}" }`
@@ -134,7 +141,7 @@ function copied (mirror: ProxyMirror, url: string, world: World): string {
   return answerOf(runPac(sourceOf(config), helpers(world)), url)
 }
 
-beforeEach(() => { vi.useFakeTimers() })
+beforeEach(() => { vi.useFakeTimers(); wrapped.count = 0 })
 afterEach(() => { vi.useRealTimers() })
 
 describe('a proxy script the system names', () => {
@@ -376,6 +383,60 @@ describe('a proxy script whose answers differ at every question', () => {
     expect(world.fetches.length).toBeLessThanOrEqual(passes + 2)
     expect(world.reloads).toBeLessThanOrEqual(passes + 2)
     expect(world.sets).not.toEqual([])
+    mirror.stop()
+  })
+})
+
+describe('the copy made of a script', () => {
+  it('is made once for a text, though every attempt of every pass that is not settled asks for it', async () => {
+    const { mirror, world } = setup({ [ADDRESS]: VOLATILE })
+    await mirror.start()
+    await vi.advanceTimersByTimeAsync(5 * READ_EVERY_MS)
+    expect(mirror.status()).toMatchObject({ state: 'system', reason: 'disagrees' })
+    expect(world.sets.length).toBeGreaterThanOrEqual(10)
+    expect(wrapped.count).toBe(1)
+    expect(new Set(world.sets).size).toBe(1)
+    mirror.stop()
+  })
+
+  it('is made once for the two attempts of a pass that makes Chromium\'s session read the script again', async () => {
+    const { mirror, world } = setup()
+    world.chromium = runPac(SECOND)
+    await mirror.start()
+    expect(world.sets).toHaveLength(2)
+    expect(world.sets[0]).toBe(world.sets[1])
+    expect(wrapped.count).toBe(1)
+    mirror.stop()
+  })
+
+  it('is made again for a text that changed, and for the script of another address', async () => {
+    const { mirror, world } = setup({ [ADDRESS]: FIRST, [OTHER]: SECOND })
+    await mirror.start()
+    expect(wrapped.count).toBe(1)
+    world.served[ADDRESS] = SECOND
+    world.notice()
+    await vi.advanceTimersByTimeAsync(ANSWER_EVERY_MS)
+    expect(wrapped.count).toBe(2)
+    expect(copied(mirror, 'https://ordinary.test/', world)).toBe('PROXY proxy.test:3129')
+    world.served[OTHER] = FIRST
+    world.switchTo(OTHER)
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(wrapped.count).toBe(3)
+    expect(copied(mirror, 'https://ordinary.test/', world)).toBe('PROXY proxy.test:3128')
+    mirror.stop()
+  })
+
+  it('is made again when the settings stopped naming a script and name it once more', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    world.settings = { kind: 'none' }
+    world.chromium = undefined
+    await vi.advanceTimersByTimeAsync(ANSWER_EVERY_MS)
+    world.settings = { kind: 'script', url: ADDRESS }
+    world.notice()
+    await vi.advanceTimersByTimeAsync(ANSWER_EVERY_MS)
+    expect(wrapped.count).toBe(2)
+    expect(mirror.status()).toMatchObject({ state: 'mirrored', reason: 'copied' })
     mirror.stop()
   })
 })

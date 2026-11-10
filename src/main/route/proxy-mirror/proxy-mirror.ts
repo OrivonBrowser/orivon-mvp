@@ -85,6 +85,8 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
   let script: { readonly url: string, readonly text: string, readonly fetchedAt: number, readonly tried: number } | undefined
   /** Moves whenever the text of the script changes, so that the pass sees a new script as a new input. */
   let scriptVersion = 0
+  /** The config made for the script as of `scriptVersion`: wrapping and encoding a megabyte takes about 160 ms of the main thread, and each attempt of each pass that is not settled asks for it. */
+  let built: { readonly version: number, readonly config: SystemProxyConfig } | undefined
   /** Until then a change in Chromium's answers alone starts no read: a script that answers by the clock or at random changes them at every question, and each read of the settings spawns a process. */
   let answersQuietUntil = 0
   /** What the pass now running did with the script, so that it fetches and reloads once and not again for the same difference. */
@@ -151,7 +153,9 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
 
   /** The config for the script fetched from `url`, or undefined when none was fetched. */
   function scriptConfig (url: string): SystemProxyConfig | undefined {
-    return script?.url === url ? mirroredScriptConfig(script.text) : undefined
+    if (script?.url !== url) return undefined
+    if (built?.version !== scriptVersion) built = { version: scriptVersion, config: mirroredScriptConfig(script.text) }
+    return built.config
   }
 
   /**
@@ -225,6 +229,7 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
       if (await updateScript(settings.url, false, answers !== lastAnswers)) answers = await sample()
     } else if (settings.kind !== 'unreadable') {
       script = undefined
+      built = undefined
     }
     const inputs = JSON.stringify([settings, scriptVersion])
     const settled = status.reason !== 'starting' && status.reason !== 'unreadable' && status.reason !== 'disagrees'

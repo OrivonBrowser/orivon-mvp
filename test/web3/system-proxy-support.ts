@@ -368,11 +368,14 @@ Promise.allSettled([fetch('https://fetched.eth/a'), new Promise((done) => { cons
 /** The lines of a proxy's log that name a host the verifier serves. */
 export const verifierNames = (log: readonly string[]): string[] => log.filter((line) => /\.(eth|orivon)\b/.test(line))
 
-/** Hosts the operating system's own services ask through the system-wide proxy, on a runner whose settings the spec changed: the component updater of Chromium, and Apple's CloudKit and certificate checks. */
-const SYSTEM_SERVICE_HOSTS = ['gvt1.com', 'apple.com', 'apple-cloudkit.com']
-
-/** The `CONNECT` lines of `log` that the shell could have sent: a tunnel to a host the system's own services use says nothing about Orivon. */
-export const tunnelsOpened = (log: readonly string[]): string[] => log.filter((line) => line.startsWith('CONNECT') && !SYSTEM_SERVICE_HOSTS.some((host) => line.includes(host)))
+/**
+ * The `CONNECT` lines of `log` that the shell could have sent. On macOS every program of the computer follows the system-wide proxy a
+ * spec sets, and Apple's own services (iCloud, CloudKit, software updates, certificate checks) tunnel through it at moments no spec
+ * controls, so there a tunnel counts only when it names a host the verifier serves; elsewhere any tunnel counts but the component
+ * updater of Chromium.
+ */
+export const tunnelsOpened = (log: readonly string[]): string[] =>
+  log.filter((line) => line.startsWith('CONNECT') && (process.platform === 'darwin' ? verifierNames([line]).length > 0 : !line.includes('gvt1.com')))
 
 export interface Running { app: ElectronApplication, chrome: Page }
 

@@ -30,7 +30,7 @@ function spellings (suffixes: readonly string[]): string {
  * the closure's names; the global `FindProxyForURL` Chromium reads is an accessor that cannot be redefined or deleted, and a script
  * that assigns the name has what it assigned taken as its own function. A script that throws, does not compile or defines no
  * function answers `DIRECT` for every name, as Chromium does for a script that fails, and an assignment made after it failed is
- * ignored.
+ * ignored; an answer that is not a string of ASCII is a failure of the call and so is `DIRECT` too.
  */
 export function wrapPacScript (script: string, suffixes: readonly string[]): string {
   return `(function (g) {
@@ -58,9 +58,14 @@ function routed (host) {
   }
   return false;
 }
+function plain (answer) {
+  if (typeof answer !== 'string') return 'DIRECT';
+  for (var i = 0; i < answer.length; i += 1) if (answer[i] > '\\x7f') return 'DIRECT';
+  return answer;
+}
 function wrapped (url, host) {
   if (routed(host)) return 'DIRECT';
-  try { return system(url, host); } catch (error) { return 'DIRECT'; }
+  try { return plain(system(url, host)); } catch (error) { return 'DIRECT'; }
 }
 Object.defineProperty(g, 'FindProxyForURL', {
   configurable: false,

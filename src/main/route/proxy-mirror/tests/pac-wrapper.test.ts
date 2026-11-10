@@ -183,9 +183,24 @@ describe('the wrapped script', () => {
       expect(load(`${SENDS_ALL} // the end`).answer('https://ordinary.test/')).toBe(PROXY)
     })
 
-    it('which returns an object is passed on as it is for a name Orivon does not serve, and never for one it does', () => {
-      const { answer } = load('function FindProxyForURL() { return { toString: function () { return "PROXY x.test:1" } } }')
-      expect(typeof answer('https://ordinary.test/')).toBe('object')
+    const NOT_ASCII_STRINGS = [
+      ['an object', 'function FindProxyForURL() { return { toString: function () { return "PROXY x.test:1" } } }'],
+      ['a string object', 'function FindProxyForURL() { return new String("PROXY x.test:1") }'],
+      ['a number', 'function FindProxyForURL() { return 1 }'],
+      ['nothing', 'function FindProxyForURL() { }'],
+      ['null', 'function FindProxyForURL() { return null }'],
+      ['a string beyond ASCII', 'function FindProxyForURL() { return "PROXY \u00e9.test:1" }'],
+      ['a string with a character beyond ASCII at its end', 'function FindProxyForURL() { return "PROXY x.test:1;\u2028" }']
+    ] as const
+
+    it.each(NOT_ASCII_STRINGS)('which returns %s answers DIRECT for every name, as Chromium\'s own session does for a script that fails, where a mandatory script fails the request', (_name, script) => {
+      const { answer } = load(script)
+      for (const host of [...ROUTED_HOSTS, ...ORDINARY_HOSTS]) expect(answer(`https://${host}/`, host)).toBe('DIRECT')
+    })
+
+    it('which returns a string of ASCII is passed on as it is for a name Orivon does not serve', () => {
+      const { answer } = load('function FindProxyForURL() { return "PROXY a.test:1; SOCKS5 b.test:2; DIRECT" }')
+      expect(answer('https://ordinary.test/')).toBe('PROXY a.test:1; SOCKS5 b.test:2; DIRECT')
       expect(answer('https://vitalik.eth/')).toBe('DIRECT')
     })
   })

@@ -172,6 +172,65 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
   }, SETUP_TIMEOUT_MS)
 })
 
+/** What a script can do to take the answer out of the wrapper's hands, in Chromium's own script context. Each answers `proxy` for every host, and `ordinary` is the answer the copy gives an ordinary site (a script that fails answers DIRECT, as Chromium's session does). */
+const HOSTILE: ReadonlyArray<{ readonly name: string, readonly text: (proxy: string) => string, readonly ordinary: 'proxy' | 'direct' }> = [
+  {
+    name: 'assigns its function to the global, bare and through this, at its first call',
+    text: (proxy) => `FindProxyForURL = function (url, host) { FindProxyForURL = function () { return "${proxy}" }; this.FindProxyForURL = function () { return "${proxy}" }; return "${proxy}" }`,
+    ordinary: 'proxy'
+  },
+  {
+    name: 'redefines the property of its function, as a value and as a getter, at load and in a call',
+    text: (proxy) => `try { Object.defineProperty(this, "FindProxyForURL", { value: function () { return "${proxy}" } }) } catch (e) {}\nfunction FindProxyForURL(url, host) { try { Object.defineProperty(this, "FindProxyForURL", { value: function () { return "${proxy}" } }) } catch (e) {} try { Object.defineProperty(this, "FindProxyForURL", { get: function () { return function () { return "${proxy}" } }, configurable: true }) } catch (e) {} return "${proxy}" }`,
+    ordinary: 'proxy'
+  },
+  {
+    name: 'assigns its function and then throws',
+    text: (proxy) => `FindProxyForURL = function () { return "${proxy}" }; throw new Error("the script stops half way")`,
+    ordinary: 'direct'
+  }
+]
+
+for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer whose ${computer.name} name a proxy script that goes after the copy`, () => {
+  it.each(HOSTILE)('$name: a .eth name is answered DIRECT in every session and neither proxy is asked about it', async (hostile) => {
+    const first = await startLoggingProxy()
+    const second = await startLoggingProxy()
+    first.serve('ordinary.test:8080', 'ordinary via the first proxy')
+    const scripts = await startScriptServer()
+    scripts.serve(hostile.text(`PROXY 127.0.0.1:${String(first.port)}`))
+    const desktop = await computer.set(scripts.url)
+    let running: Running | undefined
+    try {
+      running = await launchShell(desktop.env)
+      const { app, chrome } = running
+      const settled = await waitFor(() => mainOutput(app).includes(`system proxy: copied (${computer.source}, script, copied)`), 90_000)
+      const reported = await reportedMirror(app, chrome)
+      const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
+      const ordinary = hostile.ordinary === 'proxy' ? await visitReporting(app, chrome, ORDINARY, 'ordinary via the first proxy') : undefined
+      const answers = { eth: await resolved(app, 'https://fixture.eth/'), ethRootDot: await resolved(app, 'https://fixture.eth./'), ordinary: await resolved(app, 'https://ordinary.test/') }
+      report(`hostile script, ${computer.name} ${hostile.name}`, { settled, mirror: reported.fact, eth, ordinary, answers, firstSaw: first.seen, secondSaw: second.seen })
+      expect(settled, 'the mirror copied the script').toBe(true)
+      expect(reported.fact).toEqual({ source: computer.source, mode: 'script', state: 'mirrored', reason: 'copied' })
+      for (const kind of Object.keys(answers.eth)) {
+        expect(answers.eth[kind], `${kind} session, .eth`).toBe('DIRECT')
+        expect(answers.ethRootDot[kind], `${kind} session, .eth with a root dot`).toBe('DIRECT')
+        expect(answers.ordinary[kind], `${kind} session, ordinary`).toBe(hostile.ordinary === 'proxy' ? `PROXY 127.0.0.1:${String(first.port)}` : 'DIRECT')
+      }
+      expect(eth.result, JSON.stringify(eth)).toBe('page')
+      if (ordinary !== undefined) expect(ordinary.result, JSON.stringify(ordinary)).toBe('page')
+      expect(verifierNames(first.seen)).toEqual([])
+      expect(verifierNames(second.seen)).toEqual([])
+      expect(tunnelsOpened(first.seen)).toEqual([])
+    } finally {
+      if (running !== undefined) await closeElectronApp(running.app)
+      await first.close()
+      await second.close()
+      await scripts.close()
+      desktop.restore()
+    }
+  }, SETUP_TIMEOUT_MS)
+})
+
 describe.skipIf(!LINUX)('a computer whose GNOME settings name a proxy script that Orivon does not copy', () => {
   let proxy: LoggingProxy
   let scripts: ScriptServer
