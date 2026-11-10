@@ -1,4 +1,4 @@
-// The canary of a screen share (ADR-0108): see src/main/display-capture/README.md's Design notes for why the preload makes it.
+// The canary of a screen share (ADR-0109): see src/main/display-capture/README.md's Design notes for why the preload makes it.
 import { ipcRenderer } from 'electron'
 import { DISPLAY_CAPTURE_CHANNEL } from '../main/channels.js'
 

@@ -1,6 +1,6 @@
 # ADR-0055: A page shares a screen only through Orivon's picker, and only by a call Orivon makes
 
-- **Status:** accepted; **amended 2026-10-06 (`ADR-0061`)** so that the real call is made in the page's world; **amended 2026-11-10 (`ADR-0108`)** so that the ticket's one request is the one that follows a canary call the preload makes
+- **Status:** accepted; **amended 2026-10-06 (`ADR-0061`)** so that the real call is made in the page's world; **amended 2026-11-10 (`ADR-0109`)** so that the ticket's one request is the one that follows a canary call the preload makes
 - **Date:** 2026-10-05
 - **Type:** security
 - **Decided by:** owner for the scope (websites, registered apps and the Electron shim); AI recommendation accepted by default for the mechanism below

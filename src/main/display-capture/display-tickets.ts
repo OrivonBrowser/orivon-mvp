@@ -1,5 +1,5 @@
 // One-shot tickets that tell the permission gate which `media` request with no device type is the display call
-// Orivon's own preload made after the person picked (ADR-0055, ADR-0108). Pure: time and randomness are injected, so
+// Orivon's own preload made after the person picked (ADR-0055, ADR-0109). Pure: time and randomness are injected, so
 // every rule is unit-tested without a clock.
 import { randomBytes } from 'node:crypto'
 

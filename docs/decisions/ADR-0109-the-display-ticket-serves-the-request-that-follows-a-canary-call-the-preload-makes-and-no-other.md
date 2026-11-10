@@ -1,4 +1,4 @@
-# ADR-0108: The display ticket serves the request that follows a canary call the preload makes, and no other
+# ADR-0109: The display ticket serves the request that follows a canary call the preload makes, and no other
 
 - **Status:** accepted
 - **Date:** 2026-11-10
