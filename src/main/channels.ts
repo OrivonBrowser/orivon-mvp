@@ -227,3 +227,9 @@ export const DISPLAY_CAPTURE_STOP_CHANNEL = 'orivon-display-capture:stop'
 
 /** Main -> a tab's top frame: `{ devices: Array<[vendorId, productId, productName]> }`, the USB HID devices the person just allowed for this page; the tab preload tells the page's `navigator.hid` each one has connected (src/preload/hid-announce.ts). */
 export const HID_ANNOUNCE_CHANNEL = 'orivon-hid:announce'
+
+/** Main -> a hidden storage-carry page: one end of the message channel to the other page, sent with the carry's nonce (src/main/storage-carry/). */
+export const STORAGE_CARRY_PORT_CHANNEL = 'orivon-storage-carry:port'
+
+/** What the storage-carry preload posts to its page with the port, before the carry's nonce: the page takes the port only when the message names its own nonce. */
+export const STORAGE_CARRY_PORT_MESSAGE = 'orivon-storage-carry-port:'

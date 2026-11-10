@@ -101,7 +101,7 @@ applies to a response served from the HTTP cache too. A page a service worker an
 the header, so a site's service workers are taken off when its JavaScript is blocked (every site's, when blocking
 becomes the default): its next page comes from the network, and with scripts blocked no worker registers again.
 Images are cancelled at the request. Both settings are the top-level site's and take effect on the
-next load, in the default session only: a tab in an app's own partition is never touched.
+next load, in the default session only: a tab in a partition an app runs in on its own is never touched.
 
 **A site's sound is composed with the tab's mute, never replaced by it.** `mutedFor` in `signals/audio.ts` is the tab's
 mute or the site's setting; the tab menu and the speaker badge change the first only. The tab's badge reports a

@@ -13,6 +13,7 @@
 // see docs/open-questions.md A146 for the one gap that caller still has.
 
 import { net, session } from 'electron'
+import type { Session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishAppUpdates, publishInstallApp } from '../registry.js'
 import { publishFirstVisit, tabSetupNow } from '../app-setup/tab-setup-ref.js'
@@ -44,14 +45,37 @@ import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { AppNotReady, onServingChange, servedOrigins } from '../../loader/electron/app-partitions.js'
+import { isCarryPageUrl } from '../../loader/electron/carry-page.js'
+import { beforeAppSessionServes, isOriginServedFromCacheSync, onAppOriginRetired } from '../../loader/electron/serve.js'
+import { couldRunAsWebsite, hasOwnPartition, runsAsWebsite } from '../shell/app-session.js'
+import { appTabContents } from '../shell/tab-partition.js'
+import { clearedOriginsIn, clearedOriginsInMemory, prepareWebsiteWorkers } from '../sessions/website-workers.js'
+import { enteringPage, isEnteringPage, reloadStalePage, reloadStalePagesOfNewlyServed } from '../sessions/stale-pages.js'
+import type { Profile } from '../route/site-partition.js'
+import { profilePartitionsHolding } from '../route/site-partition.js'
+import { sitePartitionForOrigin } from '../route/site-routes.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
 import { ownFetch } from '../route/own-requests.js'
 import { blockOpenTabs } from '../app-setup/block-tabs.js'
-import { pagesInPartitionOf } from '../app-setup/pages-in-partition.js'
+import { pagesOfOrigin } from '../app-setup/pages-of-origin.js'
+import { enteringTab } from '../app-setup/entering-tab.js'
+import { asOwnRead } from '../../loader/fetch/own-read.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
+
+/**
+ * Every session a website at `origin` may have installed workers in: the shared one, the profile its own entry names, and any
+ * profile it has storage in (a tab's choice put it there once). The workers of a website are cleared in all of them, since the
+ * app runs in whichever of them the person's entry or a tab's choice picks.
+ */
+function websiteSessionsOf (origin: string, store: { isApart: (origin: string, profile: Profile) => boolean } | undefined): Session[] {
+  const names = new Set<string>(store === undefined ? [] : profilePartitionsHolding(origin, (o, p) => store.isApart(o, p)))
+  const own = sitePartitionForOrigin(origin)
+  if (own !== undefined) names.add(own)
+  return [session.defaultSession, ...[...names].map((name) => session.fromPartition(name))]
+}
 
 /**
  * Reads at most `capBytes` of `response`'s body, decoding only what was
@@ -89,9 +113,10 @@ export async function readCapped (response: Response, capBytes: number): Promise
   return new TextDecoder().decode(joined)
 }
 
-async function fetchGrantManifest (url: string): Promise<{ ok: boolean, status: number, text: string }> {
-  // Through the tunnel while the whole browser is on it, unless the app's origin is set to off (`ownFetch`).
-  const response = await ownFetch(async (target, init) => await net.fetch(target, init), new URL(url).origin)(url, { redirect: 'error', signal: AbortSignal.timeout(GRANT_MANIFEST_TIMEOUT_MS) })
+export async function fetchGrantManifest (url: string): Promise<{ ok: boolean, status: number, text: string }> {
+  // Through the tunnel while the whole browser is on it, unless the app's origin is set to off (`ownFetch`). The mark rides in the
+  // request itself, so it reaches the host whichever way the request leaves; a manifest read of a served name is the shell's own.
+  const response = await ownFetch(async (target, init) => await net.fetch(target, init), new URL(url).origin)(url, { redirect: 'error', signal: AbortSignal.timeout(GRANT_MANIFEST_TIMEOUT_MS), headers: asOwnRead(url) })
   return { ok: response.ok, status: response.status, text: await readCapped(response, MAX_MANIFEST_BYTES) }
 }
 
@@ -122,7 +147,7 @@ export const appInstallSubsystem: Subsystem = {
     // shape ../consent/request-grant-subsystem.ts wires in.
     const extensionsOnSite = async (origin: string): Promise<readonly string[]> => {
       const extensions = ctx.extensions
-      return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
+      return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, hasOwnPartition)
     }
     installFirstPromptNote(new FirstPromptNote(ctx.privateSession ? null : join(ctx.app.getPath('userData'), 'consent-notes.json')))
     const consent = createInstallConsentPrompt(scoreLevelOverrideFor, extensionsOnSite)
@@ -160,13 +185,27 @@ export const appInstallSubsystem: Subsystem = {
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })
+    // An app that runs where its website ran: the workers and response caches that page installed go before the tab loads as the app (`../sessions/website-workers.ts` says when).
+    const clearedWorkers = ctx.privateSession ? clearedOriginsInMemory() : clearedOriginsIn(join(ctx.app.getPath('userData'), 'website-workers-cleared'))
+    onAppOriginRetired((origin) => { clearedWorkers.forget(origin) })
+    beforeAppSessionServes(async (_appSession, origin, from) => {
+      if (!couldRunAsWebsite(origin)) return
+      try {
+        await prepareWebsiteWorkers(websiteSessionsOf(origin, ctx.routes?.store), origin, from, clearedWorkers)
+      } catch (error) {
+        throw new AppNotReady('the workers a website of this address installed could not be removed', 'Open it again in a moment.', { cause: error })
+      }
+    })
+    // The website's pages still open when the app starts to be served load again, so none of them stays as the website left it (`../sessions/stale-pages.ts`).
+    // The hidden pages of the storage carry are not websites' pages: a reload would end the carry they are in the middle of.
+    reloadStalePagesOfNewlyServed({ served: () => servedOrigins().filter(runsAsWebsite), pagesOf: pagesOfOrigin, isAppPage: (page) => appTabContents.has(page) || isEnteringPage(page) || isCarryPageUrl(page.getURL()), reload: reloadStalePage, onServingChange })
     // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
     // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     const firstVisit = createFirstVisit({
-      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesInPartitionOf, setup: tabSetupNow }), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
+      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), entering: enteringTab, askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     })

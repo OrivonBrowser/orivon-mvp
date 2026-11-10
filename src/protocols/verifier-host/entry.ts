@@ -89,6 +89,10 @@ function main (): void {
       host?.then((running) => { running.ipfsLookup(message.allowed) }, () => {})
       return
     }
+    if (message.type === 'shell-serves' || message.type === 'relay-head' || message.type === 'relay-body' || message.type === 'relay-end' || message.type === 'relay-error') {
+      host?.then((running) => { running.shell(message) }, () => {})
+      return
+    }
     const { id, request } = message
     if (host === undefined) {
       post({ type: 'reply', id, ok: false, message: 'the verifier host has not been started' })

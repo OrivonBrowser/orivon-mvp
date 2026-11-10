@@ -6,11 +6,14 @@ import { describe, expect, it, vi } from 'vitest'
 // default session's one granted-origin CSP handler -- a bare fake webRequest
 // is enough, since no test here inspects what got registered.
 vi.mock('../../shell/question/ask-question.js', () => ({ askQuestion: vi.fn(async () => ({ response: 1, checkboxChecked: false })) }))
+const fetched = vi.hoisted(() => ({ calls: [] as Array<{ url: string, headers: Record<string, string> }> }))
 vi.mock('electron', () => ({
+  net: { fetch: vi.fn(async (url: string, init?: { headers?: Record<string, string> }) => { fetched.calls.push({ url, headers: init?.headers ?? {} }); return new Response('{}') }) },
   session: { defaultSession: { webRequest: { onHeadersReceived: vi.fn(), onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn() } } }
 }))
 
-const { appInstallSubsystem, readCapped } = await import('../app-install-subsystem.js')
+const { appInstallSubsystem, fetchGrantManifest, readCapped } = await import('../app-install-subsystem.js')
+const { OWN_READ_HEADER } = await import('../../../loader/fetch/content-root.js')
 const { createSubsystemContext, publishBroker, publishLoader } = await import('../../registry.js')
 const { stubBroker } = await import('../../../broker/transport/tests/ipc.test-helpers.js')
 
@@ -118,5 +121,21 @@ describe('readCapped', () => {
     })
     await readCapped(new Response(stream), 10)
     expect(cancelled).toBe(true)
+  })
+})
+
+describe('fetchGrantManifest', () => {
+  it('marks a read of a host the verifier serves as the shell\'s own, so the handler of an app at that name is never asked for it', async () => {
+    fetched.calls.length = 0
+    await fetchGrantManifest('https://kept.eth/orivon.json')
+    expect(fetched.calls).toHaveLength(1)
+    expect(Object.keys(fetched.calls[0]?.headers ?? {})).toContain(OWN_READ_HEADER)
+  })
+
+  it('sends the mark to no other host: the secret reaches only the verifier', async () => {
+    fetched.calls.length = 0
+    await fetchGrantManifest('https://example.com/orivon.json')
+    expect(fetched.calls).toHaveLength(1)
+    expect(Object.keys(fetched.calls[0]?.headers ?? {})).not.toContain(OWN_READ_HEADER)
   })
 })

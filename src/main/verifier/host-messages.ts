@@ -6,7 +6,7 @@
 // or a 'reply's `value` as the `SiteProvenance`/`LightClientState` its
 // request's kind promises -- merely because `protocol.ts` says it is one.
 
-import { BLOCK_ROOT_PATTERN } from '../../protocols/verifier-host/protocol.js'
+import { BLOCK_ROOT_PATTERN, isHeaderPairs } from '../../protocols/verifier-host/protocol.js'
 import type { FromHost, HostReplies, HostRequest, LightClientState, SiteProvenance } from '../../protocols/verifier-host/protocol.js'
 import type { ContentPointer, ContentRoot, PointerStep, Provenance } from '../../protocols/resolution/records.js'
 import type { DdocReport, Refusal } from '../../protocols/resolution/providers.js'
@@ -108,6 +108,10 @@ function isLightClientState (value: unknown): value is LightClientState {
   }
 }
 
+/** The most the host may hand the shell in one request: its HTTP parser already bounds a request, and main does not rely on that. */
+const MAX_METHOD = 32
+const MAX_RELAYED_URL = 16 * 1024
+
 /** A top-level-domain name in the spelling `servedName` reads it as, and a scheme some built-in protocol serves. */
 function isNameScheme (host: unknown, scheme: unknown): boolean {
   if (typeof host !== 'string' || typeof scheme !== 'string') return false
@@ -148,6 +152,9 @@ export function isFromHost (message: unknown): message is FromHost {
     case 'node-traffic': return typeof message['node'] === 'string' && isCount(message['active']) && isCount(message['bytes'])
     case 'swarm-feed-index': return typeof message['feed'] === 'string' && isDecimal(message['index'])
     case 'name-scheme': return isNameScheme(message['host'], message['scheme'])
+    case 'relay-request': return isCount(message['id']) && typeof message['method'] === 'string' && message['method'].length <= MAX_METHOD && typeof message['url'] === 'string' && message['url'].length <= MAX_RELAYED_URL && isHeaderPairs(message['headers'])
+    case 'relay-abort': return isCount(message['id'])
+    case 'relay-wrote': return isCount(message['id']) && isCount(message['bytes'])
     case 'reply':
       if (typeof message['id'] !== 'number') return false
       if (message['ok'] === true) return 'value' in message

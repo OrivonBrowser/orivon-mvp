@@ -2,7 +2,7 @@
 // while it is down: a request is a message with an id, a reply the host's
 // answer to it.
 
-import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientState } from '../../protocols/verifier-host/protocol.js'
+import type { FromHost, HostConfig, HostReplies, HostRequest, LightClientState, RelayFromHost } from '../../protocols/verifier-host/protocol.js'
 import { isFromHost, isHostReplyValue } from './host-messages.js'
 import { ProcessSupervisor } from './process-supervisor.js'
 import type { HostProcess, ProcessDeps, ProcessEvents } from './process-supervisor.js'
@@ -20,6 +20,10 @@ export interface SupervisorEvents extends ProcessEvents {
   nameScheme: (host: string, scheme: string) => void
   /** What the host has read from a local node, by its name: reads in flight and bytes read this session. */
   nodeTraffic?: (node: string, active: number, bytes: number) => void
+  /** The host hands the shell a request for a host the shell serves, or says it wrote some of the answer, or that the client left. */
+  relay?: (message: RelayFromHost) => void
+  /** The host is gone or asleep: every request it handed the shell is waiting for nothing. */
+  abandoned?: () => void
 }
 
 export type SupervisorDeps = ProcessDeps<HostConfig, SupervisorEvents>
@@ -46,6 +50,7 @@ export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, Supe
   }
 
   protected override abandon (reason: string): void {
+    this.deps.events.abandoned?.()
     for (const [id, pending] of this.pending) {
       this.pending.delete(id)
       pending.reject(new Error(reason))
@@ -82,6 +87,9 @@ export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, Supe
       case 'node-traffic': events.nodeTraffic?.(message.node, message.active, message.bytes); break
       case 'swarm-feed-index': events.swarmFeedIndex(message.feed, message.index); break
       case 'name-scheme': events.nameScheme(message.host, message.scheme); break
+      case 'relay-request':
+      case 'relay-abort':
+      case 'relay-wrote': events.relay?.(message); break
       case 'reply': {
         const pending = this.pending.get(message.id)
         if (pending === undefined) return

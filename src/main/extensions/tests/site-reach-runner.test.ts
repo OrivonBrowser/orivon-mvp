@@ -9,7 +9,7 @@ let dir: string
 beforeEach(async () => { dir = await mkdtemp(join(tmpdir(), 'orivon-site-reach-')) })
 afterEach(async () => { await rm(dir, { recursive: true, force: true }) })
 
-const NEVER_CACHED = (): boolean => false
+const NEVER_APART = (): boolean => false
 
 function entryAt (path: string, name: string, enabled = true): InstalledExtension {
   return {
@@ -36,7 +36,7 @@ describe('extensionNamesForOrigin', () => {
     const extDir = join(dir, 'covers')
     await writeManifest(extDir, { manifest_version: 3, name: 'Covers', version: '1.0.0', host_permissions: ['<all_urls>'] })
     const list = { list: () => [entryAt(extDir, 'Covers')] }
-    const names = await extensionNamesForOrigin(list, 'https://a.example', NEVER_CACHED)
+    const names = await extensionNamesForOrigin(list, 'https://a.example', NEVER_APART)
     expect(names).toEqual(['Covers'])
   })
 
@@ -44,7 +44,7 @@ describe('extensionNamesForOrigin', () => {
     const extDir = join(dir, 'disabled')
     await writeManifest(extDir, { manifest_version: 3, name: 'Disabled', version: '1.0.0', host_permissions: ['<all_urls>'] })
     const list = { list: () => [entryAt(extDir, 'Disabled', false)] }
-    const names = await extensionNamesForOrigin(list, 'https://a.example', NEVER_CACHED)
+    const names = await extensionNamesForOrigin(list, 'https://a.example', NEVER_APART)
     expect(names).toEqual([])
   })
 
@@ -52,11 +52,11 @@ describe('extensionNamesForOrigin', () => {
     const extDir = join(dir, 'narrow')
     await writeManifest(extDir, { manifest_version: 3, name: 'Narrow', version: '1.0.0', host_permissions: ['https://other.example/*'] })
     const list = { list: () => [entryAt(extDir, 'Narrow')] }
-    const names = await extensionNamesForOrigin(list, 'https://a.example', NEVER_CACHED)
+    const names = await extensionNamesForOrigin(list, 'https://a.example', NEVER_APART)
     expect(names).toEqual([])
   })
 
-  it('returns none, and reads no manifest, for an origin served from its pinned cache', async () => {
+  it('returns none, and reads no manifest, for an app that runs in a partition of its own', async () => {
     const extDir = join(dir, 'cached-case')
     await writeManifest(extDir, { manifest_version: 3, name: 'Would Cover', version: '1.0.0', host_permissions: ['<all_urls>'] })
     let listed = false

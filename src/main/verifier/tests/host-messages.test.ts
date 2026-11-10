@@ -70,3 +70,35 @@ describe('isFromHost status, for a failure that is the person\'s servers\'', () 
     expect(isFromHost({ type: 'status', status: { ...failed, ownServersFailed } })).toBe(false)
   })
 })
+
+describe('isFromHost, for a request the host hands the shell', () => {
+  const request = { type: 'relay-request', id: 3, method: 'GET', url: 'https://kept.example/app.js', headers: [['range', 'bytes=0-1']] }
+
+  it('accepts a request, an abort and an acknowledgement', () => {
+    expect(isFromHost(request)).toBe(true)
+    expect(isFromHost({ type: 'relay-abort', id: 3 })).toBe(true)
+    expect(isFromHost({ type: 'relay-wrote', id: 3, bytes: 4096 })).toBe(true)
+  })
+
+  it.each([
+    ['an id that is not a count', { id: -1 }],
+    ['an id that is fractional', { id: 1.5 }],
+    ['a method that is not text', { method: 5 }],
+    ['a method that is far too long', { method: 'G'.repeat(100) }],
+    ['an address that is not text', { url: 7 }],
+    ['an address far too long', { url: `https://kept.example/${'a'.repeat(20_000)}` }],
+    ['headers that are not a list', { headers: 'range: bytes=0-1' }],
+    ['a header that is not a pair', { headers: [['range']] }],
+    ['a header value that is not text', { headers: [['range', 1]] }],
+    ['a header far too long', { headers: [['x-big', 'a'.repeat(20_000)]] }],
+    ['far too many headers', { headers: Array.from({ length: 300 }, (_, index) => [`x-${String(index)}`, 'a']) }]
+  ])('refuses a request with %s', (_what, fields) => {
+    expect(isFromHost({ ...request, ...fields })).toBe(false)
+  })
+
+  it('refuses an acknowledgement of bytes that are not a count', () => {
+    expect(isFromHost({ type: 'relay-wrote', id: 3, bytes: -1 })).toBe(false)
+    expect(isFromHost({ type: 'relay-wrote', id: 3 })).toBe(false)
+    expect(isFromHost({ type: 'relay-abort' })).toBe(false)
+  })
+})

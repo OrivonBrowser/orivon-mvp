@@ -1,13 +1,14 @@
-// A page navigation that moves the tab into another session (an installed app's own session, or the profile of a tunnel)
-// is stopped and issued again there. The new request carries the referrer Chromium would have sent for the navigation,
-// never more and, where the page cannot say, none: the policy of the document (its `Referrer-Policy` header or a
-// `<meta name="referrer">`), the `rel="noreferrer"` and `referrerpolicy` of the link, a form's own rules, and the
+// A page navigation that moves the tab into another view or session (an installed app's view, built with the app-tab
+// flag in the shared session, or the profile of a tunnel) is stopped and issued again there. The new request carries
+// the referrer Chromium would have sent for the navigation, never more and, where the page cannot say, none: the
+// policy of the document (its `Referrer-Policy` header or a `<meta name="referrer">`), the `rel="noreferrer"` and `referrerpolicy` of the link, a form's own rules, and the
 // difference between a link, a script's `location.assign`, a form and a `window.open`. Every case asserts what the
 // landing page reads as `document.referrer`; the tunnel case also asserts the `Referer` header the website received.
 //
-// Two launches: a `.eth` page linking to an installed `.eth` app (the app's own session), and a website linking to a
-// website that has a tunnel of its own (the tunnel's profile). The tunnel's destination answers only through the SOCKS5
-// fixture; the same name and port on the direct side answers a page that fails the case.
+// Two launches: a `.eth` page linking to an installed `.eth` app (which runs in the shared session, in a view of its
+// own), and a website linking to a website that has a tunnel of its own (the tunnel's profile). The tunnel's
+// destination answers only through the SOCKS5 fixture; the same name and port on the direct side answers a page that
+// fails the case.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/tabs/e2e-navigation-referrer.test.ts
 import { existsSync, writeFileSync } from 'node:fs'
@@ -113,7 +114,7 @@ async function drive (app: ElectronApplication, chrome: Page, first: string, c: 
   return landed === undefined ? { referrer: 'no landing', leftTheSharedSession: false } : { referrer: (landed as Landed).referrer, leftTheSharedSession: !(landed as Landed).sharedSession }
 }
 
-// ---- The installed app: a `.eth` page links to a `.eth` app with a session of its own ------------------------------
+// ---- The installed app: a `.eth` page links to a `.eth` app that runs in the shared session, in a view of its own ----
 
 const APP_ORIGIN = 'https://b.eth'
 const MANIFEST = { orivonApiVersion: 0, id: 'eth.orivon.referrer-landing', name: 'Landing', version: '1.0.0', entry: 'index.html', assets: ['app.js'], capabilities: {} }
@@ -164,7 +165,7 @@ it('[app:navigation-keeps-the-referrer] a link, a script, a form and a popup fro
     for (const c of CASES) {
       const sourceUrl = `https://a.eth/${c.page}.html`
       seen[caseId(c)] = await drive(running, chrome, first, c, sourceUrl, `${APP_ORIGIN}/?via=${caseId(c)}`, open)
-      wanted[caseId(c)] = { referrer: expectedReferrer(c, sourceUrl), leftTheSharedSession: true }
+      wanted[caseId(c)] = { referrer: expectedReferrer(c, sourceUrl), leftTheSharedSession: false }
     }
     expect(seen).toEqual(wanted)
     expect(await noNativeDialogs(running)).toEqual([])

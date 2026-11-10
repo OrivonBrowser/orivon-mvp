@@ -2,8 +2,9 @@
 
 **What lives here.** `fetch.ts` (`Fetch` over Electron `net`, with the redirect rule; while the whole browser is on the tunnel it resolves no name here and signs in to the tunnel's front), `request-fetch.ts` (a `fetch` over `net.request` that answers a proxy's challenge itself, which `net.fetch` cannot do for a request without web contents),
 `resolve.ts` (DNS through `net.resolveHost`), `serve.ts` (registers `protocol.handle` and
-`restorePinnedServing`), `app-partitions.ts` (which origins have a session of their own, and the preparers that finish
-a session before an app is served from it) and `reach-route.ts` (the route of an app's third-party reach, supplied by
+`restorePinnedServing`), `app-partitions.ts` (which origins have a session of their own, the handler each is answered with, and the preparers that finish
+a session before an app is served from it), `carry-page.ts` (the empty document every served origin answers, which the storage carry opens in
+the old session and the shared one) and `reach-route.ts` (the route of an app's third-party reach, supplied by
 main).
 
 **What it depends on.** `electron`, [`../../contracts/`](../../contracts/),
@@ -19,12 +20,26 @@ the one folder in this directory that imports `electron`, and all of it is tied 
 **A session is prepared before its app is served from it.** `prepareAppSession` runs every preparer
 `beforeAppSessionServes` was given (main points a routed app's session at its proxy this way) and `serve.ts` awaits it
 before `registerAppOrigin`, so no page loads in a session that is not yet as it must be. A preparer that fails stops
-the app being served, not the browser.
+the app being served, not the browser. A preparer is told whether the app is served from its pin or live from the
+verifier (`from`): the first live serving of an app that runs in the shared session is where
+`../../main/sessions/website-workers.ts` drops the service workers and Cache Storage the origin held as a website.
 
 Why re-registering a handler is idempotent, why `restorePinnedServing` runs at startup, and why
 the CSP is read from the live grant ledger on every request (so a revoke narrows the very next
 response, and nothing reads grants from disk, A158) are documented in [`serve.ts`](serve.ts), on
 `registerAppOrigin`, `restorePinnedServing` and `liveGrantedPatternsFor`.
+
+**The handler an origin is answered with is kept beside its partition.** `registerAppOrigin` records `origin -> handler`
+(`servingHandlerFor`, `servedOrigins`) and `retireAppOrigin` removes it, and `onServingChange` calls its listener when an origin starts or stops
+being served, and when it moves between read live and served from its pin (not when its handler is replaced and neither changed). The partition is where the app's own page runs when it has one of its own; the record is
+how the same handler answers a request for the origin made anywhere else, which [`../../main/verifier/README.md`](../../main/verifier/README.md) describes.
+`fetch.ts` marks every read of a host the verifier serves as the shell's own (`../fetch/own-read.ts`), so a live-served handler's read of the verifier is never answered by a handler.
+
+**`registerAppOrigin` wraps the handler it is given in `answeringCarryPage`, so the one registry answers the carry page.** The storage carry
+([`../../main/storage-carry/`](../../main/storage-carry/README.md)) must put a hidden page at an app's origin in two sessions, the partition the app
+used to run in and the shared one, and the shell may add no second route to either. The wrapped handler answers GET of one path, which holds a
+secret chosen at random per process, with an empty document that repeats the nonce of the query (a nonce of the shape the shell makes, else none), and every other request as the app's handler does. Both the partition's
+`protocol.handle` and the record the verifier relay reads hold the wrapped handler, so the page is answered wherever the origin is served.
 
 **When the cached bundle fails verification, nothing is served, and the next visit reinstalls
 it.** A handler that denied every request would stop the page loading, so its hint would never
