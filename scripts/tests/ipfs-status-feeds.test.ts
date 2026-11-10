@@ -20,6 +20,8 @@ const UR = '0xeeeeeeee14d718c2b47d9923deab1335e144eeee'
 const resolved = (returned: string): string => `0x${(64).toString(16).padStart(64, '0')}${'00'.repeat(12)}${'11'.repeat(20)}${abi(returned.slice(2)).slice(2 + 64)}`
 // resolve(foo.eth, contenthash(namehash(foo.eth))) as viem encodes it, and mainnet's revert for a name nobody registered.
 const FOO_NODE = 'de9b09fd7c5f901e23a3f19fecc54828e9c848539801e86591bd9801b019f84f'
+const SUPERPRODUCTIVITY_NODE = '88ac5461bc04b230f29b70dbee792b401b32427f3aa9b924d3f5dd965fd61997'
+const SUPERPRODUCTIVITY_LOOKUP = '0x9061b923000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000002311737570657270726f6475637469766974790b6f7269766f6e737461636b036574680000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024bc1c58d188ac5461bc04b230f29b70dbee792b401b32427f3aa9b924d3f5dd965fd6199700000000000000000000000000000000000000000000000000000000'
 const FOO_LOOKUP = '0x9061b92300000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000000000000000000903666f6f036574680000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000024bc1c58d1de9b09fd7c5f901e23a3f19fecc54828e9c848539801e86591bd9801b019f84f00000000000000000000000000000000000000000000000000000000'
 const NOT_FOUND = '0x77209fe800000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000017116f7269766f6e2d6e6f70652d7a7a3931780365746800000000000000000000'
 /** ResolverError(bytes) around a resolver's own revert. */
@@ -42,6 +44,8 @@ function bash (body: string, env: Record<string, string> = {}): string {
 describe.skipIf(!available)('ipfs-status.sh and the Universal Resolver', () => {
   it('asks resolve(bytes,bytes) for contenthash(bytes32), byte for byte as viem does', () => {
     expect(bash(`contenthash_lookup foo.eth ${FOO_NODE}`)).toBe(FOO_LOOKUP)
+    // A name of 35 DNS bytes, which takes two padded words.
+    expect(bash(`contenthash_lookup superproductivity.orivonstack.eth ${SUPERPRODUCTIVITY_NODE}`)).toBe(SUPERPRODUCTIVITY_LOOKUP)
     expect(bash('echo "$ENS_UNIVERSAL_RESOLVER"')).toBe(`${UR}\n`)
   })
 
@@ -58,6 +62,10 @@ describe.skipIf(!available)('ipfs-status.sh and the Universal Resolver', () => {
     expect(lookup(`revert:0x556f1830${'00'.repeat(32)}`)).toBe('unknown (it is answered offchain (CCIP-Read), which this script does not follow)')
     expect(lookup('revert:')).toBe('unknown (the Universal Resolver reverted with no reason)')
     expect(lookup('0x1234')).toBe('unknown (the Universal Resolver sent a malformed answer)')
+    // An offset past the end, or a character that is not hex, is malformed too, and ends nothing but this check.
+    expect(lookup(`0x${(4096).toString(16).padStart(64, '0')}${'00'.repeat(64)}`)).toBe('unknown (the Universal Resolver sent a malformed answer)')
+    expect(lookup(`0x${'zz'.repeat(96)}`)).toBe('unknown (the Universal Resolver sent a malformed answer)')
+    expect(lookup(resolved(`0x${(4096).toString(16).padStart(64, '0')}${'00'.repeat(32)}`))).toBe('none')
     expect(bash('eth_call () { return 1; }\nens_check x.eth ipns://k51key; echo "$ENS_STATE ($ENS_DETAIL)"')).toBe('unknown (no Ethereum RPC answered)\n')
   })
 
@@ -67,6 +75,7 @@ describe.skipIf(!available)('ipfs-status.sh and the Universal Resolver', () => {
     ).trim()
     expect(rpcs(`*//a*) echo '{"error":{"code":-32005,"message":"limit"}}' ;; *//b*) echo '{"error":{"code":3,"message":"execution reverted","data":"0x77209FE8"}}' ;;`)).toBe('revert:0x77209fe8')
     expect(rpcs(`*//a*) return 7 ;; *//b*) echo '{"result":"0xabcd"}' ;;`)).toBe('0xabcd')
+    expect(rpcs(`*//a*) echo '{"error":{"code":-32000,"message":"execution reverted","data":"0x7b1c461b"}}' ;;`)).toBe('revert:0x7b1c461b')
     expect(rpcs(`*) echo '{"error":{"code":-32000,"message":"down"}}' ;;`)).toBe('no answer')
   })
 })

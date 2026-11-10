@@ -157,8 +157,8 @@ eth_call () {
       '{jsonrpc: "2.0", id: 1, method: "eth_call", params: [{to: $to, data: $d}, "latest"]}')") || continue
     res=$(jq -r '.result // empty' <<<"$out" 2>/dev/null) || continue
     if [[ $res == 0x* ]]; then echo "$res"; return 0; fi
-    # JSON-RPC code 3 is an execution revert: an answer, whose data names the error.
-    res=$(jq -r 'select(.error.code == 3) | "revert:" + (.error.data // "" | tostring)' <<<"$out" 2>/dev/null) || continue
+    # An execution revert (JSON-RPC code 3, or a message saying so) is an answer, whose data names the error.
+    res=$(jq -r 'select(.error.code == 3 or (.error.message // "" | tostring | test("revert"; "i"))) | "revert:" + (.error.data // "" | tostring)' <<<"$out" 2>/dev/null) || continue
     if [ -n "$res" ]; then echo "${res,,}"; return 0; fi
   done
   return 1
@@ -182,7 +182,9 @@ contenthash_lookup () {
 decode_contenthash () {
   local h=${1#0x} off len data
   [ ${#h} -ge 128 ] || return 0
-  off=$(( 16#${h:48:16} )); len=$(( 16#${h:$(( off * 2 + 48 )):16} ))
+  off=$(( 16#${h:48:16} ))
+  (( off >= 0 && off * 2 + 64 <= ${#h} )) || return 0
+  len=$(( 16#${h:$(( off * 2 + 48 )):16} ))
   data=${h:$(( off * 2 + 64 )):$(( len * 2 ))}
   case $data in
     '') ;;
@@ -214,8 +216,10 @@ ens_check () {
   esac
   # (bytes result, address resolver), whose result is the resolver's own ABI-encoded `bytes`.
   h=${r#0x}
-  if [ ${#h} -lt 192 ]; then ENS_DETAIL='the Universal Resolver sent a malformed answer'; return 0; fi
-  off=$(( 16#${h:48:16} )); len=$(( 16#${h:$(( off * 2 + 48 )):16} ))
+  # A bad offset would make the arithmetic below fail, and that would end the whole collect run.
+  off=-1; [ ${#h} -ge 192 ] && [[ $h =~ ^[0-9a-fA-F]+$ ]] && off=$(( 16#${h:48:16} ))
+  if (( off < 0 || off * 2 + 64 > ${#h} )); then ENS_DETAIL='the Universal Resolver sent a malformed answer'; return 0; fi
+  len=$(( 16#${h:$(( off * 2 + 48 )):16} ))
   ENS_ACTUAL=$(decode_contenthash "0x${h:$(( off * 2 + 64 )):$(( len * 2 ))}")
   if [ -z "$ENS_ACTUAL" ]; then ENS_STATE=none
   elif [ "$ENS_ACTUAL" = "$2" ]; then ENS_STATE=ok; ENS_VIA=ipns
