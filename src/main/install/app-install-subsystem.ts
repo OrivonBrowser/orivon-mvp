@@ -46,6 +46,7 @@ import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
 import { AppNotReady, onServingChange, servedOrigins } from '../../loader/electron/app-partitions.js'
+import { isCarryPageUrl } from '../../loader/electron/carry-page.js'
 import { beforeAppSessionServes, isOriginServedFromCacheSync, onAppOriginRetired } from '../../loader/electron/serve.js'
 import { couldRunAsWebsite, hasOwnPartition, runsAsWebsite } from '../shell/app-session.js'
 import { appTabContents } from '../shell/tab-partition.js'
@@ -196,7 +197,8 @@ export const appInstallSubsystem: Subsystem = {
       }
     })
     // The website's pages still open when the app starts to be served load again, so none of them stays as the website left it (`../sessions/stale-pages.ts`).
-    reloadStalePagesOfNewlyServed({ served: () => servedOrigins().filter(runsAsWebsite), pagesOf: pagesOfOrigin, isAppPage: (page) => appTabContents.has(page) || isEnteringPage(page), reload: reloadStalePage, onServingChange })
+    // The hidden pages of the storage carry are not websites' pages: a reload would end the carry they are in the middle of.
+    reloadStalePagesOfNewlyServed({ served: () => servedOrigins().filter(runsAsWebsite), pagesOf: pagesOfOrigin, isAppPage: (page) => appTabContents.has(page) || isEnteringPage(page) || isCarryPageUrl(page.getURL()), reload: reloadStalePage, onServingChange })
     // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
     // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
