@@ -50,6 +50,11 @@ describe('parseCatalogue', () => {
     expect(entries[0]).toMatchObject({ id: 'data-survives-restart', specs: ['test/e2e-a.test.ts', 'test/e2e-b.test.ts'], covered: true })
   })
 
+  it('reads the one system a row says it holds on', () => {
+    const { entries } = parseCatalogue(HEADER + row('a-b', spec('e2e-a.test.ts'), 'Holds on `linux` only: it needs an X11 session.') + row('c-d', spec('e2e-a.test.ts')))
+    expect(entries.map((entry) => entry.platform)).toEqual(['linux', null])
+  })
+
   it('skips header, separator and prose lines', () => {
     expect(parseCatalogue(`# Title\n\n${HEADER}text | with a bar\n`).entries).toEqual([])
   })
@@ -150,6 +155,23 @@ describe('checkCatalogue', () => {
     expect(checkCatalogue(runs)).toMatchObject({ ok: true })
     const absent = fixture(HEADER + row('a-b', spec('e2e-plain.test.ts')), { 'test/e2e-plain.test.ts': gated })
     expect(checkCatalogue(absent).problems.join()).toContain('does not run test/e2e-plain.test.ts')
+  })
+
+  it('lets a Linux gate through only for a row that says it holds on Linux only', () => {
+    const gated = PROVING('a-b', ".skipIf(process.platform !== 'linux')")
+    const declared = fixture(HEADER + row('a-b', spec('e2e-plain.test.ts'), 'Holds on `linux` only: it needs an X11 session.'), { 'test/e2e-plain.test.ts': gated })
+    expect(checkCatalogue(declared)).toMatchObject({ ok: true, problems: [] })
+    const silent = fixture(HEADER + row('a-b', spec('e2e-plain.test.ts')), { 'test/e2e-plain.test.ts': gated })
+    expect(checkCatalogue(silent).problems.join()).toContain('does not say "Holds on `linux` only"')
+    const other = fixture(HEADER + row('a-b', spec('e2e-plain.test.ts'), 'Holds on `darwin` only: it needs a Mac.'), { 'test/e2e-plain.test.ts': gated })
+    expect(checkCatalogue(other).problems.join()).toContain('does not say "Holds on `linux` only"')
+  })
+
+  it('refuses every other platform condition on a proving test, whatever its row says', () => {
+    for (const modifiers of [".skipIf(process.platform !== 'win32')", ".skipIf(process.platform === 'linux')", '.skipIf(!X11)', ".runIf(process.platform === 'linux')"]) {
+      const root = fixture(HEADER + row('a-b', spec('e2e-plain.test.ts'), 'Holds on `linux` only: it needs an X11 session.'), { 'test/e2e-plain.test.ts': PROVING('a-b', modifiers) })
+      expect(checkCatalogue(root).problems.join(), modifiers).toContain('proves nothing')
+    }
   })
 
   it('does not let a commented-out, interpolated or unit-only test stand as proof', () => {
