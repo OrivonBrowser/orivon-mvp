@@ -1,11 +1,12 @@
 // "Keep tunneled sites separate" (Settings, Tunnels) is on by default: a site in a tunnel profile has cookies of its own. Turned off,
-// the cookies of the tunnel profiles and of normal browsing are kept the same both ways, so a tab that carries a tunnel choice is
-// signed in to the accounts normal browsing is signed in to, with the route of the tab unchanged (the site is reached through the
-// SOCKS5 fixture, never directly). Turned on again, the profiles' cookies are cleared and normal browsing keeps its own. The switch
-// is the real one in Settings; cookies are read from each session in the main process.
+// the cookies of the sites a person opens in a tunnelled tab are kept the same in the profile and in normal browsing, both ways, so a
+// tab that carries a tunnel choice is signed in to the accounts normal browsing is signed in to, with the route of the tab unchanged
+// (the site is reached through the SOCKS5 fixture, never directly). The cookies of a third party the page embeds are not shared.
+// Turned on again, the profiles' copies are cleared and normal browsing keeps its own, also when the app was closed before the clear
+// was done. The switch is the real one in Settings; cookies are read from each session in the main process.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-tunnel-shared-sign-ins.test.ts
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:https'
 import type { Server } from 'node:https'
 import type { IncomingMessage, ServerResponse } from 'node:http'
@@ -16,12 +17,15 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
-import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
+import { assertNoElectronSurvivors, closeElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { selfSigned } from '../support/self-signed.js'
 import { launchShell, QA_TEST_TIMEOUT_MS, visitWithoutPage } from '../support/qa-helpers.js'
 import { activeTabInfo, delay, waitFor } from '../support/smoke-helpers.mjs'
 
 const SITE = 'bank.socks.test'
+/** A host of another registrable domain: the third party a page embeds. */
+const TRACKER = 'ads.cdn-tracker.test'
+const RECORD = 'cookie-mirror.json'
 const PROXY_PROFILE = 'persist:proxy-profile'
 const DIRECT_PROFILE = 'persist:direct-profile'
 const SWITCH = '#row-route-separate-sign-ins input[type=checkbox]'
@@ -37,23 +41,32 @@ const ports = { real: 0, decoy: 0 }
 const servers: Server[] = []
 const seen: Seen[] = []
 let visits = 0
+let minted = 0
+const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64')
 
 /** The page a request for `path` gets: the cookies a site sets on sign-in, sign-out and in a tunnelled tab. */
 function answer (via: Seen['via'], request: IncomingMessage, response: ServerResponse): void {
   const path = (request.url ?? '/').split('?')[0] ?? '/'
+  const host = (request.headers.host ?? '').split(':')[0]
   seen.push({ path, cookie: request.headers.cookie ?? '', via })
+  if (host === TRACKER) {
+    minted += 1
+    response.writeHead(200, { 'content-type': 'image/gif', 'cache-control': 'no-store', 'set-cookie': `uid=minted-${String(minted)}; Path=/; Secure; SameSite=None; Max-Age=3600` }).end(GIF)
+    return
+  }
   const headers: Record<string, string | string[]> = { 'content-type': 'text/html', 'cache-control': 'no-store' }
   if (path === '/login') headers['set-cookie'] = 'sid=signed-in; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=3600'
   if (path === '/tunnel-login') headers['set-cookie'] = 'tunnelled=yes; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600'
   if (path === '/other-login') headers['set-cookie'] = 'other=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600'
   if (path === '/logout') headers['set-cookie'] = 'sid=; Path=/; Secure; Max-Age=0'
-  response.writeHead(200, headers).end(`<!doctype html><title>${path}</title><body>${path}</body>`)
+  const embed = path === '/embed' ? `<img src="https://${TRACKER}:${String(ports.decoy)}/pixel.gif" width="1" height="1">` : ''
+  response.writeHead(200, headers).end(`<!doctype html><title>${path}</title><body>${path}${embed}</body>`)
 }
 
 /** An https site: a plain-http one lives in a profile kept in memory, which the mirror never touches. The page address names the decoy's port, so a request that skipped the tunnel lands on the decoy and is told apart. */
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), 'orivon-shared-sign-ins-e2e-'))
-  const tls = selfSigned(dir, [SITE])
+  const tls = selfSigned(dir, [SITE, TRACKER])
   spki = tls.spki
   const make = async (via: Seen['via']): Promise<number> => {
     const hosted = createServer(tls, (request, response) => { answer(via, request, response) })
@@ -63,7 +76,8 @@ beforeAll(async () => {
   }
   ports.real = await make('tunnel')
   ports.decoy = await make('direct')
-  socks = await startSocks5Fixture({ preferAuth: true, names: { [`${SITE}:${String(ports.decoy)}`]: { host: '127.0.0.1', port: ports.real } } })
+  const reached = { host: '127.0.0.1', port: ports.real }
+  socks = await startSocks5Fixture({ preferAuth: true, names: { [`${SITE}:${String(ports.decoy)}`]: reached, [`${TRACKER}:${String(ports.decoy)}`]: reached } })
 }, 60_000)
 
 afterAll(async () => {
@@ -79,13 +93,33 @@ const hits = (via: Seen['via']): number => seen.filter((one) => one.via === via)
 const lastCookie = (path: string, via: Seen['via']): string => seen.filter((one) => one.path === path && one.via === via).at(-1)?.cookie ?? '(no request)'
 const requestsSeen = (): string => seen.map((one) => `${one.via} ${one.path} [${one.cookie}]`).join(' | ')
 
-async function start (settings: Record<string, unknown> = {}): Promise<{ app: ElectronApplication, chrome: Page }> {
+const settingsFor = (settings: Record<string, unknown>): string => JSON.stringify({ version: 1, values: { 'network.route.proxy': `127.0.0.1:${String(socks.port)}`, ...settings } })
+
+/** A fresh profile, or the one `reuse` names (whose settings and record the test has put down). */
+async function start (settings: Record<string, unknown> = {}, reuse?: string): Promise<{ app: ElectronApplication, chrome: Page }> {
   return await launchShell({
-    args: [`--host-resolver-rules=MAP ${SITE} 127.0.0.1, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`, `--ignore-certificate-errors-spki-list=${spki}`],
-    seedProfile: async (userDataDir) => {
-      writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 1, values: { 'network.route.proxy': `127.0.0.1:${String(socks.port)}`, ...settings } }))
-    }
+    args: [`--host-resolver-rules=MAP ${SITE} 127.0.0.1, MAP ${TRACKER} 127.0.0.1, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`, `--ignore-certificate-errors-spki-list=${spki}`],
+    ...(reuse === undefined
+      ? { seedProfile: async (userDataDir: string) => { writeFileSync(join(userDataDir, 'settings.json'), settingsFor(settings)) } }
+      : { reuseProfile: reuse })
   })
+}
+
+/** What the mirror has on disk, as the next start will read it. */
+const recordOf = (profile: string): unknown => JSON.parse(readFileSync(join(profile, RECORD), 'utf8'))
+
+/** Writes the cookies of both sessions to disk, so a launch on the same profile finds them. */
+async function flushCookies (app: ElectronApplication): Promise<void> {
+  await app.evaluate(async ({ session }) => {
+    for (const target of [session.defaultSession, session.fromPartition('persist:proxy-profile')]) await target.cookies.flushStore()
+  })
+}
+
+/** The profile folder of a launch, which must exist. */
+const profileOf = (app: ElectronApplication): string => {
+  const found = profileDirOf(app)
+  if (found === undefined) throw new Error('the launcher did not report a profile directory')
+  return found
 }
 
 const activeId = async (chrome: Page): Promise<string> => (await activeTabInfo(chrome)).activeId as string
@@ -125,9 +159,10 @@ async function setSeparate (app: ElectronApplication, chrome: Page, on: boolean)
   await activate(chrome, before)
 }
 
-it('[tunnel profiles share sign-ins] separate by default; with the switch off the tunnelled tab is signed in to what normal browsing is, both ways, attributes kept; on again, the profiles are cleared', async () => {
+it('[tunnel profiles share sign-ins] separate by default; with the switch off a tunnelled tab is signed in to what normal browsing is for the site it opens, both ways, attributes kept, and not for a third party; on again, the profiles\' copies are cleared', async () => {
   const { app, chrome } = await start()
   try {
+    const profile = profileOf(app)
     const normal = await activeId(chrome)
     await visitWithoutPage(app, chrome, urlOf('/login'))
     expect(await cookiesIn(app, null, 'sid'), 'normal browsing is signed in').toHaveLength(1)
@@ -140,19 +175,30 @@ it('[tunnel profiles share sign-ins] separate by default; with the switch off th
     expect(lastCookie('/whoami', 'tunnel'), 'the tunnelled tab is not signed in').not.toContain('sid=')
     expect(await cookiesIn(app, PROXY_PROFILE), 'the profile holds nothing').toEqual([])
 
-    // Off: the profile receives the sign-in with its attributes, and the tunnelled tab sends it, still through the tunnel.
+    // Off: nothing is copied until a tunnelled tab opens the site; then the profile receives the sign-in with its attributes before the page asks for it, still through the tunnel.
     await setSeparate(app, chrome, false)
-    expect(await waitFor(async () => (await cookiesIn(app, PROXY_PROFILE, 'sid')).length === 1, 20_000), 'the sign-in reached the profile').toBe(true)
-    const copied = (await cookiesIn(app, PROXY_PROFILE, 'sid'))[0] as Record<string, unknown>
-    expect(copied).toMatchObject({ value: 'signed-in', domain: SITE, hostOnly: true, httpOnly: true, secure: true, sameSite: 'lax', session: false, path: '/' })
-    expect(copied['expirationDate'] as number, 'the expiry is the cookie\'s own').toBeGreaterThan(Date.now() / 1000)
+    await delay(1500)
+    expect(await cookiesIn(app, PROXY_PROFILE, 'sid'), 'a site no tunnelled tab has opened yet is not copied').toHaveLength(0)
     const direct = hits('direct')
     const through = hits('tunnel')
     await visitWithoutPage(app, chrome, urlOf('/whoami'))
     expect(hits('tunnel'), 'the site was reached through the tunnel again').toBeGreaterThan(through)
     expect(hits('direct'), 'and not directly').toBe(direct)
     expect(lastCookie('/whoami', 'tunnel'), `the tunnelled tab is signed in to the same account (the site saw: ${requestsSeen()}; the profile holds: ${JSON.stringify(await cookiesIn(app, PROXY_PROFILE))})`).toContain('sid=signed-in')
+    const copied = (await cookiesIn(app, PROXY_PROFILE, 'sid'))[0] as Record<string, unknown>
+    expect(copied).toMatchObject({ value: 'signed-in', domain: SITE, hostOnly: true, httpOnly: true, secure: true, sameSite: 'lax', session: false, path: '/' })
+    expect(copied['expirationDate'] as number, 'the expiry is the cookie\'s own').toBeGreaterThan(Date.now() / 1000)
     expect(await app.evaluate(({ webContents, session }) => webContents.getAllWebContents().some((wc) => wc.getURL().includes('/whoami') && wc.session !== session.defaultSession)), 'the tab still lives in a session of its own').toBe(true)
+    expect(recordOf(profile), 'the site is recorded for the profile').toEqual({ version: 1, domains: { 'proxy-profile': ['socks.test'] }, owed: false })
+
+    // A third party the page embeds is not shared: its cookie stays where it was minted, in both directions.
+    await visitWithoutPage(app, chrome, urlOf('/embed'))
+    expect(await waitFor(async () => (await cookiesIn(app, PROXY_PROFILE, 'uid')).length === 1, 20_000), 'the embed ran in the tunnelled tab and was given its cookie').toBe(true)
+    const profileUid = (await cookiesIn(app, PROXY_PROFILE, 'uid'))[0]?.['value']
+    await app.evaluate(async ({ session }, tracker) => { await session.defaultSession.cookies.set({ url: tracker, name: 'uid', value: 'minted-in-normal-browsing', secure: true, sameSite: 'no_restriction', expirationDate: Math.floor(Date.now() / 1000) + 3600 }) }, `https://${TRACKER}/`)
+    await delay(2500)
+    expect(await cookiesIn(app, null, 'uid'), 'the tracker\'s cookie did not reach normal browsing').toEqual([expect.objectContaining({ value: 'minted-in-normal-browsing' })])
+    expect((await cookiesIn(app, PROXY_PROFILE, 'uid'))[0]?.['value'], 'nor did normal browsing\'s reach the profile').toBe(profileUid)
 
     // A cookie set in the tunnelled tab reaches normal browsing.
     await visitWithoutPage(app, chrome, urlOf('/tunnel-login'))
@@ -169,17 +215,19 @@ it('[tunnel profiles share sign-ins] separate by default; with the switch off th
     await visitWithoutPage(app, chrome, urlOf('/login'))
     await tabWith(app, chrome, 'direct')
     await visitWithoutPage(app, chrome, urlOf('/whoami'))
-    expect(lastCookie('/whoami', 'direct'), 'a profile made after the switch was moved starts with the cookies').toContain('sid=signed-in')
+    expect(lastCookie('/whoami', 'direct'), 'a profile made after the switch was moved starts with the cookies of the site it opens').toContain('sid=signed-in')
     expect(await cookiesIn(app, DIRECT_PROFILE, 'sid')).toHaveLength(1)
 
     // Sessions that are not profiles are left alone.
     expect(await cookiesIn(app, 'persist:app-0123456789abcdef'), 'an app\'s session is not mirrored').toEqual([])
     expect(await cookiesIn(app, 'tunnel-profile-memory'), 'a profile kept in memory is not mirrored').toEqual([])
 
-    // On again: the profiles' cookies go, normal browsing keeps its own, and the tunnelled tab is signed out.
+    // On again: the profiles' copies of the site go, normal browsing keeps its own, and the tunnelled tab is signed out.
     await setSeparate(app, chrome, true)
-    expect(await waitFor(async () => (await cookiesIn(app, PROXY_PROFILE)).length === 0 && (await cookiesIn(app, DIRECT_PROFILE)).length === 0, 20_000), 'the profiles\' cookies were cleared').toBe(true)
-    expect((await cookiesIn(app, null)).map((cookie) => cookie['name']).sort(), 'normal browsing kept its cookies').toEqual(['sid', 'tunnelled'])
+    expect(await waitFor(async () => (await cookiesIn(app, PROXY_PROFILE, 'sid')).length === 0 && (await cookiesIn(app, DIRECT_PROFILE)).length === 0, 20_000), 'the profiles\' copies were cleared').toBe(true)
+    expect((await cookiesIn(app, PROXY_PROFILE)).map((cookie) => cookie['name']), 'what the profile holds of third parties stays').toEqual(['uid'])
+    expect((await cookiesIn(app, null)).map((cookie) => cookie['name']).sort(), 'normal browsing kept its cookies').toEqual(['sid', 'tunnelled', 'uid'])
+    expect(await waitFor(() => JSON.stringify(recordOf(profile)) === JSON.stringify({ version: 1, domains: {}, owed: false }), 10_000), 'the record is empty again').toBe(true)
     await activate(chrome, tunnelled)
     await visitWithoutPage(app, chrome, urlOf('/whoami'))
     expect(lastCookie('/whoami', 'tunnel'), 'the tunnelled tab is separate again').not.toContain('sid=')
@@ -208,3 +256,60 @@ it('[tunnel profiles share sign-ins] a profile first made while the switch is of
     await closeElectron(app)
   }
 }, 4 * QA_TEST_TIMEOUT_MS)
+
+it('[tunnel profiles share sign-ins] a switch turned on and not yet cleared when the app stopped is cleared at the next start, whatever else starts', async () => {
+  const first = await start({ 'network.tunnel.separateSignIns': false })
+  let profile = ''
+  try {
+    profile = profileOf(first.app)
+    await visitWithoutPage(first.app, first.chrome, urlOf('/login'))
+    await tabWith(first.app, first.chrome, 'socks5')
+    await visitWithoutPage(first.app, first.chrome, urlOf('/whoami'))
+    expect(await cookiesIn(first.app, PROXY_PROFILE, 'sid'), 'the profile was given the sign-in').toHaveLength(1)
+    await flushCookies(first.app)
+  } finally {
+    await closeElectron(first.app, { keepProfile: true })
+  }
+  // The person turned the switch on and the app stopped before the clear was done: the setting is saved, the record says a clear is owed.
+  writeFileSync(join(profile, 'settings.json'), settingsFor({ 'network.tunnel.separateSignIns': true }))
+  const owed = recordOf(profile) as { domains: unknown }
+  writeFileSync(join(profile, RECORD), JSON.stringify({ version: 1, domains: owed.domains, owed: true }))
+  const second = await start({}, profile)
+  try {
+    expect(await waitFor(async () => (await cookiesIn(second.app, PROXY_PROFILE, 'sid')).length === 0, 20_000), 'the profile\'s copy of the site was cleared at launch').toBe(true)
+    expect(await cookiesIn(second.app, null, 'sid'), 'normal browsing kept its sign-in').toHaveLength(1)
+    expect(await waitFor(() => JSON.stringify(recordOf(profile)) === JSON.stringify({ version: 1, domains: {}, owed: false }), 10_000), 'and nothing is owed any more').toBe(true)
+  } finally {
+    await closeElectron(second.app)
+  }
+}, 8 * QA_TEST_TIMEOUT_MS)
+
+it('[tunnel profiles share sign-ins] a start with the switch off makes the profile equal to normal browsing for the sites it keeps, and does not copy what only the profile holds into normal browsing', async () => {
+  const first = await start()
+  let profile = ''
+  try {
+    profile = profileOf(first.app)
+    await visitWithoutPage(first.app, first.chrome, urlOf('/login'))
+    await tabWith(first.app, first.chrome, 'socks5')
+    await visitWithoutPage(first.app, first.chrome, urlOf('/other-login'))
+    expect(await cookiesIn(first.app, PROXY_PROFILE, 'other'), 'the profile holds a cookie of its own').toHaveLength(1)
+    await flushCookies(first.app)
+  } finally {
+    await closeElectron(first.app, { keepProfile: true })
+  }
+  // The site was already mirrored when the app stopped, and the profile gained a cookie the default session never heard of.
+  writeFileSync(join(profile, 'settings.json'), settingsFor({ 'network.tunnel.separateSignIns': false }))
+  writeFileSync(join(profile, RECORD), JSON.stringify({ version: 1, domains: { 'proxy-profile': ['socks.test'] }, owed: false }))
+  const second = await start({}, profile)
+  try {
+    await tabWith(second.app, second.chrome, 'socks5')
+    await visitWithoutPage(second.app, second.chrome, urlOf('/whoami'))
+    expect(await waitFor(async () => (await cookiesIn(second.app, PROXY_PROFILE, 'sid')).length === 1 && (await cookiesIn(second.app, PROXY_PROFILE, 'other')).length === 0, 20_000), `the profile now holds normal browsing's cookies of the site and no others (it holds: ${JSON.stringify(await cookiesIn(second.app, PROXY_PROFILE))})`).toBe(true)
+    await delay(2500)
+    expect(await cookiesIn(second.app, null, 'other'), 'the profile-only cookie did not reach normal browsing').toEqual([])
+    expect(lastCookie('/whoami', 'tunnel')).toContain('sid=signed-in')
+    expect(lastCookie('/whoami', 'tunnel')).not.toContain('other=')
+  } finally {
+    await closeElectron(second.app)
+  }
+}, 8 * QA_TEST_TIMEOUT_MS)

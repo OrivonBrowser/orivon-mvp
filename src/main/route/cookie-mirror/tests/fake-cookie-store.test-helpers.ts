@@ -1,4 +1,4 @@
-import { identityOf } from '../cookies.js'
+import { identityOf, siteOfCookie, wouldSend } from '../cookies.js'
 import type { ChangeCause, CookieStore, CookieToSet, StoredCookie } from '../cookies.js'
 
 type Listener = (cookie: StoredCookie, cause: ChangeCause, removed: boolean) => void
@@ -7,25 +7,28 @@ type Listener = (cookie: StoredCookie, cause: ChangeCause, removed: boolean) => 
  * A cookie store that behaves as Chromium's does where the mirror depends on it: a cookie is told apart by name, domain and path
  * (a host-only cookie and a domain cookie of one host are two); an overwrite is announced as a removal and then an insert; a write that
  * changes nothing is announced as `inserted-no-change-overwrite`; `remove(url, name)` takes every cookie of that name the address
- * would send; every announcement arrives after the call that caused it has returned. It counts each write so a test can say how
- * many there were.
+ * would send; every announcement arrives after the call that caused it has returned. It counts each write and each read so a test
+ * can say how many there were: `scans` are the reads of the whole jar (`list`), `lookups` the reads scoped by address (`find`).
  */
 export class FakeCookieStore implements CookieStore {
   readonly cookies = new Map<string, StoredCookie>()
   /** Cookies listed beside another of the same name, domain and path, as Electron lists a partitioned cookie: it carries no mark of it. */
   private readonly shadows: StoredCookie[] = []
   readonly writes: Array<{ readonly kind: 'set' | 'remove', readonly name: string }> = []
+  scans = 0
+  lookups = 0
   private readonly listeners = new Set<Listener>()
   /** A store that stores every value changed, so a mirror that trusts it would write for ever. */
   corrupts = false
   /** Rejects the next `set` with the message. */
   failNextSet: string | undefined
-  /** Rejects the next `clear`. */
-  failNextClear = false
+  /** Rejects every `remove` while true. */
+  failRemoves = false
 
   constructor (readonly label: string) {}
 
-  list (): StoredCookie[] {
+  /** Every cookie the store holds, as a test reads it. */
+  contents (): StoredCookie[] {
     return [...this.cookies.values(), ...this.shadows]
   }
 
@@ -35,7 +38,7 @@ export class FakeCookieStore implements CookieStore {
   }
 
   get (name: string, domain?: string): StoredCookie | undefined {
-    return this.list().find((cookie) => cookie.name === name && (domain === undefined || cookie.domain === domain))
+    return this.contents().find((cookie) => cookie.name === name && (domain === undefined || cookie.domain === domain))
   }
 
   private announce (cookie: StoredCookie, cause: ChangeCause, removed: boolean): void {
@@ -65,7 +68,7 @@ export class FakeCookieStore implements CookieStore {
 
   /** What the site does to log out: a cookie sent already expired takes the held one away. */
   siteExpires (name: string, domain: string): void {
-    const found = this.list().find((cookie) => cookie.name === name && cookie.domain === domain)
+    const found = this.contents().find((cookie) => cookie.name === name && cookie.domain === domain)
     if (found === undefined) return
     this.cookies.delete(identityOf(found))
     this.announce(found, 'expired-overwrite', true)
@@ -73,19 +76,21 @@ export class FakeCookieStore implements CookieStore {
 
   /** What Chromium does with a cookie that ran out, or that the store had too many of: no site and no person asked. */
   lapses (name: string, domain: string, cause: 'expired' | 'evicted'): void {
-    const found = this.list().find((cookie) => cookie.name === name && cookie.domain === domain)
+    const found = this.contents().find((cookie) => cookie.name === name && cookie.domain === domain)
     if (found === undefined) return
     this.cookies.delete(identityOf(found))
     this.announce(found, cause, true)
   }
 
-  async all (): Promise<StoredCookie[]> {
-    return this.list()
+  async list (sites: readonly string[]): Promise<StoredCookie[]> {
+    this.scans += 1
+    const wanted = new Set(sites)
+    return this.contents().filter((cookie) => wanted.has(siteOfCookie(cookie) ?? ''))
   }
 
-  async find (name: string, domain?: string): Promise<StoredCookie[]> {
-    const wanted = domain?.replace(/^\./, '')
-    return this.list().filter((cookie) => cookie.name === name && (wanted === undefined || (cookie.domain ?? '').replace(/^\./, '') === wanted))
+  async find (address: string, name: string): Promise<StoredCookie[]> {
+    this.lookups += 1
+    return this.contents().filter((cookie) => cookie.name === name && wouldSend(cookie, address))
   }
 
   async set (details: CookieToSet): Promise<void> {
@@ -109,8 +114,9 @@ export class FakeCookieStore implements CookieStore {
 
   async remove (url: string, name: string): Promise<void> {
     this.writes.push({ kind: 'remove', name })
+    if (this.failRemoves) throw new Error('busy')
     const address = new URL(url)
-    for (const cookie of this.list()) {
+    for (const cookie of this.contents()) {
       const domain = (cookie.domain ?? '').replace(/^\./, '')
       const domainMatches = cookie.hostOnly === true ? address.hostname === domain : address.hostname === domain || address.hostname.endsWith(`.${domain}`)
       if (cookie.name !== name || !domainMatches || !address.pathname.startsWith(cookie.path ?? '/') || (cookie.secure === true && address.protocol !== 'https:')) continue
@@ -122,11 +128,6 @@ export class FakeCookieStore implements CookieStore {
   watch (listener: Listener): () => void {
     this.listeners.add(listener)
     return () => { this.listeners.delete(listener) }
-  }
-
-  async clear (): Promise<void> {
-    if (this.failNextClear) { this.failNextClear = false; throw new Error('busy') }
-    this.cookies.clear()
   }
 
   async flush (): Promise<void> {}

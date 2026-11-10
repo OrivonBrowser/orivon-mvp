@@ -1,4 +1,6 @@
-// A cookie as one session holds it and how it is written into another with every attribute it had. Pure.
+// A cookie as one session holds it, which site it belongs to, and how it is written into another with every attribute it had. Pure.
+
+import { siteOf } from '../../privacy/site-of.js'
 
 export type SameSite = 'unspecified' | 'no_restriction' | 'lax' | 'strict'
 
@@ -33,15 +35,19 @@ export type ChangeCause = 'inserted' | 'inserted-no-change-overwrite' | 'inserte
 
 /** What the mirror asks of one session's cookies: Electron's `session.cookies`, or a fake. */
 export interface CookieStore {
-  readonly all: () => Promise<StoredCookie[]>
-  /** Every cookie of `name` whose domain is `domain` or below it (any domain when it is omitted). */
-  readonly find: (name: string, domain?: string) => Promise<StoredCookie[]>
+  /**
+   * Every cookie of the given sites (registrable domains): those whose domain is a site or below it. A read of the whole jar in
+   * Electron, whose `domain` filter is applied after the jar is read, so it is asked once for all the sites a step needs and never
+   * once for each cookie.
+   */
+  readonly list: (sites: readonly string[]) => Promise<StoredCookie[]>
+  /** The cookies named `name` that a request to `address` would send. Scoped by address, so cheap: the read to use for one cookie. */
+  readonly find: (address: string, name: string) => Promise<StoredCookie[]>
   readonly set: (details: CookieToSet) => Promise<void>
   /** Removes the cookies of `name` that `url` would send: the host's own and the ones of its parent domains. */
   readonly remove: (url: string, name: string) => Promise<void>
   /** Calls `listener` for each change in this store, from now on; returns the way to stop. */
   readonly watch: (listener: (cookie: StoredCookie, cause: ChangeCause, removed: boolean) => void) => () => void
-  readonly clear: () => Promise<void>
   readonly flush: () => Promise<void>
 }
 
@@ -56,6 +62,13 @@ const isSession = (cookie: StoredCookie): boolean => cookie.session === true || 
 /** Name, domain and path tell a cookie apart; a host-only cookie and a domain cookie of one host are two. */
 export function identityOf (cookie: StoredCookie): string {
   return [cookie.name, hostOf(cookie), cookie.hostOnly === true ? 'host' : 'domain', cookie.path ?? '/'].join('\u0000')
+}
+
+/** The site a cookie belongs to: the registrable domain of its domain (`shop.example` for a cookie of `.www.shop.example`); undefined for a cookie with no domain. */
+export function siteOfCookie (cookie: Pick<StoredCookie, 'domain'>): string | undefined {
+  const host = hostOf(cookie)
+  if (host === '') return undefined
+  return siteOf(`https://${host.includes(':') ? `[${host}]` : host}/`) ?? undefined
 }
 
 /** The address a cookie is sent to, with which `remove` takes it; undefined for a cookie with no domain. */

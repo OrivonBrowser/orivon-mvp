@@ -329,7 +329,7 @@ for (const scheme of SCHEMES) {
         await scrollToTunnelRow(settings, 'row-route-separate-sign-ins')
         check('the sign-ins row is on by default, so tunneled sites stay separate', await settings.locator('#row-route-separate-sign-ins input[type=checkbox]').isChecked())
         await state(check, app, `settings-tunnel-sign-ins-${scheme}`, {
-          expected: 'In the "Sites and apps" group of orivon://settings/tunnels, a row "Keep tunneled sites separate" with a switch that is on, and under the label help text that says sites in a tunnel get their own sign-ins, that turning it off keeps the same accounts in tunneled tabs, and that turning it back on clears the cookies of the tunnel profiles. The row sits above the "Sites and apps with their own tunnel setting" row; nothing is cut off or overlapping.',
+          expected: 'In the "Sites and apps" group of orivon://settings/tunnels, a row "Keep tunneled sites separate" with a switch that is on, and under the label help text that says sites in a tunnel get their own sign-ins, that turning it off keeps the same accounts in tunneled tabs, and that turning it back on clears the cookies it kept the same from the tunnel profiles. The row sits above the "Sites and apps with their own tunnel setting" row; nothing is cut off or overlapping.',
           action: 'Scrolled Settings > Tunnels to the Keep tunneled sites separate row.'
         })
       })

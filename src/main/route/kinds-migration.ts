@@ -9,7 +9,6 @@
 import { existsSync, readdirSync, renameSync, rmdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { profilePartition } from './site-partition.js'
-import type { Profile } from './site-partition.js'
 import type { RouteStore } from './route-store.js'
 
 /**
@@ -20,7 +19,7 @@ import type { RouteStore } from './route-store.js'
 export type FolderMove = 'moved' | 'nothing' | 'conflict' | 'failed'
 
 /** The folder a profile's persistent session keeps its data in, under the user data folder. */
-export function profileFolder (userData: string, profile: Profile): string {
+export function profileFolder (userData: string, profile: 'nym' | 'socks5'): string {
   return join(userData, 'Partitions', profilePartition(profile, true).slice('persist:'.length))
 }
 
