@@ -239,6 +239,11 @@ export class ExtensionStore extends EventEmitter {
   clearActiveTab(window: Electron.BaseWindow) {
     if (!this.windowToActiveTab.has(window)) return
     this.windowToActiveTab.delete(window)
+    // Orivon patch (UPSTREAM.md patch 76): the details of this window's tabs say none is in front, as
+    // `chrome.tabs.query({ active: true })` reads them.
+    this.tabDetailsCache.forEach((details) => {
+      if (details.windowId === window.id) details.active = false
+    })
     this.emit('active-tab-changed', undefined, window)
   }
 

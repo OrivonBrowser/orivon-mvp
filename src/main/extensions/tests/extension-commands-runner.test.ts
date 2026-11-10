@@ -23,8 +23,9 @@ function setup (options: { extensions?: CommandKeysDeps['extensions'], withSideP
   const openSidePanel = vi.fn(() => true)
   const keyChanged = vi.fn()
   const tab = { isDestroyed: () => false } as unknown as WebContents
+  const baseWindow = { isDestroyed: () => false }
   const window = {
-    window: { isDestroyed: () => false },
+    window: baseWindow,
     tabs: { activeWebContents: () => ('activeTab' in options ? options.activeTab : tab) }
   } as unknown as ShellWindow
   const loaded = new Set<() => void>()
@@ -45,7 +46,7 @@ function setup (options: { extensions?: CommandKeysDeps['extensions'], withSideP
     log: () => {}
   })
   const env: KeysEnvironment = { shortcuts: orivon, windows: { findOwner: () => window, focused: () => window } }
-  return { keys, prefs, env, sendCommand, activateAction, recordInvocation, recorded, keyChanged, openSidePanel, tab, loaded, orivonChanged, window }
+  return { keys, prefs, env, sendCommand, activateAction, recordInvocation, recorded, keyChanged, openSidePanel, tab, loaded, orivonChanged, window, baseWindow }
 }
 
 const flush = async (): Promise<void> => { await new Promise((resolve) => setTimeout(resolve, 0)) }
@@ -94,21 +95,45 @@ describe('running a command key', () => {
   })
 
   it('activates the action for _execute_action, under the anchor', async () => {
-    const { keys, env, activateAction, sendCommand, tab } = setup()
+    const { keys, env, activateAction, sendCommand, tab, baseWindow } = setup()
     keys.ready(env)
     expect(keys.run(chord('Mod+Shift+Y'), tab)).toBe(true)
     await flush()
-    expect(activateAction).toHaveBeenCalledWith(A, tab, { x: 1, y: 2, width: 3, height: 4 })
+    expect(activateAction).toHaveBeenCalledWith(A, baseWindow, { x: 1, y: 2, width: 3, height: 4 })
     expect(sendCommand).not.toHaveBeenCalled()
   })
 
-  it('tells an extension nothing of a hidden tab (an internal page, or one outside the extensions\' own session), and leaves the action key to the page', () => {
+  it('activates the action over a hidden page (an Orivon page) too: the popup opens in the window with no tab', async () => {
+    const { keys, env, activateAction, sendCommand, recordInvocation, tab, baseWindow } = setup({ hiddenTab: true })
+    keys.ready(env)
+    expect(keys.run(chord('Mod+Shift+Y'), tab)).toBe(true)
+    await flush()
+    expect(activateAction).toHaveBeenCalledWith(A, baseWindow, { x: 1, y: 2, width: 3, height: 4 })
+    expect(sendCommand).not.toHaveBeenCalled()
+    expect(recordInvocation).not.toHaveBeenCalled()
+  })
+
+  it('leaves the action key to the page in a window with no page', () => {
+    const empty = setup({ activeTab: undefined, hiddenTab: true })
+    empty.keys.ready(empty.env)
+    expect(empty.keys.run(chord('Mod+Shift+Y'), empty.tab)).toBe(false)
+  })
+
+  it('opens nothing once the window is gone by the time the anchor is known', async () => {
+    const { keys, env, activateAction, tab, baseWindow } = setup()
+    keys.ready(env)
+    expect(keys.run(chord('Mod+Shift+Y'), tab)).toBe(true)
+    baseWindow.isDestroyed = () => true
+    await flush()
+    expect(activateAction).not.toHaveBeenCalled()
+  })
+
+  it('tells an extension nothing of a hidden tab (an internal page, or one outside the extensions\' own session)', () => {
     const { keys, env, sendCommand, recordInvocation, tab } = setup({ hiddenTab: true })
     keys.ready(env)
     expect(keys.run(chord('Alt+Shift+K'), tab)).toBe(true)
     expect(sendCommand).toHaveBeenCalledWith(A, 'mark', undefined)
     expect(recordInvocation).not.toHaveBeenCalled()
-    expect(keys.run(chord('Mod+Shift+Y'), tab)).toBe(false)
   })
 
   it('still fires onCommand when no tab is active', () => {
