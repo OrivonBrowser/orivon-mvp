@@ -25,7 +25,8 @@ page's, voided the ticket.
 
 That rule assumed main could hold two requests of a frame at once. It cannot. Blink queues a frame's display requests
 in order and starts the next one only after the previous one was answered (`MediaDevices::getDisplayMedia` and the
-user media client's request queue, read in Chromium's source), so a page's request made ahead of the preload's step
+user media client's request queue, read in Chromium's source; the legacy `chromeMediaSource` desktop and tab requests
+take the same queue, and camera and microphone requests another), so a page's request made ahead of the preload's step
 is answered before the preload's request is sent. It can also reach main late, after the ticket opened, when the
 browser process is busy, and then it is the one request the ticket allows: the page is served the screen, the
 preload's own request meets no ticket, and only then does the unconfirmed-share check end the page's renderer.
