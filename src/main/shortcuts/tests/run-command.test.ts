@@ -36,6 +36,7 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
       hasRoom: () => true,
       liveWebContents: () => undefined,
       faviconFor: () => 'data:icon',
+      newTabTunnelChoice: (from?: string) => tabs.find((t) => t.id === (from ?? activeTabId))?.tunnelChoice,
       activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'], stop: calls['stop'], focus: vi.fn() }),
       ...calls
     },
@@ -93,6 +94,17 @@ describe('the tab-state commands', () => {
     calls['createTab']?.mockReturnValue('c')
     runCommand('tab.duplicate', target, deps)
     expect(calls['createTab']).toHaveBeenCalledWith('https://a.example/', true, undefined, 'nym')
+  })
+})
+
+describe('the new tab command', () => {
+  it('opens the new-tab page on the tunnel choice the tab in front gives it', () => {
+    const { target, calls, deps } = harness([tab('a', { tunnelChoice: 'nym' }), tab('b')], 'a')
+    runCommand('tab.new', target, deps)
+    expect(calls['createTab']).toHaveBeenCalledWith(undefined, true, undefined, 'nym')
+    const plain = harness([tab('a', { tunnelChoice: 'nym' }), tab('b')], 'b')
+    runCommand('tab.new', plain.target, plain.deps)
+    expect(plain.calls['createTab']).toHaveBeenCalledWith(undefined, true, undefined, undefined)
   })
 })
 

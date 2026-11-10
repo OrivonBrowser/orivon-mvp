@@ -26,7 +26,7 @@ describe('the certificate-error overlay', () => {
     const state = { active: 't1' }
     const back = vi.fn()
     const createTab = vi.fn()
-    const window = { tabs: { getState: () => ({ activeTabId: state.active, tabs: [{ id: 't1', canGoBack, isNewTab: false }] }), back, createTab, navigate: vi.fn() } }
+    const window = { tabs: { getState: () => ({ activeTabId: state.active, tabs: [{ id: 't1', canGoBack, isNewTab: false }] }), back, createTab, navigate: vi.fn(), newTabTunnelChoice: () => undefined } }
     const close = vi.fn()
     const services = { settings: { get: () => '' } }
     const handler = certErrorOverlay.attach({ window, services, send: vi.fn(), close } as unknown as OverlayWindow)
