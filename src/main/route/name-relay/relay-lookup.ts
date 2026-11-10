@@ -46,7 +46,7 @@ export function createRelayLookup (deps: RelayLookupDeps): RelayHostLookup {
         if (answer.entries.some(onAnonymityPort)) throw new RelayRefusal('anonymity')
         for (const entry of answer.entries) {
           try {
-            const found = await deps.lookup(name, { scheme: entry.kind, host: entry.host, port: entry.port })
+            const found = await deps.lookup(name, entry)
             return [...found.addresses, ...(await found.more ?? [])]
           } catch (error) {
             const word = error instanceof LookupRefusal ? error.word : 'no-answer'

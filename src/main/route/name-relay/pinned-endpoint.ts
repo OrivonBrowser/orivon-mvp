@@ -90,7 +90,8 @@ export async function pinnedEndpoint (options: PinnedEndpointOptions): Promise<P
   /** An opener for one address: its lookups answer that address and no other, so the relay's own steps run unchanged and nothing is asked of a resolver. */
   const openerFor = (address: string): Pin['open'] => createRelayOpener({
     systemAnswer: options.systemAnswer,
-    lookup: async ({ family }) => isIP(address) === family ? [address] : [],
+    lookup: async () => ({ addresses: [address] }),
+    drop: () => {},
     lookupDirect: async () => [address],
     failures: counting,
     connected: report

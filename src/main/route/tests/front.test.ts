@@ -6,7 +6,7 @@ import { connect as netConnect, createServer as createTcpServer } from 'node:net
 import type { AddressInfo, Server, Socket } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteProvider } from '../../../broker/route/provider.js'
-import { FrontRefusal, NOT_CARRIED_PAGE, refusalPage, startRouteFront } from '../front.js'
+import { FrontRefusal, NOT_CARRIED_PAGE, refusalPage, ROUTED_NAME_NOT_CARRIED, startRouteFront } from '../front.js'
 import type { FrontTarget, RouteFront, RouteFrontOptions } from '../front.js'
 
 const cleanups: Array<() => Promise<void> | void> = []
@@ -419,6 +419,19 @@ describe('a front given `open`', () => {
     expect((await connectThrough(f, 'vitalik.eth.:443', basic(f))).status).toBe('HTTP/1.1 403 Forbidden')
     expect((await getThrough(f, 'http://vitalik.eth./', { 'proxy-authorization': basic(f) })).status).toBe(403)
     expect(opened).toEqual([])
+  })
+
+  it('says in its own words why a plain http root-dot name is refused, and a tunnel front keeps its page', async () => {
+    const f = await frontOpening(async () => { throw new Error('unused') })
+    const answer = await getThrough(f, 'http://vitalik.eth./', { 'proxy-authorization': basic(f) })
+    expect(answer.status).toBe(403)
+    expect(answer.body).toBe(refusalPage(ROUTED_NAME_NOT_CARRIED))
+    expect(answer.body).not.toContain('Tunnels')
+
+    const tunnel = await front(providerFor({}))
+    const plain = await getThrough(tunnel, 'http://vitalik.eth./', { 'proxy-authorization': basic(tunnel) })
+    expect(plain.status).toBe(403)
+    expect(plain.body).toBe(NOT_CARRIED_PAGE)
   })
 
   it('aborts the signal it gave open when the client gives up first', async () => {

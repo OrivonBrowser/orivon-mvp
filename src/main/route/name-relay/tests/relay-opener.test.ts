@@ -5,10 +5,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { startSocks5Fixture } from '../../../../broker/route/tests/socks5-fixture.test-helpers.js'
 import { createRunCertificate } from '../../../../protocols/verifier-host/serve/certificate.js'
 import type { FrontTarget } from '../../front.js'
+import { LookupRefusal } from '../proxied-lookup.js'
+import type { LookupAnswer, NameLookup, ProxyEntry } from '../proxied-lookup.js'
 import { createRelayFailures, RelayRefusal } from '../relay-failures.js'
 import type { RefusalWord } from '../relay-failures.js'
 import { createRelayOpener, RELAY_MAX_OPEN } from '../relay-opener.js'
-import type { RelayLookup, RelayLookupQuery, RelayOpenerDeps } from '../relay-opener.js'
+import type { RelayOpenerDeps } from '../relay-opener.js'
 import { closeAll, closedPort, closeLater, keep, readBytes, startConnectProxy, startEcho, startSocks4Proxy } from './upstream-fixtures.test-helpers.js'
 
 afterEach(closeAll)
@@ -35,22 +37,47 @@ async function refusal (attempt: Promise<unknown>): Promise<RelayRefusal> {
 
 function rig (options: {
   answer: string | (() => Promise<string>)
-  lookup?: (query: RelayLookupQuery) => Answers
+  lookup?: (query: { host: string, via: ProxyEntry }) => Answers
   direct?: readonly string[] | Error
   maxOpen?: number
   roots?: readonly string[]
   connected?: RelayOpenerDeps['connected']
 }) {
   const asked: string[] = []
-  const lookups: Array<{ host: string, family: 4 | 6, via: string }> = []
+  const lookups: Array<{ host: string, via: string }> = []
+  const drops: Array<{ host: string, via: string }> = []
   const directLookups: string[] = []
   const failures = createRelayFailures()
-  const lookup: RelayLookup = async (query) => {
-    lookups.push({ host: query.host, family: query.family, via: `${query.via.kind} ${query.via.host}:${String(query.via.port)}` })
-    const answer = options.lookup?.(query)[query.family] ?? []
-    if (answer === 'never') return await new Promise<never>(() => {})
-    if (answer instanceof Error) throw answer
-    return answer
+  const viaText = (via: ProxyEntry): string => `${via.scheme} ${via.host}:${String(via.port)}`
+  type Result = { readonly addresses: readonly string[] } | { readonly error: unknown }
+  const wordOf = (error: unknown): RefusalWord => error instanceof RelayRefusal ? error.word : 'no-answer'
+  /** The lookup as `proxied-lookup.ts` answers: both families asked at once, IPv4 first and IPv6 in `more` once IPv4 has addresses. */
+  const lookup: NameLookup = async (host, via) => {
+    lookups.push({ host, via: viaText(via) })
+    const answers = options.lookup?.({ host, via }) ?? {}
+    const ask = async (family: 4 | 6): Promise<Result> => {
+      const answer = answers[family] ?? []
+      try {
+        if (answer === 'never') return await new Promise<never>(() => {})
+        if (answer instanceof Error) throw answer
+        return { addresses: answer }
+      } catch (error) {
+        return { error }
+      }
+    }
+    const four = ask(4)
+    const six = ask(6)
+    const first = await four
+    if ('addresses' in first && first.addresses.length > 0) {
+      const more: LookupAnswer['more'] = six.then((result) => 'addresses' in result ? result.addresses : [])
+      return { addresses: first.addresses, more }
+    }
+    const results = [first, await six]
+    const addresses = results.flatMap((result) => 'addresses' in result ? result.addresses : [])
+    if (addresses.length > 0) return { addresses }
+    const words = results.flatMap((result) => 'error' in result ? [wordOf(result.error)] : [])
+    for (const word of ['sign-in', 'unreachable', 'no-answer'] as const) if (words.includes(word)) throw new LookupRefusal(word)
+    throw new LookupRefusal('not-found')
   }
   const open = createRelayOpener({
     systemAnswer: async (url) => {
@@ -58,6 +85,7 @@ function rig (options: {
       return typeof options.answer === 'string' ? options.answer : await options.answer()
     },
     lookup,
+    drop: (host, via) => { drops.push({ host, via: viaText(via) }) },
     lookupDirect: async (host) => {
       directLookups.push(host)
       if (options.direct instanceof Error) throw options.direct
@@ -68,7 +96,7 @@ function rig (options: {
     ...(options.roots === undefined ? {} : { upstream: { roots: options.roots } }),
     ...(options.connected === undefined ? {} : { connected: options.connected })
   })
-  return { open, asked, lookups, directLookups, failures }
+  return { open, asked, lookups, drops, directLookups, failures }
 }
 
 async function echoes (socket: Awaited<ReturnType<ReturnType<typeof rig>['open']>>, text = 'hello'): Promise<void> {
@@ -86,10 +114,7 @@ describe('a name behind an HTTP proxy', () => {
     const socket = keep(await open(targetOf(SITE)))
     await echoes(socket)
     expect(asked).toEqual([`https://${SITE}/`])
-    expect(lookups).toEqual([
-      { host: SITE, family: 4, via: `http 127.0.0.1:${String(proxy.port)}` },
-      { host: SITE, family: 6, via: `http 127.0.0.1:${String(proxy.port)}` }
-    ])
+    expect(lookups).toEqual([{ host: SITE, via: `http 127.0.0.1:${String(proxy.port)}` }])
     expect(proxy.seen.map((seen) => seen.requestLine)).toEqual([`CONNECT ${PUBLIC_A}:443 HTTP/1.1`])
     expect(proxy.seen.map((seen) => seen.headers.host)).toEqual([`${PUBLIC_A}:443`])
     expect(JSON.stringify(proxy.seen)).not.toContain('shop')
@@ -127,11 +152,28 @@ describe('a name behind an HTTP proxy', () => {
     expect(proxy.seen.map((seen) => seen.requestLine)).toEqual([`CONNECT ${PUBLIC_A}:443 HTTP/1.1`, `CONNECT ${PUBLIC_B}:443 HTTP/1.1`])
   })
 
-  it('gives up after three addresses, across both families', async () => {
+  it('gives up after three addresses, across both families, and has the lookup forget the name', async () => {
     const proxy = await startConnectProxy({ targets: {} })
-    const { open } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A, PUBLIC_B], 6: [PUBLIC_V6, '2001:db8::8'] }) })
+    const { open, drops } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A, PUBLIC_B], 6: [PUBLIC_V6, '2001:db8::8'] }) })
     expect((await refusal(open(targetOf(SITE)))).word).toBe('unreachable')
     expect(proxy.seen.map((seen) => seen.requestLine)).toEqual([`CONNECT ${PUBLIC_A}:443 HTTP/1.1`, `CONNECT ${PUBLIC_B}:443 HTTP/1.1`, `CONNECT [${PUBLIC_V6}]:443 HTTP/1.1`])
+    expect(drops).toEqual([{ host: SITE, via: `http 127.0.0.1:${String(proxy.port)}` }])
+  })
+
+  it('has the lookup forget nothing when a connection was made, the proxy refused, or an address was given', async () => {
+    const echo = await startEcho()
+    const alive = await startConnectProxy({ targets: { [`${PUBLIC_A}:443`]: echo.port } })
+    const good = rig({ answer: viaHttp(alive.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    await echoes(keep(await good.open(targetOf(SITE))))
+    const forbidden = await startConnectProxy({ status: 403 })
+    const refused = rig({ answer: viaHttp(forbidden.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    await refusal(refused.open(targetOf(SITE)))
+    const dead = await startConnectProxy({ hangUp: true })
+    const down = rig({ answer: viaHttp(dead.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    await refusal(down.open(targetOf(SITE)))
+    const given = rig({ answer: viaHttp((await startConnectProxy({ targets: {} })).port) })
+    await refusal(given.open(targetOf(PUBLIC_A)))
+    expect([good.drops, refused.drops, down.drops, given.drops]).toEqual([[], [], [], []])
   })
 
   it('stops at a proxy that refuses or asks for a sign-in, and does not try the next address', async () => {
@@ -151,16 +193,13 @@ describe('a name behind an HTTP proxy', () => {
     const dead = await startConnectProxy({ hangUp: true })
     const { open, lookups } = rig({ answer: `${viaHttp(dead.port)}; ${viaHttp(alive.port)}`, lookup: () => ({ 4: [PUBLIC_A], 6: [] }) })
     await echoes(keep(await open(targetOf(SITE))))
-    expect(lookups.map((lookup) => lookup.via)).toEqual([
-      `http 127.0.0.1:${String(dead.port)}`, `http 127.0.0.1:${String(dead.port)}`,
-      `http 127.0.0.1:${String(alive.port)}`, `http 127.0.0.1:${String(alive.port)}`
-    ])
+    expect(lookups.map((lookup) => lookup.via)).toEqual([`http 127.0.0.1:${String(dead.port)}`, `http 127.0.0.1:${String(alive.port)}`])
   })
 
   it('moves on when the lookup cannot pass through the proxy, and stops at any other lookup refusal', async () => {
     const echo = await startEcho()
     const alive = await startConnectProxy({ targets: { [`${PUBLIC_A}:443`]: echo.port } })
-    const blocked = (query: RelayLookupQuery): Answers => query.via.port === 1 ? { 4: new RelayRefusal('unreachable'), 6: new RelayRefusal('unreachable') } : { 4: [PUBLIC_A] }
+    const blocked = (query: { via: ProxyEntry }): Answers => query.via.port === 1 ? { 4: new RelayRefusal('unreachable'), 6: new RelayRefusal('unreachable') } : { 4: [PUBLIC_A] }
     await echoes(keep(await rig({ answer: `PROXY 127.0.0.1:1; ${viaHttp(alive.port)}`, lookup: blocked }).open(targetOf(SITE))))
     const stopped = rig({ answer: `PROXY 127.0.0.1:1; ${viaHttp(alive.port)}`, lookup: (query) => query.via.port === 1 ? { 4: new RelayRefusal('sign-in'), 6: new RelayRefusal('sign-in') } : { 4: [PUBLIC_A] } })
     expect((await refusal(stopped.open(targetOf(SITE)))).word).toBe('sign-in')
@@ -239,6 +278,42 @@ describe('an address given as a literal', () => {
   })
 })
 
+describe('the host the relay reads', () => {
+  it('is the one of the URL, so a spelling of an inside address is refused as inside and never looked up', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    const { open, asked, lookups, directLookups, failures } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    const spelled: FrontTarget = { host: '0x7f.1', port: 443, url: 'https://127.0.0.1/', signal: new AbortController().signal }
+    expect((await refusal(open(spelled))).word).toBe('inside')
+    expect({ asked, lookups, directLookups, seen: proxy.seen }).toEqual({ asked: ['https://127.0.0.1/'], lookups: [], directLookups: [], seen: [] })
+    expect(failures.reasonFor('127.0.0.1', 443)).toBe('inside')
+    expect(failures.reasonFor('0x7f.1', 443)).toBeUndefined()
+  })
+
+  it('is looked up, and remembered, as the URL spells it', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    const { open, lookups, failures } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [], 6: [] }) })
+    const written: FrontTarget = { host: 'Shop.Example', port: 443, url: 'https://shop.example/', signal: new AbortController().signal }
+    expect((await refusal(open(written))).word).toBe('not-found')
+    expect(lookups.map((lookup) => lookup.host)).toEqual(['shop.example'])
+    expect(failures.reasonFor('shop.example', 443)).toBe('not-found')
+  })
+
+  it('refuses a target whose URL has no host', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    const { open, asked } = rig({ answer: viaHttp(proxy.port) })
+    expect((await refusal(open({ host: 'shop.example', port: 443, url: 'not a url', signal: new AbortController().signal }))).word).toBe('refused')
+    expect(asked).toEqual([])
+  })
+
+  it('sends the proxy a Host header and nothing else, since the seam carries no request headers', async () => {
+    const echo = await startEcho()
+    const proxy = await startConnectProxy({ targets: { [`${PUBLIC_A}:443`]: echo.port } })
+    const { open } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    await echoes(keep(await open(targetOf(SITE))))
+    expect(Object.keys(proxy.seen[0]?.headers ?? {})).toEqual(['host'])
+  })
+})
+
 describe('a name the verifier serves, and an onion address', () => {
   it.each(['vitalik.eth', 'vitalik.eth.', 'Vitalik.ETH', 'abc.onion', 'abc.onion.', 'onion'])('is refused before the system, a lookup or a proxy is asked: %s', async (host) => {
     const proxy = await startConnectProxy({ targets: {} })
@@ -276,13 +351,17 @@ describe('through SOCKS and HTTPS proxies', () => {
     expect(socks.requests.map((request) => [request.destination, request.addressType])).toEqual([[PUBLIC_A, 'ipv4']])
   })
 
-  it('asks a SOCKS4 proxy for an IPv4 address, and looks up no IPv6 one', async () => {
+  it('asks a SOCKS4 proxy for an IPv4 address only, and refuses a name that has only IPv6 ones as unreachable', async () => {
     const echo = await startEcho()
     const socks = await startSocks4Proxy({ targets: { [`${PUBLIC_A}:443`]: echo.port } })
-    const { open, lookups } = rig({ answer: `SOCKS 127.0.0.1:${String(socks.port)}`, lookup: () => ({ 4: [PUBLIC_A], 6: [PUBLIC_V6] }) })
+    const { open } = rig({ answer: `SOCKS 127.0.0.1:${String(socks.port)}`, lookup: () => ({ 4: [PUBLIC_A], 6: [PUBLIC_V6] }) })
     await echoes(keep(await open(targetOf(SITE))))
-    expect(lookups.map((lookup) => lookup.family)).toEqual([4])
     expect(socks.seen.map((seen) => seen.address)).toEqual([PUBLIC_A])
+    const failing = await startSocks4Proxy({ targets: {} })
+    const only6 = rig({ answer: `SOCKS 127.0.0.1:${String(failing.port)}`, lookup: () => ({ 4: [], 6: [PUBLIC_V6] }) })
+    expect((await refusal(only6.open(targetOf(SITE)))).word).toBe('unreachable')
+    expect(failing.seen).toHaveLength(0)
+    expect(only6.drops).toEqual([])
   })
 
   it('goes through an HTTPS proxy it can verify', async () => {
