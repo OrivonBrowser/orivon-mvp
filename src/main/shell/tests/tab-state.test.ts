@@ -558,12 +558,12 @@ describe('a tab with a tunnel choice', () => {
     expect(manager.record(fresh)?.isDashboardTab, 'and it is the new-tab page').toBe(true)
   })
 
-  it('passes direct on to a new tab beside a direct tab, and gives a new tab beside a tab with no choice none', () => {
+  it('passes no choice on from a direct tab, and none from a tab with no choice', () => {
     const manager = newManager()
     const [a, b] = strip(manager, 2) as [string, string]
     manager.setTunnelChoice(a, 'direct')
     newTabToRight(manager, a)
-    expect(manager.record(order(manager)[1] ?? '')?.tunnelChoice).toBe('direct')
+    expect(manager.record(order(manager)[1] ?? '')).not.toHaveProperty('tunnelChoice')
     newTabToRight(manager, b)
     expect(manager.record(order(manager)[3] ?? '')).not.toHaveProperty('tunnelChoice')
   })
@@ -574,6 +574,8 @@ describe('a tab with a tunnel choice', () => {
     manager.setTunnelChoice(a, 'nym')
     expect(manager.newTabTunnelChoice(a)).toBe('nym')
     expect(manager.newTabTunnelChoice(b)).toBeUndefined()
+    manager.setTunnelChoice(b, 'direct')
+    expect(manager.newTabTunnelChoice(b), 'a direct tab gives none').toBeUndefined()
     manager.activateTab(a)
     expect(manager.newTabTunnelChoice()).toBe('nym')
     expect(manager.newTabTunnelChoice('missing')).toBeUndefined()
@@ -592,6 +594,9 @@ describe('a tab with a tunnel choice', () => {
     expect(manager.newTabTunnelChoice(a)).toBe('socks5')
     entries['https://a.example'] = 'off'
     expect(manager.newTabTunnelChoice(a), 'an off entry is no tunnel').toBeUndefined()
+    entries['https://a.example'] = 'socks5'
+    manager.setTunnelChoice(a, 'direct')
+    expect(manager.newTabTunnelChoice(a), 'a direct tab on a website with a tunnel of its own, whose button is lit').toBe('socks5')
   })
 
   it('reads no entry while the tunnel settings cannot be read', () => {

@@ -16,8 +16,8 @@ const source = (over: Partial<NewTabSource> = {}, entry?: TunnelEntry): NewTabSo
 })
 
 describe('the choice a blank tab takes from the tab it is opened from', () => {
-  it('is the tab\'s own choice, whatever it shows', () => {
-    for (const choice of ['nym', 'socks5', 'direct'] as const) {
+  it('is the tab\'s own choice when that is a tunnel, whatever it shows', () => {
+    for (const choice of ['nym', 'socks5'] as const) {
       expect(choiceForNewTabFrom(source({ choice })), choice).toBe(choice)
       expect(choiceForNewTabFrom(source({ choice, address: undefined })), `${choice} on a new tab`).toBe(choice)
       expect(choiceForNewTabFrom(source({ choice, address: 'orivon://settings/' })), `${choice} on a page of the shell`).toBe(choice)
@@ -47,16 +47,33 @@ describe('the choice a blank tab takes from the tab it is opened from', () => {
     expect(choiceForNewTabFrom(source({ address: 'orivon://settings/' }, 'nym'))).toBeUndefined()
   })
 
-  it('reads no entry of an installed app, a page that cannot go through a tunnel, or a page in a session an app or a temporary route made', () => {
-    expect(choiceForNewTabFrom(source({ isApp: (origin) => origin === SITE }, 'nym')), 'an installed app').toBeUndefined()
+  it('is never direct: a direct tab gives none, or the tunnel its website\'s entry shows', () => {
+    expect(choiceForNewTabFrom(source({ choice: 'direct' })), 'no entry').toBeUndefined()
+    expect(choiceForNewTabFrom(source({ choice: 'direct' }, 'off')), 'an off entry').toBeUndefined()
+    expect(choiceForNewTabFrom(source({ choice: 'direct', address: undefined }, 'nym')), 'a new tab').toBeUndefined()
+    expect(choiceForNewTabFrom(source({ choice: 'direct' }, 'nym')), 'a website with its own Nym entry, whose button is lit').toBe('nym')
+    expect(choiceForNewTabFrom(source({ choice: 'direct' }, 'socks5'))).toBe('socks5')
+  })
+
+  it('passes an installed app\'s own entry on as a website\'s, in the session the app runs in', () => {
+    const app = (over: Partial<NewTabSource> = {}, entry?: TunnelEntry): NewTabSource => source({ isApp: (origin) => origin === SITE, partition: 'persist:app-hash', ...over }, entry)
+    expect(choiceForNewTabFrom(app({}, 'nym'))).toBe('nym')
+    expect(choiceForNewTabFrom(app({}, 'socks5'))).toBe('socks5')
+    expect(choiceForNewTabFrom(app({ choice: 'direct' }, 'nym')), 'a direct tab on an app with its own entry').toBe('nym')
+    expect(choiceForNewTabFrom(app({}, 'off')), 'an off entry').toBeUndefined()
+    expect(choiceForNewTabFrom(app()), 'no entry').toBeUndefined()
+    expect(choiceForNewTabFrom(app({ choice: 'socks5' }, 'nym')), 'the tab\'s own tunnel comes first').toBe('socks5')
+  })
+
+  it('reads no entry of a page that cannot go through a tunnel, or a website in a session an app or a temporary route made', () => {
     for (const address of ['http://localhost:3000/', 'http://127.0.0.1:8080/', 'file:///home/me/page.html']) {
       expect(choiceForNewTabFrom(source({ address, entryOf: () => 'nym' })), address).toBeUndefined()
+      expect(choiceForNewTabFrom(source({ address, isApp: () => true, entryOf: () => 'nym' })), `${address} as an app`).toBeUndefined()
     }
     for (const partition of ['persist:app-https://app.example', 'temporary-route-1']) expect(choiceForNewTabFrom(source({ partition }, 'nym')), partition).toBeUndefined()
   })
 
-  it('keeps the tab\'s choice for a page that has an entry of another tunnel: the tab\'s choice is the tab\'s', () => {
+  it('keeps the tab\'s tunnel for a page that has an entry of another tunnel: the tab\'s choice is the tab\'s', () => {
     expect(choiceForNewTabFrom(source({ choice: 'socks5' }, 'nym'))).toBe('socks5')
-    expect(choiceForNewTabFrom(source({ choice: 'direct' }, 'nym'))).toBe('direct')
   })
 })

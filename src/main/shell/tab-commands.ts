@@ -75,8 +75,8 @@ export function togglePin (tabs: TabManager, id: string): void {
 }
 
 /** A new tab, in front, right of the tab (and of the one it is joined to): an unpinned one, so beside a pinned
- * tab it opens where the pinned run ends. `url` absent opens the new-tab page. Either keeps the tunnel choice of the tab it comes
- * from; the new-tab page also takes the tunnel of the entry of the website the tab shows (`newTabTunnelChoice`). */
+ * tab it opens where the pinned run ends. `url` absent opens the new-tab page. An address (a copy of the tab) keeps the tunnel choice
+ * of the tab it comes from; the new-tab page takes the tunnel the tab's button shows, never direct (`newTabTunnelChoice`). */
 export function openBeside (tabs: TabManager, id: string, url?: string): string | undefined {
   if (!tabs.hasRoom()) return undefined
   const at = endOf(tabs.getState(), id) + 1

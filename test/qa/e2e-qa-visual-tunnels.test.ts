@@ -17,7 +17,6 @@ import { assertNoElectronSurvivors, closeElectron } from '../support/launch-elec
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import { captureState, checkState, popupSized, prepareWindow, SCHEMES, type Check, type Rect, type StateSpec } from '../support/qa-visual.js'
 import { popoverShown, waitFor } from '../support/smoke-helpers.mjs'
-import { openTabWithNoChoice } from '../support/tunnel-popup.js'
 
 /** The address text of a fixture page in the toolbar: its port changes on every run. */
 const FIXTURE_ADDRESS: Rect = { x: 240, y: 44, width: 260, height: 24 }
@@ -114,12 +113,12 @@ for (const scheme of SCHEMES) {
         await closeList()
 
         // Nine more tabs keep their own direct choice, so the question that follows has more rows than its list shows at once.
-        // A tab opened from a direct tab is direct too.
         for (let n = 1; n <= 9; n++) {
           await chrome.click('#new-tab')
+          await keepDirect()
           await visit(app, chrome, `${titled.origin}/${String(n)}`)
         }
-        await openTabWithNoChoice(app, chrome)
+        await chrome.click('#new-tab')
         const browserWide = await listOf()
         await browserWide.click('#tunnel-switch-nym')
         await browserWide.waitForSelector('#tunnel-switch-nym[aria-checked="false"]')
