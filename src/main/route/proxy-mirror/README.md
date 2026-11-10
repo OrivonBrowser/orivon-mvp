@@ -18,7 +18,7 @@ A session that follows the system takes the copy through the route controller's 
 | `mirrored-config.ts` | The config for manual settings (the system's rules and exceptions, then `*.suffix` for every routed suffix) and for a script (its wrapped text as a `data:` address) | Durable: pure |
 | `pac-wrapper.ts` | The system's proxy script made into a script of Orivon's own that answers `DIRECT` for every routed name before the system's text runs, and runs that text where it cannot reach what decides it | Durable: pure text, which Chromium's PAC context runs |
 | `pac-fetch.ts` | Fetches the text of the script the system names, direct, with no cookies or credentials, at most a megabyte and 30 seconds, decoded as Chromium decodes it | Tied to Electron: it makes a session of its own and asks it |
-| `canaries.ts` | The addresses the copy is checked with: two ordinary sites and up to three the system's exceptions cover | Durable: pure |
+| `canaries.ts` | The addresses the copy is checked with: two ordinary sites and up to three the system's exceptions cover, never one that names a host the verifier serves, since asking `orivon-system-proxy` about it would run the system's script with the name | Durable: pure |
 | `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, fetches the script the settings name when it is due, checks a copy before applying it, sets the sessions again until each has taken it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, fetch, carry or check (a copy already applied outlasts a failed read or a check with no answer); after each pass it tells its listeners (`onPass`) the status and Chromium's base answers | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
 | `mirror-status.ts` | What `orivon://report` and the log say about the mirror: four fixed words | Durable: pure |
 
@@ -55,9 +55,11 @@ new does only that.
 **A pass that ends after `stop()` applies nothing.** The check session is not set either, and the route subsystem registers the stop
 before it waits for the first read.
 
+**The status is published before the sessions are moved, and as soon as a read finds settings that may run code.** A pass can wait for a script's fetch, and the sessions are put on the system's config only at its end, so a read that finds a script, detection, settings that cannot be carried or read, or a manual proxy, while the sessions are on the system's config and the last status did not say so, is published at once (`starting`), and a pass that ends on the system's config says so before it moves the sessions, since one that already moved must not be judged by the copy it left.
+
 **Settings that are neither a manual proxy nor a script are not copied.** No proxy (`none`, or `manual` with no server named) stays on `{ mode: 'system' }`:
 it is the same answer, and a proxy turned on is followed by Chromium itself until the next pass applies the copy, with the guard refusing a
-name meanwhile. Automatic detection stays on it too, reported by its own word (`detect`). A script that could not be fetched (`unfetched`:
+name meanwhile. Automatic detection stays on it too, reported by its own word (`detect`) with a `probe` beside it, the one place the guard learns that a search for a script finds none: Chromium's own answer for the two ordinary addresses, `direct` when both were DIRECT in a sample taken after the last read and no more than `PROBE_FRESH_MS` ago, `not-direct` for a proxy or no answer, and `unsure` for no sample since the read or one that is too old. A script that could not be fetched (`unfetched`:
 the fetch failed, or the address is not `http:` or `https:`) and one whose copy does not answer as Chromium's session does (`disagrees`) stay on it as well.
 
 **A system script is copied by wrapping its text, and the wrapper is what keeps a routed name off the script's proxy.** `pac-wrapper.ts` builds

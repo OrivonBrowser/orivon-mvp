@@ -553,7 +553,7 @@ export function macosProxy (): MacosProxy {
   }
 }
 
-export interface SystemProxyFact { readonly source: string, readonly mode: string, readonly state: string, readonly reason: string }
+export interface SystemProxyFact { readonly source: string, readonly mode: string, readonly state: string, readonly reason: string, readonly probe?: string }
 
 /** Opens `orivon://report` and reads the mirror's fact, the log lines it wrote and the whole preview text, once main has built the preview. The log is read from the report because the lines a launch prints first reach a test's capture of the output only by chance. */
 export async function reportedMirror (app: ElectronApplication, chrome: Page): Promise<{ fact: SystemProxyFact | undefined, lines: string[], text: string }> {

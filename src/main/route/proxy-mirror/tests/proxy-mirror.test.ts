@@ -4,9 +4,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SystemProxyConfig } from '../../system-follow.js'
-import { ANSWER_EVERY_MS, createProxyMirror, READ_EVERY_MS, START_BOUND_MS } from '../proxy-mirror.js'
+import { ANSWER_EVERY_MS, createProxyMirror, PROBE_FRESH_MS, READ_EVERY_MS, START_BOUND_MS } from '../proxy-mirror.js'
 import type { MirrorPass, ProxyMirror, ProxyMirrorDeps } from '../proxy-mirror.js'
 import type { SystemSettings } from '../settings-source.js'
+import { namesVerifierHost } from '../../verifier-name-guard.js'
 
 const MANUAL: SystemSettings = { kind: 'manual', proxyRules: 'http=proxy.test:3128;https=proxy.test:3128', exceptions: ['localhost', '*.corp.test'] }
 const MOVED: SystemSettings = { kind: 'manual', proxyRules: 'http=proxy.test:3129;https=proxy.test:3129', exceptions: ['localhost', '*.corp.test'] }
@@ -44,12 +45,18 @@ interface World {
   /** The check session's answers never come. */
   hangCheck: boolean
   /** A read, or a set of the check session, that waits for this before it ends. */
-  gates: { read?: Promise<void>, set?: Promise<void> }
+  gates: { read?: Promise<void>, set?: Promise<void>, answer?: Promise<void> }
+  /** What Chromium's own session says for an address instead of what its settings give; undefined leaves it to them. */
+  systemSays: (url: string) => string | undefined
+  /** Runs when `apply` is called, before it says it is done. */
+  onApply: () => void
+  /** Every address either session was asked about. */
+  asked: string[]
 }
 
 function setup (options: { read?: boolean, held?: boolean, settings?: SystemSettings } = {}): { mirror: ProxyMirror, world: World, lines: string[] } {
   const settings = options.settings ?? MANUAL
-  const world: World = { settings, truth: settings, corrupt: () => undefined, nextReads: [], reads: 0, sets: [], applied: 0, applyClean: true, order: [], checkConfig: undefined, hang: false, hangCheck: false, gates: {} }
+  const world: World = { settings, truth: settings, corrupt: () => undefined, nextReads: [], reads: 0, sets: [], applied: 0, applyClean: true, order: [], checkConfig: undefined, hang: false, hangCheck: false, gates: {}, systemSays: () => undefined, onApply: () => {}, asked: [] }
   const lines: string[] = []
   const deps: ProxyMirrorDeps = {
     source: 'gnome',
@@ -60,7 +67,11 @@ function setup (options: { read?: boolean, held?: boolean, settings?: SystemSett
     },
     ...(options.held === true ? { held: true } : {}),
     systemAnswer: async (url) => {
+      world.asked.push(url)
       if (world.hang) return await new Promise<string>(() => {})
+      if (world.gates.answer !== undefined) await world.gates.answer
+      const said = world.systemSays(url)
+      if (said !== undefined) return said
       return world.truth.kind === 'manual' ? answer(world.truth.proxyRules, world.truth.exceptions, url) : 'DIRECT'
     },
     check: {
@@ -71,6 +82,7 @@ function setup (options: { read?: boolean, held?: boolean, settings?: SystemSett
         if (world.gates.set !== undefined) await world.gates.set
       },
       answer: async (url) => {
+        world.asked.push(url)
         if (world.hangCheck) return await new Promise<string>(() => {})
         const config = world.checkConfig
         const wrong = world.corrupt(url)
@@ -82,6 +94,7 @@ function setup (options: { read?: boolean, held?: boolean, settings?: SystemSett
     apply: async () => {
       world.order.push('apply')
       world.applied += 1
+      world.onApply()
       return world.applyClean
     },
     log: (line) => { lines.push(line) }
@@ -108,6 +121,17 @@ describe('a computer whose settings cannot be read yet, or a window held to a tu
 })
 
 describe('a manual proxy', () => {
+  it('asks neither session about a name the verifier serves, though the system\'s exceptions cover it: the system\'s own session would hand the name to a script', async () => {
+    const covering: SystemSettings = { ...MANUAL, exceptions: ['localhost', '*.eth', '.eth.', '*.ipfs.orivon', 'name.eth', '*.corp.test'] }
+    const { mirror, world } = setup({ settings: covering })
+    await mirror.start()
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS * 2)
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    expect(world.asked).toContain('https://probe.corp.test/')
+    expect(world.asked.filter(namesVerifierHost)).toEqual([])
+    mirror.stop()
+  })
+
   it('is copied, with the exceptions and the routed names, once the copy answers as Chromium does', async () => {
     const { mirror, world } = setup()
     await mirror.start()
@@ -452,6 +476,134 @@ describe('stopping', () => {
   })
 })
 
+describe('what the guard reads while a pass is still deciding', () => {
+  it('says the sessions are on the system\'s config before they are put there: one that took the change first is asked under what the status says', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    const seen: Array<ReturnType<ProxyMirror['status']>> = []
+    world.onApply = () => { seen.push(mirror.status()) }
+    world.settings = MOVED
+    await mirror.refresh()
+    expect(world.applied, 'the sessions went back to the system\'s config').toBe(2)
+    expect(seen).toEqual([{ source: 'gnome', mode: 'manual', state: 'system', reason: 'disagrees' }])
+    mirror.stop()
+  })
+
+  it('says a copy is in place only once every session has it: the copy of the sessions that took it is not the system\'s code, and the others are still on it', async () => {
+    const { mirror, world } = setup({ settings: { kind: 'none' } })
+    await mirror.start()
+    const seen: Array<ReturnType<ProxyMirror['status']>> = []
+    world.onApply = () => { seen.push(mirror.status()) }
+    world.settings = MANUAL
+    world.truth = MANUAL
+    await mirror.refresh()
+    expect(seen, 'while the sessions are being set').toEqual([{ source: 'gnome', mode: 'manual', state: 'system', reason: 'starting' }])
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    mirror.stop()
+  })
+
+  it('says detection may run code from the moment the read finds it, without waiting for the checks of the pass', async () => {
+    const { mirror, world } = setup({ settings: { kind: 'none' } })
+    await mirror.start()
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'none', state: 'system', reason: 'no-proxy' })
+    let open: () => void = () => {}
+    world.gates.answer = new Promise<void>((done) => { open = done })
+    world.settings = { kind: 'detect' }
+    const refreshing = mirror.refresh()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(mirror.status(), 'the read is in, the question about the ordinary addresses is not answered').toEqual({ source: 'gnome', mode: 'detect', state: 'system', reason: 'starting', probe: 'unsure' })
+    open()
+    await refreshing
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'detect', state: 'system', reason: 'detect', probe: 'direct' })
+    mirror.stop()
+  })
+
+  it('keeps saying a copy is in place while a pass checks settings of the same kind, since the sessions still hold it', async () => {
+    const { mirror, world } = setup()
+    await mirror.start()
+    let open: () => void = () => {}
+    world.gates.answer = new Promise<void>((done) => { open = done })
+    world.settings = EDITED
+    world.truth = EDITED
+    const refreshing = mirror.refresh()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    open()
+    await refreshing
+    mirror.stop()
+  })
+})
+
+describe('the probe: whether Chromium answers DIRECT for ordinary addresses where the system looks for a script', () => {
+  const DETECTING: SystemSettings = { kind: 'detect' }
+  const detecting = (probe: string): Record<string, string> => ({ source: 'gnome', mode: 'detect', state: 'system', reason: 'detect', probe })
+
+  it('is DIRECT when every ordinary address was answered DIRECT after the settings were read', async () => {
+    const { mirror } = setup({ settings: DETECTING })
+    await mirror.start()
+    expect(mirror.status()).toEqual(detecting('direct'))
+    mirror.stop()
+  })
+
+  it('is not DIRECT when one answer is a proxy, or one does not come', async () => {
+    const proxied = setup({ settings: DETECTING })
+    proxied.world.systemSays = (url) => url.startsWith('http:') ? 'PROXY wpad.test:3128' : undefined
+    await proxied.mirror.start()
+    expect(proxied.mirror.status()).toEqual(detecting('not-direct'))
+    proxied.mirror.stop()
+
+    const silent = setup({ settings: DETECTING })
+    silent.world.hang = true
+    const starting = silent.mirror.start()
+    await vi.advanceTimersByTimeAsync(PAST_A_CALL_MS)
+    await starting
+    expect(silent.mirror.status()).toEqual(detecting('not-direct'))
+    silent.mirror.stop()
+  })
+
+  it('is not an answer at all while the question taken after the last read is not answered, though the one before it was DIRECT', async () => {
+    const { mirror, world } = setup({ settings: DETECTING })
+    await mirror.start()
+    expect(mirror.status()).toEqual(detecting('direct'))
+    let open: () => void = () => {}
+    world.gates.answer = new Promise<void>((done) => { open = done })
+    const refreshing = mirror.refresh()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(mirror.status(), 'a read has come in since the answer').toEqual(detecting('unsure'))
+    open()
+    await refreshing
+    expect(mirror.status()).toEqual(detecting('direct'))
+    mirror.stop()
+  })
+
+  it('is not an answer once it is older than the time allowed, with no later question answered', async () => {
+    const { mirror } = setup({ settings: DETECTING })
+    await mirror.start()
+    mirror.stop()
+    await vi.advanceTimersByTimeAsync(PROBE_FRESH_MS - 1)
+    expect(mirror.status()).toEqual(detecting('direct'))
+    await vi.advanceTimersByTimeAsync(2)
+    expect(mirror.status()).toEqual(detecting('unsure'))
+  })
+
+  it('turns to not DIRECT at the next question of the two seconds, before any new read', async () => {
+    const { mirror, world } = setup({ settings: DETECTING })
+    await mirror.start()
+    world.systemSays = () => 'PROXY wpad.test:3128'
+    await vi.advanceTimersByTimeAsync(ANSWER_EVERY_MS)
+    expect(mirror.status()).toEqual(detecting('not-direct'))
+    mirror.stop()
+  })
+
+  it('is not part of the status for any settings but detection', async () => {
+    const { mirror } = setup()
+    await mirror.start()
+    expect(Object.keys(mirror.status()).sort()).toEqual(['mode', 'reason', 'source', 'state'])
+    mirror.stop()
+  })
+})
+
 describe('a listener of the passes', () => {
   const HTTPS_AND_HTTP = ['PROXY proxy.test:3128', 'PROXY proxy.test:3128']
 
@@ -535,4 +687,3 @@ describe('a listener of the passes', () => {
     expect(heard).toEqual([])
   })
 })
-
