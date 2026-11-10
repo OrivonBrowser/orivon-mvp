@@ -10,8 +10,8 @@ export type SystemSettings =
   | { readonly kind: 'none' }
   /** One or more proxy servers for named schemes, in the syntax `setProxy` takes, and the hosts that skip them, each in that syntax too. */
   | { readonly kind: 'manual', readonly proxyRules: string, readonly exceptions: readonly string[] }
-  /** The system names a proxy script by address; a copy of it is not made yet. */
-  | { readonly kind: 'script' }
+  /** The system names a proxy script by address, as Chromium takes the setting: the address is fetched by `pac-fetch.ts`, and may be one it refuses. */
+  | { readonly kind: 'script', readonly url: string }
   /** The system finds its proxy by looking for one; never copied. */
   | { readonly kind: 'detect' }
   /** Settings a copy cannot carry exactly. */
@@ -67,4 +67,9 @@ export function sourceOf (platform: string, env: Environment): SettingsSourceNam
   if (platform === 'darwin') return 'macos'
   const desktop = desktopOf(env)
   return desktop === 'other' ? 'environment' : desktop
+}
+
+/** The address GNOME's and KDE's setting names, as Chromium reads it: a path is a `file:` address, and anything else stands as written. */
+export function scriptAddress (setting: string): string {
+  return (setting.startsWith('/') ? `file://${setting}` : setting).trim()
 }

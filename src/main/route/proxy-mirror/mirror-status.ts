@@ -3,14 +3,14 @@
 
 import type { SettingsSourceName, SystemSettings } from './settings-source.js'
 
-/** `copied`: sessions are set to the mirrored config. Any other reason: they follow the system's own. */
+/** `copied`: sessions are set to the mirrored config. Any other reason: they follow the system's own. `unfetched`: the system names a script that could not be fetched, or is not at an `http:` or `https:` address. */
 export type MirrorReason =
   | 'copied'
   | 'starting'
   | 'held'
   | 'no-reader'
   | 'no-proxy'
-  | 'script'
+  | 'unfetched'
   | 'detect'
   | 'unsupported'
   | 'unreadable'
