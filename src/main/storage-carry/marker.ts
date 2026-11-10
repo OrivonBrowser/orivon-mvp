@@ -21,6 +21,8 @@ export interface CarryRow {
   readonly report?: CarryReport
   /** True once a page of the app was let through after the carry failed: the app may have written since, so a later carry would overwrite what the person did. */
   readonly final?: true
+  /** True while the row is the one written when the carry began to write and no outcome has replaced it: if it is still there at the next start, the browser stopped in the middle of the carry. */
+  readonly unfinished?: true
 }
 
 /** The rows by origin, as the URL parser spells it. */
@@ -65,9 +67,21 @@ export function withFinal (marker: CarryMarker, origin: string): CarryMarker {
   return { ...marker, [origin]: { ...row, final: true } }
 }
 
-/** `marker` with the outcome of one more try for `origin`. */
-export function withOutcome (marker: CarryMarker, origin: string, outcome: { readonly status: 'carried' | 'failed', readonly reason?: string, readonly report: CarryReport, readonly final?: boolean }, now: Date): CarryMarker {
+/**
+ * `marker` with a failed, unfinished row for `origin`, counting one try. It is written just before the carry first changes the
+ * website session, so a carry that takes the browser down in the middle is counted and stops after `MAX_ATTEMPTS` starts;
+ * one that stops before any write leaves no row and can be tried again. `withOutcome` replaces the row without counting it again.
+ */
+export function withWriteStarted (marker: CarryMarker, origin: string, now: Date): CarryMarker {
   const attempts = (marker[origin]?.attempts ?? 0) + 1
+  const row: CarryRow = { status: 'failed', at: now.toISOString(), attempts, reason: 'the carry began to write and did not end: the browser stopped in the middle of it', unfinished: true }
+  return { ...marker, [origin]: row }
+}
+
+/** `marker` with the outcome of one more try for `origin`: the try that `withWriteStarted` counted is not counted twice. */
+export function withOutcome (marker: CarryMarker, origin: string, outcome: { readonly status: 'carried' | 'failed', readonly reason?: string, readonly report: CarryReport, readonly final?: boolean }, now: Date): CarryMarker {
+  const prior = marker[origin]
+  const attempts = prior?.unfinished === true ? prior.attempts : (prior?.attempts ?? 0) + 1
   const base = { status: outcome.status, at: now.toISOString(), attempts }
   const row: CarryRow = {
     ...base,

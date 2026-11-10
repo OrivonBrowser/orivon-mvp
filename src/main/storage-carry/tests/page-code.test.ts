@@ -357,3 +357,27 @@ describe('what counts as written', () => {
     }
   })
 })
+
+describe('removing a database that failed', () => {
+  it('says it was removed', async () => {
+    const { to } = await connected()
+    expect(await json(to, 'writeSchema', { name: 'half', version: 1, stores: [{ name: 's', keyPath: null, autoIncrement: false, indexes: [] }] })).toEqual({ status: 'created' })
+    expect(await json(to, 'dropDatabase', 'half')).toEqual({ dropped: true })
+    expect(await to.indexedDB.databases()).toEqual([])
+  })
+
+  it('says it was not, and why, when another connection of the page holds the database open', async () => {
+    const { to } = await connected()
+    await json(to, 'writeSchema', { name: 'half', version: 1, stores: [{ name: 's', keyPath: null, autoIncrement: false, indexes: [] }] })
+    const holder = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = to.indexedDB.open('half')
+      request.onsuccess = () => { resolve(request.result) }
+      request.onerror = () => { reject(request.error ?? new Error('open failed')) }
+    })
+    try {
+      expect(await json(to, 'dropDatabase', 'half')).toEqual({ dropped: false, reason: 'the database is blocked' })
+    } finally {
+      holder.close()
+    }
+  })
+})

@@ -8,6 +8,7 @@ import { runShellInstallers } from './shell/shell-installers.js'
 import { askQuestion } from './shell/question/ask-question.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
+import { installCookieMirror } from './route/cookie-mirror/install-cookie-mirror.js'
 import { startFirstRunFlavour } from './flavour/start-first-run-flavour.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { newTabUpdate } from './self-update/update-pill.js'
@@ -42,6 +43,7 @@ import { handleOpenFile } from './os/open-file.js'
 import { removeAfterExit, removePrivateDir, sweepPrivateDirs } from './launch/private-session.js'
 import { copyPrivateExtensions } from './launch/private-extensions.js'
 import { copyPrivatePicture } from './launch/private-picture.js'
+import { moveLongNamedPartitionFolders } from './launch/partition-folders.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { configureVerifier, ethServersChanged, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
@@ -144,6 +146,8 @@ export function boot (runtime: Runtime): void {
   startDiagnostics({ dir: runtime.dir, isPrivate: runtime.isPrivate })
   // Read before any store or subsystem opens a file of the profile.
   decideDefaultProfile(runtime.dir, process.env)
+  // Before any session is made: a session opens the folder its name says, so the folders of the old names move first.
+  moveLongNamedPartitionFolders(runtime.dir)
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
   // Chromium reads the feature at start, so the saved choice is read here, before the settings store exists.
   applyGlobalPrivacyControl(app.commandLine, readSettingBeforeReady(join(runtime.dir, 'settings.json'), 'privacy.globalPrivacyControl'))
@@ -247,6 +251,8 @@ export function boot (runtime: Runtime): void {
     applyThemeSetting(shell.settings, nativeTheme)
     // The proxy an app can be routed through is the saved one until now; from here the setting itself.
     ctx.routes?.followSettings(shell.settings)
+    // With "Keep tunneled sites separate" off, the tunnel profiles' cookies follow the default session's.
+    installCookieMirror({ settings: shell.settings, isPrivate: runtime.isPrivate, userData: app.getPath('userData') })
     // The Ethereum servers the person chose. Their addresses may hold a key: whatever the choice is now, each is noted for the log and report scrub before anything is printed.
     const ethServers = (choice = shell.settings.get('web3.ethServers')): ReturnType<typeof effectiveEthServers> => effectiveEthServers({ choice, rpcs: shell.settings.get('web3.ethRpcs'), beacon: shell.settings.get('web3.ethBeacon') })
     const noteEthServers = (): void => { noteEthSecrets(ethServers('custom'), noteSecret) }
