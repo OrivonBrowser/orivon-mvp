@@ -156,3 +156,12 @@ export async function reportedRelay (app: ElectronApplication, chrome: Page, wan
   }, 15_000)
   return { fact, lines, text }
 }
+
+/** Waits until `count` has stopped growing for a second (at most twenty), so a connection a finished page still makes is not read as the next step's. */
+export async function quiet (count: () => number): Promise<void> {
+  let last = -1
+  for (let i = 0; i < 20 && count() !== last; i++) {
+    last = count()
+    await new Promise<void>((resolve) => { setTimeout(resolve, 1000) })
+  }
+}

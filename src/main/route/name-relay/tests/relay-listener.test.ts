@@ -8,10 +8,14 @@ import { createRelayFailures } from '../relay-failures.js'
 import type { RefusalWord } from '../relay-failures.js'
 import { startRelayListener } from '../relay-listener.js'
 import { LookupRefusal } from '../proxied-lookup.js'
+import { setSystemProxyProbe, systemProxyFor } from '../../system-proxy.js'
 import type { NameLookup } from '../proxied-lookup.js'
 import { closeAll, closeLater, keep, startConnectProxy, startEcho } from './upstream-fixtures.test-helpers.js'
 
-afterEach(closeAll)
+afterEach(async () => {
+  setSystemProxyProbe(undefined)
+  await closeAll()
+})
 
 const SITE = 'shop.example'
 const ADDRESS = '203.0.113.7'
@@ -109,5 +113,35 @@ describe('the listener', () => {
     expect(await echoed).toBe('still')
     socket.destroy()
     await stopped
+  })
+})
+
+describe('the listener over the system proxy question Orivon asks everywhere', () => {
+  it('never puts a name the verifier serves to either session, a script of the system could run it, and asks the ordinary one for any other host', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    const ordinary: string[] = []
+    const routed: string[] = []
+    setSystemProxyProbe(async (url) => { ordinary.push(url); return `PROXY 127.0.0.1:${String(proxy.port)}` }, async (url) => { routed.push(url); return 'DIRECT' })
+    const listener = await startRelayListener({ systemAnswer: systemProxyFor, lookup: async () => { throw new LookupRefusal('not-found') }, drop: () => {}, lookupDirect: async () => [], failures: createRelayFailures() }, () => {})
+    closeLater(listener.close)
+    const authorization = `Basic ${Buffer.from(`${listener.username}:${listener.secret}`).toString('base64')}`
+    expect((await connectThrough(listener.port, 'vitalik.eth:443', authorization)).status).toBe('HTTP/1.1 403 Forbidden')
+    expect((await connectThrough(listener.port, 'vitalik.eth.:443', authorization)).status).toBe('HTTP/1.1 403 Forbidden')
+    expect([ordinary, routed]).toEqual([[], []])
+    expect((await connectThrough(listener.port, `${SITE}:443`, authorization)).status).toBe('HTTP/1.1 502 Bad Gateway')
+    expect(ordinary).toEqual([`https://${SITE}/`])
+    expect(routed).toEqual([])
+  })
+
+  it('refuses with the word that says the system could not be asked, and sends nothing, where the question is not answered', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    setSystemProxyProbe(async () => { throw new Error('the system proxy cannot be asked') })
+    const refused: RefusalWord[] = []
+    const listener = await startRelayListener({ systemAnswer: systemProxyFor, lookup: async () => ({ addresses: [ADDRESS] }), drop: () => {}, lookupDirect: async () => [], failures: createRelayFailures(), onRefused: (word) => { refused.push(word) } }, () => {})
+    closeLater(listener.close)
+    const authorization = `Basic ${Buffer.from(`${listener.username}:${listener.secret}`).toString('base64')}`
+    expect((await connectThrough(listener.port, `${SITE}:443`, authorization)).status).toBe('HTTP/1.1 502 Bad Gateway')
+    expect(refused).toEqual(['unsure'])
+    expect(proxy.seen).toEqual([])
   })
 })

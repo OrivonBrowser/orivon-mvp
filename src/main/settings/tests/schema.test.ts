@@ -112,3 +112,11 @@ describe('the Web3 Score provider setting', () => {
     expect(validateSetting(SETTINGS['web3.scoreProvider'], '')).toBe('')
   })
 })
+
+describe('the name relay\'s switch', () => {
+  it('is a boolean the person turns on, off until then, and the renderer is told its description', () => {
+    expect(SETTINGS['privacy.resolveBehindProxy']).toMatchObject({ kind: 'bool', default: false })
+    expect(isSettingKey('privacy.resolveBehindProxy')).toBe(true)
+    expect(describeSettings().find((description) => description.key === 'privacy.resolveBehindProxy')).toMatchObject({ kind: 'bool', default: false })
+  })
+})
