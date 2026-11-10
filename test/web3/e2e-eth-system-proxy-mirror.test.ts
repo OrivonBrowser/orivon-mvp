@@ -265,14 +265,15 @@ describe.skipIf(!WINDOWS)('a computer whose Windows settings only detect the pro
   beforeAll(() => { restore = windowsAutoDetect() })
   afterAll(() => { restore() })
 
-  it('copies nothing, refuses a .eth name without asking the session, and the report says the settings only detect', async () => {
+  it('copies nothing, opens a .eth name while detection finds no script, and the report says the settings only detect and what Chromium answered', async () => {
     const { app, chrome } = await launchShell({})
     try {
       const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture', 60_000)
       const reported = await reportedMirror(app, chrome)
       report('windows, detection only', { eth, mirror: reported.fact, lines: reported.lines })
-      expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
-      expect(reported.fact).toEqual({ source: 'windows', mode: 'detect', state: 'system', reason: 'detect' })
+      expect(eth.result, JSON.stringify(eth)).toBe('page')
+      expect(reported.fact).toMatchObject({ source: 'windows', mode: 'detect', state: 'system', reason: 'detect' })
+      expect(['direct', 'unsure'], 'never the answer of a search that found something').toContain(reported.fact?.probe)
       expect(reported.lines).toEqual(['[route] system proxy: left to the system (windows, detect, detect)'])
     } finally {
       await closeElectronApp(app)

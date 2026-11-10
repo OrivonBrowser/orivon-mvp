@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { configRunsSystemCode, createProxyAnswers, PROXY_ASK_TIMEOUT_MS, PROXY_SETTLE_MS, proxyAnswerFor, proxyEpoch, proxyMayRunSystemCode, proxySetInFlight, proxySetOverran, proxySettled, trackProxySet } from '../proxy-answers.js'
+import { configRunsSystemCode, createProxyAnswers, PROXY_ASK_DRAIN_MS, PROXY_ASK_TIMEOUT_MS, PROXY_SETTLE_MS, proxyAnswerFor, proxyEpoch, proxyMayRunSystemCode, proxySetInFlight, proxySetOverran, proxySettled, trackProxySet } from '../proxy-answers.js'
 
 describe('a session that does not answer', () => {
   it('is given up on after the time allowed, long enough for automatic detection, and asked again by the next request', async () => {
@@ -211,6 +211,75 @@ describe('a change of a session\'s proxy', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('a change of a session\'s proxy to the system\'s config while a question is under way', () => {
+  const COPY = { mode: 'fixed_servers', proxyRules: 'http=proxy.test:3128' }
+  const SYSTEM = { mode: 'system' }
+
+  /** A session whose questions are answered when `answer(n)` is called for the nth one asked. */
+  function slowSession (): { session: { resolveProxy: (url: string) => Promise<string> }, answer: (nth?: number) => void } {
+    const answers: Array<() => void> = []
+    const session = { resolveProxy: async () => await new Promise<string>((done) => { answers.push(() => { done('DIRECT') }) }) }
+    return { session, answer: (nth = 0) => { answers[nth]?.() } }
+  }
+
+  it('waits for the question, which may be queued behind the change and be answered under the system\'s config, before it begins', async () => {
+    const { session, answer } = slowSession()
+    await trackProxySet(session, async () => {}, 1_000, COPY)
+    expect(proxyMayRunSystemCode(session)).toBe(false)
+    const asked = proxyAnswerFor(session, 'https://a.eth/')
+    const work = vi.fn(async () => {})
+    const change = trackProxySet(session, work, 1_000, SYSTEM)
+    await new Promise<void>((done) => { setTimeout(done, 20) })
+    expect(work, 'the question is still being answered').not.toHaveBeenCalled()
+    expect(proxyMayRunSystemCode(session), 'and the session already counts as on its way to the system\'s code').toBe(true)
+    answer()
+    await asked
+    await change
+    expect(work).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not wait when it moves the session to a config of Orivon\'s own, which no question can hand to the system\'s code', async () => {
+    const { session } = slowSession()
+    void proxyAnswerFor(session, 'https://a.eth/')
+    const work = vi.fn(async () => {})
+    await trackProxySet(session, work, 1_000, COPY)
+    expect(work).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives up on a question that does not end, after the time allowed, and then goes on', async () => {
+    vi.useFakeTimers()
+    try {
+      const { session } = slowSession()
+      void proxyAnswerFor(session, 'https://a.eth/').catch(() => {})
+      const work = vi.fn(async () => {})
+      const change = trackProxySet(session, work, 60_000, SYSTEM)
+      await vi.advanceTimersByTimeAsync(PROXY_ASK_DRAIN_MS - 1)
+      expect(work).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(2)
+      await change
+      expect(work).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('counts every question of the session, not only the one that is shared', async () => {
+    const { session, answer } = slowSession()
+    const first = proxyAnswerFor(session, 'https://a.eth/')
+    const second = proxyAnswerFor(session, 'https://b.eth/')
+    const work = vi.fn(async () => {})
+    const change = trackProxySet(session, work, 1_000, SYSTEM)
+    answer(0)
+    await first
+    await new Promise<void>((done) => { setTimeout(done, 20) })
+    expect(work, 'one question is still not answered').not.toHaveBeenCalled()
+    answer(1)
+    await second
+    await change
+    expect(work).toHaveBeenCalledTimes(1)
   })
 })
 

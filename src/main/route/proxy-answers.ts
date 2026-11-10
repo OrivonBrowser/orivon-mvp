@@ -20,6 +20,8 @@ export interface ProxyResolver {
 export const PROXY_ASK_TIMEOUT_MS = 15_000
 /** How long a request waits for a change of its session's proxy to end before it asks which proxy applies. */
 export const PROXY_SETTLE_MS = 10_000
+/** How long a change of a session's proxy to the system's config waits for the questions the session is answering, which Chromium may be holding for it. */
+export const PROXY_ASK_DRAIN_MS = 3_000
 
 /** The part of a proxy config that tells whose code answers a question: Electron's `setProxy` takes more, and none of it matters here. */
 export interface ProxyConfigKind {
@@ -53,6 +55,10 @@ interface Setting {
   towardSystem: number
   settled: Promise<void>
   release: () => void
+  /** Questions about which proxy the session would use that have been put and not answered. */
+  asking: number
+  asked: Promise<void>
+  releaseAsked: () => void
 }
 
 const settings = new WeakMap<object, Setting>()
@@ -60,10 +66,23 @@ const settings = new WeakMap<object, Setting>()
 function settingOf (target: object): Setting {
   let setting = settings.get(target)
   if (setting === undefined) {
-    setting = { inFlight: 0, overran: false, onSystem: true, towardSystem: 0, settled: Promise.resolve(), release: () => {} }
+    setting = { inFlight: 0, overran: false, onSystem: true, towardSystem: 0, settled: Promise.resolve(), release: () => {}, asking: 0, asked: Promise.resolve(), releaseAsked: () => {} }
     settings.set(target, setting)
   }
   return setting
+}
+
+/** Runs `ask`, a question to `target` about which proxy it would use, and counts it until it is answered: a change of the session to the system's config waits for it (`trackProxySet`). */
+export async function trackProxyAsk<T> (target: object, ask: () => Promise<T>): Promise<T> {
+  const setting = settingOf(target)
+  if (setting.asking === 0) setting.asked = new Promise<void>((resolve) => { setting.releaseAsked = resolve })
+  setting.asking += 1
+  try {
+    return await ask()
+  } finally {
+    setting.asking -= 1
+    if (setting.asking === 0) setting.releaseAsked()
+  }
 }
 
 /**
@@ -71,7 +90,10 @@ function settingOf (target: object): Setting {
  * `proxySetInFlight` is true until the call itself ends (not when whoever waits for it gives up), and a call that outlasts
  * `overranMs` leaves `proxySetOverran` true until a later one is quick, because whoever gave up on it no longer knows which
  * proxy the session has. A change that does not say its config counts as one to the system's, and a change that fails may have
- * gone through, so `proxyMayRunSystemCode` stays true after one that was meant to reach the system's.
+ * gone through, so `proxyMayRunSystemCode` stays true after one that was meant to reach the system's. A change to the system's
+ * config first waits, for up to `PROXY_ASK_DRAIN_MS`, for the questions the session is answering: Chromium resolves them one at
+ * a time and restarts a pending one under a new config, so one put while the session held a copy of Orivon's own could otherwise be
+ * answered by the system's code.
  */
 export async function trackProxySet<T> (target: object, work: () => Promise<T>, overranMs = PROXY_SETTLE_MS, config?: ProxyConfigKind): Promise<T> {
   const setting = settingOf(target)
@@ -83,6 +105,7 @@ export async function trackProxySet<T> (target: object, work: () => Promise<T>, 
   let late = false
   const timer = setTimeout(() => { late = true; setting.overran = true }, overranMs)
   try {
+    if (toSystem && setting.asking > 0) await within(setting.asked, PROXY_ASK_DRAIN_MS, 'the session still had questions to answer').catch(() => {})
     const result = await work()
     setting.onSystem = toSystem
     return result
@@ -148,7 +171,7 @@ const bySession = new WeakMap<object, (url: string) => Promise<string>>()
 export async function proxyAnswerFor (session: ProxyResolver, url: string): Promise<string> {
   let answers = bySession.get(session)
   if (answers === undefined) {
-    answers = createProxyAnswers({ resolve: async (target) => await session.resolveProxy(target), epoch: () => proxyEpoch(session) })
+    answers = createProxyAnswers({ resolve: async (target) => await trackProxyAsk(session, async () => await session.resolveProxy(target)), epoch: () => proxyEpoch(session) })
     bySession.set(session, answers)
   }
   return await answers(url)

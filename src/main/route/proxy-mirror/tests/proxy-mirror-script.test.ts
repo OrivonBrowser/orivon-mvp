@@ -53,6 +53,8 @@ interface World {
   switchTo: (address: string) => void
   /** Every address either session was asked about. */
   asked: string[]
+  /** A fetch of the script that waits for this before it ends. */
+  fetchGate: Promise<void> | undefined
 }
 
 /** The text a session is set to by its `data:` address. */
@@ -78,7 +80,7 @@ function answerOf (run: PacRun | undefined, url: string): string {
 function setup (served: Record<string, string | undefined> = { [ADDRESS]: FIRST }, options: { fetch?: boolean } = {}): { mirror: ProxyMirror, world: World, lines: string[] } {
   const settings: SystemSettings = { kind: 'script', url: ADDRESS }
   const world: World = {
-    settings, served, chromium: undefined, checking: undefined, counter: 0, day: true, fetches: [], reloads: 0, reloadFails: false, reads: 0, nextReads: [], sets: [], order: [], applied: 0, asked: [],
+    settings, served, chromium: undefined, checking: undefined, counter: 0, day: true, fetches: [], reloads: 0, reloadFails: false, reads: 0, nextReads: [], sets: [], order: [], applied: 0, asked: [], fetchGate: undefined,
     notice: () => {
       const text = world.settings.kind === 'script' ? world.served[world.settings.url] : undefined
       world.chromium = text === undefined ? undefined : load(text)
@@ -107,6 +109,7 @@ function setup (served: Record<string, string | undefined> = { [ADDRESS]: FIRST 
       fetchScript: async (url: string) => {
         world.fetches.push(url)
         world.order.push('fetch')
+        if (world.fetchGate !== undefined) await world.fetchGate
         const text = world.served[url]
         if (text === undefined) throw new Error('the script did not arrive')
         return text
@@ -155,6 +158,23 @@ describe('a proxy script the system names', () => {
     expect(world.order).toEqual(['fetch', 'set:pac_script', 'apply'])
     expect(mirror.status()).toEqual({ source: 'gnome', mode: 'script', state: 'mirrored', reason: 'copied' })
     expect(copied(mirror, 'https://ordinary.test/', world)).toBe('PROXY proxy.test:3128')
+    mirror.stop()
+  })
+
+  it('counts as code of the system\'s from the moment the read names it, while it is fetched: the status does not wait for the pass to end', async () => {
+    const { mirror, world } = setup()
+    world.settings = { kind: 'none' }
+    await mirror.start()
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'none', state: 'system', reason: 'no-proxy' })
+    let arrive: () => void = () => {}
+    world.fetchGate = new Promise<void>((done) => { arrive = done })
+    world.switchTo(ADDRESS)
+    const refreshing = mirror.refresh()
+    await vi.advanceTimersByTimeAsync(10)
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'script', state: 'system', reason: 'starting' })
+    arrive()
+    await refreshing
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'script', state: 'mirrored', reason: 'copied' })
     mirror.stop()
   })
 

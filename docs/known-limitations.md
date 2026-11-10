@@ -18,7 +18,7 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   an app that is not routed gets no `orivon.net` sockets and no name lookups, rather than going
   around it. [`architecture/egress.md`](architecture/egress.md) lists every path to the network
   and how each takes the tunnel.
-- **Behind a proxy that automatic detection finds, or that a script Orivon cannot copy gives, `.eth` names and other Web3
+- **Behind a proxy that a script Orivon cannot copy gives, or that automatic detection finds, `.eth` names and other Web3
   addresses do not open, even when the script would have let them through.** A name the verifier serves is answered on this
   computer, and a proxy that carried it would learn the name and could answer it with a page of its own. On Linux with a proxy set
   only by environment variables (`http_proxy` and the like) Orivon keeps these names out of it and they open. A
@@ -35,16 +35,19 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   the system and the next paragraph applies; KDE's reversed exceptions are one such case, and so are a script that cannot
   be fetched (not at an `http:` or `https:` address, over a megabyte, not answering) and one that answers differently at every
   question, by the clock or at random. A name written with a dot at the end (`name.eth.`) is not found behind a copied proxy or script,
-  and is refused behind any other. Where automatic detection, a script left to the system, or settings Orivon could not read or carry
+  and is refused behind any other. Where a script left to the system, automatic detection that finds one, or settings Orivon could not read or carry
   give the proxy, a session that follows the system cannot be told to leave a name out, and asking it which proxy it would use
   would run the system's script with the name, which the script could resolve or send anywhere. So Orivon does not ask: the request
   is refused before it is sent, and the tab says Orivon could not tell. That holds when the script would have answered
   "none" for the name, and for Orivon's own questions about a name too: an app that is not routed gets no lookup of and no connection to
   a name the verifier serves. Ordinary sites still go through the proxy. To open the names there, turn
   the system proxy off, give it a manual setting that lists `*.eth` and the other suffixes Orivon serves among its exceptions (the
-  hosts that bypass it), or turn a tunnel on. Windows has "Automatically detect settings" ticked in a new installation, so
-  on a Windows computer left as it was installed the names open only once that box is cleared (*provisional*: whether a name
-  should open when detection found no script is not decided, and a run that finds how often a network offers one would inform it). A name asked for over plain `http:` is refused whatever the proxy is,
+  hosts that bypass it), or turn a tunnel on. Windows has "Automatically detect settings" ticked in a new installation, and the names open there while
+  detection finds no script: Orivon asks Chromium which proxy it would use for two ordinary addresses, and detection counts as finding
+  none while both answers are DIRECT, taken after the settings were last read and no more than ten seconds ago. A missing, late or
+  other answer means detection may have found a script, and the names are refused as above. What that leaves open: a hostile network
+  that serves a detection script answering DIRECT for every address is never noticed, and the script sees the names; each session runs
+  its own detection, so between two samples a session may already have found a script the probe has not seen. A name asked for over plain `http:` is refused whatever the proxy is,
   except the developer names of a run that serves them. The settings are read every thirty seconds, and at once when Chromium's
   answer for an ordinary address changes: for the time between a script being turned on and that read, a session still on the system's own is asked,
   and the script then runs with the name. A copy follows the system by polling, not as it

@@ -4,8 +4,9 @@
 // own text runs, and given to the sessions that follow the system once it answers as Chromium's own session does: a script that sends a
 // .eth name to a proxy still opens it, the proxy is never asked about it, and the script's split of the other sites between two proxies is
 // kept. A manual proxy in the environment is left to the system, with `no_proxy` keeping the names out of it. An `auto_proxy`
-// that is set and empty is automatic detection, which beats the manual variables and is left to the system, where a name is refused
-// without being asked about, since detection may find a script that would be shown it. The desktop here is
+// that is set and empty is automatic detection, which beats the manual variables and is left to the system, where a name is asked
+// about only while the mirror's own question about an ordinary address is answered DIRECT, since detection that finds a script would
+// show it the name. The desktop here is
 // XFCE, one Chromium reads no proxy settings of its own for. The proxies are forward proxies on loopback that log every `CONNECT` and
 // every plain-HTTP request. Linux only: the other systems have no such variable to read, so there is nothing to run on a Windows or macOS
 // runner.
@@ -16,7 +17,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
-import { CANCELLED, launchShellOn, ORDINARY, proxyEnvironment, refusalLines, report, reportedMirror, resolved, startLoggingProxy, startScriptServer, tunnelsOpened, UNSURE_SHEET, verifierNames, visitReporting, waitForAnswer } from './system-proxy-support.js'
+import { launchShellOn, ORDINARY, proxyEnvironment, refusalLines, report, reportedMirror, resolved, startLoggingProxy, startScriptServer, tunnelsOpened, verifierNames, visitReporting, waitForAnswer } from './system-proxy-support.js'
 import type { LoggingProxy, Running, ScriptServer } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
@@ -202,15 +203,16 @@ describe.skipIf(!LINUX)('a computer whose environment sets auto_proxy and leaves
 
   it('is automatic detection, which beats the manual variables: the proxy they name is never asked, and the report says detection', () => {
     expect(settled, 'the mirror said it left detection to the system').toBe(true)
-    expect(reported.fact).toEqual({ source: 'environment', mode: 'detect', state: 'system', reason: 'detect' })
+    expect(reported.fact).toMatchObject({ source: 'environment', mode: 'detect', state: 'system', reason: 'detect' })
     expect(asked(proxy)).toEqual([])
     for (const kind of Object.keys(facts.ordinarySessions)) expect(facts.ordinarySessions[kind], `${kind} session, ordinary`).toBe('DIRECT')
     expect(facts.ordinary.result).not.toBe('page')
   })
 
-  it('refuses a .eth name without asking the session, saying Orivon could not tell: detection may find a script, which would be shown the name', () => {
-    expect(facts.eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
-    expect(facts.refusals.join('\n')).toContain('the system\'s proxy settings may run a script, and the session holds no copy of them')
+  it('opens a .eth name while the probe says detection finds no script: Chromium\'s answer for ordinary addresses is DIRECT, the session is asked, and the report carries that', () => {
+    expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
+    expect(['direct', 'unsure'], 'never the answer of a search that found something').toContain(reported.fact?.probe)
+    expect(facts.refusals.join('\n')).not.toContain('may run a script')
     expect(asked(proxy)).toEqual([])
   })
 })

@@ -248,18 +248,6 @@ export function windowsAutoDetect (): () => void {
   return restore
 }
 
-/**
- * A computer whose Windows settings carry no proxy, no script and no detection: the "Automatically detect settings" box a new
- * installation has ticked is cleared, since a session on detection is never asked about a name the verifier serves. Returns what
- * puts the user's own settings back. Chromium reads them when a session starts, so it is done before a launch.
- */
-export function windowsNoProxy (): () => void {
-  const restore = rememberIeSettings()
-  setIeBlob(ieBlob(1))
-  setIeValues({ ProxyEnable: 0, ProxyServer: null, ProxyOverride: null, AutoConfigURL: null, AutoDetect: 0 })
-  return restore
-}
-
 /** A manual proxy as Windows keeps it: `bypass` is the list written in Internet Options, `detect` the "Automatically detect settings" box. */
 export interface WindowsProxy {
   readonly server: string
@@ -565,7 +553,7 @@ export function macosProxy (): MacosProxy {
   }
 }
 
-export interface SystemProxyFact { readonly source: string, readonly mode: string, readonly state: string, readonly reason: string }
+export interface SystemProxyFact { readonly source: string, readonly mode: string, readonly state: string, readonly reason: string, readonly probe?: string }
 
 /** Opens `orivon://report` and reads the mirror's fact, the log lines it wrote and the whole preview text, once main has built the preview. The log is read from the report because the lines a launch prints first reach a test's capture of the output only by chance. */
 export async function reportedMirror (app: ElectronApplication, chrome: Page): Promise<{ fact: SystemProxyFact | undefined, lines: string[], text: string }> {

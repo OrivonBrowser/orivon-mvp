@@ -7,10 +7,11 @@
 // `https_proxy`), Orivon adds the verifier's suffixes to `no_proxy` before it starts and the names load. Where it comes
 // from the desktop's own settings, GNOME's, KDE's or Windows' manual proxy is copied into the sessions with the suffixes left out and the names
 // load (e2e-eth-system-proxy-mirror.test.ts follows it as it changes, and e2e-eth-system-proxy-script.test.ts does the same for a
-// proxy script); where the settings cannot be copied (KDE's when its exceptions are reversed, automatic detection), nothing Orivon can set
+// proxy script); where the settings cannot be copied (KDE's when its exceptions are reversed), nothing Orivon can set
 // exempts a name, so a request for one is cancelled before it is sent and the tab says why. Where the system may run a script of its
-// own (automatic detection finds one), the session is not asked at all, since asking hands the name to the script
-// (e2e-eth-system-proxy-script-never-asked.test.ts proves it from Chromium's net log). A name asked for over plain http is never sent, whatever
+// own, the session is not asked at all, since asking hands the name to the script (e2e-eth-system-proxy-script-never-asked.test.ts
+// proves it from the script's own log). Automatic detection counts as such a script only while Chromium's answer for an ordinary
+// address is not DIRECT: a stock Windows, with "Automatically detect settings" ticked and no script found, opens the names. A name asked for over plain http is never sent, whatever
 // the proxy says. A browser on a SOCKS5 tunnel is on its front, which leaves the names to the verifier, whatever the computer's proxy is.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/web3/e2e-eth-system-proxy.test.ts
@@ -28,7 +29,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp, readShield } from '../support/e2e-helpers.js'
 import { activeTabInfo } from '../support/smoke-helpers.mjs'
-import { CANCELLED, gnomeProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, proxyEnvironment, refusalLines, report, resolved, startLoggingProxy, SUBRESOURCES_BODY, UNSURE_SHEET, verifierNames, visitReporting, visitSubresources, windowsAutoDetect, windowsNoProxy } from './system-proxy-support.js'
+import { CANCELLED, gnomeProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, proxyEnvironment, refusalLines, report, resolved, startLoggingProxy, SUBRESOURCES_BODY, UNSURE_SHEET, verifierNames, visitReporting, visitSubresources, windowsAutoDetect } from './system-proxy-support.js'
 import type { LoggingProxy, Running, Visit } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
@@ -70,8 +71,8 @@ const launchShell = async (env: Record<string, string>, seedProfile?: (dir: stri
 
 describe('no proxy at all (the control)', () => {
   it('a .eth name loads and an ordinary name does not resolve, so a failure with a proxy is the proxy\'s', async () => {
-    // A new Windows installation has "Automatically detect settings" ticked, which is not "no proxy at all".
-    const restoreSettings = WINDOWS ? windowsNoProxy() : () => {}
+    // A new Windows installation has "Automatically detect settings" ticked and nothing else: the control is that computer.
+    const restoreSettings = WINDOWS ? windowsAutoDetect() : () => {}
     try {
       const { app, chrome } = await launchShell({})
       try {
@@ -362,13 +363,13 @@ describe.skipIf(!WINDOWS)('a computer whose Windows settings detect the proxy au
   beforeAll(() => { restore = windowsAutoDetect() })
   afterAll(() => { restore() })
 
-  it('refuses a .eth name without asking the session, saying Orivon could not tell: detection may find a script, which would be shown the name', async () => {
+  it('opens a .eth name while detection finds no script, which the mirror knows from Chromium answering DIRECT for ordinary addresses', async () => {
     const { app, chrome } = await launchShell({})
     try {
       const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture', 60_000)
       report('windows, automatic detection', { eth, refusals: refusalLines(app) })
-      expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
-      expect(refusalLines(app).join('\n')).toContain('the system\'s proxy settings may run a script')
+      expect(eth.result, JSON.stringify(eth)).toBe('page')
+      expect(refusalLines(app).join('\n')).not.toContain('may run a script')
     } finally {
       await closeElectronApp(app)
     }

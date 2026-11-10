@@ -55,9 +55,11 @@ new does only that.
 **A pass that ends after `stop()` applies nothing.** The check session is not set either, and the route subsystem registers the stop
 before it waits for the first read.
 
+**The status is published before the sessions are moved, and as soon as a read finds settings that may run code.** A pass can wait for a script's fetch, and the sessions are put on the system's config only at its end, so a read that finds a script, detection, settings that cannot be carried or read, or a manual proxy, while the sessions are on the system's config and the last status did not say so, is published at once (`starting`), and a pass that ends on the system's config says so before it moves the sessions, since one that already moved must not be judged by the copy it left.
+
 **Settings that are neither a manual proxy nor a script are not copied.** No proxy (`none`, or `manual` with no server named) stays on `{ mode: 'system' }`:
 it is the same answer, and a proxy turned on is followed by Chromium itself until the next pass applies the copy, with the guard refusing a
-name meanwhile. Automatic detection stays on it too, reported by its own word (`detect`). A script that could not be fetched (`unfetched`:
+name meanwhile. Automatic detection stays on it too, reported by its own word (`detect`) with a `probe` beside it, the one place the guard learns that a search for a script finds none: Chromium's own answer for the two ordinary addresses, `direct` when both were DIRECT in a sample taken after the last read and no more than `PROBE_FRESH_MS` ago, `not-direct` for a proxy or no answer, and `unsure` for no sample since the read or one that is too old. A script that could not be fetched (`unfetched`:
 the fetch failed, or the address is not `http:` or `https:`) and one whose copy does not answer as Chromium's session does (`disagrees`) stay on it as well.
 
 **A system script is copied by wrapping its text, and the wrapper is what keeps a routed name off the script's proxy.** `pac-wrapper.ts` builds
