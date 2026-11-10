@@ -2,11 +2,14 @@
 // whether that link must be cut instead -- split out of tab-view.ts to keep
 // that file under Rule 2's line limit (docs/development/code-guidelines.md),
 // the same reason `./devtools-app-origin.ts` exists as its own file.
-import type { WebContents } from 'electron'
+import { webContents } from 'electron'
+import type { WebContents, WebFrameMain } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { sessionRoutesLike } from '../route/site-routes.js'
+import { isWebsitePageOfApp } from './app-session.js'
+import { appTabContents } from './tab-partition.js'
 import type { PartitionSwap } from './tab-view.js'
 
 /** `./popups.ts`'s `routePopup`'s own `isApp`: unlike `partitionForTarget` (tab-view.ts), a held grant DOES count here -- popups.ts's README.md Design notes. */
@@ -23,6 +26,12 @@ export function keepsOpenerSession (wc: WebContents, swap: PartitionSwap, partit
   return swap.to === undefined && wc.opener !== null && wc.opener !== undefined && sessionRoutesLike(partition, url)
 }
 
+/** Whether `frame` is a page of a view built as an app's tab (`./tab-partition.ts`'s `appTabContents`); a frame whose page is gone is none. */
+export function frameIsInAppTab (frame: WebFrameMain): boolean {
+  const page = webContents.fromFrame(frame)
+  return page !== undefined && appTabContents.has(page)
+}
+
 /** Whether `wc`'s still-attached opener frame must be cut on this
  * navigation: `routePopup` (popups.ts) only ever asks its own `isApp`
  * question of the URL window.open() was given, at the moment it was given
@@ -30,17 +39,22 @@ export function keepsOpenerSession (wc: WebContents, swap: PartitionSwap, partit
  * into a different, granted or cache-served app never goes through
  * `routePopup` again, so this re-asks the identical question
  * (`popupTargetIsApp`) here, the only other place Chromium ever hands this
- * webContents a new origin to run. Reading the opener's `.url` on an
- * already-destroyed opener throws (Electron, same as `appOrigin` in
- * `./devtools-app-origin.ts`); treated the same as no opener at all rather
- * than a reason to fall through. */
-export function openerCutNeeded (wc: WebContents, navigatedUrl: string, broker: Broker | undefined): boolean {
-  if (wc.opener === null || wc.opener === undefined) return false
-  let openerUrl: string
+ * webContents a new origin to run.
+ *
+ * A link between two pages of the SAME origin is cut as well when the opener is a website's page of an app the shell now
+ * serves (`isWebsitePageOfApp`): the page the person allowed the site over, left open, must not keep a handle on a page that
+ * runs with the app's grants, which scripting it needs no more than the same origin.
+ *
+ * Reading the opener's `.url` on an already-destroyed opener throws (Electron, same as `appOrigin` in
+ * `./devtools-app-origin.ts`); treated the same as no opener at all rather than a reason to fall through. */
+export function openerCutNeeded (wc: WebContents, navigatedUrl: string, broker: Broker | undefined, openerIsInAppTab: (opener: WebFrameMain) => boolean = frameIsInAppTab): boolean {
   try {
-    openerUrl = wc.opener.url
+    const opener = wc.opener
+    if (opener === null || opener === undefined) return false
+    const openerUrl = opener.url
+    if (originFromUrl(navigatedUrl) !== originFromUrl(openerUrl)) return popupTargetIsApp(navigatedUrl, broker)
+    return isWebsitePageOfApp(openerUrl, openerIsInAppTab(opener))
   } catch {
     return false
   }
-  return originFromUrl(navigatedUrl) !== originFromUrl(openerUrl) && popupTargetIsApp(navigatedUrl, broker)
 }

@@ -53,12 +53,20 @@ function callNowOf (outcome: () => Outcome, events: string[] = []): CallNow & { 
 const succeeds = (tracks: FakeTrack[], events: string[] = []): CallNow & { calls: number } => callNowOf(() => ({ ok: true, holder: { srcObject: stream(tracks) } }), events)
 const fails = (name: string, message = 'no'): CallNow & { calls: number } => callNowOf(() => ({ ok: false, name, message }))
 
-function stubPage (extras: { allowed?: boolean, active?: boolean } = {}): void {
+/** What this world's own `getDisplayMedia` does when the preload makes its canary call: refused, as main refuses it, unless the test says otherwise. */
+const refusedCanary = (): Promise<unknown> => Promise.reject(new DOMException('Permission denied', 'NotAllowedError'))
+
+function stubPage (extras: { allowed?: boolean, active?: boolean, canary?: (options: unknown) => Promise<unknown>, events?: string[] } = {}): { canaryCalls: unknown[] } {
+  const canaryCalls: unknown[] = []
   vi.stubGlobal('window', { isSecureContext: true, addEventListener: vi.fn() })
   vi.stubGlobal('document', { permissionsPolicy: { allowsFeature: () => extras.allowed ?? true } })
-  vi.stubGlobal('navigator', { userActivation: { isActive: extras.active ?? true } })
+  vi.stubGlobal('navigator', {
+    userActivation: { isActive: extras.active ?? true },
+    mediaDevices: { getDisplayMedia: (options: unknown): Promise<unknown> => { canaryCalls.push(options); extras.events?.push('canary'); return (extras.canary ?? refusedCanary)(options) } }
+  })
   vi.stubGlobal('HTMLVideoElement', class {})
   vi.stubGlobal('MediaStream', FakeStream)
+  return { canaryCalls }
 }
 
 beforeEach(() => {
@@ -251,11 +259,14 @@ describe('the real call the wrapper makes in the page\'s world', () => {
     let forged = 0
     let attaching = false
     let outcome: unknown
+    // Only a call the wrapper makes counts: the test runner's own promises run in the same realm while the page's changes
+    // are in place, and a count of every call fails whenever one of them lands in that window.
+    const byWrapper = (): boolean => /src[\\/]preload[\\/]display-capture\.ts/.test(new Error().stack ?? '')
     // No promise of the test itself is used while the page's changes are in place.
     await new Promise<void>((resolve) => {
       setTimeout(() => {
-        Promise.prototype.then = function (this: Promise<unknown>, ...args: unknown[]): never { forged++; return Reflect.apply(savedThen, this, args) as never } as typeof Promise.prototype.then
-        Promise.prototype.constructor = class Forged { static get [Symbol.species] (): unknown { return this }; constructor (executor: (a: () => void, b: () => void) => void) { if (!attaching) forged++; executor(() => {}, () => {}) } } as unknown as PromiseConstructor
+        Promise.prototype.then = function (this: Promise<unknown>, ...args: unknown[]): never { if (byWrapper()) forged++; return Reflect.apply(savedThen, this, args) as never } as typeof Promise.prototype.then
+        Promise.prototype.constructor = class Forged { static get [Symbol.species] (): unknown { return this }; constructor (executor: (a: () => void, b: () => void) => void) { if (!attaching && byWrapper()) forged++; executor(() => {}, () => {}) } } as unknown as PromiseConstructor
         forgedName.mockReturnValue('Forged')
         const refused = devices.getDisplayMedia({ video: true })
         attaching = true
@@ -428,7 +439,7 @@ describe('the call this world has the main world make for the page', () => {
     vi.useFakeTimers()
     const track = new FakeTrack()
     const events: string[] = []
-    stubPage()
+    stubPage({ events })
     bridge.invoke.mockResolvedValue({ type: 'go', nonce: 'nonce-1' })
     bridge.send.mockImplementation((_channel: string, message: { type: string }) => { events.push(message.type) })
     const callNow = succeeds([track], events)
@@ -436,13 +447,53 @@ describe('the call this world has the main world make for the page', () => {
     const result = await share(OPTIONS, callNow)
     await vi.advanceTimersByTimeAsync(10)
     expect(bridge.invoke).toHaveBeenCalledWith(DISPLAY_CAPTURE_PICK_CHANNEL, { type: 'pick', audio: false, hints: { displaySurface: 'monitor' }, activation: true })
-    expect(events.slice(0, 2)).toEqual(['arm', 'callNow'])
+    expect(events.slice(0, 3)).toEqual(['arm', 'canary', 'callNow'])
     expect(events.indexOf('called')).toBeGreaterThan(events.indexOf('callNow'))
     expect(callNow.calls).toBe(1)
     expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'called', nonce: 'nonce-1', rejectedEarly: false })
     expect(result).toEqual({ ok: true, share: expect.any(String) })
     expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'received', nonce: 'nonce-1' })
     expect(bridge.send).not.toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, expect.objectContaining({ type: 'failed' }))
+  })
+
+  it('makes a canary call of its own ahead of the real one, in the same step, and reports it to main once it is refused', async () => {
+    vi.useFakeTimers()
+    const { canaryCalls } = stubPage()
+    bridge.invoke.mockResolvedValue({ type: 'go', nonce: 'nonce-1' })
+    const { share } = await install()
+    const callNow = succeeds([new FakeTrack()])
+    const pending = share(OPTIONS, callNow)
+    await vi.advanceTimersByTimeAsync(10)
+    await pending
+    expect(canaryCalls).toEqual([{ video: true }])
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'canary', nonce: 'nonce-1' })
+    expect(bridge.send.mock.calls.filter(([, message]) => (message as { type: string }).type === 'canary')).toHaveLength(1)
+  })
+
+  it('makes no real call, and tells main its call was rejected early, when the canary cannot be made', async () => {
+    vi.useFakeTimers()
+    stubPage({ canary: () => { throw new TypeError('no') } })
+    bridge.invoke.mockResolvedValue({ type: 'go', nonce: 'nonce-1' })
+    const { share } = await install()
+    const callNow = succeeds([new FakeTrack()])
+    expect(await share(OPTIONS, callNow)).toMatchObject({ ok: false, name: 'NotAllowedError' })
+    expect(callNow.calls).toBe(0)
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'called', nonce: 'nonce-1', rejectedEarly: true })
+    expect(bridge.send).not.toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, expect.objectContaining({ type: 'canary' }))
+  })
+
+  it('stops a canary that was served instead of refused, and tells main so rather than reporting it refused', async () => {
+    vi.useFakeTimers()
+    const served = new FakeTrack()
+    stubPage({ canary: () => Promise.resolve({ getTracks: () => [served] }) })
+    bridge.invoke.mockResolvedValue({ type: 'go', nonce: 'nonce-1' })
+    const { share } = await install()
+    const pending = share(OPTIONS, succeeds([new FakeTrack()]))
+    await vi.advanceTimersByTimeAsync(10)
+    await pending
+    expect(served.readyState).toBe('ended')
+    expect(bridge.send).toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, { type: 'failed', nonce: 'nonce-1', name: 'NotAllowedError' })
+    expect(bridge.send).not.toHaveBeenCalledWith(DISPLAY_CAPTURE_CHANNEL, expect.objectContaining({ type: 'canary' }))
   })
 
   it('never lets the ticket\'s nonce reach the main world: the result names the share by another id', async () => {

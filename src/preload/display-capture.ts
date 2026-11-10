@@ -6,6 +6,7 @@
 // here so that Stop reaches its tracks, clones included.
 import { contextBridge, ipcRenderer } from 'electron'
 import { DISPLAY_CAPTURE_CHANNEL, DISPLAY_CAPTURE_PICK_CHANNEL, DISPLAY_CAPTURE_STOP_CHANNEL } from '../main/channels.js'
+import { askCanary } from './display-canary.js'
 
 /** What the main world asks of this one for a call: whether the page wants audio, and the hints the picker opens on. */
 interface ShareOptions {
@@ -116,11 +117,16 @@ async function share (options: ShareOptions, callNow: CallNow): Promise<ShareRes
   const nonce = go.nonce
   const portal = go.portal === true
 
-  // One synchronous step: main holds the page's request until it has heard both messages, so it can tell this call
-  // from any other request that arrives meanwhile. The second message waits a turn of the event loop: a call that
-  // fails at once has failed before it and says so.
+  // One synchronous step makes two calls, the canary and then the real one. Blink hands a frame's display requests to the
+  // browser one at a time and in order, so main refuses the first request it sees, and once the canary is reported
+  // refused every request the page queued before this step has been answered and the next request is the real call.
+  // The second message waits a turn of the event loop: a call that fails at once has failed before it and says so.
   let rejectedEarly = false
   ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'arm', nonce })
+  if (!askCanary(nonce)) {
+    ipcRenderer.send(DISPLAY_CAPTURE_CHANNEL, { type: 'called', nonce, rejectedEarly: true })
+    return refusal('NotAllowedError', 'Permission denied')
+  }
   let concluded: ShareResult | undefined
   const conclude = (outcome: unknown): ShareResult => {
     concluded ??= receive(nonce, outcome, portal)

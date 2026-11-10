@@ -5,13 +5,14 @@
 import { join } from 'node:path'
 import { app, net, session, webContents } from 'electron'
 import type { Session, WebRequestFilter } from 'electron'
-import { beforeAppSessionServes } from '../../loader/electron/app-partitions.js'
+import { AppNotReady, beforeAppSessionServes } from '../../loader/electron/app-partitions.js'
 import { setReachRoute } from '../../loader/electron/reach-route.js'
 import { embedPartitionFor } from '../embed/embed-guard.js'
 import { publishRoutes } from '../registry.js'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { everywhereBeforeReady, readSettingBeforeReady, settingsFileProblem } from '../settings/settings-file.js'
-import { isOriginPinnedSync, isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { isOriginPinnedSync } from '../../loader/electron/serve.js'
+import { hasOwnPartition } from '../shell/app-session.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
@@ -109,7 +110,8 @@ export const routeSubsystem: Subsystem = {
         dropServiceWorkers: async (partition, origin) => { await (partition === undefined ? session.defaultSession : session.fromPartition(partition)).clearStorageData({ origin, storages: ['serviceworkers'] }) }
       },
       electron: {
-        isApp: isOriginServedFromCacheSync,
+        // An allowed Web3 site that runs where websites run is a website here: its tunnel, its session and its identity are a website's.
+        isApp: hasOwnPartition,
         broker: () => ctx.broker,
         sessionFor: (partition) => session.fromPartition(partition),
         defaultSession: () => session.defaultSession,
@@ -135,7 +137,7 @@ export const routeSubsystem: Subsystem = {
       if (guarded.has(target)) return
       guarded.add(target)
       webRequestOwnerFor(target).onBeforeRequest(-2, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, (details, current) =>
-        details.resourceType === 'mainFrame' && mustLeaveSession(details.url, { shared: target === session.defaultSession, via: routes.controller.tunnelOf(target), temporary: isTemporary(target) }, isOriginServedFromCacheSync, routes.hub.kindOf, details.webContentsId === undefined ? undefined : tabChoiceOfContents(details.webContentsId)) ? { cancel: true } : current)
+        details.resourceType === 'mainFrame' && mustLeaveSession(details.url, { shared: target === session.defaultSession, via: routes.controller.tunnelOf(target), temporary: isTemporary(target) }, hasOwnPartition, routes.hub.kindOf, details.webContentsId === undefined ? undefined : tabChoiceOfContents(details.webContentsId)) ? { cancel: true } : current)
       // After the hold on a profile session that is not yet pointed (order -1), so that a session coming up through the person's tunnel is judged by the tunnel it ends up on.
       webRequestOwnerFor(target).onBeforeRequest(ONION_GUARD_ORDER, ONION_FILTER, isOnionUrl, (details, current) => {
         if (!onionRefused(details.url, routes.controller.tunnelOf(target))) return current
@@ -292,14 +294,20 @@ export const routeSubsystem: Subsystem = {
     setMadeSiteSessions(siteSessions.made)
     setReachRoute(routes.hub.routeFor)
     setRouteChallengeSource(routes.controller.challengeCredentials)
-    beforeAppSessionServes(async (appSession, origin) => { await routes.controller.appSessionRegistered(origin, appSession) })
+    beforeAppSessionServes(async (appSession, origin) => {
+      try {
+        await routes.controller.appSessionRegistered(origin, appSession)
+      } catch (error) {
+        throw new AppNotReady('its tunnel could not start', 'Check the tunnel under Tunnels, then open it again.', { cause: error })
+      }
+    })
     const temporary = createTemporaryRoutes({
       isolationSecret,
       controller: routes.controller,
       targetOf: routes.targetOf,
       providerFor: routes.providerFor,
       sessionFor: (partition) => session.fromPartition(partition),
-      announce: (target) => { announceWebsiteSession(target as unknown as Session) },
+      announce: (target, tunnel) => { announceWebsiteSession(target as unknown as Session, tunnel) },
       liveContentsIn: (inside) => webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.session === inside).length,
       onContentsGone: (listener) => {
         app.on('web-contents-created', (_event, contents) => {
@@ -325,7 +333,7 @@ export const routeSubsystem: Subsystem = {
     setLeavingRoutes({
       world: {
         isRouted: routes.hub.isRouted,
-        isInstalledApp: isOriginServedFromCacheSync,
+        isInstalledApp: hasOwnPartition,
         routedOriginOf: (partition) => {
           // A profile holds many websites, so a page with no web address in one cannot be said to be any of them.
           if (partition === undefined || siteProfileOf(partition) !== undefined) return undefined

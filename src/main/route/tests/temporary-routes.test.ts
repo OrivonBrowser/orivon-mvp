@@ -13,6 +13,7 @@ function setup (options: { unusedMs?: number, prepare?: () => Promise<void>, ann
   const prepared: Array<{ session: object, port: number, username: string }> = []
   const released: object[] = []
   const announced: object[] = []
+  const announcedWith: Array<string | undefined> = []
   const deps: TemporaryRoutesDeps = {
     controller: {
       prepareTemporary: async (session, front) => { await options.prepare?.(); prepared.push({ session, port: front.port, username: front.username }) },
@@ -34,14 +35,14 @@ function setup (options: { unusedMs?: number, prepare?: () => Promise<void>, ann
       }
       return session
     },
-    announce: (session) => { options.announce?.(session); announced.push(session) },
+    announce: (session, tunnel) => { options.announce?.(session); announced.push(session); announcedWith.push(tunnel) },
     liveContentsIn: (session) => live.get(session) ?? 0,
     onContentsGone: (listener) => { gone = listener },
     ...(options.unusedMs === undefined ? {} : { unusedMs: options.unusedMs })
   }
   const routes = createTemporaryRoutes(deps)
   made.push(routes)
-  return { routes, sessions, live, prepared, released, announced, closeTab: (session: object) => { live.set(session, (live.get(session) ?? 1) - 1); gone?.(session) } }
+  return { routes, sessions, live, prepared, released, announced, announcedWith, closeTab: (session: object) => { live.set(session, (live.get(session) ?? 1) - 1); gone?.(session) } }
 }
 
 describe('a temporary routed session', () => {
@@ -99,6 +100,13 @@ describe('a temporary routed session', () => {
 })
 
 describe('the website controls on a temporary session', () => {
+  it('announces the tunnel the session leaves by, so the verifier fetches for its pages through that tunnel and not directly', async () => {
+    const { routes, announcedWith } = setup()
+    await routes.open('socks5')
+    await routes.open('nym')
+    expect(announcedWith).toEqual(['socks5', 'nym'])
+  })
+
   it('announces the session as a website session before it is pointed at its front', async () => {
     const order: string[] = []
     const { routes, sessions, announced } = setup({ announce: () => { order.push('announce') }, prepare: async () => { order.push('prepare') } })

@@ -3,6 +3,9 @@ import type { Session } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { forgetSystemSettings, systemSettingsAre } from '../../route/tests/mirror-status.test-helpers.js'
 import type { Resolver } from '../../../broker/policy/connect.js'
+import { OWN_READ_HEADER } from '../../../loader/fetch/content-root.js'
+import { registerAppOrigin, retireAppOrigin } from '../../../loader/electron/app-partitions.js'
+import { ownReadToken } from '../../../loader/fetch/own-read.js'
 import { MAX_FAVICON_BYTES } from '../favicon-format.js'
 import { FAVICON_TIMEOUT_MS, faviconTimeoutMs, VERIFIED_FAVICON_TIMEOUT_MS } from '../favicon-timeout.js'
 
@@ -19,6 +22,12 @@ vi.mock('electron', () => ({
   net: { request: vi.fn() },
   session: { defaultSession: { resolveProxy: vi.fn() } }
 }))
+
+/** The part of a session `registerAppOrigin` uses. */
+function fakeAppSession (): Session {
+  const handled = new Set<string>()
+  return { protocol: { isProtocolHandled: (scheme: string) => handled.has(scheme), unhandle: (scheme: string) => { handled.delete(scheme) }, handle: (scheme: string) => { handled.add(scheme) } } } as unknown as Session
+}
 
 const { net, session } = await import('electron')
 const { fetchFaviconDataUrlCached, isSafeFaviconUrl, MAX_FAVICON_REDIRECTS, readCapped } = await import('../favicon-fetch.js')
@@ -544,5 +553,24 @@ describe('the icon of a page the verifier serves', () => {
     mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
     await expect(fetchUncached('https://page.eth/favicon.ico', PAGE)).resolves.not.toBeNull()
     expect(net.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('is read as the shell\'s own when the shell keeps no copy of the site, so it is the verifier that answers', async () => {
+    resolveProxy.mockResolvedValue('DIRECT')
+    mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+    await fetchUncached('https://page.eth/favicon.ico', PAGE)
+    expect(requests[0]?.setHeader).toHaveBeenCalledWith(OWN_READ_HEADER, ownReadToken())
+  })
+
+  it('is left for the copy the shell keeps of the page\'s own site to answer, in the shared session as in a partition of its own', async () => {
+    resolveProxy.mockResolvedValue('DIRECT')
+    registerAppOrigin(fakeAppSession(), 'https://kept.eth', async () => new Response('kept'))
+    try {
+      mockRequestOnce((request) => { request.emit('response', respondOk(200, [PNG_BYTES])) })
+      await fetchUncached('https://kept.eth/favicon.ico', 'https://kept.eth/')
+      expect(requests[0]?.setHeader).not.toHaveBeenCalledWith(OWN_READ_HEADER, expect.anything())
+    } finally {
+      retireAppOrigin(fakeAppSession(), 'https://kept.eth')
+    }
   })
 })

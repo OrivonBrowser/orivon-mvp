@@ -8,9 +8,11 @@ import type { RequestHeaders } from '../fetch/budget.js'
 import { originFromUrl } from '../../broker/policy/origin.js'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { servedByVerifier } from '../fetch/verifier-origin.js'
+import { asOwnRead } from '../fetch/own-read.js'
 import { answerRouteChallenge } from '../../main/route/lookup-session.js'
 import { ownDirectSession, ownRequestsSettled, ownRouteFor, ownSiteSession } from '../../main/route/own-requests.js'
 import { namesVerifierHost, refuseWhenProxySees } from '../../main/route/verifier-name-guard.js'
+import { createRequestFetch } from './request-fetch.js'
 
 export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers) => {
   // Dynamically imported: outside a real Electron process (i.e. under
@@ -153,7 +155,7 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
   return await new Promise<FetchResponse>((resolve, reject) => {
     const request = net.request({ url, method: 'GET', credentials: 'omit', useSessionCookies: false, redirect: 'manual', ...(used === undefined ? {} : { session: used as Session }) })
     request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
-    for (const [name, value] of Object.entries(headers ?? {})) request.setHeader(name, value)
+    for (const [name, value] of Object.entries(asOwnRead(url, headers))) request.setHeader(name, value)
     let hops = 0
     let settled = false
     const fail = (error: Error): void => {
@@ -185,9 +187,18 @@ export async function netFetch (url: string, signal: AbortSignal, headers?: Requ
  * One request to the verifier's server for the origin of an app served live (serve/live-serve.ts), made as the
  * browser itself and not as any page: no credentials, no cache, a redirect an error rather than a hop taken
  * unseen, and the custom-scheme handler of an app's partition bypassed so the request reaches the network.
+ *
+ * Made where the site's own pages are: an app whose tunnel entry gives it a profile reads in that profile's session, so
+ * the verifier reads and proves the name through that tunnel (the route mark the session's requests carry) and the read
+ * never leaves by the shared session, nor shows the address of this computer.
  */
 export async function fetchFromVerifier (url: string, init: { readonly method: string, readonly headers: Record<string, string>, readonly signal: AbortSignal }): Promise<Response> {
-  const { net } = await import('electron')
-  if (namesVerifierHost(url)) await refuseWhenProxySees((await import('electron')).session.defaultSession, url)
-  return await net.fetch(url, { method: init.method, headers: init.headers, signal: init.signal, redirect: 'error', credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true })
+  const { net, session } = await import('electron')
+  await ownRequestsSettled()
+  const profile = await ownSiteSession(new URL(url).origin) as Session | undefined
+  if (namesVerifierHost(url)) await refuseWhenProxySees(profile ?? session.defaultSession, url)
+  const headers = asOwnRead(url, init.headers)
+  // `net.request`, which answers the front of the profile's tunnel itself: `net.fetch` cannot.
+  if (profile !== undefined) return await createRequestFetch({ net, session: profile, answer: answerRouteChallenge })(url, { method: init.method, headers, signal: init.signal, redirect: 'error', cache: 'no-store' })
+  return await net.fetch(url, { method: init.method, headers, signal: init.signal, redirect: 'error', credentials: 'omit', cache: 'no-store', bypassCustomProtocolHandlers: true })
 }

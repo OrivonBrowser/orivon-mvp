@@ -4,7 +4,7 @@
 ([`ADR-0076`](../../../docs/decisions/ADR-0076-a-first-visit-loads-as-a-website-while-the-app-is-asked-about-and-cached.md), which builds on
 [`ADR-0075`](../../../docs/decisions/ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md)).
 The order itself (the page loads, ask and cache beside it, reload as the app once something is granted, check each file, pin) is [`../install/first-visit.ts`](../install/first-visit.ts); this folder is
-what the person sees and how a tab is sent into the app. `block-tabs.ts` covers the tabs of an app found bad. `first-visit-hook.ts` is the default session's `onBeforeRequest`
+what the person sees and how a tab is sent into the app. `block-tabs.ts` covers the tabs of an app found bad, and `pages-of-origin.ts` finds every page of its origin, in whatever session it sits. `first-visit-hook.ts` is the default session's `onBeforeRequest`
 handler that notices a tab's top-level GET to an origin Orivon has never held and starts the visit beside it (the request is never held), `tab-host.ts` is the way a visit enters or leaves one tab,
 `tab-screens.ts` is the cover and the sheets for one tab (an app update's "Updating" cover and its reload under it too, asked by [`../install/update-cover.ts`](../install/update-cover.ts)), `setup-sheet-overlay.ts` is the sheet (a security warning, or "Couldn't download" with Try again), `setup-text.ts` is every word on
 them, `install-app-setup.ts` wires the hook, and `tab-setup-ref.ts` holds what the visit reads from the shell, `entry-changes.ts` tells the chrome an app's permissions changed so its key asks again for its dot (the screens, and the first visit that `../install/app-install-subsystem.ts` builds). The cover is the loading-screen overlay,
@@ -35,6 +35,8 @@ counts as still there until it starts another navigation or is destroyed (`TabSc
 
 **Nothing acts on a tab the person left.** `navigate`, `leavePage` and `stop` end the screens first, then act only if the tab is still where the visit began; `signal` aborts the caching when it is not. A block that finds bad data before the answer withdraws the question too (`DialogCaller.signal`), so the warning has the tab to itself.
 
+**A bad app's pages are found in every session.** `pages-of-origin.ts` lists the pages of the origin in the app's own partition, if it has one, and every page that shows an address of the origin in any session, since an app that runs in the shared session has no partition of its own to list; the block stops and closes each.
+
 **A bad app's tabs are named, not only found.** `block-tabs.ts` finds tabs by the address they show, and adds the tab the visit let in by reference
 (`TabScreens.tab()`): its first page may have failed to load, so it shows no address of the origin, and entering swapped its contents for ones in the
-app's own partition. Each is stopped, emptied in place, covered with the sheet, and sent back or home when the person has read it.
+session the app runs in. Each is stopped, emptied in place, covered with the sheet, and sent back or home when the person has read it.

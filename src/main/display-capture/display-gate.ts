@@ -22,7 +22,7 @@ export interface PickRequest {
 }
 
 export interface DisplayGateDeps {
-  tickets: Pick<DisplayTickets<DisplayChoice>, 'open' | 'void' | 'arm' | 'called' | 'has' | 'suspect' | 'forgetTab'>
+  tickets: Pick<DisplayTickets<DisplayChoice>, 'open' | 'void' | 'arm' | 'canaryRefused' | 'called' | 'rejected' | 'has' | 'suspect' | 'forgetTab'>
   policy: DisplayPolicy
   choose: ChooseDisplaySource
   shares: {
@@ -48,6 +48,8 @@ export interface DisplayGateDeps {
 export interface DisplayGate {
   pick: (contents: WebContents, request: PickRequest) => Promise<PickReply>
   arm: (contents: WebContents, nonce: string) => void
+  /** The preload's canary call was refused: the page's requests queued ahead of it have been answered, and the next one is the real call. */
+  canary: (contents: WebContents, nonce: string) => void
   called: (contents: WebContents, nonce: string, rejectedEarly: boolean) => void
   /** The preload's own call received the stream: the share is confirmed. */
   received: (contents: WebContents, nonce: string) => void
@@ -145,6 +147,10 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
       const key = deps.frameKey(contents)
       if (key !== undefined) deps.tickets.arm(key, nonce)
     },
+    canary (contents, nonce) {
+      const key = deps.frameKey(contents)
+      if (key !== undefined) deps.tickets.canaryRefused(key, nonce)
+    },
     called (contents, nonce, rejectedEarly) {
       if (rejectedEarly) stopExpecting(contents, nonce)
       const key = deps.frameKey(contents)
@@ -155,6 +161,9 @@ export function createDisplayGate (deps: DisplayGateDeps): DisplayGate {
     },
     failed (contents, nonce, name) {
       stopExpecting(contents, nonce)
+      // A request that follows a rejected call is not that call's, whatever it is: a ticket still open is voided.
+      const key = deps.frameKey(contents)
+      if (key !== undefined) deps.tickets.rejected(key, nonce)
       const ended = deps.shares.failed(contents, nonce)
       if (ended && name === 'NotAllowedError') deps.endUnexpectedCapture(contents, 'the preload\'s own call was refused after a request was served against its ticket')
     },

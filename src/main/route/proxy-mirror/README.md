@@ -68,8 +68,10 @@ global `FindProxyForURL`; the wrapper defines it as an accessor that cannot be r
 wrapped. The routed check compares characters by index against both spellings of every routed suffix and calls nothing on the host or on a
 prototype, so a text that replaces `String.prototype` or `Array.prototype` methods changes nothing; it drops every trailing dot of the host
 (Chromium hands a script the host with the root dots kept, in lower case) and treats a host that is not a string as routed. A text that does not
-compile, throws while it loads, defines no function or throws when asked answers `DIRECT`, as Chromium's own session does for a script that
-fails, so a broken text cannot send anything to a proxy either; a load that failed is final, so a function assigned later (from a promise the
+compile, throws while it loads, defines no function, throws when asked or answers with anything but a string of ASCII answers `DIRECT`,
+as Chromium's own session does for a script that fails (the copy is applied as a mandatory script, which would fail the request itself on
+an answer Chromium cannot read, where the session's own config falls back to `DIRECT`), so a broken text cannot send anything to a proxy
+either; a load that failed is final, so a function assigned later (from a promise the
 text started) is not taken. A text does not see the wrapper: the stack, `caller`, `arguments.callee` and `prepareStackTrace` frames reach only
 strict functions, which hand out neither the function nor its `this`. Measured in Chromium's PAC context: it honours a non-configurable accessor
 for `FindProxyForURL`, runs `Function`-compiled code with the helpers (`dnsResolve`, `isInNet`, `shExpMatch` and the rest) as globals, and
@@ -78,7 +80,18 @@ makes a new context for each `setProxy` of a `data:` address. The size of the ad
 control characters, each escaped as six). `pacDataUrl` refuses anything that is not ASCII, because base64 of Latin-1 would change what a
 character says. The text runs as the body of a function, not as a top-level script, so its `var` and function declarations are local
 to it and not properties of the global: a script that reads one back through `this` or `globalThis` sees something else than it does
-in Chromium's own context. Only the check catches such a difference, and only on its canary hosts (`example.com` over http and https).
+in Chromium's own context. **A copy can send one host direct where Chromium proxies it**: a branch for a single host that reads such a
+variable through `this` throws in the copy, so the copy answers `DIRECT` where Chromium's session answers the proxy. That fails open, for
+ordinary hosts only (a routed name is `DIRECT` before the text runs), and the check cannot see it, since it asks only its canary hosts
+(`example.com` over http and https).
+
+**A text without the literal `FindProxyForURL` is refused by Chromium and run by the wrapper.** Chromium's decider refuses a script that does
+not contain that string anywhere (`LooksLikePacScript` in `net/proxy_resolution/pac_file_decider.cc`, read in Chromium's source; measured in
+Electron 44.9.3: a `pac_script` session gives no answer for a text that names its function as `this["Find" + "ProxyForURL"]` or by an escape
+(`\u0046indProxyForURL`), and the proxy for one that holds the name only in a comment). The wrapper compiles such a text and takes the function
+it assigns, so a copy of it answers a proxy where Chromium's own session fails and goes direct. The check sees the difference on its canary
+hosts, unless the text answers by host: then an ordinary host goes to a proxy that Chromium's session would not use. A routed name is `DIRECT`
+either way.
 
 **The script is fetched by a session of Orivon's own, direct, and only from the address the system names.** `orivon-pac-fetch` lives in memory, is
 set to `{ mode: 'direct' }` before its first request and is marked as one that sets a proxy of its own, so the fetch goes through no proxy
