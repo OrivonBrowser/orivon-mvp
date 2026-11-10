@@ -6,12 +6,11 @@
 // Where the computer's proxy comes from the environment (Linux with no desktop proxy setting, a shell profile that exports
 // `https_proxy`), Orivon adds the verifier's suffixes to `no_proxy` before it starts and the names load. Where it comes
 // from the desktop's own settings, GNOME's, KDE's or Windows' manual proxy is copied into the sessions with the suffixes left out and the names
-// load (e2e-eth-system-proxy-mirror.test.ts follows it as it changes); where the settings are a script, or cannot be copied
-// (macOS reads its own too, and KDE's when its exceptions are reversed), nothing Orivon can set exempts a name, so a request for one is cancelled before it
-// is sent and the tab says why. A proxy that is found with a script (PAC)
-// answers its first question slowly, and a request that waits for it is not sent: the name opens when the script says DIRECT,
-// and the tab says Orivon could not tell when the script never answers. A name asked for over plain http is never sent, whatever
-// a script says. A browser on a SOCKS5 tunnel is on its front, which leaves the names to the verifier, whatever the computer's proxy is.
+// load (e2e-eth-system-proxy-mirror.test.ts follows it as it changes, and e2e-eth-system-proxy-script.test.ts does the same for a
+// proxy script); where the settings cannot be copied (KDE's when its exceptions are reversed, automatic detection), nothing Orivon can set
+// exempts a name, so a request for one is cancelled before it is sent and the tab says why. A proxy that is found by detection
+// answers its first question slowly, and a request that waits for it is not sent. A name asked for over plain http is never sent, whatever
+// the proxy says. A browser on a SOCKS5 tunnel is on its front, which leaves the names to the verifier, whatever the computer's proxy is.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/web3/e2e-eth-system-proxy.test.ts
 import { execFileSync } from 'node:child_process'
@@ -29,8 +28,8 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp, readShield } from '../support/e2e-helpers.js'
 import { activeTabInfo } from '../support/smoke-helpers.mjs'
-import { CANCELLED, gnomeProxy, gnomeScriptProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, PROXY_SHEET, proxyEnvironment, proxyScript, refusalLines, report, resolved, startLoggingProxy, startScriptServer, SUBRESOURCES_BODY, UNSURE_SHEET, verifierNames, visitReporting, visitSubresources, windowsAutoDetect } from './system-proxy-support.js'
-import type { LoggingProxy, Running, ScriptServer, Visit } from './system-proxy-support.js'
+import { CANCELLED, gnomeProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, proxyEnvironment, refusalLines, report, resolved, startLoggingProxy, SUBRESOURCES_BODY, verifierNames, visitReporting, visitSubresources, windowsAutoDetect } from './system-proxy-support.js'
+import type { LoggingProxy, Running, Visit } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
 /** The environment variables and the GNOME settings these cases write are what Linux reads; Windows and macOS read their own. */
@@ -359,95 +358,6 @@ async function firstAnswer (app: ElectronApplication, url: string): Promise<{ an
     return { answer, ms: Math.round(performance.now() - started) }
   }, url)
 }
-
-describe.skipIf(!LINUX)('a computer whose desktop finds its proxy with a script', () => {
-  let proxy: LoggingProxy
-  let scripts: ScriptServer
-  let scratchDir: string
-
-  beforeAll(async () => {
-    proxy = await startLoggingProxy()
-    proxy.serve('ordinary.test:8080', 'ordinary via the proxy')
-    proxy.serve('plain.eth', 'served by the proxy as plain.eth')
-    scripts = await startScriptServer()
-    scratchDir = mkdtempSync(join(scratch, 'script-'))
-  })
-
-  afterAll(async () => {
-    await scripts.close()
-    await proxy.close()
-  })
-
-  it('opens a name whose script answers more slowly than two seconds, and sends the rest through the proxy', async () => {
-    scripts.serve(proxyScript('DIRECT', `PROXY 127.0.0.1:${String(proxy.port)}`))
-    const desktop = gnomeScriptProxy(mkdtempSync(join(scratchDir, 'slow-')), scripts.url)
-    const { app, chrome } = await launchShell(desktop.env)
-    try {
-      // The script is asked for again whenever the setting changes, and now takes four seconds to arrive: the next question waits for it.
-      scripts.serve(proxyScript('DIRECT', `PROXY 127.0.0.1:${String(proxy.port)}`), 4_000)
-      const askedBefore = scripts.asked()
-      desktop.write(`${scripts.url}?slow`)
-      await new Promise((resolve) => { setTimeout(resolve, 500) })
-      const first = await firstAnswer(app, 'https://fixture.eth/')
-      const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture', 60_000)
-      const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the proxy', 60_000)
-      report('script, slow', { first, eth, ordinary, scriptAsked: scripts.asked() - askedBefore, refusals: refusalLines(app), proxySaw: proxy.seen.filter((line) => !line.includes('gvt1.com')) })
-      expect(eth.result, JSON.stringify(eth)).toBe('page')
-      expect(first.ms, 'the first question really did wait for the script').toBeGreaterThan(2_000)
-      expect(first.answer).toBe('DIRECT')
-      expect(refusalLines(app)).toEqual([])
-      expect(ordinary.result).toBe('page')
-      expect(verifierNames(proxy.seen)).toEqual([])
-    } finally {
-      await closeElectronApp(app)
-    }
-  }, SETUP_TIMEOUT_MS)
-
-  it('refuses a name whose script sends it to the proxy, saying the proxy would see it, and the proxy is never asked', async () => {
-    scripts.serve(proxyScript(`PROXY 127.0.0.1:${String(proxy.port)}`, `PROXY 127.0.0.1:${String(proxy.port)}`))
-    const { app, chrome } = await launchShell(gnomeScriptProxy(mkdtempSync(join(scratchDir, 'proxied-')), scripts.url).env)
-    try {
-      const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
-      report('script, to the proxy', { eth, refusals: refusalLines(app) })
-      expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: PROXY_SHEET })
-      expect(verifierNames(proxy.seen)).toEqual([])
-    } finally {
-      await closeElectronApp(app)
-    }
-  }, SETUP_TIMEOUT_MS)
-
-  it('refuses a plain-http name whatever the script answers for it, which cannot be told from the request that follows', async () => {
-    // Every second question is answered DIRECT, so a guard that trusted one answer would let a request out that the next answer sends to the proxy.
-    scripts.serve('var asks = 0; function FindProxyForURL(url, host) { asks += 1; return /\\.eth$/.test(host) && asks % 2 === 1 ? "DIRECT" : "PROXY 127.0.0.1:' + String(proxy.port) + '" }')
-    const { app, chrome } = await launchShell(gnomeScriptProxy(mkdtempSync(join(scratchDir, 'alternating-')), scripts.url).env)
-    try {
-      const plain = await visitReporting(app, chrome, 'http://plain.eth/', 'served by the proxy as plain.eth')
-      report('script, alternating', { plain, refusals: refusalLines(app) })
-      expect(plain).toMatchObject({ result: 'error', error: CANCELLED, sheet: PLAIN_SHEET })
-      expect(verifierNames(proxy.seen)).toEqual([])
-    } finally {
-      await closeElectronApp(app)
-    }
-  }, SETUP_TIMEOUT_MS)
-
-  it('refuses a name whose script never answers, saying Orivon could not tell, not that the proxy would see it', async () => {
-    scripts.serve(proxyScript('DIRECT', 'DIRECT'), 0)
-    const desktop = gnomeScriptProxy(mkdtempSync(join(scratchDir, 'silent-')), scripts.url)
-    const { app, chrome } = await launchShell(desktop.env)
-    try {
-      scripts.serve(null)
-      desktop.write(`${scripts.url}?silent`)
-      await new Promise((resolve) => { setTimeout(resolve, 500) })
-      const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture', 90_000)
-      report('script, silent', { eth, refusals: refusalLines(app) })
-      expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
-      expect(refusalLines(app).join('\n')).toContain('it could not be told whether its proxy would carry it')
-      expect(verifierNames(proxy.seen)).toEqual([])
-    } finally {
-      await closeElectronApp(app)
-    }
-  }, SETUP_TIMEOUT_MS)
-})
 
 describe.skipIf(!WINDOWS)('a computer whose Windows settings detect the proxy automatically', () => {
   let restore: () => void = () => {}

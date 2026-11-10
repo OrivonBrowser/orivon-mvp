@@ -4,6 +4,7 @@
 // unset, a port of 0 is the scheme's default, and each `ignore-hosts` entry goes to the bypass-rule parser as it stands. Only the keys
 // it needs are read, so an `authentication-password` line cannot reach anything. Pure.
 
+import { scriptAddress } from './settings-source.js'
 import type { SystemSettings } from './settings-source.js'
 
 /** A name, an IPv4 address or an IPv6 address: nothing that could end or add a rule. */
@@ -94,7 +95,7 @@ export function parseGnomeSettings (output: string): SystemSettings {
   }
   if (mode === undefined) return { kind: 'unreadable' }
   if (mode === 'none') return { kind: 'none' }
-  if (mode === 'auto') return { kind: script.trim() === '' ? 'detect' : 'script' }
+  if (mode === 'auto') return script.trim() === '' ? { kind: 'detect' } : { kind: 'script', url: scriptAddress(script) }
   if (mode !== 'manual' || ignore === undefined) return { kind: 'unsupported' }
   const rules: string[] = []
   for (const scheme of ['http', 'https', 'socks'] as const) {

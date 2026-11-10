@@ -49,9 +49,15 @@ describe('GNOME\'s proxy settings', () => {
   })
 
   it('are a script when the mode is auto and names an address, and detection when it names none', () => {
-    expect(parseGnomeSettings(gsettingsOutput({ mode: 'auto', url: 'http://127.0.0.1:8123/proxy.pac' }))).toEqual({ kind: 'script' })
+    expect(parseGnomeSettings(gsettingsOutput({ mode: 'auto', url: 'http://127.0.0.1:8123/proxy.pac' }))).toEqual({ kind: 'script', url: 'http://127.0.0.1:8123/proxy.pac' })
     expect(parseGnomeSettings(gsettingsOutput({ mode: 'auto' }))).toEqual({ kind: 'detect' })
     expect(parseGnomeSettings(gsettingsOutput({ mode: 'auto', url: '  ' }))).toEqual({ kind: 'detect' })
+  })
+
+  it('carry the script\'s address as Chromium takes it: a path is a file address, anything else as written, trimmed', () => {
+    expect(parseGnomeSettings(gsettingsOutput({ mode: 'auto', url: '/home/me/proxy.pac' }))).toEqual({ kind: 'script', url: 'file:///home/me/proxy.pac' })
+    expect(parseGnomeSettings(gsettingsOutput({ mode: 'auto', url: ' https://pac.test/p.pac?v=2#x ' }))).toEqual({ kind: 'script', url: 'https://pac.test/p.pac?v=2#x' })
+    expect(parseGnomeSettings(gsettingsOutput({ mode: 'auto', url: 'wpad.dat' }))).toEqual({ kind: 'script', url: 'wpad.dat' })
   })
 
   it('read the exceptions however the list is typed', () => {

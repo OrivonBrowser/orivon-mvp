@@ -56,16 +56,16 @@ describe('macOS\'s proxy settings', () => {
   })
 
   it('are a script when one is on and names an address, even beside a manual proxy, because Chromium asks the script first', () => {
-    expect(parseMacosSettings(printed.SCRIPT_ONLY)).toEqual({ kind: 'script' })
-    expect(parseMacosSettings(printed.SCRIPT_AND_MANUAL)).toEqual({ kind: 'script' })
+    expect(parseMacosSettings(printed.SCRIPT_ONLY)).toEqual({ kind: 'script', url: 'http://127.0.0.1:49219/p.pac' })
+    expect(parseMacosSettings(printed.SCRIPT_AND_MANUAL)).toEqual({ kind: 'script', url: 'http://127.0.0.1:49219/p.pac' })
     expect(parseMacosSettings(printed.SCRIPT_OFF_MANUAL)).toMatchObject({ kind: 'manual', proxyRules: 'http=127.0.0.1:18080' })
     expect(parseMacosSettings(printed.SCRIPT_ONLY.replace(/ProxyAutoConfigURLString : .*/, 'ProxyAutoConfigURLString :'))).toEqual({ kind: 'none' })
   })
 
   it('are detection when discovery is on, and not a script at the address macOS gives discovery', () => {
     expect(parseMacosSettings(printed.DISCOVERY_ONLY)).toEqual({ kind: 'detect' })
-    expect(parseMacosSettings(printed.DISCOVERY_ONLY.replace('http://wpad/wpad.dat', 'http://pac.example.test/proxy.pac'))).toEqual({ kind: 'script' })
-    expect(parseMacosSettings(printed.DISCOVERY_ONLY.replace('ProxyAutoDiscoveryEnable : 1', 'ProxyAutoDiscoveryEnable : 0'))).toEqual({ kind: 'script' })
+    expect(parseMacosSettings(printed.DISCOVERY_ONLY.replace('http://wpad/wpad.dat', 'http://pac.example.test/proxy.pac'))).toEqual({ kind: 'script', url: 'http://pac.example.test/proxy.pac' })
+    expect(parseMacosSettings(printed.DISCOVERY_ONLY.replace('ProxyAutoDiscoveryEnable : 1', 'ProxyAutoDiscoveryEnable : 0'))).toEqual({ kind: 'script', url: 'http://wpad/wpad.dat' })
   })
 
   it('copy the manual part when discovery is on beside it, which the check against Chromium\'s own answer then judges', () => {
