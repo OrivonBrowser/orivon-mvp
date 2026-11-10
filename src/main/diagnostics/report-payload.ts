@@ -1,7 +1,9 @@
 // The body of a bug report, built in main and never by the page: what the preview shows is this object, and
 // what is sent is the same object. Every field is cut to the length the server accepts (a report never goes
 // over a limit and is refused for it), the person's home directory is replaced by `~` everywhere, and so is a key
-// in an Ethereum server's address the person typed in Settings (secret-scrub.ts), before a field is cut.
+// in an Ethereum server's address the person typed in Settings (secret-scrub.ts), before a field is cut. An address in a log
+// line is cut after its site (address-redact.ts).
+import { redactAddresses } from './address-redact.js'
 import type { CrashRecord } from './crash-records.js'
 import { redactDeep, redactHome } from './redact.js'
 import type { Diagnostics } from './diagnostics-facts.js'
@@ -136,7 +138,7 @@ export function buildPayload (sources: ReportSources): ReportPayload {
     version: wireVersion(sources.version),
     crash: crash ?? null,
     diagnostics: choices.diagnostics ? fitDiagnostics(scrubDeep(redactDeep(sources.diagnostics, home, ignoreCase))) : null,
-    log: choices.log ? sources.log.slice(-LIMITS.logLines).map((line) => cut(redacted(line, home, ignoreCase), LIMITS.logLine)) : null,
+    log: choices.log ? sources.log.slice(-LIMITS.logLines).map((line) => cut(redactAddresses(redacted(line, home, ignoreCase)), LIMITS.logLine)) : null,
     page,
     dump: choices.dump && sources.dump !== undefined ? { base64: sources.dump.base64(), bytes: sources.dump.bytes } : null
   }

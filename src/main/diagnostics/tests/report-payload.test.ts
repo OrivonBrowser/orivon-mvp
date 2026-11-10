@@ -50,6 +50,33 @@ describe('buildPayload', () => {
     expect(JSON.stringify(payload)).not.toContain(HOME)
   })
 
+  describe('the address of a page in a log line', () => {
+    const electron = '2026-11-10T23:46:50.823Z ERROR (node:2722343) electron: Failed to load URL: https://bank.example/account/12345?token=abc with error: ERR_NAME_NOT_RESOLVED'
+
+    it('is cut after its site in the log, whoever printed the line, and the error stays', () => {
+      const payload = buildPayload(sources({ log: [electron, '2026-11-10T23:46:51.000Z LOG [verifier] opened ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/notes?x=1 from /home/ann/x'] }))
+      expect(payload.log).toEqual([
+        '2026-11-10T23:46:50.823Z ERROR (node:2722343) electron: Failed to load URL: https://bank.example/•••• with error: ERR_NAME_NOT_RESOLVED',
+        '2026-11-10T23:46:51.000Z LOG [verifier] opened ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi/•••• from ~/x'
+      ])
+      expect(previewText(payload)).not.toContain('account/12345')
+      expect(previewText(payload)).not.toContain('token=abc')
+    })
+
+    it('leaves no part of the path in a line that runs past the limit', () => {
+      const long = `${'x'.repeat(LIMITS.logLine - 60)} https://bank.example/${'secret-path/'.repeat(20)}`
+      const line = buildPayload(sources({ log: [long] })).log?.[0] ?? ''
+      expect(line).toContain('https://bank.example/••••')
+      expect(line).not.toContain('secret-path')
+    })
+
+    it('is sent whole in the two places the person chose it: the description they wrote and the crashed page they ticked', () => {
+      const payload = buildPayload(sources({ choices: { ...CHOICES, description: 'It fails on https://example.org/path?q=1' } }))
+      expect(payload.description).toBe('It fails on https://example.org/path?q=1')
+      expect(payload.page).toBe('https://example.org/path?q=1')
+    })
+  })
+
   describe('an Ethereum server\'s key the person typed in Settings', () => {
     const KEY = 'FAKE-KEY-0123456789abcdef'
     afterEach(() => { forgetSecrets() })
