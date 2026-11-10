@@ -37,6 +37,15 @@ export function answerRouteChallenge (info: Parameters<RouteChallengeSource>[0],
   else callback(credentials.username, credentials.password)
 }
 
+/** For a `login` listener on a request made from main: signs in only where `source` answers (the name relay's listener), and cancels every other challenge, an app's front's included. */
+export function answerChallengeOnly (source: () => RouteChallengeSource | undefined): (info: Parameters<RouteChallengeSource>[0], callback: (username?: string, password?: string) => void) => void {
+  return (info, callback) => {
+    const credentials = source()?.(info)
+    if (credentials === undefined) callback()
+    else callback(credentials.username, credentials.password)
+  }
+}
+
 /**
  * Where Orivon's lookups about a website that is not routed go while the whole browser is on the tunnel: a session on the
  * system's proxy, because the default session is then the tunnel's. Undefined while the browser-wide setting is off, when

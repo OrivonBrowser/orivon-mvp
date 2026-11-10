@@ -57,10 +57,19 @@ export interface ProxyMirrorDeps {
   readonly log?: (line: string) => void
 }
 
+/** What a pass saw and decided, for whoever follows the mirror instead of reading the settings again. */
+export interface MirrorPass {
+  readonly status: MirrorStatus
+  /** Chromium's own answer for each of `BASE_CANARIES`, in their order, as the pass asked it; `unanswered` for a question that got none. */
+  readonly answers: readonly string[]
+}
+
 export interface ProxyMirror {
   /** What the sessions that follow the system are set to now; `{ mode: 'system' }` until a copy has been checked. */
   config: () => SystemProxyConfig
   status: () => MirrorStatus
+  /** Calls `listener` at the end of every pass, including one that changed nothing, with what that pass saw. Returns the call that removes it. A listener that throws is skipped and the mirror goes on. */
+  onPass: (listener: (pass: MirrorPass) => void) => () => void
   /** Reads once (bounded), then keeps reading. Resolves with nothing read at all when this computer's settings cannot be read yet. */
   start: () => Promise<void>
   /** Reads, checks and applies once; resolves when that ended. */
@@ -92,6 +101,7 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
   /** What the pass now running did with the script, so that it fetches and reloads once and not again for the same difference. */
   let passFetched = false
   let passReloaded = false
+  const listeners = new Set<(pass: MirrorPass) => void>()
   let running: Promise<void> | undefined
   let queued = false
   let stopped = false
@@ -218,9 +228,10 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
     taken = await applyOnce()
   }
 
-  async function pass (): Promise<void> {
+  /** One pass; resolves with the base answers it saw, or undefined when it did nothing. */
+  async function pass (): Promise<string | undefined> {
     const read = deps.read
-    if (read === undefined || stopped) return
+    if (read === undefined || stopped) return undefined
     passFetched = false
     passReloaded = false
     const settings = await read()
@@ -235,13 +246,13 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
     const settled = status.reason !== 'starting' && status.reason !== 'unreadable' && status.reason !== 'disagrees'
     if (settled && inputs === lastInputs && answers === lastAnswers) {
       await retryApply()
-      return
+      return answers
     }
     const outcome = await decide(settings, read, applied !== SYSTEM && answers === lastAnswers)
-    if (stopped) return
+    if (stopped) return undefined
     if (outcome === 'kept') {
       await retryApply()
-      return
+      return answers
     }
     answersQuietUntil = inputs === lastInputs && answers !== lastAnswers ? Date.now() + ANSWERS_QUIET_MS : 0
     lastInputs = inputs
@@ -253,6 +264,19 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
     }
     if (JSON.stringify(next) !== JSON.stringify(status)) log(`[route] system proxy: ${next.state === 'mirrored' ? 'copied' : 'left to the system'} (${next.source}, ${next.mode}, ${next.reason})`)
     status = next
+    return answers
+  }
+
+  /** Tells the listeners what a pass saw. `sample` joins the answers with a newline, which no answer holds. */
+  function announce (answers: string): void {
+    const seen: MirrorPass = { status, answers: answers.split('\n') }
+    for (const listener of listeners) {
+      try {
+        listener(seen)
+      } catch (error) {
+        console.error('[route] a listener of the system proxy mirror failed:', error instanceof Error ? error.message : 'unexpected error')
+      }
+    }
   }
 
   /** One pass at a time; a call during one runs one more pass after it. Never rejects. */
@@ -265,7 +289,8 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
       do {
         queued = false
         try {
-          await pass()
+          const answers = await pass()
+          if (answers !== undefined && !stopped) announce(answers)
         } catch (error) {
           console.error('[route] reading the system proxy failed:', error instanceof Error ? error.message : 'unexpected error')
         }
@@ -284,6 +309,10 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
   return {
     config: () => applied,
     status: () => status,
+    onPass: (listener) => {
+      listeners.add(listener)
+      return () => { listeners.delete(listener) }
+    },
     start: async () => {
       if (deps.read === undefined || deps.held === true) return
       await within(refresh(), START_BOUND_MS, 'the first read of the system proxy took too long').catch(() => {})

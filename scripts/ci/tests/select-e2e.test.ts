@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { areaOf, areasOf, decide, packShards, selectImpacted, tokensFor, weightOf } from '../select-e2e.mjs'
 
@@ -49,6 +50,13 @@ describe('tokensFor', () => {
     expect(tokensFor(MAP, 'scripts/check-size.mjs')).toEqual([])
     expect(tokensFor(MAP, 'scripts/build-e2e.mjs')).toEqual(['@full'])
     expect(tokensFor(MAP, 'package.json')).toEqual(['@full'])
+  })
+})
+
+describe('the committed map', () => {
+  it('sends a change under the name relay to the web3 specs alone', () => {
+    const committed = JSON.parse(readFileSync(new URL('../../../test/impact-map.json', import.meta.url), 'utf8')) as typeof MAP
+    expect(tokensFor(committed, 'src/main/route/name-relay/relay-link.ts')).toEqual(['web3'])
   })
 })
 
