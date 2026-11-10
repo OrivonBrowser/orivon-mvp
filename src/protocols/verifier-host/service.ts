@@ -33,6 +33,11 @@ export interface LightClient {
 export interface HostDeps {
   readonly fetch: WebFetch
   readonly resolveHost: (host: string) => Promise<readonly string[]>
+  /**
+   * The lookup the check of a CCIP-Read gateway judges a name by (`egress.ts`): the name relay's while it runs, which main answers
+   * for (`relayed-addresses.ts`), and `resolveHost` while it does not. Left out, the check uses `resolveHost`.
+   */
+  readonly resolveForCheck?: (host: string) => Promise<readonly string[]>
   readonly post: (message: FromHost) => void
   /** `route` a tunnel: the client that proves the names of the websites in that tunnel's profile, which reports nothing and has requests of its own. */
   readonly startLightClient: (config: LightClientConfig, fetch: WebFetch, report: (message: FromHost) => void, route?: TunnelRoute, pace?: LightClientPace) => LightClient

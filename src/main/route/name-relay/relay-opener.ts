@@ -36,7 +36,12 @@ export interface RelayOpenerDeps {
   readonly failures: RelayFailures
   readonly maxOpen?: number
   readonly upstream?: UpstreamOptions
+  /** Called once for each connection made, with the address it was made to and the road: the proxy's word (`PROXY`, `HTTPS`, `SOCKS5`, `SOCKS`) or `DIRECT`. */
+  readonly connected?: (target: FrontTarget, address: string, road: string) => void
 }
+
+/** The proxy's own word for a road, as the system writes it: all a report of a connection may say of the proxy. */
+const ROAD: Readonly<Record<ProxyEntry['scheme'], string>> = { http: 'PROXY', https: 'HTTPS', socks5: 'SOCKS5', socks4: 'SOCKS' }
 
 const BUSY = 'Orivon is already carrying as many connections through your proxy as it allows. Try again in a moment.'
 
@@ -80,6 +85,15 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
   const maxOpen = deps.maxOpen ?? RELAY_MAX_OPEN
   let active = 0
 
+  /** Nothing a listener does with the report ends the connection it reports. */
+  function report (target: FrontTarget, address: string, road: string): void {
+    try {
+      deps.connected?.(target, address, road)
+    } catch {
+      // The connection is made; a listener that fails is its own.
+    }
+  }
+
   /** What the lookup found for `host` through `entry`, or why it found nothing. */
   async function lookUp (host: string, entry: ProxyEntry, signal: AbortSignal): Promise<LookupAnswer> {
     try {
@@ -110,14 +124,18 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
       inside += ordered.inside
       for (const address of ordered.usable) {
         tried += 1
+        let socket: Socket
         try {
-          return await connectThroughProxy(entry, address, port, signal, deps.upstream)
+          socket = await connectThroughProxy(entry, address, port, signal, deps.upstream)
         } catch (error) {
           if (signal.aborted) throw abandoned()
           if (!(error instanceof UpstreamFailure)) throw new RelayRefusal('unreachable')
           if (error.effect === 'proxy') throw new ProxyDown()
           if (error.effect === 'final') throw new RelayRefusal(error.word)
+          continue
         }
+        report(target, address, ROAD[entry.scheme])
+        return socket
       }
     }
     if (tried > 0) {
@@ -134,11 +152,15 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
     const addresses = keepResolverOrder(found)
     if (addresses.length === 0) throw new RelayRefusal('not-found')
     for (const address of addresses) {
+      let socket: Socket
       try {
-        return await connectDirect(address, port, signal, deps.upstream)
+        socket = await connectDirect(address, port, signal, deps.upstream)
       } catch {
         if (signal.aborted) throw abandoned()
+        continue
       }
+      report(target, address, 'DIRECT')
+      return socket
     }
     throw new RelayRefusal('unreachable')
   }

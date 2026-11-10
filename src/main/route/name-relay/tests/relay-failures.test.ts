@@ -6,7 +6,7 @@ import { FrontRefusal } from '../../front.js'
 import { createRelayFailures, FAILURE_MEMORY_MS, MAX_REMEMBERED, RelayRefusal, REFUSAL_WORDS, refusalSentence } from '../relay-failures.js'
 import type { RefusalWord } from '../relay-failures.js'
 
-const WORDS: readonly RefusalWord[] = ['not-found', 'no-answer', 'sign-in', 'refused', 'unreachable', 'inside', 'anonymity', 'unsure']
+const WORDS: readonly RefusalWord[] = ['not-found', 'no-answer', 'sign-in', 'refused', 'unreachable', 'inside', 'anonymity', 'unsure', 'unpinned']
 
 describe('what is remembered of a failure', () => {
   it('is the last word noted for that host and port', () => {
@@ -67,6 +67,7 @@ describe('a refusal', () => {
   it('is a 403 when the relay or the proxy will not carry the host at all, and a 502 when it could not', () => {
     expect(new RelayRefusal('refused').status).toBe(403)
     expect(new RelayRefusal('anonymity').status).toBe(403)
+    expect(new RelayRefusal('unpinned').status).toBe(403)
     for (const word of ['not-found', 'no-answer', 'sign-in', 'unreachable', 'inside', 'unsure'] as const) expect(new RelayRefusal(word).status).toBe(502)
     expect(new RelayRefusal('refused', 503, 'busy').status).toBe(503)
     expect(new RelayRefusal('refused', 503, 'busy').reason).toBe('busy')

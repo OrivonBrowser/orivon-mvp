@@ -137,6 +137,8 @@ data or all history replaces the salt, puts the host to sleep and deletes the fi
 the host deletes every `swarm-chunks-*` file ([`swarm-chunk-files.ts`](swarm-chunk-files.ts)) whose id is not its own salt's as it
 starts, before it opens anything, so a file main could not delete (Windows keeps an open file) goes at the next start.
 
+**The addresses a CCIP-Read check judges are asked of main while the name relay runs.** [`relayed-addresses.ts`](relayed-addresses.ts) is the `resolveHost` of that check: it posts an `address-lookup` for each name and waits (twenty seconds, at most 64 at a time) for main's `address-answer`; `none` says the relay is not running and the host's own lookup is used, `refused` or an answer that is empty or too long fails the check. The request itself is made as the host's other requests are.
+
 **Every request leaves through [`egress.ts`](egress.ts), over Electron's `net`, except a CCIP-Read
 request when no proxy is configured, and the DNS-tamper fallback below.** A configured proxy
 applies to everything else. A CCIP-Read URL, which a name's resolver contract chooses, is checked

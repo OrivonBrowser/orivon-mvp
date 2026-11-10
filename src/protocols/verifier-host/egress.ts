@@ -77,7 +77,7 @@ async function checkUrl (raw: string, deps: CcipDeps): Promise<UrlCheck> {
   if (namesThisComputer(host)) return { ok: false, refusal: `${host} is not a public name` }
   // No resolver is asked about an onion name, here or at the far end of a tunnel: its answer would tell it which hidden service a name points at.
   if (isOnionHost(host)) return { ok: false, refusal: `${host} is an onion address, which no resolver is asked about` }
-  // Through the tunnel the far end resolves the name: resolving it here as well would be a lookup from this computer that the tunnel was set to hide, and its answer is not the address that gets dialled. Any other proxy keeps the check on what this computer resolves.
+  // Through the tunnel the far end resolves the name: resolving it here as well would be a lookup from this computer that the tunnel was set to hide, and its answer is not the address that gets dialled. Any other proxy keeps the check on what this computer resolves, or on what the name relay's lookup gives while it runs (`resolveHost` is then main's answer, `relayed-addresses.ts`).
   if (deps.farEnd === true) return LOCAL_NAME.test(host) || !host.includes('.') ? { ok: false, refusal: `${host} is not a public name` } : { ok: true, addresses: [] }
   const addresses = await deps.resolveHost(host)
   if (addresses.length === 0) return { ok: false, refusal: `${host} resolved to no address` }
