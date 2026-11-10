@@ -1,7 +1,8 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { originHash, partitionFor } from '../../../broker/grants/origin-hash.js'
 import { appRootDirectoryName } from '../../../loader/index.js'
 import { cleanOrphanedAppPartitions, orphanedGrantOrigins } from '../orphaned-app-partitions.js'
 
@@ -66,6 +67,26 @@ describe('cleanOrphanedAppPartitions', () => {
 
     expect(cleared).toHaveLength(1)
     expect(sessionFor).toHaveBeenCalledTimes(1)
+  })
+
+  // The cleaner asks for the session by its name and never reads the Partitions folder, so a folder still waiting
+  // under its long name (a move the system refused, launch/partition-folders.ts) is out of its reach.
+  it('names the session by its short name and leaves a folder still under the long name as it is', async () => {
+    const origin = 'https://granted.example'
+    const waiting = join(dir, 'Partitions', `app-${originHash(origin)}`)
+    mkdirSync(waiting, { recursive: true })
+    writeFileSync(join(waiting, 'Cookies'), 'waiting to move')
+    const cleared: string[] = []
+    const sessionFor = (partition: string): { clearData: () => Promise<void> } => {
+      cleared.push(partition)
+      return { clearData: async () => {} }
+    }
+
+    await cleanOrphanedAppPartitions(dir, [{ origin }], () => false, NO_PINS, sessionFor)
+
+    expect(cleared).toEqual([`persist:app-${originHash(origin).slice(0, 32)}`])
+    expect(cleared).toEqual([partitionFor(origin)])
+    expect(readFileSync(join(waiting, 'Cookies'), 'utf8')).toBe('waiting to move')
   })
 
   it('never touches a cache-served origin\'s partition', async () => {

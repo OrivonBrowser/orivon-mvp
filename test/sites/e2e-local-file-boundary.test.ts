@@ -18,7 +18,7 @@ import { ABSENCE_SETTLE_MS, delay, popoverShown, tabIds, waitFor } from '../supp
 
 const E2E_TIMEOUT_MS = 240_000
 const SHARED_PARTITION = 'persist:orivon-local-files'
-const ownPartition = (key: string): string => `persist:local-${createHash('sha256').update(key, 'utf8').digest('hex')}`
+const ownPartition = (key: string): string => `persist:local-${createHash('sha256').update(key, 'utf8').digest('hex').slice(0, 32)}`
 /** A 1x1 PNG. */
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64')
 
