@@ -1,13 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadRefusals } from '../load-refusals.js'
 import { trackProxySet } from '../proxy-answers.js'
+import { forgetSystemSettings, systemSettingsAre } from './mirror-status.test-helpers.js'
+import type { MirrorStatus } from '../proxy-mirror/mirror-status.js'
 import {
   createRefusalNotes, guardOfSession, namesVerifierHost, noteRefusal, PLAIN_NAME_REFUSED, PROXY_NOT_KNOWN, PROXY_WOULD_SEE_NAME, proxyWouldCarry,
   refuseWhenProxySees, refusesPlain, refusingProxiedNames, routedBypassRules, verifierNameFilter, verifierNameGuard
 } from '../verifier-name-guard.js'
 import type { NameRefusal } from '../verifier-name-guard.js'
 
-afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+beforeEach(() => { systemSettingsAre() })
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); forgetSystemSettings() })
 
 const none = (): boolean => false
 
@@ -308,5 +311,159 @@ describe('a request Orivon makes itself', () => {
     expect(send).not.toHaveBeenCalled()
     await expect(refusingProxiedNames({ resolveProxy: async () => 'DIRECT' }, send)('https://wrapped.eth/')).resolves.toBeInstanceOf(Response)
     expect(send).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the guard of a session on the system\'s config while the system\'s settings run code', () => {
+  const quiet = (): void => {}
+  const details = (url: string, resourceType = 'mainFrame', webContentsId = 21): { url: string, resourceType: string, webContentsId: number } => ({ url, resourceType, webContentsId })
+
+  it('cancels a name without asking the session, and remembers a main-frame load so the sheet says Orivon could not tell', async () => {
+    const ask = vi.fn(async () => 'DIRECT')
+    const note = vi.fn()
+    const handler = verifierNameGuard({ followsSystem: () => true, runsSystemCode: () => true, ask, allowsPlain: none, note })
+    expect(await handler(details('https://leaky.eth/'), {})).toEqual({ cancel: true })
+    expect(await handler(details('https://sub.leaky.eth/a.js', 'script', 22), {})).toEqual({ cancel: true })
+    expect(ask).not.toHaveBeenCalled()
+    expect(loadRefusals.claims(21, 'https://leaky.eth/')).toBe('unsure')
+    expect(loadRefusals.claims(22, 'https://sub.leaky.eth/a.js')).toBeUndefined()
+    expect(note).toHaveBeenCalledWith('https://leaky.eth/', { kind: 'unasked' })
+  })
+
+  it('still says a plain request opens only over https, which holds whatever runs on the system', async () => {
+    const note = vi.fn()
+    const ask = vi.fn(async () => 'DIRECT')
+    const handler = verifierNameGuard({ followsSystem: () => true, runsSystemCode: () => true, ask, allowsPlain: none, note })
+    expect(await handler(details('http://leaky.eth/', 'mainFrame', 23), {})).toEqual({ cancel: true })
+    expect(loadRefusals.claims(23, 'http://leaky.eth/')).toBe('plain')
+    expect(ask).not.toHaveBeenCalled()
+  })
+
+  it('asks the session as it always did when what it holds runs none of the system\'s code', async () => {
+    const ask = vi.fn(async () => 'DIRECT')
+    const handler = verifierNameGuard({ followsSystem: () => true, runsSystemCode: () => false, ask, allowsPlain: none, note: quiet })
+    expect(await handler(details('https://copied.eth/'), {})).toEqual({})
+    expect(ask).toHaveBeenCalledExactlyOnceWith('https://copied.eth/')
+    const proxied = verifierNameGuard({ followsSystem: () => true, runsSystemCode: () => false, ask: async () => 'PROXY p:1', allowsPlain: none, note: quiet })
+    expect(await proxied(details('https://copied.eth/', 'mainFrame', 24), {})).toEqual({ cancel: true })
+    expect(loadRefusals.claims(24, 'https://copied.eth/')).toBe('would-see')
+  })
+
+  it('leaves a session on a tunnel alone, and does not ask it', async () => {
+    const ask = vi.fn(async () => 'DIRECT')
+    const handler = verifierNameGuard({ followsSystem: () => false, runsSystemCode: () => true, ask, allowsPlain: none, note: quiet })
+    const current = { redirectURL: 'https://elsewhere.test/' }
+    expect(await handler(details('https://tunnelled.eth/'), current)).toBe(current)
+    expect(ask).not.toHaveBeenCalled()
+  })
+
+  it('judges the session as it is after a change of its proxy ended: a copy taken meanwhile is asked, the system\'s config entered meanwhile is not', async () => {
+    let code = true
+    let end: () => void = () => {}
+    const ask = vi.fn(async () => 'DIRECT')
+    const handler = verifierNameGuard({ followsSystem: () => true, runsSystemCode: () => code, ask, allowsPlain: none, note: quiet, settled: async () => { await new Promise<void>((done) => { end = done }) } })
+    const taken = handler(details('https://moving.eth/'), {})
+    await Promise.resolve()
+    code = false
+    end()
+    expect(await taken).toEqual({})
+    expect(ask).toHaveBeenCalledTimes(1)
+
+    code = false
+    const left = handler(details('https://moving.eth/', 'mainFrame', 25), {})
+    await Promise.resolve()
+    code = true
+    end()
+    expect(await left).toEqual({ cancel: true })
+    expect(ask).toHaveBeenCalledTimes(1)
+  })
+
+  it('cancels when it cannot be told whether the session runs the system\'s code', async () => {
+    const ask = vi.fn(async () => 'DIRECT')
+    const handler = verifierNameGuard({ followsSystem: () => true, runsSystemCode: () => { throw new Error('no mirror') }, ask, allowsPlain: none, note: quiet })
+    expect(await handler(details('https://broken.eth/'), {})).toEqual({ cancel: true })
+    expect(ask).not.toHaveBeenCalled()
+  })
+})
+
+/** The settings the mirror can find, and what the guard of a session on the system's config does with each, with a session that records every question it is asked. */
+describe('what the guard does with each thing the mirror can find', () => {
+  const COPY = { mode: 'fixed_servers', proxyRules: 'http=proxy.test:3128', proxyBypassRules: '*.eth;*.eth.' }
+  const SYSTEM = { mode: 'system' }
+  const NAME = 'https://fixture.eth/'
+  const details = { url: NAME, resourceType: 'script' }
+
+  /** A session that answers `answer` and records the URLs it was asked about, set to `config` the way the controller sets it (none: never set). */
+  async function sessionOn (config: Record<string, string> | undefined, answer = 'DIRECT') {
+    const session = { resolveProxy: vi.fn<(url: string) => Promise<string>>(async () => answer) }
+    if (config !== undefined) await trackProxySet(session, async () => {}, 1_000, config)
+    return session
+  }
+
+  const CASES: Array<{ label: string, found: Partial<MirrorStatus>, config: Record<string, string> | undefined, asked: boolean }> = [
+    { label: 'a manual proxy whose copy the session took', found: { mode: 'manual', state: 'mirrored', reason: 'copied' }, config: COPY, asked: true },
+    { label: 'a script whose copy the session took', found: { mode: 'script', state: 'mirrored', reason: 'copied' }, config: COPY, asked: true },
+    { label: 'a script whose copy a session has not taken yet', found: { mode: 'script', state: 'mirrored', reason: 'copied' }, config: undefined, asked: false },
+    { label: 'a script whose copy a session left for the system\'s config', found: { mode: 'script', state: 'mirrored', reason: 'copied' }, config: SYSTEM, asked: false },
+    { label: 'a script Orivon could not copy', found: { mode: 'script', state: 'system', reason: 'disagrees' }, config: SYSTEM, asked: false },
+    { label: 'a script that could not be fetched', found: { mode: 'script', state: 'system', reason: 'unfetched' as MirrorStatus['reason'] }, config: undefined, asked: false },
+    { label: 'automatic detection', found: { mode: 'detect', state: 'system', reason: 'detect' }, config: SYSTEM, asked: false },
+    { label: 'settings not yet read', found: { source: 'none', mode: 'unknown', state: 'system', reason: 'starting' }, config: undefined, asked: false },
+    { label: 'settings that could not be read', found: { mode: 'unreadable', state: 'system', reason: 'unreadable' }, config: SYSTEM, asked: false },
+    { label: 'settings that cannot be carried', found: { mode: 'unsupported', state: 'system', reason: 'unsupported' }, config: SYSTEM, asked: false },
+    { label: 'a manual proxy whose copy did not match', found: { mode: 'manual', state: 'system', reason: 'disagrees' }, config: SYSTEM, asked: false },
+    { label: 'no proxy', found: {}, config: undefined, asked: true },
+    { label: 'no proxy, a session set to the system\'s config', found: {}, config: SYSTEM, asked: true }
+  ]
+
+  for (const { label, found, config, asked } of CASES) {
+    it(`${asked ? 'asks' : 'does not ask'} a session for a routed name: ${label}`, async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      systemSettingsAre(found)
+      const session = await sessionOn(config)
+      const handler = verifierNameGuard(guardOfSession(session, () => undefined, none))
+      expect(await handler(details, {}), 'and the request goes out only when asked and DIRECT').toEqual(asked ? {} : { cancel: true })
+      if (asked) expect(session.resolveProxy).toHaveBeenCalledExactlyOnceWith(NAME)
+      else expect(session.resolveProxy).not.toHaveBeenCalled()
+      // The request Orivon makes itself is judged the same.
+      const second = await sessionOn(config)
+      if (asked) await expect(refuseWhenProxySees(second, NAME, none)).resolves.toBeUndefined()
+      else await expect(refuseWhenProxySees(second, NAME, none)).rejects.toThrow(PROXY_NOT_KNOWN)
+      expect(second.resolveProxy).toHaveBeenCalledTimes(asked ? 1 : 0)
+    })
+  }
+
+  it('asks a session that answers with a proxy, and refuses the name saying the proxy would see it, when nothing runs on the system', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const session = await sessionOn(undefined, 'PROXY 127.0.0.1:3128')
+    expect(await verifierNameGuard(guardOfSession(session, () => undefined, none))(details, {})).toEqual({ cancel: true })
+    await expect(refuseWhenProxySees(session, NAME, none)).rejects.toThrow(PROXY_WOULD_SEE_NAME)
+  })
+
+  it('asks no session about an ordinary host, whatever the system runs', async () => {
+    systemSettingsAre({ mode: 'script', state: 'system', reason: 'disagrees' })
+    const session = await sessionOn(SYSTEM)
+    await expect(refuseWhenProxySees(session, 'https://example.com/', none)).resolves.toBeUndefined()
+    expect(session.resolveProxy).not.toHaveBeenCalled()
+  })
+
+  it('does not ask a session that is being set to the system\'s config, and waits for it first', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    systemSettingsAre({ mode: 'script', state: 'mirrored', reason: 'copied' })
+    const session = await sessionOn(COPY)
+    let end: () => void = () => {}
+    const leaving = trackProxySet(session, async () => { await new Promise<void>((done) => { end = done }) }, 1_000, SYSTEM)
+    const decided = verifierNameGuard(guardOfSession(session, () => undefined, none))(details, {})
+    await Promise.resolve()
+    end()
+    await leaving
+    expect(await decided).toEqual({ cancel: true })
+    expect(session.resolveProxy).not.toHaveBeenCalled()
+  })
+
+  it('writes the refusal to the log without saying which proxy, script or name', () => {
+    const line = createRefusalNotes()('https://secret-name.eth/', { kind: 'unasked' })
+    expect(line).toBe('[route] refused a request for a .eth name: the system\'s proxy settings may run a script, and the session holds no copy of them, so the name was not put to them')
+    expect(line).not.toMatch(/secret-name/)
   })
 })

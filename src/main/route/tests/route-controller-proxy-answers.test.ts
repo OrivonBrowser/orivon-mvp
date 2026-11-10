@@ -2,7 +2,7 @@
 // the controller forgets them on either side of every `setProxy`, whether or not that call succeeds. And a session whose
 // proxy is being set, or was set by a call the controller stopped waiting for, is not one the controller can say is on a tunnel.
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { proxyAnswerFor, proxySetInFlight, proxySetOverran } from '../proxy-answers.js'
 import { guardOfSession, verifierNameGuard } from '../verifier-name-guard.js'
 import { createRouteController } from '../route-controller.js'
@@ -10,10 +10,12 @@ import type { RouteSession } from '../route-controller.js'
 import { createRouteHub } from '../route-hub.js'
 import type { RouteHub } from '../route-hub.js'
 import { RouteStore } from '../route-store.js'
+import { forgetSystemSettings, systemSettingsAre } from './mirror-status.test-helpers.js'
 
 const APP = 'https://one.example'
 const hubs: RouteHub[] = []
-afterEach(async () => { for (const hub of hubs.splice(0)) await hub.dispose() })
+beforeEach(() => { systemSettingsAre() })
+afterEach(async () => { for (const hub of hubs.splice(0)) await hub.dispose(); forgetSystemSettings() })
 
 type FakeSession = RouteSession & { readonly resolveProxy: ReturnType<typeof vi.fn<(url: string) => Promise<string>>> }
 

@@ -7,6 +7,7 @@ import type { SystemProxyConfig } from '../../system-follow.js'
 import { ANSWER_EVERY_MS, createProxyMirror, READ_EVERY_MS, START_BOUND_MS } from '../proxy-mirror.js'
 import type { ProxyMirror, ProxyMirrorDeps } from '../proxy-mirror.js'
 import type { SystemSettings } from '../settings-source.js'
+import { namesVerifierHost } from '../../verifier-name-guard.js'
 
 const MANUAL: SystemSettings = { kind: 'manual', proxyRules: 'http=proxy.test:3128;https=proxy.test:3128', exceptions: ['localhost', '*.corp.test'] }
 const MOVED: SystemSettings = { kind: 'manual', proxyRules: 'http=proxy.test:3129;https=proxy.test:3129', exceptions: ['localhost', '*.corp.test'] }
@@ -45,11 +46,13 @@ interface World {
   hangCheck: boolean
   /** A read, or a set of the check session, that waits for this before it ends. */
   gates: { read?: Promise<void>, set?: Promise<void> }
+  /** Every address either session was asked about. */
+  asked: string[]
 }
 
 function setup (options: { read?: boolean, held?: boolean, settings?: SystemSettings } = {}): { mirror: ProxyMirror, world: World, lines: string[] } {
   const settings = options.settings ?? MANUAL
-  const world: World = { settings, truth: settings, corrupt: () => undefined, nextReads: [], reads: 0, sets: [], applied: 0, applyClean: true, order: [], checkConfig: undefined, hang: false, hangCheck: false, gates: {} }
+  const world: World = { settings, truth: settings, corrupt: () => undefined, nextReads: [], reads: 0, sets: [], applied: 0, applyClean: true, order: [], checkConfig: undefined, hang: false, hangCheck: false, gates: {}, asked: [] }
   const lines: string[] = []
   const deps: ProxyMirrorDeps = {
     source: 'gnome',
@@ -60,6 +63,7 @@ function setup (options: { read?: boolean, held?: boolean, settings?: SystemSett
     },
     ...(options.held === true ? { held: true } : {}),
     systemAnswer: async (url) => {
+      world.asked.push(url)
       if (world.hang) return await new Promise<string>(() => {})
       return world.truth.kind === 'manual' ? answer(world.truth.proxyRules, world.truth.exceptions, url) : 'DIRECT'
     },
@@ -71,6 +75,7 @@ function setup (options: { read?: boolean, held?: boolean, settings?: SystemSett
         if (world.gates.set !== undefined) await world.gates.set
       },
       answer: async (url) => {
+        world.asked.push(url)
         if (world.hangCheck) return await new Promise<string>(() => {})
         const config = world.checkConfig
         const wrong = world.corrupt(url)
@@ -108,6 +113,17 @@ describe('a computer whose settings cannot be read yet, or a window held to a tu
 })
 
 describe('a manual proxy', () => {
+  it('asks neither session about a name the verifier serves, though the system\'s exceptions cover it: the system\'s own session would hand the name to a script', async () => {
+    const covering: SystemSettings = { ...MANUAL, exceptions: ['localhost', '*.eth', '.eth.', '*.ipfs.orivon', 'name.eth', '*.corp.test'] }
+    const { mirror, world } = setup({ settings: covering })
+    await mirror.start()
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS * 2)
+    expect(mirror.status()).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
+    expect(world.asked).toContain('https://probe.corp.test/')
+    expect(world.asked.filter(namesVerifierHost)).toEqual([])
+    mirror.stop()
+  })
+
   it('is copied, with the exceptions and the routed names, once the copy answers as Chromium does', async () => {
     const { mirror, world } = setup()
     await mirror.start()

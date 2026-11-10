@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createProxyAnswers, PROXY_ASK_TIMEOUT_MS, PROXY_SETTLE_MS, proxyAnswerFor, proxyEpoch, proxySetInFlight, proxySetOverran, proxySettled, trackProxySet } from '../proxy-answers.js'
+import { configRunsSystemCode, createProxyAnswers, PROXY_ASK_TIMEOUT_MS, PROXY_SETTLE_MS, proxyAnswerFor, proxyEpoch, proxyMayRunSystemCode, proxySetInFlight, proxySetOverran, proxySettled, trackProxySet } from '../proxy-answers.js'
 
 describe('a session that does not answer', () => {
   it('is given up on after the time allowed, long enough for automatic detection, and asked again by the next request', async () => {
@@ -208,6 +208,91 @@ describe('a change of a session\'s proxy', () => {
 
       await trackProxySet(session, async () => {}, 1_000)
       expect(proxySetOverran(session)).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('which configs hand a name to the system\'s own code', () => {
+  it('are the system\'s and automatic detection, which look for a script; a fixed server, a script of Orivon\'s own and direct do not', () => {
+    expect(configRunsSystemCode({ mode: 'system' })).toBe(true)
+    expect(configRunsSystemCode({ mode: 'auto_detect' })).toBe(true)
+    for (const mode of ['direct', 'fixed_servers', 'pac_script']) expect(configRunsSystemCode({ mode }), mode).toBe(false)
+    expect(configRunsSystemCode({}), 'no mode: Electron takes rules or a script from the other fields').toBe(false)
+  })
+})
+
+describe('whether a session may hand a name to the system\'s own code', () => {
+  const COPY = { mode: 'fixed_servers', proxyRules: 'http=proxy.test:3128' }
+  const ANOTHER_COPY = { mode: 'fixed_servers', proxyRules: 'http=other.test:1' }
+  const SYSTEM = { mode: 'system' }
+
+  it('may before anything set its proxy: a session starts on the system\'s', () => {
+    expect(proxyMayRunSystemCode({})).toBe(true)
+  })
+
+  it('may not once it was set to a config of Orivon\'s own, and may again once it is set to the system\'s', async () => {
+    const session = {}
+    await trackProxySet(session, async () => {}, PROXY_SETTLE_MS, COPY)
+    expect(proxyMayRunSystemCode(session)).toBe(false)
+    await trackProxySet(session, async () => {}, PROXY_SETTLE_MS, SYSTEM)
+    expect(proxyMayRunSystemCode(session)).toBe(true)
+  })
+
+  it('may while it is being set to the system\'s or away from it, and may not while one copy replaces another', async () => {
+    const session = {}
+    await trackProxySet(session, async () => {}, PROXY_SETTLE_MS, COPY)
+    let end: () => void = () => {}
+    const replaced = trackProxySet(session, async () => { await new Promise<void>((done) => { end = done }) }, PROXY_SETTLE_MS, ANOTHER_COPY)
+    expect(proxyMayRunSystemCode(session), 'one copy for another').toBe(false)
+    end()
+    await replaced
+
+    const leaving = trackProxySet(session, async () => { await new Promise<void>((done) => { end = done }) }, PROXY_SETTLE_MS, SYSTEM)
+    expect(proxyMayRunSystemCode(session), 'going to the system\'s').toBe(true)
+    end()
+    await leaving
+    const entering = trackProxySet(session, async () => { await new Promise<void>((done) => { end = done }) }, PROXY_SETTLE_MS, COPY)
+    expect(proxyMayRunSystemCode(session), 'still on the system\'s until the copy is taken').toBe(true)
+    end()
+    await entering
+    expect(proxyMayRunSystemCode(session)).toBe(false)
+  })
+
+  it('may after a change that failed unless the session was on a copy and was not meant to leave it', async () => {
+    const session = {}
+    await trackProxySet(session, async () => {}, PROXY_SETTLE_MS, COPY)
+    await expect(trackProxySet(session, async () => { throw new Error('refused') }, PROXY_SETTLE_MS, COPY)).rejects.toThrow('refused')
+    expect(proxyMayRunSystemCode(session), 'a copy that failed to replace a copy').toBe(false)
+    await expect(trackProxySet(session, async () => { throw new Error('refused') }, PROXY_SETTLE_MS, SYSTEM)).rejects.toThrow('refused')
+    expect(proxyMayRunSystemCode(session), 'a call to the system\'s that failed may have gone through').toBe(true)
+
+    const other = {}
+    await expect(trackProxySet(other, async () => { throw new Error('refused') }, PROXY_SETTLE_MS, COPY)).rejects.toThrow('refused')
+    expect(proxyMayRunSystemCode(other), 'a copy that failed to be taken').toBe(true)
+  })
+
+  it('may when the config of a change is not said, since nothing then tells what it left the session on', async () => {
+    const session = {}
+    await trackProxySet(session, async () => {}, PROXY_SETTLE_MS, COPY)
+    await trackProxySet(session, async () => {})
+    expect(proxyMayRunSystemCode(session)).toBe(true)
+  })
+
+  it('may when a change outlasted the wait for it, until a later one is quick', async () => {
+    vi.useFakeTimers()
+    try {
+      const session = {}
+      await trackProxySet(session, async () => {}, 1_000, COPY)
+      const slow = trackProxySet(session, async () => { await new Promise<void>((done) => { setTimeout(done, 5_000) }) }, 1_000, COPY)
+      await vi.advanceTimersByTimeAsync(1_001)
+      expect(proxyMayRunSystemCode(session)).toBe(true)
+      await vi.advanceTimersByTimeAsync(5_000)
+      await slow
+      expect(proxyMayRunSystemCode(session), 'ended, but later than it was waited for').toBe(true)
+      await trackProxySet(session, async () => {}, 1_000, COPY)
+      expect(proxyMayRunSystemCode(session)).toBe(false)
     } finally {
       vi.useRealTimers()
     }

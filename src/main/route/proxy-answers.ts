@@ -1,8 +1,9 @@
 // Which proxy a session would use for a URL, asked of the session's own network context. An answer is shared only by asks
 // that overlap and never kept: a PAC script, the network and the system's own settings can answer differently the next time.
 // The answer stands only for the proxy setting it was asked under, so a change of a session's proxy is tracked here: a
-// caller waits for one under way (`proxySettled`) before it asks, and an ask that spanned one is asked again. Pure over the
-// session it is handed: no `electron` import.
+// caller waits for one under way (`proxySettled`) before it asks, and an ask that spanned one is asked again. What kind of
+// config each session was last set to is tracked too, since a session on the system's own config hands a name it is asked
+// about to whatever script the system names. Pure over the session it is handed: no `electron` import.
 
 import { within } from './within.js'
 
@@ -20,6 +21,16 @@ export const PROXY_ASK_TIMEOUT_MS = 15_000
 /** How long a request waits for a change of its session's proxy to end before it asks which proxy applies. */
 export const PROXY_SETTLE_MS = 10_000
 
+/** The part of a proxy config that tells whose code answers a question: Electron's `setProxy` takes more, and none of it matters here. */
+export interface ProxyConfigKind {
+  readonly mode?: string | undefined
+}
+
+/** Whether a session set to `config` puts a name it is asked about to the system's own code: the system's config and automatic detection do, a fixed server, direct and a script of Orivon's own do not. */
+export function configRunsSystemCode (config: ProxyConfigKind): boolean {
+  return config.mode === 'system' || config.mode === 'auto_detect'
+}
+
 const epochs = new WeakMap<object, number>()
 
 /** Moves whenever `target`'s proxy begins to be set or has just been set: an answer asked under another epoch stands for another setting. */
@@ -36,6 +47,10 @@ interface Setting {
   inFlight: number
   /** The last change took longer than the caller waits for it, or still does. */
   overran: boolean
+  /** The session is on a config that hands a name to the system's code, as far as the last change that ended says; a session nothing set is on the system's. */
+  onSystem: boolean
+  /** Changes under way whose config hands a name to the system's code. */
+  towardSystem: number
   settled: Promise<void>
   release: () => void
 }
@@ -45,28 +60,38 @@ const settings = new WeakMap<object, Setting>()
 function settingOf (target: object): Setting {
   let setting = settings.get(target)
   if (setting === undefined) {
-    setting = { inFlight: 0, overran: false, settled: Promise.resolve(), release: () => {} }
+    setting = { inFlight: 0, overran: false, onSystem: true, towardSystem: 0, settled: Promise.resolve(), release: () => {} }
     settings.set(target, setting)
   }
   return setting
 }
 
 /**
- * Runs `work`, a change of `target`'s proxy, and tracks it: answers asked before and across it are forgotten, `proxySetInFlight`
- * is true until the call itself ends (not when whoever waits for it gives up), and a call that outlasts `overranMs` leaves
- * `proxySetOverran` true until a later one is quick, because whoever gave up on it no longer knows which proxy the session has.
+ * Runs `work`, a change of `target`'s proxy to `config`, and tracks it: answers asked before and across it are forgotten,
+ * `proxySetInFlight` is true until the call itself ends (not when whoever waits for it gives up), and a call that outlasts
+ * `overranMs` leaves `proxySetOverran` true until a later one is quick, because whoever gave up on it no longer knows which
+ * proxy the session has. A change that does not say its config counts as one to the system's, and a change that fails may have
+ * gone through, so `proxyMayRunSystemCode` stays true after one that was meant to reach the system's.
  */
-export async function trackProxySet<T> (target: object, work: () => Promise<T>, overranMs = PROXY_SETTLE_MS): Promise<T> {
+export async function trackProxySet<T> (target: object, work: () => Promise<T>, overranMs = PROXY_SETTLE_MS, config?: ProxyConfigKind): Promise<T> {
   const setting = settingOf(target)
+  const toSystem = config === undefined || configRunsSystemCode(config)
   noteProxySet(target)
   if (setting.inFlight === 0) setting.settled = new Promise<void>((resolve) => { setting.release = resolve })
   setting.inFlight += 1
+  if (toSystem) setting.towardSystem += 1
   let late = false
   const timer = setTimeout(() => { late = true; setting.overran = true }, overranMs)
   try {
-    return await work()
+    const result = await work()
+    setting.onSystem = toSystem
+    return result
+  } catch (error) {
+    setting.onSystem = setting.onSystem || toSystem
+    throw error
   } finally {
     clearTimeout(timer)
+    if (toSystem) setting.towardSystem -= 1
     if (!late && setting.inFlight === 1) setting.overran = false
     setting.inFlight -= 1
     noteProxySet(target)
@@ -82,6 +107,12 @@ export function proxySetInFlight (target: object): boolean {
 /** Whether the last change of `target`'s proxy took longer than whoever applied it waited, so what it recorded about the session may be wrong. */
 export function proxySetOverran (target: object): boolean {
   return settings.get(target)?.overran === true
+}
+
+/** Whether `target` may hand a name it is asked about to the system's own code: it is on the system's config, or being set to or from it, or a change of it ran past the wait for it. A session nothing has set is on the system's config. */
+export function proxyMayRunSystemCode (target: object): boolean {
+  const setting = settings.get(target)
+  return setting === undefined || setting.onSystem || setting.towardSystem > 0 || setting.overran
 }
 
 /** Resolves when no change of `target`'s proxy is under way, and rejects when one still is after `ms`. */

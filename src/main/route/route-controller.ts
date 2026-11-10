@@ -132,9 +132,9 @@ const CONFINED_BYPASS = '<-loopback>'
 /** `pointedAt`'s value for a session held on the unreachable proxy: no front has this port. */
 const CONFINED_FRONT = 0
 
-/** Sets the proxy of `session` and tracks the change (`proxy-answers.ts`): the answers it gave about which proxy carries a URL are forgotten, and the session counts as changing until the call ends, however long `callMs` was waited for it. */
+/** Sets the proxy of `session` and tracks the change (`proxy-answers.ts`): the answers it gave about which proxy carries a URL are forgotten, the session counts as changing until the call ends, however long `callMs` was waited for it, and it counts as on the system's code or not by `config`. */
 async function setProxyOf (session: RouteSession, config: RouteProxyConfig, callMs: number): Promise<void> {
-  await trackProxySet(session, async () => { await session.setProxy(config) }, callMs)
+  await trackProxySet(session, async () => { await session.setProxy(config) }, callMs, config)
 }
 
 export function createRouteController (deps: RouteControllerDeps): RouteController {
