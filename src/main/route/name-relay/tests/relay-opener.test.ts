@@ -346,6 +346,15 @@ describe('what is remembered of a failure', () => {
   })
 })
 
+describe('a refusal that comes after the client gave up', () => {
+  it('is not remembered for the host', async () => {
+    const controller = new AbortController()
+    const { open, failures } = rig({ answer: async () => { controller.abort(); throw new Error('the session did not say which proxy it would use') } })
+    expect((await refusal(open(targetOf(SITE, 443, controller.signal)))).word).toBe('unsure')
+    expect(failures.reasonFor(SITE, 443)).toBeUndefined()
+  })
+})
+
 describe('the number of connections', () => {
   it('is bounded: past the limit a connection is answered 503, and one opens again when another has closed', async () => {
     const echo = await startEcho()

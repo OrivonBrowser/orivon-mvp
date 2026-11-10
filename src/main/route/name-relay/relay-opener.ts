@@ -114,7 +114,7 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
 
   async function openDirect (target: FrontTarget): Promise<Socket> {
     const { host, port, signal } = target
-    const found = isIP(host) !== 0 ? [host] : await untilAbandoned(deps.lookupDirect(host, signal).catch(() => []), signal)
+    const found = isIP(host) !== 0 ? [host] : await untilAbandoned((async () => await deps.lookupDirect(host, signal))().catch(() => []), signal)
     const addresses = keepResolverOrder(found)
     if (addresses.length === 0) throw new RelayRefusal('not-found')
     for (const address of addresses) {
