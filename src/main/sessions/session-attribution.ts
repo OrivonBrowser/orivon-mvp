@@ -20,7 +20,7 @@ import { publishSenderAttributed } from '../registry.js'
 import { appTabContents, partitionForTab } from '../shell/tab-partition.js'
 import { forgetShellAnswered, takeMainFrameAnswer } from './shell-answered.js'
 import type { MainFrameAnswer } from './shell-answered.js'
-import { forgetWorkerControl, installWorkerControlReports, isControlledByWorker } from './worker-control.js'
+import { forgetWorkerControl, installWorkerControlReports, isControlledByWorker, onWorkerControl } from './worker-control.js'
 import { tabChoiceOfContents } from '../route/tab-tunnel.js'
 import { isChildHostFor } from '../children/child-host.js'
 import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
@@ -38,6 +38,8 @@ interface AttributionRecord {
   readonly inExpectedSession: boolean
   /** Whether the shell served the origin where websites run when the document committed: only then can the app's own worker have answered it. */
   readonly servedAsWebsite: boolean
+  /** Whether the preload reported a worker controlling this document, which can arrive before or after its commit: it is kept with the document, so a navigation that starts and never commits does not take it away. */
+  controlled: boolean
 }
 
 /**
@@ -46,9 +48,9 @@ interface AttributionRecord {
  * and the workers a website left were removed before the serving began. So a document no response was seen for, committed
  * while the origin was served, whose preload reported a controller, was answered by the app.
  */
-function answeredByShell (wc: WebContents, record: AttributionRecord): boolean {
+function answeredByShell (record: AttributionRecord): boolean {
   if (record.answer === 'shell') return true
-  return record.answer === 'none' && record.servedAsWebsite && isControlledByWorker(wc, record.url)
+  return record.answer === 'none' && record.servedAsWebsite && record.controlled
 }
 
 /**
@@ -69,6 +71,12 @@ function answeredByShell (wc: WebContents, record: AttributionRecord): boolean {
  * same origin on the same live code either way.
  */
 const attributionRecords = new WeakMap<WebContents, AttributionRecord>()
+
+// A report about a worker's control can arrive after the document committed, so it reaches the document's record here.
+onWorkerControl((page) => {
+  const record = attributionRecords.get(page as WebContents)
+  if (record !== undefined && isControlledByWorker(page, record.url)) record.controlled = true
+})
 
 export const sessionAttributionSubsystem: Subsystem = {
   name: 'session-attribution',
@@ -106,7 +114,8 @@ export const sessionAttributionSubsystem: Subsystem = {
           answer: takeMainFrameAnswer(wc, url),
           inExpectedSession: origin !== null && wc.session === expectedSession(origin, wc),
           // An origin the shell serves where websites run attributes only a document it answered, even once it stops serving it.
-          servedAsWebsite: origin !== null && runsAsWebsite(origin)
+          servedAsWebsite: origin !== null && runsAsWebsite(origin),
+          controlled: isControlledByWorker(wc, url)
         })
       })
     })
@@ -114,7 +123,7 @@ export const sessionAttributionSubsystem: Subsystem = {
     /** Whether `wc`'s current document is `origin`'s, was answered by the shell, and runs in a view built as the app's tab. */
     const shellDocumentOf = (wc: WebContents, origin: string): boolean => {
       const record = attributionRecords.get(wc)
-      return record !== undefined && record.origin === origin && answeredByShell(wc, record) && appTabContents.has(wc)
+      return record !== undefined && record.origin === origin && answeredByShell(record) && appTabContents.has(wc)
     }
 
     publishSenderAttributed(ctx, (sender, origin) => {
@@ -144,7 +153,7 @@ export const sessionAttributionSubsystem: Subsystem = {
         return wc.session === expectedSession(origin, wc)
       }
       const record = attributionRecords.get(wc)
-      if (record !== undefined && record.origin === origin) return record.inExpectedSession && (!record.servedAsWebsite || answeredByShell(wc, record))
+      if (record !== undefined && record.origin === origin) return record.inExpectedSession && (!record.servedAsWebsite || answeredByShell(record))
       // No record yet (a call arriving before this WebContents' first
       // did-navigate, or one this subsystem never saw) -- the live check,
       // today's original rule, is the fallback.

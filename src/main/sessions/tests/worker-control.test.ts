@@ -4,7 +4,7 @@ import { WORKER_CONTROL_CHANNEL as PRELOAD_SIDE_CHANNEL } from '../../channels.j
 const ipcOn = vi.hoisted(() => vi.fn())
 vi.mock('electron', () => ({ ipcMain: { on: ipcOn } }))
 
-const { forgetWorkerControl, installWorkerControlReports, isControlledByWorker, noteWorkerControl, takeWorkerControlReport } = await import('../worker-control.js')
+const { forgetWorkerControl, installWorkerControlReports, isControlledByWorker, noteWorkerControl, onWorkerControl, takeWorkerControlReport } = await import('../worker-control.js')
 
 const URL_A = 'https://kept.eth/'
 
@@ -31,6 +31,16 @@ describe('whether a worker controls a page\'s document', () => {
     expect(isControlledByWorker(page, URL_A)).toBe(false)
     noteWorkerControl(page, 'not an address')
     expect(isControlledByWorker(page, 'not an address')).toBe(false)
+  })
+})
+
+describe('a listener of the reports', () => {
+  it('hears the page of each report that is kept, since the document it names may have committed already', () => {
+    const heard: object[] = []
+    onWorkerControl((page) => { heard.push(page) })
+    const page = {}
+    noteWorkerControl(page, URL_A)
+    expect(heard).toContain(page)
   })
 })
 

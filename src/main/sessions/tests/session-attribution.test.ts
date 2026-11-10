@@ -243,7 +243,7 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
 
   describe('a document the app\'s own service worker answers', () => {
     /** A tab whose navigation to `url` is answered by no response the session sees, as a worker's answer is, with the preload's report of a controller. */
-    function workerAnswered (attributed: (sender: unknown, origin: string) => boolean, register: (wc: FakeWebContents) => void, options: { report?: 'before' | 'after' | 'none', reportUrl?: string, flagged?: boolean, inSession?: unknown } = {}): { wc: FakeWebContents, commit: () => void } {
+    function workerAnswered (attributed: (sender: unknown, origin: string) => boolean, register: (wc: FakeWebContents) => void, options: { report?: 'before' | 'after' | 'none', reportUrl?: string, flagged?: boolean, inSession?: unknown } = {}): { wc: FakeWebContents, commit: () => void, start: () => void } {
       const made = fakeWebContents(options.inSession ?? DEFAULT_SESSION)
       register(made.wc)
       if (options.flagged !== false) appTabContents.add(made.wc as never)
@@ -252,6 +252,7 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
       const report = (): void => { noteWorkerControl(made.wc, options.reportUrl ?? url) }
       return {
         wc: made.wc,
+        start: made.start,
         commit: () => {
           made.start()
           if (options.report === 'before') report()
@@ -305,6 +306,16 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
       noteWorkerControl(tab.wc, `${KEPT}/`)
 
       expect(attributed(tab.wc, KEPT)).toBe(false)
+    })
+
+    it('keeps a committed document attributed when a navigation starts and never commits: a download, a stopped load', () => {
+      served.add(KEPT)
+      const { attributed, register } = attributionRig()
+      const tab = workerAnswered(attributed, register)
+      tab.commit()
+      tab.start()
+
+      expect(attributed(tab.wc, KEPT)).toBe(true)
     })
 
     it('forgets the report when a navigation starts: a later commit nothing answered is not the earlier document\'s', () => {

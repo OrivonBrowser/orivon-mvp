@@ -7,8 +7,9 @@ import { ipcMain } from 'electron'
 import type { WebContents } from 'electron'
 import { WORKER_CONTROL_CHANNEL } from '../channels.js'
 
-/** The address, without a fragment, of the document each page reported a worker controls. One per page: the next navigation forgets it. */
+/** The address, without a fragment, of the document each page reported a worker controls, until the next navigation starts. */
 const controlled = new WeakMap<object, string>()
+const listeners = new Set<(page: object) => void>()
 
 function documentUrl (url: string): string | undefined {
   try {
@@ -25,9 +26,15 @@ export function noteWorkerControl (page: object, url: string): void {
   const at = documentUrl(url)
   if (at === undefined) controlled.delete(page)
   else controlled.set(page, at)
+  for (const listener of [...listeners]) listener(page)
 }
 
-/** A navigation of `page` starts: a report made by the document before it says nothing of the next. */
+/** Calls `listener` with a page each time a report about it arrives: the document it names may have committed already, since nothing orders the two. */
+export function onWorkerControl (listener: (page: object) => void): void {
+  listeners.add(listener)
+}
+
+/** A navigation of `page` starts: a report not yet used by a commit was made by the document before it, and says nothing of the next. */
 export function forgetWorkerControl (page: object): void {
   controlled.delete(page)
 }
