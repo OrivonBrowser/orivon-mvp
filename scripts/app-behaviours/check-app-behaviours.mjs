@@ -24,6 +24,10 @@ export const ORDINARY_JOB = 'e2e-ordinary'
 export const CHANGED_HEADING = '### Changed for apps'
 /** The one gate a proving test may carry: it needs the ordinary build, and `ORDINARY_JOB` runs it. */
 export const ORDINARY_GATE = '.skipIf(!ORDINARY_BUILD)'
+/** The system the e2e job runs on. */
+export const CI_PLATFORM = 'linux'
+/** The other gate a proving test may carry, for a behaviour that exists on one system only: its row says `Holds on `linux` only`, and the proof still runs in the e2e job. */
+export const PLATFORM_GATE = `.skipIf(process.platform !== '${CI_PLATFORM}')`
 
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/
 const MARKER = /\[app:([^\]\s]*)\]/g
@@ -31,12 +35,14 @@ const MARKER = /\[app:([^\]\s]*)\]/g
 const SCANNED_DIRS = ['test', 'src', 'scripts/tests']
 const SCANNED_EXT = /\.(ts|tsx|mjs|js)$/
 const NOT_COVERED = /^not covered:\s*\S/
+/** A row that holds on one system only says so in its behaviour: ``Holds on `linux` only``. */
+const PLATFORM_ONLY = /\bHolds on `([a-z0-9]+)` only\b/
 /** An e2e spec: `e2e-*.test.ts` in any folder under test/ except the served apps in test/apps/. */
 const E2E_SPEC = /^test\/(?!apps\/)(?:[^/]+\/)*e2e-[^/]+\.test\.ts$/
 
 /**
  * @typedef {{ id: string, behaviour: string, apps: string, ports: string, provenBy: string,
- *   specs: string[], covered: boolean, line: number }} Entry
+ *   specs: string[], covered: boolean, platform: string | null, line: number }} Entry
  */
 
 /**
@@ -73,7 +79,7 @@ export function parseCatalogue (text) {
     if (covered && !specs.some((spec) => E2E_SPEC.test(spec))) {
       problems.push(`${CATALOGUE}:${line}: \`${id}\` is proven by no e2e spec; a unit test never proves an app behaviour alone, since it cannot see a broken wiring`)
     }
-    entries.push({ id, behaviour, apps, ports, provenBy, specs, covered, line })
+    entries.push({ id, behaviour, apps, ports, provenBy, specs, covered, platform: PLATFORM_ONLY.exec(behaviour)?.[1] ?? null, line })
   })
   return { entries, problems }
 }
@@ -273,6 +279,10 @@ export function checkCatalogue (root) {
         if (test.modifiers === ORDINARY_GATE) {
           if (!ordinaryJob.includes(spec)) {
             problems.push(`${spec}:${test.line}: the test for \`${entry.id}\` needs an ordinary build, and ${CI_WORKFLOW} job ${ORDINARY_JOB} does not run ${spec}`)
+          }
+        } else if (test.modifiers === PLATFORM_GATE) {
+          if (entry.platform !== CI_PLATFORM) {
+            problems.push(`${spec}:${test.line}: the test for \`${entry.id}\` is gated to ${CI_PLATFORM}, and ${CATALOGUE}:${entry.line} does not say "Holds on \`${CI_PLATFORM}\` only" for the row`)
           }
         } else {
           problems.push(`${spec}:${test.line}: the test for \`${entry.id}\` carries the modifier ${test.modifiers}; a test CI skips or narrows proves nothing`)
