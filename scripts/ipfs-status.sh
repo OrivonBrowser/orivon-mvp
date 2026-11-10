@@ -40,7 +40,8 @@ TIMEOUT=${TIMEOUT:-30}
 LATEST_KEY=${LATEST_KEY:-}
 ETH_LIMO=${ETH_LIMO:-1}
 
-ENS_REGISTRY=0x00000000000C2E074eC69A0dFb2997BA6C7d2e1e
+# ENS's Universal Resolver on mainnet: it finds a name's resolver in ENSv2 and in ENSv1 alike.
+ENS_UNIVERSAL_RESOLVER=0xeeeeeeee14d718c2b47d9923deab1335e144eeee
 
 ipfs () { command ipfs ${IPFS_API:+--api "$IPFS_API"} "$@"; }
 log () { echo "[ipfs-status] $*" >&2; }
@@ -148,7 +149,7 @@ namehash () {
   done
   echo "$node"
 }
-# eth_call <to> <data>: the hex result from the first RPC that answers one.
+# eth_call <to> <data>: the hex result from the first RPC that answers one, or revert:<data> when the call reverts.
 eth_call () {
   local rpc out res
   for rpc in $ETH_RPCS; do
@@ -156,14 +157,34 @@ eth_call () {
       '{jsonrpc: "2.0", id: 1, method: "eth_call", params: [{to: $to, data: $d}, "latest"]}')") || continue
     res=$(jq -r '.result // empty' <<<"$out" 2>/dev/null) || continue
     if [[ $res == 0x* ]]; then echo "$res"; return 0; fi
+    # An execution revert (JSON-RPC code 3, or a message saying so) is an answer, whose data names the error.
+    res=$(jq -r 'select(.error.code == 3 or (.error.message // "" | tostring | test("revert"; "i"))) | "revert:" + (.error.data // "" | tostring)' <<<"$out" 2>/dev/null) || continue
+    if [ -n "$res" ]; then echo "${res,,}"; return 0; fi
   done
   return 1
+}
+# <hex> with zeros after it up to a whole number of 32-byte words.
+pad_words () { local h=$1; while (( ${#h} % 64 )); do h+=0; done; printf '%s' "$h"; }
+# <name> in the DNS wire form the Universal Resolver takes, as hex: each label after its length byte, then a zero byte.
+dns_encode () {
+  local LC_ALL=C labels label
+  IFS=. read -ra labels <<<"$1"
+  for label in "${labels[@]}"; do printf '%02x%s' "${#label}" "$(printf '%s' "$label" | xxd -p | tr -d '\n')"; done
+  printf '00'
+}
+# The calldata of resolve(<name>, contenthash(<node>)) on the Universal Resolver.
+contenthash_lookup () {
+  local dns padded inner
+  dns=$(dns_encode "$1"); padded=$(pad_words "$dns"); inner=bc1c58d1$2
+  printf '0x9061b923%064x%064x%064x%s%064x%s' 64 $(( 96 + ${#padded} / 2 )) $(( ${#dns} / 2 )) "$padded" $(( ${#inner} / 2 )) "$(pad_words "$inner")"
 }
 # The ABI-encoded `bytes` of contenthash(), as ipns://, ipfs://, bzz://<64 hex> or other:<hex>; nothing when it is empty.
 decode_contenthash () {
   local h=${1#0x} off len data
   [ ${#h} -ge 128 ] || return 0
-  off=$(( 16#${h:48:16} )); len=$(( 16#${h:$(( off * 2 + 48 )):16} ))
+  off=$(( 16#${h:48:16} ))
+  (( off >= 0 && off * 2 + 64 <= ${#h} )) || return 0
+  len=$(( 16#${h:$(( off * 2 + 48 )):16} ))
   data=${h:$(( off * 2 + 64 )):$(( len * 2 ))}
   case $data in
     '') ;;
@@ -174,18 +195,32 @@ decode_contenthash () {
     *) echo "other:0x$data" ;;
   esac
 }
-# Sets ENS_STATE (ok, wrong, none, no-resolver, unknown), ENS_ACTUAL and, when ok, ENS_VIA (ipns or feed) for <name>
-# expected to hold <ipns://id> or, when one is given, <bzz://feed manifest>.
+# Sets ENS_STATE (ok, wrong, none, no-resolver, unknown), ENS_ACTUAL, ENS_DETAIL (why, when unknown) and, when ok, ENS_VIA
+# (ipns or feed) for <name> expected to hold <ipns://id> or, when one is given, <bzz://feed manifest>. ENSv1's registry
+# lists a name that moved to ENSv2 with no resolver, so only the Universal Resolver is asked; its revert says why it
+# has no answer.
 ens_check () {
-  local node r c resolver
-  ENS_STATE=unknown; ENS_ACTUAL=''; ENS_VIA=''
+  local r h off len
+  ENS_STATE=unknown; ENS_ACTUAL=''; ENS_VIA=''; ENS_DETAIL=''
   [ "$KECCAK" = 1 ] || return 0
-  node=$(namehash "$1")
-  r=$(eth_call "$ENS_REGISTRY" "0x0178b8bf$node") || return 0
-  resolver=${r: -40}
-  if [[ $resolver =~ ^0+$ ]]; then ENS_STATE=no-resolver; return 0; fi
-  c=$(eth_call "0x$resolver" "0xbc1c58d1$node") || return 0
-  ENS_ACTUAL=$(decode_contenthash "$c")
+  r=$(eth_call "$ENS_UNIVERSAL_RESOLVER" "$(contenthash_lookup "$1" "$(namehash "$1")")") || { ENS_DETAIL='no Ethereum RPC answered'; return 0; }
+  case $r in
+    # ResolverNotFound, ResolverNotContract.
+    revert:0x77209fe8*|revert:0x1e9535f2*) ENS_STATE=no-resolver; return 0 ;;
+    # ResolverError(bytes): ENSv2's mirror of the v1 registry wraps UnreachableName in it for a v1 name with no resolver.
+    revert:0x95c0c752*) if [ "${r:145:8}" = 5fe9a5df ]; then ENS_STATE=no-resolver; else ENS_DETAIL='its resolver reverted'; fi; return 0 ;;
+    # UnsupportedResolverProfile: the resolver keeps no contenthash.
+    revert:0x7b1c461b*) ENS_STATE=none; return 0 ;;
+    revert:0x556f1830*) ENS_DETAIL='it is answered offchain (CCIP-Read), which this script does not follow'; return 0 ;;
+    revert:*) h=${r:7:10}; ENS_DETAIL="the Universal Resolver reverted with ${h:-no reason}"; return 0 ;;
+  esac
+  # (bytes result, address resolver), whose result is the resolver's own ABI-encoded `bytes`.
+  h=${r#0x}
+  # A bad offset would make the arithmetic below fail, and that would end the whole collect run.
+  off=-1; [ ${#h} -ge 192 ] && [[ $h =~ ^[0-9a-fA-F]+$ ]] && off=$(( 16#${h:48:16} ))
+  if (( off < 0 || off * 2 + 64 > ${#h} )); then ENS_DETAIL='the Universal Resolver sent a malformed answer'; return 0; fi
+  len=$(( 16#${h:$(( off * 2 + 48 )):16} ))
+  ENS_ACTUAL=$(decode_contenthash "0x${h:$(( off * 2 + 64 )):$(( len * 2 ))}")
   if [ -z "$ENS_ACTUAL" ]; then ENS_STATE=none
   elif [ "$ENS_ACTUAL" = "$2" ]; then ENS_STATE=ok; ENS_VIA=ipns
   elif [ -n "${3:-}" ] && [ "$ENS_ACTUAL" = "$3" ]; then ENS_STATE=ok; ENS_VIA=feed
@@ -341,7 +376,7 @@ collect_site () {
         fi ;;
       none) flag error "$name has no contenthash: set it to $want" ;;
       no-resolver) flag error "$name has no resolver: set one, then set its contenthash to $want" ;;
-      unknown) [ "$KECCAK" = 1 ] && flag warn "Could not read the ENS record of $name (no Ethereum RPC answered)" ;;
+      unknown) [ "$KECCAK" = 1 ] && flag warn "Could not read the ENS record of $name ($ENS_DETAIL)" ;;
     esac
     if [ "$ETH_LIMO" = 1 ]; then
       local code secs
