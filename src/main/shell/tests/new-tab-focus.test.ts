@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import { describe, expect, it, vi } from 'vitest'
-import { watchNewTab, wantsAddressBar } from '../new-tab-focus.js'
+import { KeyboardWaiters, watchFreshTab, watchNewTab, wantsAddressBar } from '../new-tab-focus.js'
 import type { NewTabFocusInput } from '../new-tab-focus.js'
 
 const wanted: NewTabFocusInput = { active: true, freshNewTab: true, windowFocused: true, coveredByIntro: false }
@@ -141,5 +141,30 @@ describe('watchNewTab: when the keyboard is placed', () => {
     await turn()
     expect(later.returnKeyboard).not.toHaveBeenCalled()
     expect(later.placed).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('watchFreshTab', () => {
+  const shellWith = (over: Record<string, unknown> = {}): never => ({ runCommand: vi.fn(), window: { isDestroyed: () => false, isFocused: () => true }, ...over }) as never
+  const tab = { active: () => true, fresh: () => true }
+
+  it('begins waiting for the tab\'s keyboard and gives the bar the keyboard of a fresh tab in front', () => {
+    const shell = shellWith()
+    const keyboard = new KeyboardWaiters()
+    const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
+    watchFreshTab(shell, keyboard, 't1', contents as never, tab)
+    expect((shell as unknown as { runCommand: ReturnType<typeof vi.fn> }).runCommand).toHaveBeenCalledWith('nav.focusAddress')
+    const ran = vi.fn()
+    expect(keyboard.whenPlaced('t1', ran), 'the tab is waiting for its keyboard').toBeTypeOf('function')
+    expect(ran).not.toHaveBeenCalled()
+  })
+
+  it('leaves the keyboard alone for a window that cannot run a command', () => {
+    const keyboard = new KeyboardWaiters()
+    const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
+    watchFreshTab(undefined, keyboard, 't1', contents as never, tab)
+    const ran = vi.fn()
+    expect(keyboard.whenPlaced('t1', ran)).toBeUndefined()
+    expect(ran).toHaveBeenCalledTimes(1)
   })
 })
