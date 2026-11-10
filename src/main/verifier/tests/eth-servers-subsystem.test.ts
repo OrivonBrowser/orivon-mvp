@@ -39,6 +39,7 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
     onBeforeRequest: () => ({ remove }),
     onCompleted: () => ({ remove }),
     onResponseStarted: () => ({ remove }),
+    onHeadersReceived: () => ({ remove }),
     onErrorOccurred: () => ({ remove })
   })
 }))
