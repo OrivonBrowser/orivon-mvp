@@ -2,8 +2,9 @@
 // offline-first app does, on every start after the first). The page such a worker answers is the app's, so it holds the
 // app's grants; a worker the shell did not serve is the network's, and neither installs nor gives grants:
 //
-//   1. The app registers its worker on the first page, and from then on a reload, and a reload with the gateway gone,
-//      are answered by the worker and still show `window.orivon` working (a grant-backed call succeeds).
+//   1. The app registers its worker on the first page, and from then on a reload, another address, Back, a reload with the gateway
+//      gone and the first page after a restart are answered by the worker and still show `window.orivon` working (a grant-backed call
+//      succeeds).
 //   2. In the moment between the shell serving an app and the verifier host learning it, the host answers from the network:
 //      a worker script it hands out has no mark of the shell's, so the worker is refused and never installs. The page it
 //      answered has no grants. Once the host knows, the reload is the shell's, holds its grants, registers the app's own
@@ -15,6 +16,7 @@
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/web3/e2e-allowed-app-worker-answers.test.ts
 import { existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, launchElectron, DEFAULT_ACTION_TIMEOUT_MS } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, tabIds, waitFor } from '../support/smoke-helpers.mjs'
@@ -75,11 +77,12 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-async function openFixtureApp (gateway: Awaited<ReturnType<typeof startFixtureGateway>>): Promise<{ app: Running, chrome: ReturnType<typeof findChrome>, userData: string }> {
+async function openFixtureApp (gateway: Awaited<ReturnType<typeof startFixtureGateway>>, reuseProfile?: string): Promise<{ app: Running, chrome: ReturnType<typeof findChrome>, userData: string }> {
   const app = await launchElectron({
     appPath: '.',
     args: [HERMETIC_RESOLVER],
-    env: { ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_BACKGROUND_PIN_DELAY_MS: '500' }
+    env: { ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_BACKGROUND_PIN_DELAY_MS: '500' },
+    ...(reuseProfile === undefined ? {} : { reuseProfile })
   })
   await stubNativeDialogs(app)
   const listening = await waitFor(async () => await app.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
@@ -91,16 +94,18 @@ async function openFixtureApp (gateway: Awaited<ReturnType<typeof startFixtureGa
   return { app, chrome, userData }
 }
 
-it('[app:allowed-app-worker-keeps-grants] keeps the grants of an allowed site on a page its own service worker answers, on a reload and with the gateway gone', async () => {
+it('[app:allowed-app-worker-keeps-grants] keeps the grants of an allowed site on a page its own service worker answers, on a reload, with the gateway gone and after a restart', async () => {
   await runPhase('allowed app worker keeps grants', async (check) => {
     const gateway = await startFixtureGateway({ worker: await withDeclaredTree(files('Worker app', 'allowed.app.worker')) })
     let app: Running | undefined
     let gatewayOpen = true
+    let profile: string | undefined
     try {
       const opened = await openFixtureApp(gateway)
       app = opened.app
       const running = app
       const { chrome, userData } = opened
+      profile = userData
       const root = gateway.roots['worker']!
       const origin = `https://${root}.ipfs.orivon`
       const url = `${origin}/`
@@ -120,6 +125,17 @@ it('[app:allowed-app-worker-keeps-grants] keeps the grants of an allowed site on
       check(`the worker answers the reload (${JSON.stringify(second)})`, answered && second?.via === 'worker' && second.controlled === 'yes')
       check(`and the page it answered still holds the app's grants (${JSON.stringify(second)})`, second?.grants === 'granted:fs')
 
+      // Another address the worker answers, and Back to the first: a history navigation builds a new document, which the worker answers too.
+      check('the page to leave is marked', await markPage(running, url))
+      await pageValue(running, url, 'setTimeout(() => { location.assign("/?next=1") }, 50); true')
+      let next = null as Facts | null
+      const moved = await waitFor(async () => { next = await factsOf(running, `${url}?next=1`); return next !== null && next.app === 'ran' && next.grants !== null }, 60_000)
+      check(`another page the worker answers holds the grants (${JSON.stringify(next)})`, moved && next?.via === 'worker' && next.grants === 'granted:fs')
+      await pageValue(running, `${url}?next=1`, 'setTimeout(() => { history.back() }, 50); true')
+      let previous = null as Facts | null
+      const returned = await waitFor(async () => { previous = await factsOf(running, url); return previous !== null && !previous.marked && previous.app === 'ran' && previous.grants !== null }, 60_000)
+      check(`and Back to the first page holds them too (${JSON.stringify(previous)})`, returned && previous?.via === 'worker' && previous.grants === 'granted:fs')
+
       await gateway.close()
       gatewayOpen = false
       check('the page to reload is marked again', await markPage(running, url))
@@ -127,12 +143,23 @@ it('[app:allowed-app-worker-keeps-grants] keeps the grants of an allowed site on
       let offline = null as Facts | null
       const again = await waitFor(async () => { offline = await factsOf(running, url); return offline !== null && !offline.marked && offline.app === 'ran' && offline.grants !== null }, 60_000)
       check(`with the gateway gone the worker answers again, with the grants (${JSON.stringify(offline)})`, again && offline?.via === 'worker' && offline.grants === 'granted:fs')
+
+      // A start: the pinned app is served again before any page asks, and the worker the profile kept answers its first page.
+      app = undefined
+      await closeElectronApp(running, APP_CLOSE_RACE_MS, { keepProfile: true })
+      const restarted = await openFixtureApp(gateway, userData)
+      app = restarted.app
+      await clickAddressBarRetrying(restarted.chrome, `ipfs://${root}`)
+      let started = null as Facts | null
+      const back = await waitFor(async () => { started = await factsOf(restarted.app, url); return started !== null && started.app === 'ran' && started.grants !== null }, 60_000)
+      check(`after a restart the worker answers the first page, with the grants (${JSON.stringify(started)})`, back && started?.via === 'worker' && started.controlled === 'yes' && started.grants === 'granted:fs')
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       if (gatewayOpen) await gateway.close()
+      if (profile !== undefined) await rm(profile, { recursive: true, force: true })
     }
   })
-}, TEST_TIMEOUT_MS)
+}, TEST_TIMEOUT_MS * 2)
 
 it('[app:allowed-app-unchecked-worker-never-installs] refuses a service worker script the shell did not answer, so a page the host answered holds no grants through it', async () => {
   await runPhase('allowed app unchecked worker', async (check) => {

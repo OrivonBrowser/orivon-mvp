@@ -19,10 +19,12 @@ answered it (ADR-0108), or when the site's own service worker did. The worker's 
    `navigator.serviceWorker.controller` in its isolated world, and main takes it only from the tab's top frame, for the address
    the document committed at, and forgets it when the next navigation starts.
 4. The worker is the app's. From the moment the shell prepares to serve the origin until it stops, a worker script of that
-   origin (or a script it imports) that the shell did not serve is cancelled when its headers arrive, in every website session:
+   origin (or a script it imports: `importScripts` and the static imports of a module worker both reach the hook as a `script`
+   request with no page behind it, measured in Electron 44) that the shell did not serve is cancelled when its headers arrive, in every website session:
    its response carries no `x-orivon-shell-answered` mark. The guard is armed before the workers a website left are removed
    (`website-workers.ts`), so no worker can be registered between the removal and the serving, and every worker that exists at
-   the origin got its scripts from the shell's handler, which checks each file against the declared tree.
+   the origin got its scripts from the shell's handler, which checks each file against the declared tree. The same preparer
+   runs for the pinned apps the loader restores at a start, because it is registered before the loader is.
 
 Everything else stays denied: a document read from the HTTP cache, a document the network answered (whatever controls it), a
 document for which nothing is known (no response and no controller), a document that committed before the shell served the
@@ -63,7 +65,14 @@ has its own wrappers and prototypes and cannot change what the platform reports 
 `ipcRenderer`. Main takes the report only from the tab's top frame and for the committed address, so a subframe or a
 message about another document is ignored. If the report were absent or false, the document is denied, as it was.
 
-The one thing a page can do is register a worker, and that goes through the shell's check.
+A page of the app can register a worker, and that goes through the shell's check. A document of the origin can also write
+Cache Storage, which a worker may answer from, and nothing checks what it writes. The documents that could are the ones the
+shell did not answer, and while the origin is served the only such documents are the website pages that were open when the
+serving began: the shell loads them again as it starts to serve (`stale-pages.ts`). In the span between the removal of the
+website's caches and that load, such a page could leave an entry that the app's worker later answers with. What it could
+leave is what the verifier served for that name, which is the content the declaration describes, and the grants it reaches
+are those of the app the person accepted. Removing the caches again once those pages are gone would also remove the app's
+own precache, so this stays a limit of the rule (*provisional*: closing the old pages before the removal would settle it).
 
 ## Consequences
 
@@ -75,7 +84,8 @@ The one thing a page can do is register a worker, and that goes through the shel
   never the app's.
 - The guard works on `script` loads with no page behind them, so a dedicated or shared worker's script at such an origin in
   that same moment is refused too. A page the app owns is unaffected: all its requests are the shell's.
-- The report is one IPC message per document that a worker controls, and nothing for any other.
+- The report is one IPC message per document that a worker controls, and nothing for any other. Electron 44 builds a new
+  document for a history navigation (it has no back-forward cache), so Back to a page the worker answered reports again.
 - A worker registered by a build without this guard is not re-checked. A person who wants one gone blocks the site and allows it
   again, which removes the origin's workers when it is next served.
 - An origin the shell serves in a partition of its own (a plain `https` host, a loopback address) is unchanged: its documents

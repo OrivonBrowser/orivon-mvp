@@ -34,6 +34,7 @@ describe('a worker script of a guarded origin', () => {
 })
 
 describe('what is not a worker script', () => {
+  // Measured in Electron 44: a worker's script, its `importScripts` and the static imports of a module worker are all `script` with no page; the shell's own reads (the install's download) are `other` with no page and no mark.
   it('is never refused: a page\'s own script, or any other kind of request', () => {
     guardWorkerScripts(APP)
     expect(refusesWorkerScript(script({ hasPage: true }))).toBe(false)

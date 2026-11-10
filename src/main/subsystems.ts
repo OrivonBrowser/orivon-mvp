@@ -46,6 +46,7 @@ import { diagnosticsSubsystem } from './diagnostics/diagnostics-runner.js'
 import { networkServiceSubsystem } from './sessions/network-service-runner.js'
 import { verifierNetworkServiceSubsystem } from './verifier/network-service-reapply.js'
 import { storageCarrySubsystem } from './storage-carry/install-storage-carry.js'
+import { websiteWorkersSubsystem } from './sessions/website-workers-subsystem.js'
 
 export const subsystems: Subsystem[] = [
   diagnosticsSubsystem, // native crash dumps, collected here and never uploaded -> src/main/diagnostics/. Reads neither ctx.broker nor ctx.loader.
@@ -79,6 +80,8 @@ export const subsystems: Subsystem[] = [
   requestGrantSubsystem, // queue item 4.1: app.requestGrant's mechanism -> src/main/request-grant.ts. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   embedSubsystem, // ADR-0039: pages an app shows inside itself -> src/main/embed/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   childrenSubsystem, // ADR-0046: the hidden child host each app's spawn/fork/thread runs in -> src/main/children/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
+  // The workers a website left are removed, and the worker scripts the shell did not serve are refused, before an app runs where websites run -> src/main/sessions/website-workers-subsystem.ts. Must stay above loaderSubsystem: it restores the pinned apps at start-up, and each is prepared by this subsystem's preparer. Reads ctx.routes -- must stay below routeSubsystem. Reads neither ctx.broker nor ctx.loader.
+  websiteWorkersSubsystem,
   // build step 3: shim      -> src/shim/
   loaderSubsystem, // build step 4: loader -> src/loader/
   appInstallSubsystem, // queue item S4-4: install-time consent -> src/main/app-install.ts. Reads ctx.broker AND ctx.loader -- must stay below both brokerIpcSubsystem and loaderSubsystem.
