@@ -68,7 +68,7 @@ export interface WebGpuState {
 /** Chromium reports a CPU renderer under Google's SwiftShader id, or under Mesa's software id. */
 const SOFTWARE_VENDORS: ReadonlySet<number> = new Set([0x1ae0, 0x10005])
 
-/** The makers whose adapters Chromium's Dawn accepts on Windows: AMD, Intel, NVIDIA, Qualcomm (only with recent drivers, which a report cannot show) and Microsoft, whose WARP is a software renderer Dawn takes. */
+/** The makers whose adapters Chromium's Dawn accepts on Windows: AMD, Intel, NVIDIA, Qualcomm (only with recent drivers, which a report cannot show) and Microsoft, whose WARP is not a maker to blame: when pages are drawn on the processor that is the reason given, and otherwise nothing shows it was refused. */
 const WINDOWS_MAKERS: ReadonlySet<number> = new Set([0x1002, 0x8086, 0x10de, 0x5143, 0x1414])
 
 /** A feature Chromium reports as off, as opposed to one it does not report at all. */
@@ -110,11 +110,13 @@ function unlisted (devices: readonly GpuDevice[] | undefined): WebGpuState {
   return result('unavailable', 'gpu-not-listed', `WebGPU is off because Chromium gave ${gave}. On Linux it does that for every card and driver not on its list.`)
 }
 
-/** Whether pages are drawn on the processor: Chromium blocks WebGPU there. Windows is left out because its software
- * renderer (WARP) is a device Chromium accepts. */
+/** Whether pages are drawn on the processor: Chromium blocks WebGPU there. On Windows only Chromium's own status for
+ * WebGPU counts: compositing can fall back to the processor (a blocklisted driver, a remote session) while WebGPU
+ * still works, and a device list cannot tell a software renderer from a card Dawn accepts. A computer whose only
+ * device is Microsoft's Basic Render Driver (WARP) reports `webgpu` as `unavailable_software`. */
 function drawsInSoftware (inputs: WebGpuInputs): boolean {
-  if (inputs.platform === 'win32') return false
   const { features, devices } = inputs
+  if (inputs.platform === 'win32') return isSoftware(features['webgpu'])
   if (isSoftware(features['gpu_compositing']) || isSoftware(features['webgpu'])) return true
   return devices !== undefined && devices.every(isSoftwareDevice)
 }
