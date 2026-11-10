@@ -69,9 +69,10 @@ Sonnet charge the same for that re-read. So:
 ## At the end of a notable session
 
 A milestone, a decision taken or reversed, a direction change, a worry the owner kept returning
-to: append one bullet to the current week of `devlog/journal.md`, **Done / results** for
-outcomes, **In my head** for thinking. At most 25 words; `npm run check:devlog` checks it.
-Skip routine sessions.
+to: append one bullet to the current week of `devlog/journal.md` in the main checkout (the
+parent of `git rev-parse --path-format=absolute --git-common-dir`), never a worktree's;
+the file is local and gitignored. **Done / results** for outcomes, **In my head** for
+thinking. At most 25 words. Skip routine sessions.
 
 ## Opening and editing a PR
 
