@@ -13,9 +13,9 @@ export interface ProxyResolver {
 }
 
 /**
- * How long a session may take to say which proxy it would use. Automatic detection and a PAC script answer the first
- * question after a start or a change of network slowly, while the system tries one place after another for the script, and
- * a request that waits is not sent: the wait costs a page its load time and nothing else.
+ * How long a session may take to say which proxy it would use. A request that waits is not sent: the wait costs a page its
+ * load time and nothing else. A session that would run the system's own detection or script is not asked about a name at all
+ * (`system-code.ts`), so a slow answer from either never holds one.
  */
 export const PROXY_ASK_TIMEOUT_MS = 15_000
 /** How long a request waits for a change of its session's proxy to end before it asks which proxy applies. */
