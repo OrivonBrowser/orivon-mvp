@@ -50,7 +50,10 @@ export class FrontRefusal extends Error {
 export interface RouteFrontOptions {
   /** Read on every request, so a changed proxy applies to the next one. Undefined, or left out when `open` is given, means the app has no proxy to go through, and the front refuses. */
   readonly provider?: () => RouteProvider | undefined
-  /** Reaches a target in place of `provider().connect`, with the same contract: the stream comes back paused. A rejection refuses the request, with the reason when it is a `FrontRefusal`. */
+  /**
+   * Reaches a target in place of `provider().connect`, with the same contract: the stream comes back paused. A rejection refuses the request, with the reason when it is a `FrontRefusal`.
+   * The front refuses only a wrong secret, a malformed target and a routed name written with the root dot before calling it, so `open` refuses a routed name and an onion name itself.
+   */
   readonly open?: (target: FrontTarget) => Promise<Socket>
   /** Called once when the front stops listening, whoever closed it. */
   readonly onClosed?: () => void

@@ -16,7 +16,7 @@ import { hasOwnPartition } from '../shell/app-session.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
-import { answerRouteChallenge, lookupSessionFor, setDirectLookupSource, setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
+import { answerChallengeOnly, answerRouteChallenge, lookupSessionFor, setDirectLookupSource, setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
 import { followsSystem, hasOwnProxy, markFollowsSystem, markOwnProxy } from './own-proxy.js'
 import { migrateRouteKinds, moveNymProfileToProxy } from './kinds-migration.js'
 import { migrateLegacySites } from './legacy-sites.js'
@@ -213,7 +213,7 @@ export const routeSubsystem: Subsystem = {
     setMirrorStatusSource(proxyMirror.status)
     setDirectLookupSource(() => routes.everywhere() ? systemMirrorSession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
-    const directFetch = createDirectFetch(net, systemMirrorSession(), answerRouteChallenge)
+    const directFetch = createDirectFetch(net, systemMirrorSession(), answerChallengeOnly(() => nameRelay?.credentials))
     // A website with a tunnel of its own, or one a tab with a tunnel choice shows or is loading, is asked about (its app manifest, its files by the loader) in that tunnel's profile session, never the default one, which is direct while the whole browser is off the tunnel and may be the other tunnel when it is on.
     const siteTunnelled = (origin: string): boolean => {
       const profile = routes.hub.profileFor(origin)
