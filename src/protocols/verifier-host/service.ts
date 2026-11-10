@@ -14,8 +14,9 @@ import { startProtocols } from './protocols.js'
 import { startTunnelProtocols } from './tunnel-protocols.js'
 import { NodeLinks } from './node-link.js'
 import { GatewayConsent } from './gateway-consent.js'
-import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, SiteProvenance, TunnelRoute } from './protocol.js'
+import type { FromHost, NodeNotice, HostConfig, HostReplies, HostRequest, LightClientConfig, LightClientState, RelayToHost, ShellServes, SiteProvenance, TunnelRoute } from './protocol.js'
 import { createVerifierServer } from './serve/server.js'
+import { ShellRelay } from './serve/shell-relay.js'
 import type { LightClientPace } from './pace.js'
 import { paceOn } from './pace.js'
 import type { RoutePace } from '../route-pace.js'
@@ -78,6 +79,8 @@ export interface RunningHost {
   node: (notice: NodeNotice) => void
   /** Whether a name service may be asked for an IPNS record after the IPFS node, from the next lookup. */
   ipfsLookup: (allowed: boolean) => void
+  /** What the shell says about the hosts it serves from a copy it keeps: the set of them, or the answer to a request it was handed. */
+  shell: (message: ShellServes | RelayToHost) => void
 }
 
 /** A site mounted from gateways with a reason was mounted because the person's node could not serve it and they said yes for that load (`ServedFrom`): no other mount gives a reason. */
@@ -108,8 +111,10 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   }
   const sites = new RoutedSites(sitesOf(registry, route), (tunnel) => tunnelSet(tunnel).sites)
   const certificate = createRunCertificate()
-  const server = createVerifierServer(registry, sites, certificate, undefined, { direct: route, tunnel: (tunnel) => tunnelSet(tunnel).route }, consent)
-  server.once('close', () => { deps.chunkChecks?.close() })
+  const shell = new ShellRelay({ post: deps.post, ownReadToken: config.shell?.ownReadToken })
+  shell.setServed(config.shell?.origins ?? [])
+  const server = createVerifierServer(registry, sites, certificate, undefined, { direct: route, tunnel: (tunnel) => tunnelSet(tunnel).route }, consent, shell)
+  server.once('close', () => { shell.dispose(); deps.chunkChecks?.close() })
   await new Promise<void>((resolve, reject) => {
     server.once('error', reject)
     server.listen(config.port, '127.0.0.1', () => {
@@ -138,6 +143,10 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
     fingerprint: certificate.fingerprint,
     answer,
     node: (notice) => { nodes.notice(notice) },
-    ipfsLookup: (allowed) => { controls.lookupService = allowed }
+    ipfsLookup: (allowed) => { controls.lookupService = allowed },
+    shell: (message) => {
+      if (message.type === 'shell-serves') shell.setServed(message.origins)
+      else shell.receive(message)
+    }
   }
 }

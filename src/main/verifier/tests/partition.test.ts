@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { requestPartition, withPartition, withRoute } from '../partition.js'
+import { originOf, requestPartition, withoutHttpCache, withPartition, withRoute } from '../partition.js'
 
 describe('requestPartition', () => {
   it('gives a top-level navigation the partition of the page it opens', () => {
@@ -16,6 +16,21 @@ describe('requestPartition', () => {
     expect(requestPartition({ url: 'https://a.eth/', resourceType: 'xhr', topUrl: undefined })).toBeUndefined()
     expect(requestPartition({ url: 'https://a.eth/', resourceType: 'image', topUrl: 'about:blank' })).toBeUndefined()
     expect(requestPartition({ url: 'https://a.eth/', resourceType: 'image', topUrl: 'file:///home/x/index.html' })).toBeUndefined()
+  })
+})
+
+describe('originOf', () => {
+  it('is the origin of an address, and undefined for one with none', () => {
+    expect(originOf('https://app.ipfs.orivon/a/b.js?x=1')).toBe('https://app.ipfs.orivon')
+    expect(originOf('data:text/plain,hello')).toBeUndefined()
+    expect(originOf('not a url')).toBeUndefined()
+  })
+})
+
+describe('withoutHttpCache', () => {
+  it('adds the condition the HTTP cache passes through, replacing one the page set in any case', () => {
+    expect(withoutHttpCache({ Accept: '*/*' })).toEqual({ Accept: '*/*', 'If-Match': '*' })
+    expect(withoutHttpCache({ 'if-match': '"abc"', Accept: '*/*' })).toEqual({ Accept: '*/*', 'If-Match': '*' })
   })
 })
 

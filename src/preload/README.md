@@ -1,8 +1,8 @@
 # `src/preload/`: the privilege boundary
 
-**What lives here.** Twelve preload scripts at twelve privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
-`permissions.ts`, `site-info.ts`, `overlay.ts`, `split-frame.ts`, `drop-catcher.ts`, `internal.ts`, `embed.ts`,
-`child-host.ts` and `extension-api.ts`), the
+**What lives here.** Thirteen preload scripts at thirteen privilege levels (`app.ts`, `shell.ts`, `newtab.ts`,
+`permissions.ts`, `site-info.ts`, `overlay.ts`, `split-frame.ts`, `drop-catcher.ts`, `storage-carry.ts`, `internal.ts`,
+`embed.ts`, `child-host.ts` and `extension-api.ts`), the
 app-tab wiring they share (`manifest-hint.ts`, `expose-shim-globals.ts`, `expose-fetch-route.ts`,
 `page-buffer.ts`, `embed-event-relay.ts`, `page-visibility.ts`, `no-drag-regions.ts`, `display-capture.ts`, `display-canary.ts`, `hid-announce.ts`, `permission-query.ts`, `webgpu-ask.ts`, `ordinary-tab.ts`, `navigation-source.ts`), the sign-in form watcher (`form-watch.ts`, with
 the decisions it makes in `login-fields.ts`), the app-tab key report (`page-keys.ts`, `find-chord.ts`), and
@@ -49,6 +49,7 @@ across this boundary.
 | `overlay.ts` | only an overlay view (`src/main/overlays/overlay-view.ts`), and only at the exact URL main built for it | `orivonOverlay`: which overlay this is, `ready`, `request`, `size`, `close` and `onEvent`; `src/main/overlays/overlay-ipc.ts` re-verifies the sender on every call, and the host runs only the handler of the overlay the view was built for |
 | `split-frame.ts` | only the view behind a split (`src/main/shell/split-frame.ts`) | `orivonSplit`: what to draw, whether the window is a private one, and drag the divider to a place or reset it |
 | `drop-catcher.ts` | only the transparent view over a window's page while a tab is dragged (`src/main/shell/drop-catcher.ts`), and only at its expected URL | nothing: it listens for the drag's events on its own document and reports where they were to main; only a drag carrying the tab type is touched |
+| `storage-carry.ts` | only a hidden page of the storage carry (`src/main/storage-carry/carry-pages.ts`), in the top frame and at the exact URL main built for it | nothing: it hands the page the message port main sends it, in a message that names the carry's nonce, so the carry's script can take it; a page that is anywhere else gets nothing |
 | `internal.ts` | only a tab the shell opened as one of its own pages (`src/main/pages/`: Settings, History, ...) | `orivonInternal`: one `request(domain, command)` and one `onEvent`, after checking the document's scheme and host against the page the shell named; `src/main/pages/internal-ipc.ts` decides on every call what the page may reach |
 | `site-info.ts` | only the per-site popup (`src/main/permissions/site-info-panel.ts`) | `orivonSiteInfo`: this site's info, switches, picked paths and browser data |
 | `embed.ts` | only a page an app shows inside itself (`src/main/embed/embed-host.ts` sets it on every `<webview>` guest; ADR-0039) | Nothing on `window`: runs the script set with `orivon.web.setEmbedScript` before the page's own code, handing it `orivonEmbed`; also installs `./page-dialogs.ts`'s wrapper, so the shown page's `prompt` is asked in the app's tab |

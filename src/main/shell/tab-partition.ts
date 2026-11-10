@@ -1,11 +1,10 @@
 // Which Electron session a tab's view runs in, and whether it carries the app-tab
 // flag: the two facts a navigation can change, decided from the target URL alone.
 // Split out of tab-view.ts, which re-exports every name here.
-import type { WebContentsView } from 'electron'
-import { partitionFor } from '../../broker/grants/origin-hash.js'
+import type { WebContents, WebContentsView } from 'electron'
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '../local-files/partition.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { appSessionPartition } from './app-session.js'
 import type { Broker } from '../../broker/broker-contracts.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
 import { sitePartitionForTab } from '../route/site-routes.js'
@@ -16,15 +15,19 @@ import type { TabTunnelChoice } from '../route/tab-tunnel.js'
  * `appTabArgsFor` gives below; within this file it is one constant. */
 export const APP_TAB_FLAG = '--orivon-app-tab'
 
-/** Which Electron session `target` must run in: its own isolated partition,
- * or undefined for the shell's shared default session.
+/** Which Electron session `target` must run in: its own isolated partition, a tunnel
+ * profile's, or undefined for the shell's shared default session.
  *
- * ONLY a cache-served origin gets its own partition. ADR-0007 intercepts a
- * cached bundle with `protocol.handle`, scoped to one session, so an origin
- * served from cache whose tab sat on the default session could not load at
- * all; nothing there answers its scheme. This reads the registry
- * `registerAppOrigin` itself writes -- deciding it from a different one
- * makes a served app unreachable.
+ * An allowed app runs where a website at its origin runs, with a website's
+ * session, tunnel and identity, when the shell can serve its kept copy there: the
+ * verifier hands every request for a host a protocol serves to the shell, which
+ * answers with the app's own handler (`../verifier/shell-serves.ts`), and the
+ * person's extensions are loaded in that session (`./app-session.ts` says when).
+ * Any other served origin (a plain https host, a loopback address) gets a
+ * partition of its own: ADR-0007 intercepts a cached bundle with
+ * `protocol.handle`, scoped to one session, and nothing else answers its
+ * scheme. This reads the registry `registerAppOrigin` itself writes --
+ * deciding it from a different one makes a served app unreachable.
  *
  * A held grant, on its own, is not isolated: a Chrome extension runs as one
  * instance across every page, granted or not, so a granted app shares the
@@ -36,9 +39,11 @@ export const APP_TAB_FLAG = '--orivon-app-tab'
  * the shared one before (`localPartitionFor`).
  *
  * A website whose tunnel state differs from the browser's default runs in a session of its own
- * (`../route/site-partition.ts`), which an installed app never needs: its own partition is already apart.
- * A tab with a tunnel choice puts every website it opens in that choice's profile (`../route/tab-tunnel.ts`), so
- * every caller that decides a session for a tab passes the tab's choice (`partitionForTab`).
+ * (`../route/site-partition.ts`), which an installed app with a partition of its own never needs: its own route decides its
+ * session, and a tab's tunnel choice does not apply to it. An allowed app that runs as a website (`./app-session.ts`) has the
+ * website's rule whole: its entry's profile, or the shared session. A tab with a tunnel choice puts every website it opens in
+ * that choice's profile (`../route/tab-tunnel.ts`), so every caller that decides a session for a tab passes the tab's choice
+ * (`partitionForTab`).
  *
  * `originFromUrl` derives an origin only for `http:`/`https:`, so a
  * `chrome-extension:` target always answers undefined: tabs.ts's
@@ -49,8 +54,11 @@ export function partitionForTab (target: string, choice: TabTunnelChoice | undef
   if (local !== undefined) return local
   const origin = originFromUrl(target)
   if (origin === null) return undefined
+  // An app that runs as a website has a website's session, tunnel profile included; any other app that is served has the partition of its own.
+  const own = appSessionPartition(origin)
+  if (own !== undefined) return own
   // A website whose tunnel state differs from the browser's default keeps its storage apart from the shared session.
-  return isOriginServedFromCacheSync(origin) ? partitionFor(origin) : sitePartitionForTab(origin, choice)
+  return sitePartitionForTab(origin, choice)
 }
 
 /** `partitionForTab` for a caller with no tab: the session an address gets from its own entry alone. */
@@ -134,12 +142,21 @@ export function appTabArgsFor (target: string, broker: Broker | undefined): stri
 /** Whether `target` needs the app-tab flag `view` does not already carry, or vice
  * versa -- a partition follows CACHE-SERVING (`partitionForTarget`) but this flag
  * follows REGISTRATION (`isRegisteredSync`), so a navigation between a registered
- * app that is not cache-served and an ordinary site can cross this without the
- * partition ever changing. Undefined for a target with no derivable origin, same as
+ * app that shares the session websites run in (a granted network-served app, an allowed
+ * Web3 site) and an ordinary site, or the first load of an app as the app after its
+ * visit as a website, crosses this without the partition ever changing. Undefined for a target with no derivable origin, same as
  * `partitionChanged` -- a rejected navigation must not read as a flag change either. */
 export function appTabFlagChanged (target: string, view: WebContentsView, broker: Broker | undefined): boolean {
   if (originFromUrl(target) === null) return false
   return (appTabArgsFor(target, broker) !== undefined) !== appTabViews.has(view)
+}
+
+/** Whether `target` needs the app-tab flag and `view` was built without it: the half of `appTabFlagChanged` whose first
+ * request must not commit in the view, because the page it reaches would run with the routed `fetch` missing
+ * (pre-partition.ts stops such a navigation before it starts). Leaving an app for a website only drops the flag, and that
+ * swap waits for `did-navigate`. */
+export function appTabFlagGained (target: string, view: WebContentsView, broker: Broker | undefined): boolean {
+  return originFromUrl(target) !== null && appTabArgsFor(target, broker) !== undefined && !appTabViews.has(view)
 }
 
 /** The views built with APP_TAB_FLAG. Electron cannot read a view's
@@ -147,6 +164,9 @@ export function appTabFlagChanged (target: string, view: WebContentsView, broker
  * still matches what its origin needs (tab-parking.ts's takeParkedView, the
  * one outside reader -- exported for that, not for general use). */
 export const appTabViews = new WeakSet<WebContentsView>()
+
+/** The pages of the views in `appTabViews`: the document-level check (`../sessions/session-attribution.ts`) and an opener (`./popup-opener.ts`) know a page, not its view. */
+export const appTabContents = new WeakSet<WebContents>()
 
 /** The views built with the new-tab page's preload (tab-view.ts's `makeDashboardView`), for the same reason: only
  * such a view can be the new-tab page, and any other view at that address is an ordinary page. */

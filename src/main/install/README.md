@@ -93,4 +93,6 @@ cache all reach the very next load with nothing to re-register.
 last among that session's `onHeadersReceived` handlers so Orivon's own policy is applied after
 anything else. A cache-served origin's network-delivered document, committed in the default session
 before its tab moves to the app's partition, gets this policy too; its pinned copy, served through
-`protocol.handle`, never reaches this handler and carries its CSP from `csp.ts` (A110).
+`protocol.handle`, never reaches this handler and carries its CSP from `csp.ts` (A110). An app that runs in the default
+session is served through the verifier (`../shell/app-session.ts`), so its pinned copy reaches this handler as well and
+carries the policy twice, which the browser enforces together.

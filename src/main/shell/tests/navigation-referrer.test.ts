@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { documentPolicyOf, parseReport, referrerFor } from '../navigation-referrer.js'
+import { carriesNoBody, documentPolicyOf, parseReport, referrerFor } from '../navigation-referrer.js'
 import type { NavigationReferrer, NavigationReport, NavigationSource } from '../navigation-referrer.js'
 
 // The rule these tests hold: a navigation the shell re-issues carries what Chromium would have sent, or less.
@@ -162,6 +162,13 @@ describe('parseReport', () => {
     expect(parseReport({ ...good, source: undefined })?.source).toBeUndefined()
   })
 
+  it('keeps whether the navigation submits a form, and drops anything but a boolean', () => {
+    expect(parseReport({ ...good, post: true })?.post).toBe(true)
+    expect(parseReport({ ...good, post: false })?.post).toBe(false)
+    expect(parseReport({ ...good, post: 'yes' })).not.toHaveProperty('post')
+    expect(parseReport(good)).not.toHaveProperty('post')
+  })
+
   it.each([undefined, null, 'x', 4, [], { href: 1 }, { href: 'x', documentUrl: 'x', destination: 1 }])('rejects %j', (value) => {
     expect(parseReport(value)).toBeUndefined()
   })
@@ -177,5 +184,25 @@ describe('parseReport', () => {
     expect(parseReport({ ...good, source: { kind: 'element', rel: null, referrerPolicy: null } })).toBeUndefined()
     expect(parseReport({ ...good, source: { kind: 'other' } })).toBeUndefined()
     expect(parseReport({ ...good, source: 'a' })).toBeUndefined()
+  })
+})
+
+describe('carriesNoBody', () => {
+  const noteFor = (extra: object = {}): NonNullable<ReturnType<typeof parseReport>> => parseReport({ href: SOURCE, documentUrl: SOURCE, metaPolicies: [], destination: TARGET, source: { kind: 'script' }, post: false, ...extra })!
+
+  it('is true only when the page said this navigation submits no form', () => {
+    expect(carriesNoBody(SOURCE, TARGET, noteFor())).toBe(true)
+    expect(carriesNoBody(SOURCE, TARGET, noteFor({ post: true }))).toBe(false)
+    expect(carriesNoBody(SOURCE, TARGET, parseReport({ href: SOURCE, documentUrl: SOURCE, metaPolicies: [], destination: TARGET, source: { kind: 'script' } }))).toBe(false)
+    expect(carriesNoBody(SOURCE, TARGET, undefined)).toBe(false)
+  })
+
+  it('is false when the note is about another navigation or another document', () => {
+    expect(carriesNoBody(SOURCE, TARGET, noteFor({ destination: 'https://c.eth/' }))).toBe(false)
+    expect(carriesNoBody('https://a.eth/other', TARGET, noteFor())).toBe(false)
+  })
+
+  it('does not tell a hash edit from the same navigation', () => {
+    expect(carriesNoBody(SOURCE, TARGET, noteFor({ destination: `${TARGET}#top` }))).toBe(true)
   })
 })

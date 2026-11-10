@@ -46,6 +46,7 @@ import { wireTabSignals } from './tab-signals.js'
 import { readableNow } from '../reader/reader-signal.js'
 import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, dashboardViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTab } from './tab-partition.js'
 import { noteTabVisit } from './tab-tunnel-facts.js'
+import { isWebsitePageOfApp } from './app-session.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
 export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, dashboardViews, partitionAfterFileBlock, partitionChanged, partitionForTab, partitionForTarget } from './tab-partition.js'
@@ -428,7 +429,7 @@ export function wireView (id: string, record: TabRecord): void {
     openExternal: (url) => { void askExternalLink(wc, url).then((allowed) => { if (allowed) return shell.openExternal(url) }).catch(() => {}) },
     leaveFor: (url, from) => leaveForOpen(record, from.url, url, from.partition),
     chooseLeave: async (leave) => await chooseLeave(wc, leave)
-  }, () => ({ url: wc.getURL(), partition: record.partition })))
+  }, () => { const url = wc.getURL(); return { url, partition: record.partition, websitePageOfApp: isWebsitePageOfApp(url, appTabViews.has(record.view)) } }))
   wireTabSignals(id, record)
 }
 

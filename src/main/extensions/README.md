@@ -207,6 +207,19 @@ right end (`extension-action-anchor.ts`). A virtual display never reports a page
 so the library measures the page's content after half a second, and again while it still renders; a real display's size, and the placement
 on Wayland, are *provisional* until a person's desktop shows them.
 
+**A toolbar click opens the popup whatever page is in front.** A click, `chrome.action.openPopup()` and a command key
+(`_execute_action`) act on what is in front of the window they belong to when they run, not on the tab a toolbar last
+drew. An `orivon:` page, or a tab of a session no extension is in, is in none of the instances' tabs, and
+`extension-host.ts`'s `tabActivated` tells every instance that no tab of theirs is in front of that window (the cached
+`active` of the window's tabs goes false with it); its `frontTracked` answers whether the front page is a tab any
+instance tracks. Over a page none tracks the popup opens under that window with no tab (UPSTREAM.md patch 76): its
+`chrome.tabs.query({ active: true, currentWindow: true })` finds no tab, and `getContexts` reports it with tab `-1`, as in
+Chrome on a `chrome://` page. `onClicked` carries a tab, so an action with no popup hears nothing; no tab-capture
+invocation is recorded; and the side panel's click interceptor (`side-panel-runner.ts`) is given the window, so an
+`openPanelOnActionClick` extension's panel opens in it. Over a tab of another instance (a profile session's) an instance
+opens nothing: the toolbar speaks to the instance of the front tab, `openPopup` returns, and a command key, which speaks to
+the default session's instance alone, finds no popup to open.
+
 **The Chrome Web Store page keeps its own `chrome.webstorePrivate`.** Every extension load makes the
 renderer rebuild `chrome.*`; the preload defines `webstorePrivate` and `management` as accessors that
 refuse redefinition (UPSTREAM.md of `vendor/electron-chrome-web-store`, patch 8), because the native
@@ -250,7 +263,8 @@ the popup as a click on the icon does, under the icon or else the Extensions but
 `ElectronChromeExtensions.sendCommand` with the active tab, and counts as an invocation of the
 extension on that tab. A tab no extension can see (an Orivon page, or a tab in a session with no extensions, such as an app run from
 its pinned copy) is passed as no tab: a named command still reaches the extension and the key is consumed,
-while `_execute_action` and `_execute_side_panel` do nothing and leave the key with the page. A site that holds
+`_execute_action` opens the popup in the window with no tab, as a click on the icon does there (UPSTREAM.md patch 76),
+and `_execute_side_panel` does nothing and leaves the key with the page. A site that holds
 Orivon permissions is a tab like any other. `commands.getAll` (`api/commands-api.ts`) answers with the live key. The
 table is empty until `installShortcuts` says the saved shortcuts are read, because a lookup before
 that would cache the defaults. The macOS reading of `Command` and `MacCtrl` is *provisional*: it
@@ -276,20 +290,24 @@ extension is removed, or within a few seconds after it is loaded again, is navig
 extension is back: the failure can be reported after the reload ended, when the tab held no URL yet.
 The extension's hidden offscreen document is never navigated.
 
-**[`site-reach.ts`](site-reach.ts) returns none for an origin served from its pinned cache,
+**[`site-reach.ts`](site-reach.ts) returns none for an app that runs in a partition of its own,
 without ever looking at the installed extensions.** ADR-0045 has extensions run on every page,
 including a site that holds grants, with its page menu entries, command keys, side panel,
-`webRequest` and `declarativeNetRequest` rules and `chrome.tabCapture`. An app run from its pinned copy
-has a session of its own that no extension reaches: no content script, request, menu entry, tab API or side panel,
-and a named command key reaches an extension with no tab. Only history is shared, since it is the person's one list
-for every session: `chrome.history` and `chrome.topSites` list that app's pages. `GRANTED_APPS_CLAUSE`
-(`../../broker/policy/extension-manifest.ts`) already carries the one exception: "except an app
-running from its pinned copy". Naming extensions on such an origin's site-info popup or grant
-prompt would say something false, so this file matches that exception exactly rather than
-letting its own answer drift from what the install prompt and the extensions page already say.
-The check is an injected predicate (`isOriginServedFromCacheSync`, real implementation in
-`../../loader/electron/serve.ts`), so this file stays pure and testable against a fake, the same
-shape [`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts)'s
+`webRequest` and `declarativeNetRequest` rules and `chrome.tabCapture`, and an allowed Web3 site
+runs in the session websites run in (`../shell/app-session.ts`), so they reach it as they reach any
+website; one with a tunnel entry of its own runs in that entry's profile session, as a website does, and the
+extensions loaded there reach it. An app that runs in a partition of its own (a plain `https` host or a
+loopback address the shell serves from a kept copy) has a session that no extension reaches: no content
+script, request, menu entry, tab API or side panel, and a named command key reaches an extension with no tab.
+Only history is shared, since it is the person's one list for every session: `chrome.history` and
+`chrome.topSites` list that app's pages. `GRANTED_APPS_CLAUSE`
+(`../../broker/policy/extension-manifest.ts`) carries the one exception: "except an app that runs in a
+session of its own". Naming extensions on such an origin's site-info popup or grant prompt would say
+something false, so this file matches that exception exactly rather than letting its own answer drift from
+what the install prompt and the extensions page already say. The check is an injected predicate
+(`runsApart`, real implementation `hasOwnPartition` in `../shell/app-session.ts`), so this file stays pure
+and testable against a fake, the same shape
+[`../permissions/site-info-controller.ts`](../permissions/site-info-controller.ts)'s
 `SiteTrustSources` already uses it in.
 
 **Why `loadableManifest` (`../../broker/policy/extension-manifest.ts`) strips `webRequest*`,

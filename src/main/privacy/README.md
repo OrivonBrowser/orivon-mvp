@@ -55,11 +55,16 @@ every five minutes. The other values keep their meaning, and a forced-off run ne
 so site data and the cache are all or nothing, and the page says so.
 
 **An app's storage is a separate choice, only for a cache-served app.** Such an app keeps working data (a
-signed-in session, a local database) in its own session, so clearing "cookies and site data" never reaches it;
-choosing App data clears every cache-served app's own session instead, leaving the files an app saved in its
-own folder, its permissions and its installed code untouched. A granted-without-install app has no session of
-its own: its storage sits in the same session ordinary websites use, so "cookies and site data" reaches it and
-App data does not.
+signed-in session, a local database) apart from the websites', so clearing "cookies and site data" never
+reaches it; choosing App data clears it instead, leaving the files an app saved in its own folder, its
+permissions and its installed code untouched. Where it sits depends on the app. One with a partition of its own
+(a plain https host, loopback) has every byte in that partition. One that runs where websites run (a host the
+verifier answers) stores under its origin in the websites' sessions, the shared one and the profile of its tunnel
+entry: "cookies and site data" clears those sessions with its origin excluded (`ClearDeps.appOrigins`), and App data
+clears that origin there, so the two choices never overlap. The Cache API cannot be told by origin, so "cookies and
+site data" empties it for every origin of the session, an app's too: it is a cache that the app fills again. A
+granted-without-install app has no session of its own: its storage sits in the same session ordinary websites use,
+so "cookies and site data" reaches it and App data does not.
 
 **One part failing does not stop the others.** The result names what could not be cleared.
 
@@ -76,7 +81,7 @@ interface: `test/sites/e2e-global-privacy-control.test.ts` fails on a build that
 
 **The other network controls cover the default session only.** That is where ordinary tabs and network-served apps
 run. Extension pages and `orivon:` pages are never filtered (the filters name `http` and `https`, and a request
-whose top document is not a web page is treated as first party), and an app's own partition is not covered.
+whose top document is not a web page is treated as first party), and a partition an app runs in on its own is not covered; an allowed Web3 app that runs in the default session is.
 
 **A handler is on the owner only while a setting needs it, and reads its setting per request.** The HTTPS upgrade is
 registered while `privacy.httpsOnly` is on, the request-header handler while Do Not Track is on or third-party cookies are

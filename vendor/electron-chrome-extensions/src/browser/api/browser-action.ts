@@ -42,15 +42,20 @@ export function setTabCaptureInvocationRecorder(recorder: TabCaptureInvocationRe
 // click was handled elsewhere (a side panel, an omnibox), so no popup and
 // no onClicked. Both are set once, before the first activation.
 let gActionVisibilityCheck: ((extensionId: string) => boolean) | undefined
-let gActionClickInterceptor: ((extensionId: string, tab: Electron.WebContents) => boolean) | undefined
+// Orivon patch (UPSTREAM.md patch 76): `tab` is undefined when the page in front of `window` is one no
+// extension instance tracks (an Orivon page, a tab of a session no extension is loaded into).
+type ActionClickInterceptor = (
+  extensionId: string,
+  tab: Electron.WebContents | undefined,
+  window: Electron.BaseWindow,
+) => boolean
+let gActionClickInterceptor: ActionClickInterceptor | undefined
 
 export function setActionVisibilityCheck(check: (extensionId: string) => boolean): void {
   gActionVisibilityCheck = check
 }
 
-export function setActionClickInterceptor(
-  intercept: (extensionId: string, tab: Electron.WebContents) => boolean,
-): void {
+export function setActionClickInterceptor(intercept: ActionClickInterceptor): void {
   gActionClickInterceptor = intercept
 }
 
@@ -145,7 +150,7 @@ export class BrowserActionAPI {
   // Orivon patch (UPSTREAM.md, patch 33): the tab `this.popup` was opened
   // for -- getOpenPopup() below is chrome.runtime.getContexts()'s only way
   // to report a POPUP context's tabId, since PopupView itself carries no
-  // tab of its own.
+  // tab of its own. Patch 76: undefined for a popup opened with no tab.
   private popupTabId?: number | undefined
 
   private observers: Set<Electron.WebContents> = new Set()
@@ -403,15 +408,16 @@ export class BrowserActionAPI {
   // Chrome allows only one open popup at a time session-wide, matching
   // `this.popup` already being a single field, not a map.
   getOpenPopup(): { extensionId: string; webContents: Electron.WebContents; tabId: number } | undefined {
-    if (!this.popup || this.popup.isDestroyed() || this.popupTabId === undefined) return undefined
+    if (!this.popup || this.popup.isDestroyed()) return undefined
     const { webContents } = this.popup
     if (webContents.isDestroyed()) return undefined
-    return { extensionId: this.popup.extensionId, webContents, tabId: this.popupTabId }
+    // Orivon patch (UPSTREAM.md patch 76): -1, Chrome's "not hosted in a tab", for a popup opened with no tab.
+    return { extensionId: this.popup.extensionId, webContents, tabId: this.popupTabId ?? -1 }
   }
 
-  private getPopupUrl(extensionId: string, tabId: number) {
+  private getPopupUrl(extensionId: string, tabId: number | undefined) {
     const action = this.getAction(extensionId)
-    const tabPopupValue = action.tabs[tabId]?.popup
+    const tabPopupValue = tabId === undefined ? undefined : action.tabs[tabId]?.popup
     const actionPopupValue = action.popup
 
     let popupPath: string | undefined
@@ -503,10 +509,12 @@ export class BrowserActionAPI {
   }
 
   // Orivon patch (UPSTREAM.md patch 46): a click on `extensionId`'s action
-  // for `tab`, started by Orivon's own trusted code (a menu entry, a
-  // shortcut): counted as an invocation exactly like a toolbar click.
-  activateFromMain(extensionId: string, tab: Electron.WebContents, anchor: Electron.Rectangle): void {
-    this.activateClick({ eventType: 'click', extensionId, tabId: tab.id, anchorRect: anchor }, true)
+  // in `window`, started by Orivon's own trusted code (a menu entry, a
+  // shortcut): counted as an invocation exactly like a toolbar click, and
+  // acting on what is in front of `window` as one does (patch 76).
+  activateFromMain(extensionId: string, window: Electron.BaseWindow, anchor: Electron.Rectangle): void {
+    if (window.isDestroyed()) return
+    this.activateClick({ eventType: 'click', extensionId, tabId: -1, anchorRect: anchor }, true, window)
   }
 
   // Orivon patch (UPSTREAM.md patch 46): public onUpdate(), for state that
@@ -621,16 +629,23 @@ export class BrowserActionAPI {
       }
     }
 
-    // Orivon patch (UPSTREAM.md patch 65): with no tab named, the clicked toolbar's own window.
-    const tab =
-      tabId >= 0
-        ? this.ctx.store.getTabById(tabId)
-        : ownWindow
-          ? this.ctx.store.getActiveTabFromWindow(ownWindow)
-          : this.ctx.store.getActiveTabOfCurrentWindow()
-    if (!tab) {
-      throw new Error(`Unable to get active tab`)
+    // Orivon patch (UPSTREAM.md patches 65 and 76): with the clicked toolbar's own window known, the click
+    // acts on what is in front of that window now -- the `tabId` the toolbar holds may be a tab since closed or
+    // switched away from -- and a page no extension instance tracks (an Orivon page, a tab of a session no
+    // extension is in) is no tab: the popup opens with none, as Chrome's does over its own pages. Another
+    // instance's tab in front is not this instance's to act on. Only with no window known is `tabId` read, else
+    // the last focused window's front tab.
+    const window = ownWindow && !ownWindow.isDestroyed() ? ownWindow : undefined
+    let tab: Electron.WebContents | undefined
+    if (window) {
+      const front = this.frontOf(window)
+      if (!front) throw new Error(`Unable to get active tab`)
+      tab = front.tab
+    } else {
+      tab = tabId >= 0 ? this.ctx.store.getTabById(tabId) : this.ctx.store.getActiveTabOfCurrentWindow()
+      if (!tab) throw new Error(`Unable to get active tab`)
     }
+    const targetWindow = window ?? (tab ? this.ctx.store.tabToWindow.get(tab) : undefined)
 
     // Orivon patch (UPSTREAM.md, patch 33): a real toolbar click IS
     // an invocation, whether or not it opens a popup -- both branches below
@@ -638,39 +653,53 @@ export class BrowserActionAPI {
     // click, no gesture -- see its own doc) and true only for the one
     // caller that already proved this is a real click (`activate`, above).
     if (recordInvocation) {
-      gTabCaptureInvocationRecorder?.(extensionId, tab)
+      // Patch 76: an invocation is of a tab, and there may be none.
+      if (tab) gTabCaptureInvocationRecorder?.(extensionId, tab)
       // Orivon patch (UPSTREAM.md patch 46): handled elsewhere, no popup. Patch 70: only for a
       // counted click; `chrome.action.openPopup()` is no click, so it always opens the popup.
-      if (gActionClickInterceptor?.(extensionId, tab)) return
+      if (targetWindow && gActionClickInterceptor?.(extensionId, tab, targetWindow)) return
     }
 
-    const popupUrl = this.getPopupUrl(extensionId, tab.id)
+    const popupUrl = this.getPopupUrl(extensionId, tab?.id)
 
     if (popupUrl) {
-      const win = this.ctx.store.tabToWindow.get(tab)
-      if (!win) {
+      if (!targetWindow) {
         throw new Error('Unable to get BrowserWindow from active tab')
       }
 
       this.popup = new PopupView({
         extensionId,
         session: this.ctx.session,
-        parent: win,
+        parent: targetWindow,
         url: popupUrl,
         anchorRect,
         alignment,
       })
-      this.popupTabId = tab.id
+      this.popupTabId = tab?.id
 
       d(`opened popup: ${popupUrl}`)
 
       this.ctx.emit('browser-action-popup-created', this.popup)
-    } else {
+    } else if (tab) {
       d(`dispatching onClicked for ${extensionId}`)
 
       const tabDetails = this.ctx.store.tabDetailsCache.get(tab.id)
       this.ctx.router.sendEvent(extensionId, 'browserAction.onClicked', tabDetails)
+    } else {
+      // Orivon patch (UPSTREAM.md patch 76): onClicked carries the tab clicked on; there is none.
+      d(`no popup and no tab: not dispatching onClicked for ${extensionId}`)
     }
+  }
+
+  /**
+   * Orivon patch (UPSTREAM.md patch 76): what a click in `window` acts on. `{ tab }` is the tab of this
+   * instance in front there, or none when the page in front is one no instance tracks (the host answers
+   * through `impl.frontTracked`). `undefined` when the page in front is a tab of another instance.
+   */
+  private frontOf(window: Electron.BaseWindow): { tab: Electron.WebContents | undefined } | undefined {
+    const tab = this.ctx.store.getActiveTabFromWindow(window)
+    if (tab) return { tab }
+    return this.ctx.store.impl.frontTracked?.(window) ? undefined : { tab: undefined }
   }
 
   private activateContextMenu(details: ActivateDetails) {
@@ -765,8 +794,9 @@ export class BrowserActionAPI {
       return
     }
 
-    const activeTab = this.ctx.store.getActiveTabFromWindow(window)
-    if (!activeTab) return
+    // Orivon patch (UPSTREAM.md patch 76): a window whose front page no instance tracks gets the popup
+    // with no tab; one whose front is another instance's tab gets none from this one.
+    if (!this.frontOf(window)) return
 
     // Orivon patch (UPSTREAM.md patch 69): the embedder says where the action's icon is.
     let anchorRect: Electron.Rectangle | undefined
@@ -776,6 +806,8 @@ export class BrowserActionAPI {
       d('openPopup: the anchor lookup failed: %O', error)
     }
     if (window.isDestroyed()) return
+    // Patch 76: the page in front may have changed while the anchor was measured.
+    if (!this.frontOf(window)) return
 
     if (anchorRect === undefined) {
       // Orivon patch: `?? 0` -- noUncheckedIndexedAccess types a
@@ -786,12 +818,12 @@ export class BrowserActionAPI {
       anchorRect = { x: width - anchorSize, y: 0, width: anchorSize, height: anchorSize }
     }
 
-    this.activateClick({
-      eventType: 'click',
-      extensionId: event.extension.id,
-      tabId: activeTab?.id,
-      anchorRect,
-    })
+    // `activateClick` reads what is in front of `window` itself (patch 76).
+    this.activateClick(
+      { eventType: 'click', extensionId: event.extension.id, tabId: -1, anchorRect },
+      false,
+      window,
+    )
   }
 
   private onUpdate() {

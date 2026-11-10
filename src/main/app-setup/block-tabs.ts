@@ -1,6 +1,6 @@
 // The pages of an app that turned out to be bad after they were let in (ADR-0075): every tab of the origin is stopped
 // and emptied, so nothing of the app runs on while its grants are taken away and its storage is cleared, whatever its
-// `beforeunload` handlers say; every other page of the app's partition (a popup, a context's host) is closed; then each
+// `beforeunload` handlers say; every other page of the app, in whichever session it is (a popup, a context's host), is closed; then each
 // tab is covered with the security warning and sent away when the person has read it. No Electron beyond the types:
 // the tabs and their screens come in.
 import type { WebContents } from 'electron'
@@ -10,7 +10,7 @@ import type { TabRef, TabSetup } from './tab-screens.js'
 export interface BlockTabsDeps {
   /** Every live tab, in any window, whose page is on the origin. */
   readonly tabsOn: (origin: string) => readonly WebContents[]
-  /** Every web contents in the origin's own partition, tabs, popups and hosts alike. */
+  /** Every web contents that shows the origin or runs in its own partition, in any session: tabs, popups and hosts alike. */
   readonly pagesOf: (origin: string) => readonly WebContents[]
   /** Read at the moment of use: the screens are published after the first visit is built. */
   readonly setup: () => TabSetup | undefined
