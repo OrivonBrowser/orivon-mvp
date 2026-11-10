@@ -54,9 +54,10 @@ describe('tokensFor', () => {
 })
 
 describe('the committed map', () => {
-  it('sends a change under the name relay to the web3 specs alone', () => {
+  it('sends a change under the name relay to the specs of the route folder and the web3 specs', () => {
     const committed = JSON.parse(readFileSync(new URL('../../../test/impact-map.json', import.meta.url), 'utf8')) as typeof MAP
-    expect(tokensFor(committed, 'src/main/route/name-relay/relay-link.ts')).toEqual(['web3'])
+    expect(tokensFor(committed, 'src/main/route/name-relay/relay-opener.ts')).toEqual(tokensFor(committed, 'src/main/route/proxy-mirror/pac-fetch.ts'))
+    expect(tokensFor(committed, 'src/main/route/name-relay/relay-opener.ts')).toEqual(['@core', 'shell-pages', 'sites', 'web3'])
   })
 })
 
