@@ -59,10 +59,11 @@ shell serves such an origin, it settles in this order, and until step 4 no docum
 
 A worker script the shell served is held until the origin has settled (the guard of rule 4 answers it then), so the registration
 it starts comes after the removal in step 3 and cannot be wiped by it; the app's first page registers its worker as soon as the
-origin settles. A script of an origin that cannot settle is cancelled, as an unmarked one is.
+origin settles. A script is held for at most 20 s; one whose origin has not settled by then is cancelled, as an unmarked one is, and
+the page's next load registers it.
 
-Each wait is bounded: 10 s for the host's word (the first visit's too), 15 s for each page to load again, 10 s for the first
-visit's tab to show the shell's document and 15 s for the removal (*provisional*: field reports of a slow host would settle the
+Each wait is bounded: 10 s for the host's word (the first visit's too), 15 s for each page to load again, 30 s for the first
+visit's tab to show the shell's document (its first page may come through a slow tunnel) and 15 s for the removal (*provisional*: field reports of a slow host would settle the
 numbers). A bound that runs out leaves the origin unsettled, so a document its worker answers has no grants and the worker
 scripts of the origin are cancelled, and the settling is tried again after 3 s, then 6 s and so on to a minute, for as long as
 the shell serves the origin. A first visit loads its tab as the app when the host has said it was told or the bound ran out,

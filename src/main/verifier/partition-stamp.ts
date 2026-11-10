@@ -102,6 +102,9 @@ export function installShellAnswerWatch (target: Session): void {
   })
 }
 
+/** How long a shell-served worker script waits for its origin to settle before it is cancelled: a registration that waits longer is one the next load makes again. */
+const SCRIPT_HOLD_MS = 20_000
+
 /** How many main-frame responses' marks are held between the headers arriving and the response starting. */
 const MAIN_FRAME_MARKS_KEPT = 256
 
@@ -112,14 +115,14 @@ const MAIN_FRAME_MARKS_KEPT = 256
  * the shell did answer waits until the origin has settled (`../sessions/worker-settle.ts`), so the registration it starts
  * comes after the removal of what a website left; one that settles never is cancelled.
  */
-export function installWorkerScriptGuard (target: Session): void {
+export function installWorkerScriptGuard (target: Session, holdMs: number = SCRIPT_HOLD_MS): void {
   webRequestOwnerFor(target).onHeadersReceived(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, async (details, current) => {
     const response = { url: details.url, resourceType: details.resourceType, hasPage: details.webContents !== undefined && details.webContents !== null, answeredByShell: carriesShellMark(details.responseHeaders), ...(details.initiatorOrigin === undefined ? {} : { initiatorOrigin: details.initiatorOrigin }) }
     if (refusesWorkerScript(response)) {
       console.warn('[verifier] refused a service worker script the shell did not serve:', details.url)
       return { ...current, cancel: true }
     }
-    if (holdsWorkerScript(response) && !(await settledOrigin(new URL(details.url).origin))) {
+    if (holdsWorkerScript(response) && !(await settledOrigin(new URL(details.url).origin, holdMs))) {
       console.warn('[verifier] refused a service worker script of an origin that had not settled:', details.url)
       return { ...current, cancel: true }
     }

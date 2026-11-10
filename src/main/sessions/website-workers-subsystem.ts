@@ -25,7 +25,7 @@ import { beginSettling, forgetSettling, retryDelayMs, settleAttempts, settleServ
 import type { SettleLimits } from './worker-settle.js'
 
 /** How long each wait of the settling may take before the origin stays unsettled and a worker's answer is denied the grants. Provisional: field reports of a slow host would settle it. */
-const LIMITS: SettleLimits = { hostMs: 10_000, pageMs: 15_000, enteringMs: 10_000, clearMs: 15_000 }
+const LIMITS: SettleLimits = { hostMs: 10_000, pageMs: 15_000, enteringMs: 30_000, clearMs: 15_000 }
 
 /**
  * Every session a website at `origin` may have installed workers in: the shared one, the profile its own entry names, and any
@@ -85,6 +85,7 @@ export const websiteWorkersSubsystem: Subsystem = {
         limits: LIMITS,
         log: (message, error) => { console.warn(message, error) }
       }).then((settled) => {
+        if (settled) console.log(`[workers] ${origin} settled (attempt ${String(settleAttempts(origin))}); a page its worker answers keeps the app's grants`)
         if (settled || !servedOrigins().includes(origin)) return
         setTimeout(() => { settle(origin) }, retryDelayMs(settleAttempts(origin))).unref()
       }).catch((error: unknown) => { console.error('[workers] settling an origin failed:', error) })

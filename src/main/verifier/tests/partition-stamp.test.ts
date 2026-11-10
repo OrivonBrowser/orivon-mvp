@@ -136,7 +136,7 @@ describe('which document the shell answered', () => {
 
 describe('the service worker scripts of a served origin', () => {
   const answer = async (over: Partial<Started> = {}, headers: Record<string, string[]> = {}): Promise<{ responseHeaders: Record<string, string[]>, cancel?: boolean }> => {
-    installWorkerScriptGuard({} as Session)
+    installWorkerScriptGuard({} as Session, 150)
     if (captured.received === undefined) throw new Error('nothing was registered for response headers')
     const current = { responseHeaders: headers }
     return await captured.received({ resourceType: 'script', url: `${HOST_ORIGIN}/sw.js`, responseHeaders: headers, ...over }, current)

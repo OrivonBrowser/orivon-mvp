@@ -86,7 +86,7 @@ describe('settling a served origin', () => {
     expect(await settleServedOrigin(ORIGIN, deps)).toBe(false)
     expect(events).toEqual([])
     expect(workerAnswersTrusted(ORIGIN, nextTick())).toBe(false)
-    expect(await settledOrigin(ORIGIN)).toBe(false)
+    expect(await settledOrigin(ORIGIN, 1)).toBe(false)
     expect(settleAttempts(ORIGIN)).toBe(1)
     told = true
     expect(await settleServedOrigin(ORIGIN, deps)).toBe(true)
@@ -106,12 +106,20 @@ describe('settling a served origin', () => {
     expect(workerAnswersTrusted(ORIGIN, nextTick())).toBe(false)
   })
 
-  it('answers whether an origin has settled, waiting for the first attempt when none has ended', async () => {
+  it('answers whether an origin has settled, waiting up to the bound for it to', async () => {
     beginSettling(ORIGIN)
-    const waiting = settledOrigin(ORIGIN)
+    const waiting = settledOrigin(ORIGIN, 1_000)
     await settleServedOrigin(ORIGIN, harness([]).deps)
     expect(await waiting).toBe(true)
-    expect(await settledOrigin(ORIGIN)).toBe(true)
+    expect(await settledOrigin(ORIGIN, 1)).toBe(true)
+  })
+
+  it('says no once the bound has passed without the origin settling, and yes if a later attempt settles it in time', async () => {
+    beginSettling(ORIGIN)
+    expect(await settledOrigin(ORIGIN, 10)).toBe(false)
+    const waiting = settledOrigin(ORIGIN, 1_000)
+    await settleServedOrigin(ORIGIN, harness([]).deps)
+    expect(await waiting).toBe(true)
   })
 
   it('trusts nothing for an origin it was never asked to settle, or one that stopped being served', async () => {
@@ -121,7 +129,7 @@ describe('settling a served origin', () => {
     expect(workerAnswersTrusted(ORIGIN, nextTick())).toBe(true)
     forgetSettling(ORIGIN)
     expect(workerAnswersTrusted(ORIGIN, nextTick())).toBe(false)
-    expect(await settledOrigin(ORIGIN)).toBe(false)
+    expect(await settledOrigin(ORIGIN, 1)).toBe(false)
   })
 
   it('judges an origin by the origin of its address, however it is spelled', async () => {

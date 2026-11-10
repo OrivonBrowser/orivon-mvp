@@ -19,9 +19,8 @@ interface Settling {
   readonly began: number
   /** Whether a page showing a website's document was seen at the origin since the serving began, open or since closed: what it wrote must go. */
   sawWebsite: boolean
-  /** Resolves when the first attempt ends: true when it settled, false when a wait ran out. */
-  settled: Promise<boolean>
-  finish: (settled: boolean) => void
+  /** Calls waiting in `settledOrigin`, ended when the origin settles. */
+  readonly waiters: Set<() => void>
   running: boolean
   attempts: number
 }
@@ -44,9 +43,7 @@ function originKey (origin: string): string | undefined {
 }
 
 function fresh (): Settling {
-  let finish: (settled: boolean) => void = () => {}
-  const settled = new Promise<boolean>((resolve) => { finish = resolve })
-  return { state: 'pending', trustedFrom: Number.POSITIVE_INFINITY, began: nextTick(), sawWebsite: false, settled, finish, running: false, attempts: 0 }
+  return { state: 'pending', trustedFrom: Number.POSITIVE_INFINITY, began: nextTick(), sawWebsite: false, waiters: new Set(), running: false, attempts: 0 }
 }
 
 /** The shell is about to serve `origin` where websites run: until it settles, a worker's answer is not the app's. */
@@ -71,12 +68,18 @@ export function workerAnswersTrusted (origin: string, committedAt: number): bool
   return held !== undefined && held.state === 'settled' && committedAt >= held.trustedFrom
 }
 
-/** Whether `origin` has settled, waiting for the first attempt to end when none has: false when a wait ran out (a later attempt may still settle it), and for an origin that is not being settled. */
-export async function settledOrigin (origin: string): Promise<boolean> {
+/** Whether `origin` has settled, waiting up to `ms` for it to: false when it has not by then (a later attempt may still settle it), and for an origin that is not being settled. */
+export async function settledOrigin (origin: string, ms: number): Promise<boolean> {
   const key = originKey(origin)
   const held = key === undefined ? undefined : origins.get(key)
   if (held === undefined) return false
-  if (held.state !== 'settled') await held.settled
+  if (held.state !== 'settled') {
+    await new Promise<void>((resolve) => {
+      const done = (): void => { clearTimeout(timer); held.waiters.delete(done); resolve() }
+      const timer = setTimeout(done, ms)
+      held.waiters.add(done)
+    })
+  }
   return held.state === 'settled'
 }
 
@@ -163,11 +166,10 @@ export async function settleServedOrigin<Page> (origin: string, deps: SettleDeps
     }
     held.state = 'settled'
     held.trustedFrom = trustedFrom
-    held.finish(true)
+    for (const waiter of [...held.waiters]) waiter()
     return true
   } catch (error) {
     deps.log(`[workers] ${origin} could not be settled (attempt ${held.attempts}); a page its worker answers gets no grants until it is:`, error)
-    held.finish(false)
     return false
   } finally {
     held.running = false
