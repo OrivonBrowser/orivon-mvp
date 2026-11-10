@@ -13,17 +13,18 @@ export function homeAddress (settings: Pick<SettingsStore, 'get'>): string | nul
 
 /** `newTab`: the home page goes to a new background tab, leaving this one. Otherwise it loads in the active
  * tab. With no home page set the new-tab page is opened, and a page already showing it stays: a loaded page is
- * never swapped for the dashboard, which would lose its history. */
-export function goHome (tabs: Pick<TabManager, 'getState' | 'navigate' | 'createTab'>, settings: Pick<SettingsStore, 'get'>, { newTab }: { newTab: boolean }): void {
+ * never swapped for the dashboard, which would lose its history. A tab opened here takes the tunnel of the tab in
+ * front (`newTabTunnelChoice`). */
+export function goHome (tabs: Pick<TabManager, 'getState' | 'navigate' | 'createTab' | 'newTabTunnelChoice'>, settings: Pick<SettingsStore, 'get'>, { newTab }: { newTab: boolean }): void {
   const address = homeAddress(settings)
   const { tabs: order, activeTabId } = tabs.getState()
   const active = order.find((tab) => tab.id === activeTabId)
   if (newTab) {
-    tabs.createTab(address ?? undefined, false)
+    tabs.createTab(address ?? undefined, false, undefined, tabs.newTabTunnelChoice())
   } else if (address !== null) {
     if (active === undefined) tabs.createTab(address)
     else tabs.navigate(active.id, address)
   } else if (active === undefined || !active.isNewTab) {
-    tabs.createTab()
+    tabs.createTab(undefined, true, undefined, tabs.newTabTunnelChoice())
   }
 }

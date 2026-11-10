@@ -544,7 +544,7 @@ describe('a tab with a tunnel choice', () => {
     expect(manager.record(id)?.tunnelChoice).toBe('nym')
   })
 
-  it('gives a copy of the tab its choice, and a new tab beside it none', () => {
+  it('gives a copy of the tab its choice, and a new tab beside it the same', () => {
     const manager = newManager()
     const [a] = strip(manager, 1) as [string]
     manager.setTunnelChoice(a, 'socks5')
@@ -554,7 +554,58 @@ describe('a tab with a tunnel choice', () => {
     expect(createdViews.at(-1)?.partition).toBe('persist:proxy-profile')
     newTabToRight(manager, a)
     const [, fresh] = order(manager) as [string, string]
-    expect(manager.record(fresh)?.tunnelChoice).toBeUndefined()
+    expect(manager.record(fresh)?.tunnelChoice).toBe('socks5')
+    expect(manager.record(fresh)?.isDashboardTab, 'and it is the new-tab page').toBe(true)
+  })
+
+  it('passes no choice on from a direct tab, and none from a tab with no choice', () => {
+    const manager = newManager()
+    const [a, b] = strip(manager, 2) as [string, string]
+    manager.setTunnelChoice(a, 'direct')
+    newTabToRight(manager, a)
+    expect(manager.record(order(manager)[1] ?? '')).not.toHaveProperty('tunnelChoice')
+    newTabToRight(manager, b)
+    expect(manager.record(order(manager)[3] ?? '')).not.toHaveProperty('tunnelChoice')
+  })
+
+  it('names the choice a new tab opened from the tab in front takes, and none for a tab that is gone', () => {
+    const manager = newManager()
+    const [a, b] = strip(manager, 2) as [string, string]
+    manager.setTunnelChoice(a, 'nym')
+    expect(manager.newTabTunnelChoice(a)).toBe('nym')
+    expect(manager.newTabTunnelChoice(b)).toBeUndefined()
+    manager.setTunnelChoice(b, 'direct')
+    expect(manager.newTabTunnelChoice(b), 'a direct tab gives none').toBeUndefined()
+    manager.activateTab(a)
+    expect(manager.newTabTunnelChoice()).toBe('nym')
+    expect(manager.newTabTunnelChoice('missing')).toBeUndefined()
+  })
+
+  it('takes the tunnel of the entry of the website the tab shows, when the tab has no choice of its own', () => {
+    const entries: Record<string, string> = { 'https://a.example': 'socks5' }
+    const routes = { hub: { unreadable: () => false }, store: { stateOf: (origin: string) => entries[origin] } }
+    const manager = newManager({ routes } as unknown as SubsystemContext)
+    const [a] = strip(manager, 1) as [string]
+    expect(manager.newTabTunnelChoice(a)).toBe('socks5')
+    newTabToRight(manager, a)
+    expect(manager.record(order(manager)[1] ?? '')?.tunnelChoice).toBe('socks5')
+    manager.navigate(order(manager)[1] ?? '', 'https://news.example/')
+    expect(createdViews.at(-1)?.partition, 'the first address typed there opens in the tunnel\'s profile').toBe('persist:proxy-profile')
+    expect(manager.newTabTunnelChoice(a)).toBe('socks5')
+    entries['https://a.example'] = 'off'
+    expect(manager.newTabTunnelChoice(a), 'an off entry is no tunnel').toBeUndefined()
+    entries['https://a.example'] = 'socks5'
+    manager.setTunnelChoice(a, 'direct')
+    expect(manager.newTabTunnelChoice(a), 'a direct tab on a website with a tunnel of its own, whose button is lit').toBe('socks5')
+  })
+
+  it('reads no entry while the tunnel settings cannot be read', () => {
+    const routes = { hub: { unreadable: () => true }, store: { stateOf: () => 'nym' } }
+    const manager = newManager({ routes } as unknown as SubsystemContext)
+    const [a] = strip(manager, 1) as [string]
+    expect(manager.newTabTunnelChoice(a)).toBeUndefined()
+    manager.setTunnelChoice(a, 'socks5')
+    expect(manager.newTabTunnelChoice(a), 'the tab\'s own choice is still its own').toBe('socks5')
   })
 
   it('takes the choice away again, and a tab that is gone takes none', () => {

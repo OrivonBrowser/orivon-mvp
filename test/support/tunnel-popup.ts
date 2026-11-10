@@ -3,7 +3,7 @@
 // where a spec's point is the entry, and press the row alone (`openTunnelList` then a click) where its point is what the tab does.
 import { expect } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
-import { delay, waitFor } from './smoke-helpers.mjs'
+import { activeTabInfo, delay, tabIds, waitFor } from './smoke-helpers.mjs'
 
 export type TunnelRow = 'nym' | 'socks5'
 
@@ -73,4 +73,32 @@ export async function pickTunnelForWebsite (app: ElectronApplication, chrome: Pa
   expect(await waitFor(arrival.inProfile, 60_000), 'the website came back in its tunnel\'s session').toBe(true)
   await pressAlways(app, chrome, row)
   await closeTunnelList(app, chrome)
+}
+
+type Seam = { choiceOf: (tab: string) => string | undefined, set: (tab: string, choice: string | null) => boolean }
+
+/** The tunnel choice the tab `tabId` carries, read through the test seam: undefined for none. */
+export async function tabChoiceOf (app: ElectronApplication, tabId: string): Promise<string | undefined> {
+  return await app.evaluate((_electron, id) => (globalThis as unknown as { __orivonDevTabTunnel?: Seam }).__orivonDevTabTunnel?.choiceOf(id), tabId)
+}
+
+/** Takes the tab's choice away through the test seam, as its list does when the browser is on no tunnel. */
+export async function clearTabChoice (app: ElectronApplication, tabId: string): Promise<void> {
+  const done = await app.evaluate((_electron, id) => (globalThis as unknown as { __orivonDevTabTunnel?: Seam }).__orivonDevTabTunnel?.set(id, null), tabId)
+  expect(done, 'the test seam found the tab').toBe(true)
+  expect(await tabChoiceOf(app, tabId), 'the tab has no choice now').toBeUndefined()
+}
+
+/**
+ * A new tab opened with the "+" button, in front, with no tunnel choice: a new tab takes the choice of the tab it is opened from, so the
+ * choice is taken away again for a spec whose point is a tab that follows the browser. Returns the new tab's id.
+ */
+export async function openTabWithNoChoice (app: ElectronApplication, chrome: Page): Promise<string> {
+  const before = await tabIds(chrome)
+  await chrome.click('#new-tab')
+  expect(await waitFor(async () => (await tabIds(chrome)).length === before.length + 1), 'a new tab opened').toBe(true)
+  const id = (await activeTabInfo(chrome)).activeId as string
+  expect(before, 'and it is not one of the tabs that were open').not.toContain(id)
+  if (await tabChoiceOf(app, id) !== undefined) await clearTabChoice(app, id)
+  return id
 }

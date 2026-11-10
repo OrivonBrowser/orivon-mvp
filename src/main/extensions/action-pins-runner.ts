@@ -107,7 +107,10 @@ function install (ctx: ExtensionApiContext): void {
       return new Map((host?.listAllActions(tabId) ?? []).map((action) => [action.id, { hasPopup: action.hasPopup, badge: action.badge }]))
     },
     prefs: ctx.prefs,
-    activate: (id, tab, anchor) => { hostOfTab(tab)?.activateAction(id, tab, anchor) },
+    activate: (id, tab, anchor) => {
+      const window = ctx.shell()?.windows.findTab(tab)?.window.window
+      if (window !== undefined && !window.isDestroyed()) hostOfTab(tab)?.activateAction(id, window, anchor)
+    },
     canActivate: (tab) => ctx.hostFor(tab.session) !== undefined,
     isLoaded,
     uninstall: async (id) => { await ctx.extensions()?.uninstall(id) }

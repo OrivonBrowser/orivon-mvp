@@ -1,5 +1,6 @@
 // Which view holds the keyboard after a new tab opens in front. Tied to Electron: the keyboard is a webContents' focus.
 import type { WebContents } from 'electron'
+import type { TabShell } from './tab-types.js'
 
 export interface NewTabFocusInput {
   /** The tab is the one in front. */
@@ -52,6 +53,24 @@ export function watchNewTab (contents: Pick<WebContents, 'on' | 'removeListener'
   contents.on('did-finish-load', settle)
   contents.on('did-fail-load', settle)
   contents.on('destroyed', finish)
+}
+
+/** Where the keyboard goes for a tab opened on the start page. Only a shell that can run a command has a bar to give it to. */
+export function watchFreshTab (shell: TabShell | undefined, keyboard: KeyboardWaiters, id: string, contents: WebContents, tab: { readonly active: () => boolean, readonly fresh: () => boolean }): void {
+  if (shell?.runCommand === undefined) return
+  keyboard.begin(id)
+  watchNewTab(contents, {
+    placed: () => { keyboard.release(id) },
+    input: () => ({
+      active: tab.active(),
+      // Still the start page: the record's flag, which the tab's first navigation clears.
+      freshNewTab: tab.fresh(),
+      windowFocused: !shell.window.isDestroyed() && shell.window.isFocused(),
+      coveredByIntro: shell.coveredByIntro?.() === true
+    }),
+    focusAddressBar: () => { shell.runCommand?.('nav.focusAddress') },
+    returnKeyboard: () => { shell.focusChrome?.() }
+  })
 }
 
 /**
