@@ -184,18 +184,17 @@ git add package-lock.json
 **Never resolve it hunk by hunk.** `package.json` is the source of truth; the lockfile is
 derived, so derive it again.
 
-### `merge=union` on the append-only files
+### `merge=union` on the changelog
 
-[`.gitattributes`](../../.gitattributes) sets `merge=union` on `devlog/journal.md` and
-`CHANGELOG.md`. Git resolves those automatically by keeping both sides, instead of stopping the
-merge.
+[`.gitattributes`](../../.gitattributes) sets `merge=union` on `CHANGELOG.md`. Git resolves it
+automatically by keeping both sides, instead of stopping the merge.
 
 This is correct **only** where every change is an append and order does not matter. It must
 never be extended to source files, because union-merging code produces something syntactically valid
 and semantically wrong, which is strictly worse than a conflict you can see.
 
-**The driver is local. GitHub does not apply it**, so two branches that both appended to one of
-those files show as conflicting on the pull request while `git merge` here reports nothing to
+**The driver is local. GitHub does not apply it**, so two branches that both appended to
+the changelog show as conflicting on the pull request while `git merge` here reports nothing to
 resolve. The PR is not broken and there is nothing to hand-resolve: merge `origin/main` into the
 branch locally, where the driver runs, and push the merge commit. GitHub then has no divergence
 left to compute and the PR goes clean.

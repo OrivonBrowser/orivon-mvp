@@ -36,7 +36,6 @@
     "check:egress": "node scripts/check-egress.mjs",
     "check:floating-promises": "node scripts/check-floating-promises.mjs",
     "check:dev-grant-absent": "node scripts/check-dev-grant-absent.mjs",
-    "check:devlog": "node scripts/check-devlog.mjs",
     "check:app-behaviours": "node scripts/app-behaviours/check-app-behaviours.mjs",
     "check:contracts-surface": "node scripts/app-behaviours/check-contracts-surface.mjs",
     "check:test-paths": "node scripts/check-test-paths.mjs",
