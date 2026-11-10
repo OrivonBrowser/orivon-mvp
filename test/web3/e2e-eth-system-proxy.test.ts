@@ -8,8 +8,9 @@
 // from the desktop's own settings, GNOME's, KDE's or Windows' manual proxy is copied into the sessions with the suffixes left out and the names
 // load (e2e-eth-system-proxy-mirror.test.ts follows it as it changes, and e2e-eth-system-proxy-script.test.ts does the same for a
 // proxy script); where the settings cannot be copied (KDE's when its exceptions are reversed, automatic detection), nothing Orivon can set
-// exempts a name, so a request for one is cancelled before it is sent and the tab says why. A proxy that is found by detection
-// answers its first question slowly, and a request that waits for it is not sent. A name asked for over plain http is never sent, whatever
+// exempts a name, so a request for one is cancelled before it is sent and the tab says why. Where the system may run a script of its
+// own (automatic detection finds one), the session is not asked at all, since asking hands the name to the script
+// (e2e-eth-system-proxy-script-never-asked.test.ts proves it from Chromium's net log). A name asked for over plain http is never sent, whatever
 // the proxy says. A browser on a SOCKS5 tunnel is on its front, which leaves the names to the verifier, whatever the computer's proxy is.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/web3/e2e-eth-system-proxy.test.ts
@@ -21,14 +22,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import type { ElectronApplication, Page } from 'playwright'
 import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp, readShield } from '../support/e2e-helpers.js'
 import { activeTabInfo } from '../support/smoke-helpers.mjs'
-import { CANCELLED, gnomeProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, proxyEnvironment, refusalLines, report, resolved, startLoggingProxy, SUBRESOURCES_BODY, verifierNames, visitReporting, visitSubresources, windowsAutoDetect } from './system-proxy-support.js'
+import { CANCELLED, gnomeProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, proxyEnvironment, refusalLines, report, resolved, startLoggingProxy, SUBRESOURCES_BODY, UNSURE_SHEET, verifierNames, visitReporting, visitSubresources, windowsAutoDetect } from './system-proxy-support.js'
 import type { LoggingProxy, Running, Visit } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
@@ -350,29 +350,19 @@ describe.skipIf(!LINUX)('a computer whose environment carries the proxy, the who
   })
 })
 
-/** The first question a session is asked about `url`, and how long the answer took. */
-async function firstAnswer (app: ElectronApplication, url: string): Promise<{ answer: string, ms: number }> {
-  return await app.evaluate(async ({ session }, target) => {
-    const started = performance.now()
-    const answer = await session.defaultSession.resolveProxy(target).catch((error: unknown) => `failed: ${String(error)}`)
-    return { answer, ms: Math.round(performance.now() - started) }
-  }, url)
-}
-
 describe.skipIf(!WINDOWS)('a computer whose Windows settings detect the proxy automatically', () => {
   let restore: () => void = () => {}
 
   beforeAll(() => { restore = windowsAutoDetect() })
   afterAll(() => { restore() })
 
-  it('opens a .eth name, however long the first question about the proxy takes', async () => {
+  it('refuses a .eth name without asking the session, saying Orivon could not tell: detection may find a script, which would be shown the name', async () => {
     const { app, chrome } = await launchShell({})
     try {
-      const first = await firstAnswer(app, 'https://fixture.eth/')
       const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture', 60_000)
-      report('windows, automatic detection', { first, eth, refusals: refusalLines(app) })
-      expect(eth.result, JSON.stringify(eth)).toBe('page')
-      expect(refusalLines(app)).toEqual([])
+      report('windows, automatic detection', { eth, refusals: refusalLines(app) })
+      expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
+      expect(refusalLines(app).join('\n')).toContain('the system\'s proxy settings may run a script')
     } finally {
       await closeElectronApp(app)
     }

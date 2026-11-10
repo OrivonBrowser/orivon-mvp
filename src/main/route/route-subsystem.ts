@@ -36,7 +36,7 @@ import type { ProxyMirror } from './proxy-mirror/proxy-mirror.js'
 import { readKdeSettings } from './proxy-mirror/read-kde-files.js'
 import { readGnomeSettings, readMacosSettings, readWindowsSettings } from './proxy-mirror/run-readers.js'
 import { sourceOf } from './proxy-mirror/settings-source.js'
-import { wouldRunSystemCode } from './system-code.js'
+import { askHolderOfCopy } from './system-code.js'
 import { guardOfSession, namesVerifierHost, rootDotBypassRules, routedBypassRules, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
@@ -166,7 +166,7 @@ export const routeSubsystem: Subsystem = {
       return systemSession
     }
     // Ordinary hosts only: a name the verifier serves is asked of the session that holds the copy below, which is never this one.
-    setSystemProxyProbe(async (url) => await systemProxySession().resolveProxy(url), async (url) => await routedNameProbe(url))
+    setSystemProxyProbe(async (url) => await systemProxySession().resolveProxy(url), async (url) => await askHolderOfCopy(systemMirrorSession(), url))
     // Made now, so that the first question finds its proxy set.
     systemProxySession()
     // Orivon's own direct requests and the lookups about a website set to off go through a session of their own that follows the system as the controller sets it (`systemConfig`), never the one above.
@@ -181,12 +181,6 @@ export const routeSubsystem: Subsystem = {
         mirrorSet = routes.controller.mirrorSystem(made).catch((error: unknown) => { console.error('[route] could not put the system-mirror session on the system\'s proxy:', error) })
       }
       return mirrorSession
-    }
-    // Orivon's own question about a name the verifier serves (T20, for an unrouted app's `net.lookup` or `tcp.connect`): never the session above, which would hand the name to the system's script. The session that holds the copy answers, and where it would run that script nothing is asked.
-    async function routedNameProbe (url: string): Promise<string> {
-      const holder = systemMirrorSession()
-      if (wouldRunSystemCode(holder)) throw new Error('the system\'s proxy settings may run a script, and no copy of them is held, so the name was not put to them')
-      return await holder.resolveProxy(url)
     }
     // The copy of the system's settings is tried on a session of its own before any other takes it, and Chromium's answer for the same addresses is asked of the one above.
     let checkSession: Session | undefined

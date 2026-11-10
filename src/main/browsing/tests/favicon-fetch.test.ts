@@ -1,9 +1,13 @@
 import { Readable } from 'node:stream'
 import type { Session } from 'electron'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { forgetSystemSettings, systemSettingsAre } from '../../route/tests/mirror-status.test-helpers.js'
 import type { Resolver } from '../../../broker/policy/connect.js'
 import { MAX_FAVICON_BYTES } from '../favicon-format.js'
 import { FAVICON_TIMEOUT_MS, faviconTimeoutMs, VERIFIED_FAVICON_TIMEOUT_MS } from '../favicon-timeout.js'
+
+beforeEach(() => { systemSettingsAre() })
+afterEach(() => { forgetSystemSettings() })
 
 // fetchFaviconDataUrlCached dynamically imports 'electron' for net.request (see
 // favicon-fetch.ts's file header for why net.request, not net.fetch) -- mocked

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { trackProxySet } from '../proxy-answers.js'
 import { setMirrorStatusSource } from '../proxy-mirror/mirror-status.js'
 import type { MirrorStatus } from '../proxy-mirror/mirror-status.js'
-import { settingsMayRunCode, wouldRunSystemCode } from '../system-code.js'
+import { askHolderOfCopy, settingsMayRunCode, wouldRunSystemCode } from '../system-code.js'
 
 afterEach(() => { setMirrorStatusSource(undefined) })
 
@@ -85,6 +85,39 @@ describe('whether a name put to a session would reach code of the system\'s', ()
     } finally {
       if (before === undefined) delete process.env['auto_proxy']
       else process.env['auto_proxy'] = before
+    }
+  })
+})
+
+describe('Orivon\'s own question about a name the verifier serves', () => {
+  const NAME = 'https://fixture.eth/'
+  const COPY = { mode: 'fixed_servers', proxyRules: 'http=proxy.test:3128' }
+  const recording = (): { holder: { resolveProxy: (url: string) => Promise<string> }, asked: string[] } => {
+    const asked: string[] = []
+    return { holder: { resolveProxy: async (url) => { asked.push(url); return 'DIRECT' } }, asked }
+  }
+
+  it('is put to the holder of the copy, which has taken it, behind a script', async () => {
+    setMirrorStatusSource(() => status({ mode: 'script', state: 'mirrored', reason: 'copied' }))
+    const { holder, asked } = recording()
+    await trackProxySet(holder, async () => {}, 1_000, COPY)
+    expect(await askHolderOfCopy(holder, NAME)).toBe('DIRECT')
+    expect(asked).toEqual([NAME])
+  })
+
+  it('is put to the holder where the system runs no code of its own', async () => {
+    setMirrorStatusSource(() => status({}))
+    const { holder, asked } = recording()
+    expect(await askHolderOfCopy(holder, NAME)).toBe('DIRECT')
+    expect(asked).toEqual([NAME])
+  })
+
+  it('fails without being put to the holder when it holds no copy of a script, of detection, or of settings not read yet', async () => {
+    for (const facts of [{ mode: 'script' }, { mode: 'detect' }, { mode: 'unknown', reason: 'starting' }] as const) {
+      setMirrorStatusSource(() => status(facts))
+      const { holder, asked } = recording()
+      await expect(askHolderOfCopy(holder, NAME), facts.mode).rejects.toThrow(/may run a script/)
+      expect(asked, facts.mode).toEqual([])
     }
   })
 })

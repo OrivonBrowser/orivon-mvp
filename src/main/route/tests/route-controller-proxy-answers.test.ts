@@ -3,10 +3,10 @@
 // proxy is being set, or was set by a call the controller stopped waiting for, is not one the controller can say is on a tunnel.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { proxyAnswerFor, proxySetInFlight, proxySetOverran } from '../proxy-answers.js'
+import { proxyAnswerFor, proxyMayRunSystemCode, proxySetInFlight, proxySetOverran } from '../proxy-answers.js'
 import { guardOfSession, verifierNameGuard } from '../verifier-name-guard.js'
 import { createRouteController } from '../route-controller.js'
-import type { RouteSession } from '../route-controller.js'
+import type { RouteProxyConfig, RouteSession } from '../route-controller.js'
 import { createRouteHub } from '../route-hub.js'
 import type { RouteHub } from '../route-hub.js'
 import { RouteStore } from '../route-store.js'
@@ -20,7 +20,7 @@ afterEach(async () => { for (const hub of hubs.splice(0)) await hub.dispose(); f
 type FakeSession = RouteSession & { readonly resolveProxy: ReturnType<typeof vi.fn<(url: string) => Promise<string>>> }
 
 /** A controller over one session whose `setProxy` runs `during` before it answers. */
-function setup (during: (session: FakeSession) => Promise<void>, callTimeoutMs?: number) {
+function setup (during: (session: FakeSession) => Promise<void>, callTimeoutMs?: number, systemConfig?: () => RouteProxyConfig) {
   const store = new RouteStore(null)
   store.setEntry(APP, 'socks5')
   const hub = createRouteHub({ store, targetOf: () => ({ host: '127.0.0.1', port: 9050 }), defaultKind: () => 'socks5', everywhere: () => false, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
@@ -34,7 +34,8 @@ function setup (during: (session: FakeSession) => Promise<void>, callTimeoutMs?:
     allContents: () => [],
     onContentsCreated: () => {},
     onLogin: () => {},
-    ...(callTimeoutMs === undefined ? {} : { callTimeoutMs })
+    ...(callTimeoutMs === undefined ? {} : { callTimeoutMs }),
+    ...(systemConfig === undefined ? {} : { systemConfig })
   })
   return { controller, session, store, hub }
 }
@@ -125,5 +126,29 @@ describe('a session that is leaving a tunnel', () => {
     const current = { redirectURL: 'https://elsewhere.test/' }
     expect(await handler(details, current)).toBe(current)
     expect(session.resolveProxy).not.toHaveBeenCalled()
+  })
+})
+
+describe('whether a session may hand a name to the system\'s own code', () => {
+  const COPY: RouteProxyConfig = { mode: 'fixed_servers', proxyRules: 'http=proxy.test:3128', proxyBypassRules: '*.eth;*.eth.' }
+
+  it('is no for a session pointed at a front or held shut, and yes again once the session is back on the system\'s config', async () => {
+    const { controller, session, store } = setup(async () => {})
+    expect(proxyMayRunSystemCode(session), 'a session nothing set').toBe(true)
+    await controller.prepare(APP, session)
+    expect(proxyMayRunSystemCode(session), 'on the app\'s front').toBe(false)
+    store.setEntry(APP, 'off')
+    await controller.settled()
+    expect(proxyMayRunSystemCode(session), 'back on the system\'s').toBe(true)
+  })
+
+  it('is no for a session that took the mirror\'s copy, and yes when the mirror takes it back', async () => {
+    let config: RouteProxyConfig = COPY
+    const { controller, session } = setup(async () => {}, undefined, () => config)
+    await controller.mirrorSystem(session)
+    expect(proxyMayRunSystemCode(session), 'on the copy').toBe(false)
+    config = { mode: 'system' }
+    await controller.systemChanged()
+    expect(proxyMayRunSystemCode(session), 'the copy withdrawn').toBe(true)
   })
 })

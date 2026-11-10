@@ -4,6 +4,7 @@
 // set to a config of Orivon's own (a copy of the settings, a tunnel's front) runs none of it. Pure over the facts handed in.
 
 import { proxyMayRunSystemCode } from './proxy-answers.js'
+import type { ProxyResolver } from './proxy-answers.js'
 import { mirrorStatus } from './proxy-mirror/mirror-status.js'
 import type { MirrorStatus } from './proxy-mirror/mirror-status.js'
 
@@ -32,4 +33,10 @@ export function settingsMayRunCode (status: MirrorStatus, env: Environment): boo
 /** Whether a name put to `target` would reach code of the system's: it is on the system's config (or moving to or from it), and the system's settings may run code. */
 export function wouldRunSystemCode (target: object, status: MirrorStatus = mirrorStatus(), env: Environment = process.env): boolean {
   return proxyMayRunSystemCode(target) && settingsMayRunCode(status, env)
+}
+
+/** Orivon's own question about a name the verifier serves (T20), put to `holder`, the session that holds the copy of the system's settings: asked of it, or failed without asking where it would reach the system's code. */
+export async function askHolderOfCopy (holder: ProxyResolver, url: string): Promise<string> {
+  if (wouldRunSystemCode(holder)) throw new Error('the system\'s proxy settings may run a script, and no copy of them is held, so the name was not put to them')
+  return await holder.resolveProxy(url)
 }
