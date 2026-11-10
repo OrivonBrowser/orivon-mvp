@@ -52,7 +52,9 @@ export interface CarryRequest {
   readonly notCarried: readonly string[]
   readonly nowSeconds: () => number
   readonly log: CarryLog
-  /** The longest the clearing of a half copy may take; the carry ends when it has passed. */
+  /** Called once, when the old partition has been read and holds something to carry, just before the carry first changes the website session. */
+  readonly beforeWriting?: () => void
+  /** The longest the clearing of a half copy may take; the carry ends when it has passed, with the clearing perhaps still running. */
   readonly cleanupMs?: number
 }
 
@@ -63,8 +65,8 @@ export interface CarryOutcome {
   readonly report: CarryReport
 }
 
-/** How long the clearing of a half copy may take before the carry gives up on it. */
-export const CLEANUP_MS = 60_000
+/** How long the carry waits for the clearing of a half copy to end or fail before it gives up waiting: the page of the app is held until then. Provisional: a profile with a database of several gigabytes would settle it. */
+export const CLEANUP_MS = 5 * 60_000
 
 interface StoreShape { name: string, keyPath: string | string[] | null, autoIncrement: boolean, indexes: unknown[], count: number }
 interface DatabaseShape { name: string, version: number, stores: StoreShape[], error?: string }
@@ -105,7 +107,15 @@ export async function carryStorage (request: CarryRequest): Promise<CarryOutcome
 
   const open = async (side: CarrySide): Promise<Side> => {
     const nonce = request.nonce()
-    const page = await step(side.open(nonce))
+    const opening = side.open(nonce)
+    let page: CarryPage
+    try {
+      page = await step(opening)
+    } catch (error) {
+      // A page that finishes opening after the carry stopped waiting for it is held by nobody else: it is closed as it arrives.
+      void opening.then((late) => { try { late.close() } catch { /* a page that is already gone needs no closing */ } }, () => undefined)
+      throw error
+    }
     const opened = { page, nonce }
     sides.push(opened)
     if (await step(page.run(carryPageCode(nonce))) !== 'ready') throw new Error('the hidden page already defines the name the carry installs under')
@@ -127,6 +137,7 @@ export async function carryStorage (request: CarryRequest): Promise<CarryOutcome
       return { status: 'carried', report }
     }
 
+    request.beforeWriting?.()
     cleared = true
     await step(request.clearTarget())
     const target = await open(request.target)
@@ -164,17 +175,23 @@ export async function carryStorage (request: CarryRequest): Promise<CarryOutcome
   return { status: 'failed', reason: failure, report }
 }
 
-/** Clears what a carry that stopped wrote into the target. Returns what is left when that fails, else undefined. */
+/**
+ * Clears what a carry that stopped wrote into the target. Returns what is left when that fails, else undefined. It returns
+ * once every part of the clearing has ended or failed, or `cleanupMs` has passed: the page of the app is let through when the
+ * carry returns, so a part still running at that point can remove what the page writes.
+ */
 async function clearHalfCopy (request: CarryRequest, written: readonly CookieToSet[]): Promise<string | undefined> {
+  const limit = request.cleanupMs ?? CLEANUP_MS
   let timer: NodeJS.Timeout | undefined
+  const parts = Promise.allSettled([request.clearTarget(), ...written.map(async (cookie) => { await request.target.cookies.remove(cookie.url, cookie.name) })])
   try {
-    await Promise.race([
-      Promise.all([request.clearTarget(), ...written.map(async (cookie) => { await request.target.cookies.remove(cookie.url, cookie.name) })]),
-      new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { reject(new Error('it took too long')) }, request.cleanupMs ?? CLEANUP_MS) })
+    const settled = await Promise.race([
+      parts,
+      new Promise<'late'>((resolve) => { timer = setTimeout(() => { resolve('late') }, limit) })
     ])
-    return undefined
-  } catch (error) {
-    return `the half copy could not be cleared (${messageOf(error)})`
+    if (settled === 'late') return `the half copy could not be cleared (it was still being cleared after ${String(limit)} ms)`
+    const refused = settled.find((part): part is PromiseRejectedResult => part.status === 'rejected')
+    return refused === undefined ? undefined : `the half copy could not be cleared (${messageOf(refused.reason)})`
   } finally {
     clearTimeout(timer)
   }
@@ -232,8 +249,8 @@ async function carryDatabases (source: Side, target: Side, shapes: readonly Data
       if (error instanceof CarryAborted) throw error
       report.databases.failed += 1
       addProblem(report, `${label}: ${messageOf(error)}`)
-      // The half-made database is removed, so the website session never holds a database that is only partly the app's.
-      await tell(target, 'dropDatabase', shape.name).catch(() => undefined)
+      // The half-made database is removed, so the website session never holds a database that is only partly the app's. When it stays, the carry ends as failed: its clearing of the website session takes the database away.
+      await dropFailed(target, shape.name, label, ask, report)
       // One database that fails is its own; two pages that no longer answer end the carry.
       try {
         await Promise.all([tell(source, 'connect'), tell(target, 'connect')])
@@ -242,6 +259,21 @@ async function carryDatabases (source: Side, target: Side, shapes: readonly Data
       }
     }
   }
+}
+
+/** Removes the database a failed carry of it left in the target; throws, naming the database, when it stays. */
+async function dropFailed (target: Side, name: string, label: string, ask: Ask, report: CarryReport): Promise<void> {
+  let reason: string | undefined
+  try {
+    const answer = await ask<{ dropped: boolean, reason?: string }>(target, 'dropDatabase', name)
+    if (!answer.dropped) reason = answer.reason ?? 'no reason given'
+  } catch (error) {
+    if (error instanceof CarryAborted) throw error
+    reason = messageOf(error)
+  }
+  if (reason === undefined) return
+  addProblem(report, `${label}: it could not be removed after it failed (${reason})`)
+  throw new Error(`${label} could not be removed after it failed (${reason})`)
 }
 
 /** Moves one store; returns how many of its records were not carried. */
