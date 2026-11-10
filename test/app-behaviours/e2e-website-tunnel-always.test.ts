@@ -18,7 +18,7 @@ import { clickAddressBarRetrying, navigateToFixture } from '../support/e2e-helpe
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { ABSENCE_SETTLE_MS, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
-import { alwaysIsOn, closeTunnelList, openTunnelList, pickTunnelForWebsite, pressAlways, pressRow } from '../support/tunnel-popup.js'
+import { alwaysIsOn, closeTunnelList, openTabWithNoChoice, openTunnelList, pickTunnelForWebsite, pressAlways, pressRow } from '../support/tunnel-popup.js'
 
 const GATEWAY = 'gw.always.test'
 const ORIGIN = 'https://tunnelled.eth'
@@ -62,8 +62,7 @@ async function openSite (): Promise<void> {
 async function freshTab (): Promise<void> {
   const before = await tabIds(chrome)
   await closeTunnelList(app, chrome)
-  await chrome.click('#new-tab')
-  expect(await waitFor(async () => (await tabIds(chrome)).length === before.length + 1)).toBe(true)
+  await openTabWithNoChoice(app, chrome)
   for (const id of before) await chrome.evaluate((tab) => { (window as unknown as { orivonShell: { closeTab: (id: string) => void } }).orivonShell.closeTab(tab) }, id)
   expect(await waitFor(async () => (await tabIds(chrome)).length === 1)).toBe(true)
 }

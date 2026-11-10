@@ -58,7 +58,7 @@ export function runCommand (id: CommandId, target: ShellWindow, deps: CommandDep
   const activeIndex = order.findIndex((tab) => tab.id === activeTabId)
 
   switch (id) {
-    case 'tab.new': tabs.createTab(); return
+    case 'tab.new': tabs.createTab(undefined, true, undefined, tabs.newTabTunnelChoice(activeTabId ?? undefined)); return
     case 'file.open': void openFileCommand(target).catch((error: unknown) => { console.error('[shortcuts] open file command failed:', error) }); return
     case 'tab.close': if (active !== undefined) tabs.closeTab(active.id); return
     case 'tab.next': case 'tab.previous': {

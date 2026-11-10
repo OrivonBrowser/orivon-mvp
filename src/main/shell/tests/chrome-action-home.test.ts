@@ -6,7 +6,7 @@ import type { ChromeActionContext } from '../chrome-actions.js'
 function context (homeUrl: string): { ctx: ChromeActionContext, navigate: ReturnType<typeof vi.fn>, createTab: ReturnType<typeof vi.fn> } {
   const navigate = vi.fn()
   const createTab = vi.fn()
-  const tabs = { getState: () => ({ tabs: [{ id: 'a', isNewTab: false }], activeTabId: 'a' }), navigate, createTab }
+  const tabs = { getState: () => ({ tabs: [{ id: 'a', isNewTab: false }], activeTabId: 'a' }), navigate, createTab, newTabTunnelChoice: () => undefined }
   const settings = { get: () => homeUrl }
   return { ctx: { window: { tabs }, services: { settings }, copyAddress: async () => {} } as unknown as ChromeActionContext, navigate, createTab }
 }
@@ -21,7 +21,7 @@ describe('the home.open chrome action', () => {
     runChromeAction('home.open', { newTab: false }, ctx)
     expect(navigate).toHaveBeenCalledWith('a', 'https://example.com/')
     runChromeAction('home.open', { newTab: true }, ctx)
-    expect(createTab).toHaveBeenCalledWith('https://example.com/', false)
+    expect(createTab).toHaveBeenCalledWith('https://example.com/', false, undefined, undefined)
   })
 
   it('ignores a payload that is not exactly one boolean', () => {
