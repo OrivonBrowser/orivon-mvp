@@ -85,7 +85,9 @@ would save and avoids trusting an on-disk shape that could change under a future
 The partition is left behind, empty, rather than deleted, for the same reason: Electron creates it
 again the moment anything asks for that partition string, so removing the (now-empty) directory buys
 nothing. Runs once, ever, per profile (one boolean marker, not one per origin): a grant creates no
-partition, so no origin gains a new orphaned one for a later run to find.
+partition, so no origin gains a new orphaned one for a later run to find. The session is asked for by the
+origin's name and never found by reading `Partitions/`, so a folder still waiting under its long name
+(`../launch/partition-folders.ts`) is out of its reach.
 
 **Why `orphanedGrantOrigins` also takes `pinnedOrigins`, separate from `isCacheServed`, and why
 `cleanOrphanedAppPartitions` stats the app directory besides.** `isCacheServed` answers "is serving

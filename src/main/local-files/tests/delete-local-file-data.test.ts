@@ -39,7 +39,7 @@ describe('deleteLocalFileData', () => {
     expect(await deleteLocalFileData({ broker, userDataPath: userData, clearPartition }, KEY)).toBe(true)
 
     expect(broker.revokePersisted).toHaveBeenCalledWith(KEY, 'fs')
-    expect(clearPartition).toHaveBeenCalledExactlyOnceWith(`persist:local-${originHash(KEY)}`)
+    expect(clearPartition).toHaveBeenCalledExactlyOnceWith(`persist:local-${originHash(KEY).slice(0, 32)}`)
     expect(await readdir(join(userData, 'app-data'))).toEqual([originHash(OTHER)])
     const record = new LocalFileApps(join(userData, 'local-file-apps.json'))
     expect(record.list()).toEqual([OTHER])

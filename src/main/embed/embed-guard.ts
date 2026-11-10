@@ -5,12 +5,10 @@
 // inside it may proceed. ./embed-host.ts wires these to Electron.
 
 import type { WebPreferences } from 'electron'
-import { originHash } from '../../broker/grants/origin-hash.js'
+import { hashedPartitionName } from '../../broker/grants/origin-hash.js'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
 import { embedAdmissionKind, embedDocumentAllowed } from '../../broker/policy/embed-origin.js'
 import type { Pattern } from '../../contracts/index.js'
-
-const PARTITION_PREFIX = 'persist:embed-'
 
 /**
  * The one session every page `appOrigin` shows runs in: `persist:`, so a
@@ -19,7 +17,7 @@ const PARTITION_PREFIX = 'persist:embed-'
  * different prefix, so it can never coincide with it.
  */
 export function embedPartitionFor (appOrigin: string): string {
-  return `${PARTITION_PREFIX}${originHash(appOrigin)}`
+  return hashedPartitionName('embed', appOrigin)
 }
 
 /** The `<webview>` attributes an app may set that the shell overrides or drops. */
