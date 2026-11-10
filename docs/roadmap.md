@@ -46,8 +46,6 @@ In progress: links from other programs that open in Orivon. An `orivon:open?u=..
 
 ## Non-goals
 
-- No Orivon server in the path of using it. Infrastructure is limited to the endpoint for opt-in
-  statistics and bug reports, and static hosting of first-party app bundles.
-- No judged score passed off as a machine-verified one. The indicator keeps what the machine
-  observed apart from what a provider attests, and names the provider behind every judged level.
+- No Orivon server in the path of using it. Infrastructure is limited to the endpoint for opt-in statistics and bug reports, and static hosting of first-party app bundles or other helpers to make Web3 easier to be accessible.
+- No judged score passed off as a machine-verified one. The indicator keeps what the machine observed apart from what a provider attests, and names the provider behind every judged level.
 - No native machine code run for an app. Native modules and child processes run as WebAssembly.
