@@ -1,4 +1,4 @@
-# ADR-0112: A page an allowed site's own service worker answers keeps the site's grants, because no worker script the shell did not serve can be registered there
+# ADR-0113: A page an allowed site's own service worker answers keeps the site's grants, because no worker script the shell did not serve can be registered there
 
 - **Status:** accepted. Amends [`ADR-0108`](ADR-0108-an-allowed-web3-site-runs-where-websites-run-and-its-kept-copy-is-served-there-through-the-verifier.md)
   (which document of such a site holds the app's grants).
