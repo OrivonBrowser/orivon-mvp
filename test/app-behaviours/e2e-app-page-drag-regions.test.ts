@@ -3,17 +3,16 @@
 // so does one inside a region the page marks after it loaded or inside an open shadow root. The window's frame
 // belongs to the shell, so a page's drag region never takes a press for a window drag. A frame's own regions
 // never took a press, so the frame checks hold with or without the shell's sheet and guard the invariant.
-// The press is a real pointer on the virtual display: a debugger's click skips the window's hit test, which is
-// where a drag region swallows it.
+// The press is the system's own pointer (native-pointer.ts): a debugger's click skips the window's hit test, which
+// is where a drag region swallows it.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-app-page-drag-regions.test.ts
 import type { ElectronApplication, Frame, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { appManifest, grantApp, startAppServer, type AppServer } from './app-behaviour-support.js'
 import { runPhase } from '../support/e2e-helpers.js'
-import { underVirtualDisplay } from '../support/focus-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
-import { pressPointer } from '../support/native-pointer.js'
+import { pressPointer, realPointerAvailable } from '../support/native-pointer.js'
 import { launchShell, QA_TEST_TIMEOUT_MS, startServer, visit, type FixtureServer } from '../support/qa-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
@@ -70,16 +69,18 @@ afterAll(async () => {
   expect(await assertNoElectronSurvivors()).toEqual([])
 })
 
-/** Where the page's top-left corner is on the screen: the window's content, plus the view's place in it. */
-async function pageOrigin (app: ElectronApplication, origin: string): Promise<{ x: number, y: number }> {
-  const at = await app.evaluate(({ BaseWindow }, wanted) => {
+/** A point of the page that `origin` names, in the screen pixels the pointer moves in: the window's content, plus the view's place in it, plus the point. */
+async function screenPointOf (app: ElectronApplication, origin: string, point: { x: number, y: number }): Promise<{ x: number, y: number }> {
+  const at = await app.evaluate(({ BaseWindow, screen }, wanted) => {
     const win = BaseWindow.getAllWindows()[0]
     if (win === undefined) return null
     const content = win.getContentBounds()
-    const view = win.contentView.children.find((child) => (child as unknown as { webContents?: { getURL: () => string } }).webContents?.getURL().startsWith(wanted) === true)
+    const view = win.contentView.children.find((child) => (child as unknown as { webContents?: { getURL: () => string } }).webContents?.getURL().startsWith(wanted.origin) === true)
     const bounds = view?.getBounds()
-    return bounds === undefined ? null : { x: content.x + bounds.x, y: content.y + bounds.y }
-  }, origin)
+    if (bounds === undefined) return null
+    const dip = { x: content.x + bounds.x + wanted.point.x, y: content.y + bounds.y + wanted.point.y }
+    return typeof screen.dipToScreenPoint === 'function' ? screen.dipToScreenPoint(dip) : dip
+  }, { origin, point })
   if (at === null) throw new Error(`no view shows ${origin}`)
   return at
 }
@@ -88,25 +89,48 @@ async function pageOrigin (app: ElectronApplication, origin: string): Promise<{ 
 async function pressAndWatch (app: ElectronApplication, page: Page | Frame, origin: string, id: string): Promise<boolean> {
   const box = await page.locator(`#${id}`).boundingBox()
   if (box === null) throw new Error(`#${id} has no box`)
-  const at = await pageOrigin(app, origin)
-  pressPointer(at.x + box.x + box.width / 2, at.y + box.y + box.height / 2, 1)
+  const at = await screenPointOf(app, origin, { x: box.x + box.width / 2, y: box.y + box.height / 2 })
+  pressPointer(at.x, at.y, 1)
   return await waitFor(async () => await page.evaluate((wanted) => (window as unknown as { __clicks: string[] }).__clicks.includes(wanted), id), 4_000)
 }
 
-it('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a page\'s drag region reaches the page, in an app tab and on a website', async () => {
-  expect(underVirtualDisplay()).toBe(true)
-  const { app, chrome } = await launchShell({ args: [`--host-resolver-rules=MAP ${OTHER_SITE} 127.0.0.1:${new URL(website.origin).port}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`] })
+/** What the page's own declarations compute to: both regions, the one from the stylesheet and the one set later with `!important`. */
+async function declaredRegions (page: Page): Promise<string[]> {
+  return await page.evaluate(() => ['bar', 'late'].map((id) => String((getComputedStyle(document.getElementById(id) as Element) as unknown as Record<string, string>)['appRegion'])))
+}
+
+const SHELL_ARGS = (): string[] => [`--host-resolver-rules=MAP ${OTHER_SITE} 127.0.0.1:${new URL(website.origin).port}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`]
+
+// Each test is a launch of its own and uses the window's first tab: a macOS runner sometimes never lets Playwright
+// attach the page of a tab opened later (test/README.md, Known risk), and a page it cannot reach cannot say what press
+// it received. The press takes the pointer, so it runs on the virtual display or a hosted runner and nowhere else.
+const NEEDS_POINTER = 'a real press needs the headless runner\'s virtual display on Linux, or a hosted runner on Windows and macOS (test/support/native-pointer.ts)'
+
+it('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a drag region of an app\'s page reaches the page', async () => {
+  expect(realPointerAvailable(), NEEDS_POINTER).toBe(true)
+  const { app, chrome } = await launchShell({ args: SHELL_ARGS() })
   try {
-    await runPhase('page drag regions', async (check) => {
+    await runPhase('page drag regions in an app tab', async (check) => {
       await grantApp(app, appServer.origin, appManifest('page-drag-regions', { fs: { quotaBytes: 1024 } }), [{ capability: 'fs', patterns: [] }])
       const appPage = await visit(app, chrome, `${appServer.origin}/`)
-      const regions = await appPage.evaluate(() => ['bar', 'late'].map((id) => String((getComputedStyle(document.getElementById(id) as Element) as unknown as Record<string, string>)['appRegion'])))
+      const regions = await declaredRegions(appPage)
       check('[app:page-drag-region-never-swallows-a-press] the page\'s own declarations, one in a stylesheet and one set later with !important, both compute as no-drag', regions.every((region) => region === 'no-drag'), JSON.stringify(regions))
       check('[app:page-drag-region-never-swallows-a-press] a real press on a button inside an app\'s drag region is a click for the page', await pressAndWatch(app, appPage, appServer.origin, 'inside'))
       check('[app:page-drag-region-never-swallows-a-press] and so is one inside a region the app marked after it loaded', await pressAndWatch(app, appPage, appServer.origin, 'later'))
+    })
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
 
-      await chrome.click('#new-tab')
+it('[app:page-drag-region-never-swallows-a-press] a real press on a control inside a drag region of a website, or of a frame in it, reaches the page', async () => {
+  expect(realPointerAvailable(), NEEDS_POINTER).toBe(true)
+  const { app, chrome } = await launchShell({ args: SHELL_ARGS() })
+  try {
+    await runPhase('page drag regions on a website', async (check) => {
       const sitePage = await visit(app, chrome, `${website.origin}/`)
+      const regions = await declaredRegions(sitePage)
+      check('[app:page-drag-region-never-swallows-a-press] the website\'s own declarations, one in a stylesheet and one set later with !important, both compute as no-drag', regions.every((region) => region === 'no-drag'), JSON.stringify(regions))
       check('[app:page-drag-region-never-swallows-a-press] a real press on a button inside a website\'s drag region is a click for the page', await pressAndWatch(app, sitePage, website.origin, 'inside'))
       check('[app:page-drag-region-never-swallows-a-press] and so is one inside a region the website marked after it loaded', await pressAndWatch(app, sitePage, website.origin, 'later'))
 
