@@ -15,7 +15,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
-import { CANCELLED, gnomeScriptProxy, launchShellOn, macosProxy, ORDINARY, PLAIN_SHEET, PROXY_SHEET, refusalLines, report, reportedMirror, resolved, startLoggingProxy, startScriptServer, UNSURE_SHEET, verifierNames, visitReporting, waitForAnswer, windowsScriptProxy } from './system-proxy-support.js'
+import { CANCELLED, gnomeScriptProxy, launchShellOn, macosProxy, ORDINARY, PLAIN_SHEET, PROXY_SHEET, refusalLines, report, reportedMirror, resolved, startLoggingProxy, startScriptServer, tunnelsOpened, UNSURE_SHEET, verifierNames, visitReporting, waitForAnswer, windowsScriptProxy } from './system-proxy-support.js'
 import type { LoggingProxy, Running, ScriptServer } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
@@ -125,7 +125,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
     expect(verifierNames(first.seen)).toEqual([])
     expect(verifierNames(second.seen)).toEqual([])
-    expect(first.seen.filter((line) => line.startsWith('CONNECT') && !line.includes('gvt1.com'))).toEqual([])
+    expect(tunnelsOpened(first.seen)).toEqual([])
   })
 
   it('keeps the script\'s own split: an ordinary site through the first proxy and another through the second', () => {

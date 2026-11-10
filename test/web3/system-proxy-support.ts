@@ -368,6 +368,12 @@ Promise.allSettled([fetch('https://fetched.eth/a'), new Promise((done) => { cons
 /** The lines of a proxy's log that name a host the verifier serves. */
 export const verifierNames = (log: readonly string[]): string[] => log.filter((line) => /\.(eth|orivon)\b/.test(line))
 
+/** Hosts the operating system's own services ask through the system-wide proxy, on a runner whose settings the spec changed: the component updater of Chromium, and Apple's CloudKit and certificate checks. */
+const SYSTEM_SERVICE_HOSTS = ['gvt1.com', 'apple.com', 'apple-cloudkit.com']
+
+/** The `CONNECT` lines of `log` that the shell could have sent: a tunnel to a host the system's own services use says nothing about Orivon. */
+export const tunnelsOpened = (log: readonly string[]): string[] => log.filter((line) => line.startsWith('CONNECT') && !SYSTEM_SERVICE_HOSTS.some((host) => line.includes(host)))
+
 export interface Running { app: ElectronApplication, chrome: Page }
 
 /** A shell whose verifier host is up, answering `fixture.eth` and `direct.eth` from `gateway`, launched with no desktop in its environment and `env` on top of it, under `resolver` (every name hidden unless a spec says otherwise). */

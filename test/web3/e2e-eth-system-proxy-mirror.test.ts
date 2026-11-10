@@ -17,7 +17,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
-import { gnomeProxy, kdeProxy, launchShellOn, macosProxy, ORDINARY, PROXY_SHEET, CANCELLED, refusalLines, report, reportedMirror, resolved, startLoggingProxy, verifierNames, visitReporting, waitForAnswer, windowsAutoDetect, windowsManualProxy } from './system-proxy-support.js'
+import { gnomeProxy, kdeProxy, launchShellOn, macosProxy, ORDINARY, PROXY_SHEET, CANCELLED, refusalLines, report, reportedMirror, resolved, startLoggingProxy, tunnelsOpened, verifierNames, visitReporting, waitForAnswer, windowsAutoDetect, windowsManualProxy } from './system-proxy-support.js'
 import type { LoggingProxy, MacosProxy, Running, WindowsProxyForm } from './system-proxy-support.js'
 import { ALL_BUT_ROOT_DOT_RESOLVER, readNetLog, startNetLog, stopNetLog } from './root-dot-support.js'
 import type { NetLogFacts } from './root-dot-support.js'
@@ -152,7 +152,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     expect(first.seen).toContain(`GET ${ORDINARY}`)
     expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
     expect(verifierNames(first.seen)).toEqual([])
-    expect(first.seen.filter((line) => line.startsWith('CONNECT') && !line.includes('gvt1.com'))).toEqual([])
+    expect(tunnelsOpened(first.seen)).toEqual([])
   })
 
   it('answers DIRECT for a name the verifier serves in every session kind, and the proxy for an ordinary one', () => {
@@ -328,7 +328,7 @@ describe.skipIf(!LINUX)('a computer whose KDE settings carry a manual proxy', ()
     expect(first.seen).toContain(`GET ${ORDINARY}`)
     expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
     expect(verifierNames(first.seen)).toEqual([])
-    expect(first.seen.filter((line) => line.startsWith('CONNECT') && !line.includes('gvt1.com'))).toEqual([])
+    expect(tunnelsOpened(first.seen)).toEqual([])
   })
 
   it('answers DIRECT for a name the verifier serves in every session kind, and the proxy for an ordinary one', () => {
