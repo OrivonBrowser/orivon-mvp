@@ -236,6 +236,7 @@ describe('the answer', () => {
 describe('every refusal has one word', () => {
   const words: Array<[string, Behaviour, LookupWord]> = [
     ['another HTTP status', () => new Response('', { status: 500 }), 'no-answer'],
+    ['another HTTP status, whatever its body holds', (sent) => new Response(answerFor(SITE, sent.init.body as Uint8Array), { status: 502 }), 'no-answer'],
     ['a 407 from the server itself', () => new Response('', { status: 407 }), 'sign-in'],
     ['SERVFAIL', (sent) => new Response(answerFor({ [sent.question.name]: { rcode: 2 } }, sent.init.body as Uint8Array), { status: 200 }), 'no-answer'],
     ['bytes that do not decode', () => new Response(new Uint8Array([1, 2, 3]), { status: 200 }), 'no-answer'],
