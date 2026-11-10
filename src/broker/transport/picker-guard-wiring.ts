@@ -63,8 +63,9 @@ export interface Notice { readonly title: string, readonly message: string }
  * app's own call as a plain cancellation (`null` or `[]`), indistinguishable
  * from one the person chose themselves. Nothing downstream of a refused pick
  * waits on the notice being dismissed. The notice is drawn by `show`, which
- * the shell supplies: this layer may not import the shell's panel code, and
- * a refusal with nothing to show it on only reaches the log.
+ * the shell supplies: this layer may not import the shell's panel code. Every
+ * refusal reaches the log too, so a report of a pick that quietly did nothing
+ * names the reason.
  */
 export function notifyPickRefused (info: { readonly origin: string, readonly appName: string | undefined, readonly reason: string }, show: ((notice: Notice) => void) | undefined): void {
   const requester = info.appName === undefined ? info.origin : `"${info.appName}" (${info.origin})`
@@ -72,6 +73,6 @@ export function notifyPickRefused (info: { readonly origin: string, readonly app
     title: 'Folder or file not allowed',
     message: `${requester} asked to use a folder or file Orivon will not hand over: ${info.reason}.`
   }
-  if (show === undefined) console.error(`[picker] ${notice.message}`)
-  else show(notice)
+  console.warn(`[picker] ${notice.message}`)
+  show?.(notice)
 }
