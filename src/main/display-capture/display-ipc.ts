@@ -41,6 +41,7 @@ export function readPick (raw: unknown): PickRequest | undefined {
 
 export type DisplayReport =
   | { readonly type: 'arm', readonly nonce: string }
+  | { readonly type: 'canary', readonly nonce: string }
   | { readonly type: 'called', readonly nonce: string, readonly rejectedEarly: boolean }
   | { readonly type: 'tracks-ended', readonly nonce: string }
   | { readonly type: 'received', readonly nonce: string }
@@ -48,7 +49,7 @@ export type DisplayReport =
 
 export function readReport (raw: unknown): DisplayReport | undefined {
   if (!isRecord(raw) || typeof raw.nonce !== 'string' || raw.nonce.length === 0 || raw.nonce.length > NONCE_MAX) return undefined
-  if ((raw.type === 'arm' || raw.type === 'tracks-ended' || raw.type === 'received') && sameKeys(raw, ['type', 'nonce'])) return { type: raw.type, nonce: raw.nonce }
+  if ((raw.type === 'arm' || raw.type === 'canary' || raw.type === 'tracks-ended' || raw.type === 'received') && sameKeys(raw, ['type', 'nonce'])) return { type: raw.type, nonce: raw.nonce }
   if (raw.type === 'called' && sameKeys(raw, ['type', 'nonce', 'rejectedEarly']) && typeof raw.rejectedEarly === 'boolean') return { type: 'called', nonce: raw.nonce, rejectedEarly: raw.rejectedEarly }
   if (raw.type === 'failed' && sameKeys(raw, ['type', 'nonce', 'name']) && isFailureName(raw.name)) return { type: 'failed', nonce: raw.nonce, name: raw.name }
   return undefined
@@ -82,6 +83,7 @@ export function registerDisplayIpc (deps: DisplayIpcDeps): void {
     const report = readReport(raw)
     if (contents === undefined || report === undefined) return
     if (report.type === 'arm') deps.gate.arm(contents, report.nonce)
+    else if (report.type === 'canary') deps.gate.canary(contents, report.nonce)
     else if (report.type === 'called') deps.gate.called(contents, report.nonce, report.rejectedEarly)
     else if (report.type === 'received') deps.gate.received(contents, report.nonce)
     else if (report.type === 'failed') deps.gate.failed(contents, report.nonce, report.name)
