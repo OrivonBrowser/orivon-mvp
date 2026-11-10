@@ -55,7 +55,8 @@ function rig (options: RigOptions = {}): Rig {
 }
 
 const writes = (store: FakeCookieStore): number => store.writes.length
-const visit = async (r: Rig, label: string = NYM, address: string = SITE): Promise<void> => { await r.mirror.visit(label, address) }
+/** The first request of a navigation the person started (the address bar, a bookmark): the one load that may add a site before the page asks. */
+const visit = async (r: Rig, label: string = NYM, address: string = SITE): Promise<void> => { await r.mirror.visit(label, address, true) }
 /** A mirror that is started and has copied the site into the profiles named. */
 async function watching (r: Rig, labels: string[] = [NYM, DIRECT]): Promise<void> {
   await r.mirror.start()
@@ -114,15 +115,15 @@ describe('copying a site into a profile', () => {
 
   it('asks the page to wait only for a site that is new to the profile, and for none while the mirror is off', async () => {
     const r = rig({ join: ['nym'] })
-    expect(r.mirror.visit(NYM, SITE), 'off').toBeUndefined()
+    expect(r.mirror.visit(NYM, SITE, true), 'off').toBeUndefined()
     await r.mirror.start()
-    const first = r.mirror.visit(NYM, SITE)
+    const first = r.mirror.visit(NYM, SITE, true)
     expect(first).toBeDefined()
-    expect(r.mirror.visit(NYM, SITE), 'the same site while it is being copied waits for the same copy').toBe(first)
+    expect(r.mirror.visit(NYM, SITE, true), 'the same site while it is being copied waits for the same copy').toBe(first)
     await first
-    expect(r.mirror.visit(NYM, 'https://www.example.com/other'), 'a page of a site already copied').toBeUndefined()
-    expect(r.mirror.visit(NYM, 'not an address'), 'no site').toBeUndefined()
-    expect(r.mirror.visit('unknown-profile', 'https://other.test/'), 'a profile that did not join').toBeUndefined()
+    expect(r.mirror.visit(NYM, 'https://www.example.com/other', true), 'a page of a site already copied').toBeUndefined()
+    expect(r.mirror.visit(NYM, 'not an address', true), 'no site').toBeUndefined()
+    expect(r.mirror.visit('unknown-profile', 'https://other.test/', true), 'a profile that did not join').toBeUndefined()
   })
 
   it('keeps host-only cookies host-only, domain cookies on their domain, and session cookies session cookies', async () => {
@@ -162,6 +163,63 @@ describe('copying a site into a profile', () => {
     await r.mirror.idle()
     expect(r.nym.contents()).toHaveLength(1)
     expect(r.nym.listening).toBe(1)
+  })
+})
+
+describe('which loads add a site', () => {
+  const TRACKER_HOP = 'https://tracker.test/r?u=https%3A%2F%2Fexample.com%2F'
+
+  it('adds no site for a load the browser did not start, and copies nothing for it: a redirect hop or a page\'s own navigation', async () => {
+    const r = rig({ join: ['nym'] })
+    r.main.seed(signIn({ name: 'uid', value: 'normal-identity', domain: 'tracker.test', sameSite: 'no_restriction' }))
+    await r.mirror.start()
+    expect(r.mirror.visit(NYM, TRACKER_HOP, false), 'nothing to wait for').toBeUndefined()
+    await r.mirror.idle()
+    expect(r.nym.contents(), 'the tracker\'s cookie was not copied').toEqual([])
+    expect(r.disk.current.domains, 'and the tracker is not in the scope').toEqual({})
+    r.main.siteSets(signIn({ name: 'uid', value: 'changed-in-normal-browsing', domain: 'tracker.test', sameSite: 'no_restriction' }))
+    await r.mirror.idle()
+    expect(r.nym.contents(), 'nor is a later change of it followed').toEqual([])
+  })
+
+  it('still makes a page wait for the copy of a site that is being added, whatever started the load', async () => {
+    const r = rig({ join: ['nym'] })
+    r.main.seed(signIn())
+    await r.mirror.start()
+    const adding = r.mirror.visit(NYM, SITE, true)
+    expect(adding).toBeDefined()
+    expect(r.mirror.visit(NYM, SITE, false), 'a redirect hop to the same site waits for the same copy').toBe(adding)
+    await adding
+    expect(r.mirror.visit(NYM, SITE, false), 'and for nothing once it is copied').toBeUndefined()
+  })
+
+  it('adds a site when a navigation to it commits as the top-level page of a tab, copying the default session\'s cookies of it', async () => {
+    const r = rig({ join: ['nym'] })
+    r.main.seed(signIn({ name: 'sid', value: 'default-sid' }))
+    await r.mirror.start()
+    await r.mirror.committed(NYM, 'https://www.example.com/after-a-page-started-it')
+    await r.mirror.idle()
+    expect(r.nym.get('sid')?.value).toBe('default-sid')
+    expect(r.disk.current.domains).toEqual({ [NYM]: ['example.com'] })
+    r.main.siteSets(signIn({ name: 'sid', value: 'default-later' }))
+    await r.mirror.idle()
+    expect(r.nym.get('sid')?.value, 'and it is followed from then on').toBe('default-later')
+  })
+
+  it('adds a site once, however often navigations to it commit, and none while the mirror is off or for a profile that did not join', async () => {
+    const r = rig({ join: ['nym'] })
+    r.main.seed(signIn())
+    await r.mirror.committed(NYM, SITE)
+    expect(r.disk.history, 'off: nothing recorded').toEqual([])
+    await r.mirror.start()
+    await r.mirror.committed('unknown-profile', SITE)
+    await r.mirror.committed(NYM, 'not an address')
+    expect(r.disk.history, 'nothing recorded for either').toEqual([])
+    await Promise.all([r.mirror.committed(NYM, SITE), r.mirror.committed(NYM, SITE)])
+    await r.mirror.committed(NYM, SITE)
+    await r.mirror.idle()
+    expect(r.disk.history.map((record) => record.domains)).toEqual([{ [NYM]: ['example.com'] }])
+    expect(writes(r.nym)).toBe(1)
   })
 })
 
@@ -296,6 +354,18 @@ describe('following the sessions', () => {
     expect(r.nym.get('embed')).toBeUndefined()
     expect(r.logs.filter((line) => line.includes('share a name')).length).toBe(1)
     expect(r.logs.join('\n')).not.toContain('embed')
+  })
+
+  it('carries a cookie again once the look-alike that kept it from being written is gone', async () => {
+    const r = rig({ join: ['nym'] })
+    r.main.seed(signIn({ value: 'one' }))
+    r.main.shadow(signIn({ value: 'partitioned', sameSite: 'no_restriction' }))
+    await watching(r, [NYM])
+    expect(r.nym.get('sid'), 'while a look-alike is listed it is not written').toBeUndefined()
+    r.main.dropShadows()
+    r.main.siteSets(signIn({ value: 'signed-in-again' }))
+    await r.mirror.idle()
+    expect(r.nym.get('sid')?.value, 'a new sign-in on the same cookie is carried').toBe('signed-in-again')
   })
 
   it('reports a write that failed, names no cookie, and carries on with the next one', async () => {
@@ -609,6 +679,66 @@ describe('a restart with the switch off', () => {
     await second.mirror.idle()
     expect(second.nym.get('sid')?.value).toBe('now')
     expect(second.nym.get('uid')).toBeUndefined()
+  })
+})
+
+describe('forgetting the sites when history is cleared', () => {
+  it('empties the list of sites on disk, clears the profiles\' copies, keeps the default session\'s cookies, and carries nothing to the default session', async () => {
+    const r = rig()
+    r.main.seed(signIn({ name: 'sid', value: 'normal' }))
+    r.main.seed(signIn({ name: 'other', domain: 'other.test' }))
+    await watching(r)
+    r.nym.siteSets(signIn({ name: 'unrelated', domain: 'elsewhere.test' }))
+    await r.mirror.idle()
+    await r.mirror.forget()
+    expect(r.disk.current, 'no site is listed and nothing is owed').toEqual({ domains: {}, owed: false })
+    expect(r.nym.get('sid'), 'the copy in the profile is gone').toBeUndefined()
+    expect(r.direct.get('sid')).toBeUndefined()
+    expect(r.nym.get('unrelated'), 'a cookie of a site that was never mirrored stays').toBeDefined()
+    expect(r.main.get('sid')?.value, 'normal browsing keeps its own').toBe('normal')
+    await r.mirror.idle()
+    expect(r.main.get('sid')?.value).toBe('normal')
+    expect(r.main.get('unrelated'), 'the clear is not a sign-out that reaches normal browsing').toBeUndefined()
+  })
+
+  it('goes on mirroring afterwards: a site is added again by the next load that may add it, and a site no longer listed is not followed', async () => {
+    const r = rig({ join: ['nym'] })
+    r.main.seed(signIn({ name: 'sid', value: 'normal' }))
+    await watching(r, [NYM])
+    await r.mirror.forget()
+    r.main.siteSets(signIn({ name: 'sid', value: 'changed' }))
+    await r.mirror.idle()
+    expect(r.nym.get('sid'), 'no longer followed').toBeUndefined()
+    expect(r.mirror.status().state).toBe('mirroring')
+    await visit(r)
+    await r.mirror.idle()
+    expect(r.nym.get('sid')?.value).toBe('changed')
+    expect(r.disk.current.domains).toEqual({ [NYM]: ['example.com'] })
+  })
+
+  it('keeps the list and says a clear is owed when a profile cannot be cleared, and finishes at the next start', async () => {
+    const r = rig({ join: ['nym'] })
+    r.main.seed(signIn())
+    await watching(r, [NYM])
+    r.nym.failRemoves = true
+    await r.mirror.forget()
+    expect(r.disk.current).toEqual({ domains: { [NYM]: ['example.com'] }, owed: true })
+    r.nym.failRemoves = false
+    const next = rig({ join: ['nym'], record: r.disk.current, stores: r })
+    await next.mirror.start(); await next.mirror.idle()
+    expect(next.nym.contents()).toEqual([])
+    expect(next.disk.current).toEqual({ domains: {}, owed: false })
+  })
+
+  it('empties the list while the mirror is off too, and does nothing when it holds nothing', async () => {
+    const r = rig({ join: ['nym'], record: { domains: { [NYM]: ['example.com'] }, owed: false } })
+    r.nym.seed(signIn())
+    await r.mirror.forget()
+    expect(r.disk.current).toEqual({ domains: {}, owed: false })
+    expect(r.nym.contents(), 'and the copies the record named').toEqual([])
+    const empty = rig({ join: ['nym'] })
+    await empty.mirror.forget()
+    expect(empty.disk.history).toEqual([])
   })
 })
 

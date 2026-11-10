@@ -2,8 +2,10 @@
 // the cookies of the sites a person opens in a tunnelled tab are kept the same in the profile and in normal browsing, both ways, so a
 // tab that carries a tunnel choice is signed in to the accounts normal browsing is signed in to, with the route of the tab unchanged
 // (the site is reached through the SOCKS5 fixture, never directly). The cookies of a third party the page embeds are not shared.
-// Turned on again, the profiles' copies are cleared and normal browsing keeps its own, also when the app was closed before the clear
-// was done. The switch is the real one in Settings; cookies are read from each session in the main process.
+// A site is added by a navigation the person started (the address bar) or by one that has committed at it, never by a tracker a page
+// bounces through (a redirect, a script, a popup). Turned on again, the profiles' copies are cleared and normal browsing keeps its
+// own, also when the app was closed before the clear was done. The switch is the real one in Settings; cookies are read from each
+// session in the main process.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/sites/e2e-tunnel-shared-sign-ins.test.ts
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -17,6 +19,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest'
 import type { ElectronApplication, Page } from 'playwright'
 import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
+import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { selfSigned } from '../support/self-signed.js'
 import { launchShell, QA_TEST_TIMEOUT_MS, visitWithoutPage } from '../support/qa-helpers.js'
@@ -32,7 +35,7 @@ const SWITCH = '#row-route-separate-sign-ins input[type=checkbox]'
 type Choice = 'socks5' | 'direct'
 
 /** `via` is the route a request took: the SOCKS5 fixture's (`tunnel`) or straight to the host the resolver maps (`direct`). */
-interface Seen { path: string, cookie: string, via: 'tunnel' | 'direct' }
+interface Seen { host: string, path: string, cookie: string, via: 'tunnel' | 'direct' }
 
 let socks: Socks5Fixture
 let dir: string
@@ -48,19 +51,28 @@ const GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA
 function answer (via: Seen['via'], request: IncomingMessage, response: ServerResponse): void {
   const path = (request.url ?? '/').split('?')[0] ?? '/'
   const host = (request.headers.host ?? '').split(':')[0]
-  seen.push({ path, cookie: request.headers.cookie ?? '', via })
+  seen.push({ host: host ?? '', path, cookie: request.headers.cookie ?? '', via })
   if (host === TRACKER) {
     minted += 1
-    response.writeHead(200, { 'content-type': 'image/gif', 'cache-control': 'no-store', 'set-cookie': `uid=minted-${String(minted)}; Path=/; Secure; SameSite=None; Max-Age=3600` }).end(GIF)
+    const identity = `uid=minted-${String(minted)}; Path=/; Secure; SameSite=None; Max-Age=3600`
+    const back = new URL(request.url ?? '/', 'https://x.test').searchParams.get('u')
+    if (path === '/r' && back !== null) { response.writeHead(302, { location: back, 'cache-control': 'no-store', 'set-cookie': identity }).end(); return }
+    if (path === '/landing') { response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store', 'set-cookie': identity }).end('<!doctype html><title>landing</title><body>landing</body>'); return }
+    response.writeHead(200, { 'content-type': 'image/gif', 'cache-control': 'no-store', 'set-cookie': identity }).end(GIF)
     return
   }
+  const bounce = `https://${TRACKER}:${String(ports.decoy)}/r?u=${encodeURIComponent(`https://${SITE}:${String(ports.decoy)}/landed`)}`
+  if (path === '/to-tracker') { response.writeHead(302, { location: bounce, 'cache-control': 'no-store' }).end(); return }
   const headers: Record<string, string | string[]> = { 'content-type': 'text/html', 'cache-control': 'no-store' }
   if (path === '/login') headers['set-cookie'] = 'sid=signed-in; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=3600'
   if (path === '/tunnel-login') headers['set-cookie'] = 'tunnelled=yes; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600'
   if (path === '/other-login') headers['set-cookie'] = 'other=1; Path=/; HttpOnly; SameSite=Lax; Max-Age=3600'
   if (path === '/logout') headers['set-cookie'] = 'sid=; Path=/; Secure; Max-Age=0'
   const embed = path === '/embed' ? `<img src="https://${TRACKER}:${String(ports.decoy)}/pixel.gif" width="1" height="1">` : ''
-  response.writeHead(200, headers).end(`<!doctype html><title>${path}</title><body>${path}${embed}</body>`)
+  // What a page does by itself: bounces through the tracker with a script, offers a link that opens one in a popup, or leaves for it.
+  const script = path === '/bounce' ? `<script>location.href = ${JSON.stringify(bounce)}</script>` : path === '/leave' ? `<script>location.href = ${JSON.stringify(`https://${TRACKER}:${String(ports.decoy)}/landing`)}</script>` : ''
+  const popup = path === '/popup' ? `<a id="pop" href=${JSON.stringify(bounce)} target="_blank">pop</a>` : ''
+  response.writeHead(200, headers).end(`<!doctype html><title>${path}</title><body>${path}${embed}${popup}${script}</body>`)
 }
 
 /** An https site: a plain-http one lives in a profile kept in memory, which the mirror never touches. The page address names the decoy's port, so a request that skipped the tunnel lands on the decoy and is told apart. */
@@ -145,6 +157,27 @@ async function cookiesIn (app: ElectronApplication, partition: string | null, na
     return await target.cookies.get(cookieName === null ? {} : { name: cookieName }) as unknown as Array<Record<string, unknown>>
   }, [partition, name ?? null] as const)
 }
+
+/** Types `url` in the address bar and waits for a page done loading at an address that starts with `landing`: where the navigation ends, after the bounces it makes on the way. */
+async function visitUntil (app: ElectronApplication, chrome: Page, url: string, landing: string): Promise<void> {
+  await clickAddressBarRetrying(chrome, url)
+  expect(await waitFor(async () => await app.evaluate(({ webContents }, target) => webContents.getAllWebContents().some((wc) => wc.getURL().startsWith(target) && !wc.isLoading()), landing)), `a page loaded at ${landing}`).toBe(true)
+}
+
+/** Clicks the element `selector` of the page whose address contains `part` with real input, which is what lets a page open a window. */
+async function clickWithInput (app: ElectronApplication, part: string, selector: string): Promise<void> {
+  await app.evaluate(async ({ webContents }, [wanted, css]) => {
+    const wc = webContents.getAllWebContents().find((candidate) => !candidate.isDestroyed() && candidate.getURL().includes(wanted as string))
+    if (wc === undefined) throw new Error(`no page at ${wanted as string}`)
+    const at = await wc.executeJavaScript(`(() => { const box = document.querySelector(${JSON.stringify(css)}).getBoundingClientRect(); return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) } })()`) as { x: number, y: number }
+    wc.sendInputEvent({ type: 'mouseMove', ...at })
+    wc.sendInputEvent({ type: 'mouseDown', ...at, button: 'left', clickCount: 1 })
+    wc.sendInputEvent({ type: 'mouseUp', ...at, button: 'left', clickCount: 1 })
+  }, [part, selector] as const)
+}
+
+/** What the tracker was sent by the requests to it from `from` on. */
+const trackerSaw = (from: number): string[] => seen.slice(from).filter((one) => one.host === TRACKER).map((one) => one.cookie)
 
 /** Moves the switch in Settings the way a person does, and leaves the tab that was in front in front. */
 async function setSeparate (app: ElectronApplication, chrome: Page, on: boolean): Promise<void> {
@@ -236,6 +269,61 @@ it('[tunnel profiles share sign-ins] separate by default; with the switch off a 
     expect(lastCookie('/whoami', 'tunnel'), 'the profile keeps a cookie its own tab was given').toContain('other=1')
     await delay(2000)
     expect(await cookiesIn(app, null, 'other'), 'a cookie set in a separate profile stays there').toEqual([])
+  } finally {
+    await closeElectron(app)
+  }
+}, 8 * QA_TEST_TIMEOUT_MS)
+
+it('[tunnel profiles share sign-ins] the site typed in the address bar is copied before its first request; a tracker a page bounces through (a redirect, a script, a popup) is not, and a site a page navigates to is added once it has loaded', async () => {
+  const { app, chrome } = await start({ 'network.tunnel.separateSignIns': false })
+  try {
+    const profile = profileOf(app)
+    const landed = `https://${SITE}:${String(ports.decoy)}/landed`
+    const normalIdentity = 'minted-in-normal-browsing'
+    await visitWithoutPage(app, chrome, urlOf('/login'))
+    await app.evaluate(async ({ session }, [tracker, value]) => { await session.defaultSession.cookies.set({ url: tracker as string, name: 'uid', value: value as string, secure: true, sameSite: 'no_restriction', expirationDate: Math.floor(Date.now() / 1000) + 3600 }) }, [`https://${TRACKER}/`, normalIdentity])
+    await tabWith(app, chrome, 'socks5')
+
+    // The address bar to a site: the person's own choice, copied before the first request asks for it.
+    await visitWithoutPage(app, chrome, urlOf('/whoami'))
+    expect(lastCookie('/whoami', 'tunnel'), 'the first request of a navigation the person started sends the sign-in').toContain('sid=signed-in')
+    expect(recordOf(profile)).toEqual({ version: 1, domains: { 'proxy-profile': ['socks.test'] }, owed: false })
+
+    const bounced = async (label: string, from: number): Promise<void> => {
+      const sent = trackerSaw(from)
+      expect(sent.length, `${label}: the tracker was reached`).toBeGreaterThan(0)
+      for (const cookie of sent) expect(cookie, `${label}: normal browsing's identity was not sent to the tracker`).not.toContain(normalIdentity)
+      expect((await cookiesIn(app, PROXY_PROFILE, 'uid'))[0]?.['value'], `${label}: the profile holds the identity the tracker gave it`).toMatch(/^minted-\d+$/)
+      expect(recordOf(profile), `${label}: the tracker is not in the scope`).toEqual({ version: 1, domains: { 'proxy-profile': ['socks.test'] }, owed: false })
+    }
+
+    // A redirect hop of a navigation the person started: the first hop is the site, the tracker is a hop after it.
+    let from = seen.length
+    await visitUntil(app, chrome, urlOf('/to-tracker'), landed)
+    await bounced('a redirect through the tracker', from)
+
+    // A page that sends its tab through the tracker with a script.
+    from = seen.length
+    await visitUntil(app, chrome, urlOf('/bounce'), landed)
+    await bounced('a script bouncing through the tracker', from)
+
+    // A popup a page opens into the tracker, which sends it back.
+    await visitWithoutPage(app, chrome, urlOf('/popup'))
+    from = seen.length
+    await clickWithInput(app, '/popup', '#pop')
+    expect(await waitFor(() => trackerSaw(from).length > 0, 20_000), `the popup reached the tracker (the pages open: ${JSON.stringify(await app.evaluate(({ webContents }) => webContents.getAllWebContents().map((wc) => wc.getURL())))}; the requests: ${requestsSeen()})`).toBe(true)
+    expect(await waitFor(async () => await app.evaluate(({ webContents }, target) => webContents.getAllWebContents().filter((wc) => wc.getURL().startsWith(target) && !wc.isLoading()).length >= 1, landed), 20_000)).toBe(true)
+    await bounced('a popup through the tracker', from)
+
+    await delay(2500)
+    expect(await cookiesIn(app, null, 'uid'), 'nothing the tracker gave the tunnel reached normal browsing').toEqual([expect.objectContaining({ value: normalIdentity })])
+
+    // A page that navigates its tab to another site: that page loads signed out once (a page chose it, not the person); once it has loaded the site is added and follows normal browsing.
+    from = seen.length
+    await visitUntil(app, chrome, urlOf('/leave'), `https://${TRACKER}:${String(ports.decoy)}/landing`)
+    expect(trackerSaw(from)[0], 'the first load of a site a page navigated to is signed out').not.toContain(normalIdentity)
+    expect(await waitFor(async () => (await cookiesIn(app, PROXY_PROFILE, 'uid'))[0]?.['value'] === normalIdentity, 20_000), 'and then the site follows normal browsing').toBe(true)
+    expect(recordOf(profile)).toEqual({ version: 1, domains: { 'proxy-profile': ['cdn-tracker.test', 'socks.test'] }, owed: false })
   } finally {
     await closeElectron(app)
   }

@@ -1,12 +1,13 @@
 // Keeps the default session's cookies and those of the profile sessions in step, for the sites a person opens in a tunnelled tab and
 // no others. Electron-free over the stores it is handed. README.md's Design notes say how a change is carried and why.
 
-import { siteOf } from '../../privacy/site-of.js'
 import { addressOf, followsChange, identityOf, planSet, sameCookie, siteOfCookie, wouldSend } from './cookies.js'
 import type { CookieStore, StoredCookie } from './cookies.js'
 import { MAX_SITES_PER_PROFILE } from './mirror-record.js'
 import type { MirrorRecord } from './mirror-record.js'
+import { mirrorSiteOf } from './mirror-site.js'
 import type { CookieMirrorStatus } from './mirror-status.js'
+import { createWriteBudget } from './write-budget.js'
 
 export interface MirrorSide {
   /** What the log says: the session's name, never a site. */
@@ -28,25 +29,26 @@ export interface CookieMirror {
   /** A profile session exists. Resolves once it holds what the default session does for the sites already copied into it (at once while the mirror is off). */
   readonly join: (side: MirrorSide) => Promise<void>
   /**
-   * A tab in the profile named `label` is about to load `address` as a page. When its site is new to that profile, the default
-   * session's cookies of the site are copied in first. A promise to wait for, or undefined when there is nothing to wait for.
+   * A tab in the profile named `label` is about to request `address` as its page. A site that is being copied into the profile is
+   * waited for, whatever started the load. A site new to the profile is added, and the default session's cookies of it copied
+   * first, only when `joins`: the request is the first of a navigation the person started. A redirect hop and a page's own
+   * navigation never add a site. A promise to wait for, or undefined when there is nothing to wait for.
    */
-  readonly visit: (label: string, address: string) => Promise<void> | undefined
+  readonly visit: (label: string, address: string, joins: boolean) => Promise<void> | undefined
+  /** A navigation committed `address` as the top-level page of a tab in `label`: its site is mirrored into that profile from now on, whatever started the navigation. */
+  readonly committed: (label: string, address: string) => Promise<void>
   /** Makes each profile equal to the default session for the sites recorded, then follows every change to cookies of those sites. */
   readonly start: () => Promise<void>
   /** Stops following and clears the recorded sites' cookies from the profiles; the default session's stay. */
   readonly stop: () => Promise<void>
   /** With the switch on at launch: finishes a clear an earlier run owed. */
   readonly settle: () => Promise<void>
+  /** Forgets every site opened so far: the profiles' copies of their cookies are cleared and the list is emptied, and the mirror goes on from there. */
+  readonly forget: () => Promise<void>
   /** Resolves when everything asked for so far, and what it set off, has been done. */
   readonly idle: () => Promise<void>
   readonly status: () => CookieMirrorStatus
 }
-
-/** A cookie one store keeps changing in a loop is written to a session at most this often. */
-const WRITES_PER_WINDOW = 30
-const WINDOW_MS = 5000
-const BUDGETS_KEPT = 5000
 
 interface Change {
   readonly side: MirrorSide
@@ -72,13 +74,13 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
   for (const [label, sites] of Object.entries(earlier.domains)) scope.set(label, new Set(sites))
   /** What a cookie held when the default session and a profile last agreed on it, for each profile and cookie: it tells which side has changed since. */
   const agreed = new Map<string, StoredCookie>()
-  /** Cookies a listing has shown more than once (only partitioned cookies share a name, domain and path): never written, removed when the one mirrored is. */
+  /** Cookies the last listing of them showed more than once (only partitioned cookies share a name, domain and path): never written, removed when the one mirrored is. Forgotten when the cookie is set again, and worked out afresh from the listing at each equalize. */
   const twinned = new Set<string>()
   /** The cookies changed and not yet carried, one entry for each session and cookie: a cookie changed again meanwhile is carried once, as it is then. */
   const dirty = new Map<string, Change>()
   const adding = new Map<string, Promise<void>>()
-  const budgets = new Map<string, { since: number, count: number }>()
-  const counts = { copied: 0, removed: 0, failed: 0, suppressed: 0 }
+  const budget = createWriteBudget(deps.now, deps.log)
+  const counts = { copied: 0, removed: 0, failed: 0 }
   const warned = new Set<string>()
   let order = 0
   /** What the last call to `start` or `stop` asked for; set when it is made, so work for an earlier ask can stop early. */
@@ -89,18 +91,15 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
   const steps: Array<() => Promise<void>> = []
   let pumping: Promise<void> | undefined
 
-  const failed = (side: MirrorSide, what: string): void => {
-    counts.failed += 1
-    const once = `${side.label}\u0000${what}`
-    if (warned.has(once)) return
-    warned.add(once)
-    deps.log(`[cookie-mirror] ${what} ${side.label}; further failures of that kind there are counted, not logged`)
-  }
-
   const warnOnce = (key: string, line: string): void => {
     if (warned.has(key)) return
     warned.add(key)
     deps.log(line)
+  }
+
+  const failed = (side: MirrorSide, what: string): void => {
+    counts.failed += 1
+    warnOnce(`${side.label}\u0000${what}`, `[cookie-mirror] ${what} ${side.label}; further failures of that kind there are counted, not logged`)
   }
 
   const leftAlone = (): void => {
@@ -132,26 +131,12 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
     return { cookies: found, shared }
   }
 
-  /** Whether one more write of this cookie into `target` is within its budget: a store that changes what it is given would otherwise be written to for ever. */
-  function allowed (target: MirrorSide, identity: string): boolean {
-    const key = `${target.label}\u0000${identity}`
-    const now = deps.now()
-    if (budgets.size > BUDGETS_KEPT) for (const [stale, budget] of budgets) if (now - budget.since > WINDOW_MS) budgets.delete(stale)
-    const budget = budgets.get(key)
-    if (budget === undefined || now - budget.since > WINDOW_MS) { budgets.set(key, { since: now, count: 1 }); return true }
-    budget.count += 1
-    if (budget.count <= WRITES_PER_WINDOW) return true
-    counts.suppressed += 1
-    if (budget.count === WRITES_PER_WINDOW + 1) deps.log(`[cookie-mirror] a cookie keeps changing between sessions; it is not carried to ${target.label} for a while`)
-    return false
-  }
-
   async function put (target: MirrorSide, cookie: StoredCookie): Promise<Written> {
     const identity = identityOf(cookie)
     if (twinned.has(identity)) { leftAlone(); return 'skipped' }
     const plan = planSet(cookie, deps.now() / 1000)
     if (plan.kind === 'skip') return 'skipped'
-    if (!allowed(target, identity)) return 'failed'
+    if (!budget.allows(target.label, identity)) return 'failed'
     try {
       await target.store.set(plan.cookie)
       counts.copied += 1
@@ -183,7 +168,7 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
   async function take (target: MirrorSide, cookie: StoredCookie, restore: boolean): Promise<boolean> {
     const address = addressOf(cookie)
     const identity = identityOf(cookie)
-    if (address === undefined || !allowed(target, identity)) return false
+    if (address === undefined || !budget.allows(target.label, identity)) return false
     let casualties: StoredCookie[] = []
     try {
       if (restore) casualties = (await target.store.find(address, cookie.name)).filter((other) => identityOf(other) !== identity)
@@ -281,8 +266,10 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
 
   /** Makes `profile` equal to the default session for `sites`: what only the profile holds goes, what the default holds is written. Never the other way. */
   async function equalize (profile: MirrorSide, sites: readonly string[]): Promise<void> {
-    const mine = distinct(await main.store.list(sites))
-    const theirs = distinct(await profile.store.list(sites))
+    const listed = [await main.store.list(sites), await profile.store.list(sites)]
+    for (const cookies of listed) for (const cookie of cookies) twinned.delete(identityOf(cookie))
+    const mine = distinct(listed[0] as StoredCookie[])
+    const theirs = distinct(listed[1] as StoredCookie[])
     const present = new Map(theirs.cookies)
     for (const [identity, cookie] of theirs.cookies) {
       if (!asked) return
@@ -316,6 +303,8 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
     const site = siteOfCookie(seen)
     if (site === undefined || (side === main ? mirroring(site).length === 0 : !inScope(side.label, site))) return
     if (!removed && isEcho(side, seen, site)) return
+    // A cookie set again is looked at afresh: a look-alike that has gone since it was noticed must not keep the new value from being carried.
+    if (!removed) twinned.delete(identityOf(seen))
     order += 1
     dirty.set(`${side.label}\u0000${identityOf(seen)}`, { side, seen, removed, order })
     pump()
@@ -371,16 +360,30 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
     }
   }
 
-  async function end (): Promise<void> {
+  /** Stops following and drops what was pending; true when it was following. */
+  function quiet (): boolean {
     const wasRunning = running
     running = false
     for (const off of watching.values()) off()
     watching.clear()
     dirty.clear()
     agreed.clear()
+    twinned.clear()
+    return wasRunning
+  }
+
+  async function end (): Promise<void> {
+    const wasRunning = quiet()
     if (asked) return
     if (wasRunning) deps.log('[cookie-mirror] stopped; clearing the cookies the tunnel profile sessions were given')
     await clearRecorded()
+  }
+
+  /** Clears the profiles' copies of every site listed and empties the list, then follows again if the mirror is on. Nothing it removes is carried to the default session. */
+  async function forgetSites (): Promise<void> {
+    const wasRunning = quiet()
+    await clearRecorded()
+    if (wasRunning && asked) await begin()
   }
 
   async function addSite (profile: MirrorSide, site: string): Promise<void> {
@@ -431,6 +434,17 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
     })()
   }
 
+  /** Adds `site` to the profile named `label`, unless it is there already or the profile did not join; the promise to wait for the copy. */
+  function adopt (label: string, site: string): Promise<void> | undefined {
+    if (inScope(label, site)) return undefined
+    const profile = profiles.find((known) => known.label === label)
+    if (profile === undefined) return undefined
+    const key = `${label}\u0000${site}`
+    const added = step(async () => { await addSite(profile, site) }).finally(() => { adding.delete(key) })
+    adding.set(key, added)
+    return added
+  }
+
   return {
     join: (side) => {
       if (side === main || profiles.some((known) => known.label === side.label || known.store === side.store)) return Promise.resolve()
@@ -443,19 +457,19 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
         if (running && sites.length > 0) await equalize(side, sites)
       })
     },
-    visit: (label, address) => {
+    visit: (label, address, joins) => {
       if (!asked) return undefined
-      const site = siteOf(address)
-      if (site === null) return undefined
-      const key = `${label}\u0000${site}`
-      const pending = adding.get(key)
+      const site = mirrorSiteOf(address)
+      if (site === undefined) return undefined
+      const pending = adding.get(`${label}\u0000${site}`)
       if (pending !== undefined) return pending
-      if (inScope(label, site)) return undefined
-      const profile = profiles.find((known) => known.label === label)
-      if (profile === undefined) return undefined
-      const added = step(async () => { await addSite(profile, site) }).finally(() => { adding.delete(key) })
-      adding.set(key, added)
-      return added
+      return joins ? adopt(label, site) : undefined
+    },
+    committed: (label, address) => {
+      if (!asked) return Promise.resolve()
+      const site = mirrorSiteOf(address)
+      if (site === undefined) return Promise.resolve()
+      return adding.get(`${label}\u0000${site}`) ?? adopt(label, site) ?? Promise.resolve()
     },
     start: () => {
       asked = true
@@ -467,6 +481,7 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
       return step(end)
     },
     settle: () => step(async () => { if (!asked) await clearRecorded() }),
+    forget: () => step(forgetSites),
     idle: async () => {
       for (;;) {
         await Promise.resolve()
@@ -479,6 +494,6 @@ export function createCookieMirror (deps: CookieMirrorDeps): CookieMirror {
         await current
       }
     },
-    status: () => ({ state: asked ? 'mirroring' : 'separate', sessions: asked ? profiles.length : 0, ...counts })
+    status: () => ({ state: asked ? 'mirroring' : 'separate', sessions: asked ? profiles.length : 0, ...counts, suppressed: budget.suppressed() })
   }
 }

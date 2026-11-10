@@ -1,6 +1,6 @@
 // A cookie as one session holds it, which site it belongs to, and how it is written into another with every attribute it had. Pure.
 
-import { siteOf } from '../../privacy/site-of.js'
+import { mirrorSiteOf } from './mirror-site.js'
 
 export type SameSite = 'unspecified' | 'no_restriction' | 'lax' | 'strict'
 
@@ -64,11 +64,11 @@ export function identityOf (cookie: StoredCookie): string {
   return [cookie.name, hostOf(cookie), cookie.hostOnly === true ? 'host' : 'domain', cookie.path ?? '/'].join('\u0000')
 }
 
-/** The site a cookie belongs to: the registrable domain of its domain (`shop.example` for a cookie of `.www.shop.example`); undefined for a cookie with no domain. */
+/** The site a cookie belongs to (`mirror-site.ts`): `shop.example` for a cookie of `.www.shop.example`; undefined for a cookie with no domain. */
 export function siteOfCookie (cookie: Pick<StoredCookie, 'domain'>): string | undefined {
   const host = hostOf(cookie)
   if (host === '') return undefined
-  return siteOf(`https://${host.includes(':') ? `[${host}]` : host}/`) ?? undefined
+  return mirrorSiteOf(`https://${host.includes(':') ? `[${host}]` : host}/`)
 }
 
 /** The address a cookie is sent to, with which `remove` takes it; undefined for a cookie with no domain. */

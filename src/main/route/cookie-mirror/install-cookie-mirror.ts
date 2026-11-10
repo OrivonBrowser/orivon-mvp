@@ -1,7 +1,7 @@
 // The Electron half of the cookie mirror: the sessions it works on, the setting that switches it, the record of what it mirrors, and
 // the wait before a tunnelled tab loads a site it has not mirrored yet. Tied to Electron.
 import { join } from 'node:path'
-import { session } from 'electron'
+import { app, session } from 'electron'
 import type { Cookie, Event as ElectronEvent, Session } from 'electron'
 import { forEachWebsiteSession } from '../../sessions/website-sessions.js'
 import { webRequestOwnerFor } from '../../sessions/web-request-owner.js'
@@ -9,9 +9,11 @@ import type { WebRequestHandlerHandle } from '../../sessions/web-request-owner.j
 import { within } from '../within.js'
 import { createCookieMirror } from './cookie-mirror.js'
 import { siteOfCookie } from './cookies.js'
+import { joinsMirror } from './members.js'
+import { setCookieMirrorForgetter } from './mirror-forget.js'
 import { readMirrorRecord, writeMirrorRecord } from './mirror-record.js'
 import { setCookieMirrorStatusSource } from './mirror-status.js'
-import { joinsMirror } from './members.js'
+import { createNavigationHops } from './navigation-hops.js'
 import { holdForMerge } from './session-ready.js'
 import type { ChangeCause, CookieStore } from './cookies.js'
 
@@ -76,14 +78,23 @@ export function installCookieMirror (options: { readonly settings: CookieMirrorS
     log: (line) => { console.info(line) }
   })
   setCookieMirrorStatusSource(mirror.status)
+  setCookieMirrorForgetter(mirror.forget)
   const separate = (): boolean => options.settings.get(KEY)
+  const hops = createNavigationHops()
   /** The profile sessions a page load is waited for in, and the handler that waits while the mirror is on. */
   const visiting = new Map<Session, Visiting>()
   const arm = (target: Session, entry: Visiting): void => {
     entry.handle ??= webRequestOwnerFor(target).onBeforeRequest(VISIT_ORDER, { urls: ['http://*/*', 'https://*/*'], types: ['mainFrame'] }, () => true, async (details, soFar) => {
       // The owner calls every handler of a session for a request its filter union covers, so the type is checked here: only a tab's own page is a site it opened.
       if (details.resourceType !== 'mainFrame') return soFar
-      const waiting = mirror.visit(entry.label, details.url)
+      const hop = hops.classify({
+        id: details.id,
+        referrer: details.referrer,
+        ...(details.webContentsId === undefined ? {} : { webContentsId: details.webContentsId }),
+        ...(details.initiatorOrigin === undefined ? {} : { initiatorOrigin: details.initiatorOrigin })
+      })
+      // Only the first request of a navigation the person started adds a site before its page loads: a page's own navigation and a redirect hop are not the person's choice of site.
+      const waiting = mirror.visit(entry.label, details.url, hop === 'browser')
       if (waiting === undefined) return soFar
       try {
         await within(waiting, MERGE_WAIT_MS)
@@ -109,6 +120,17 @@ export function installCookieMirror (options: { readonly settings: CookieMirrorS
     } catch (error) {
       console.error('[cookie-mirror] a profile session could not join:', error)
     }
+  })
+  // A site is added for good when a navigation to it commits as a tab's page, whoever started it.
+  app.on('web-contents-created', (_event, contents) => {
+    const entry = visiting.get(contents.session)
+    if (entry === undefined) return
+    const id = contents.id
+    contents.once('destroyed', () => { hops.forget(id) })
+    contents.on('did-navigate', (_navigated, url) => {
+      if (separate() || !/^https?:\/\//i.test(url)) return
+      mirror.committed(entry.label, url).catch(() => {})
+    })
   })
   const apply = (): void => {
     if (separate()) {

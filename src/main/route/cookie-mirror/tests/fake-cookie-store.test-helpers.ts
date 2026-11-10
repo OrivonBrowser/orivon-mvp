@@ -37,6 +37,11 @@ export class FakeCookieStore implements CookieStore {
     this.shadows.push(cookie)
   }
 
+  /** The look-alikes go: the listing shows each cookie once again. */
+  dropShadows (): void {
+    this.shadows.length = 0
+  }
+
   get (name: string, domain?: string): StoredCookie | undefined {
     return this.contents().find((cookie) => cookie.name === name && (domain === undefined || cookie.domain === domain))
   }

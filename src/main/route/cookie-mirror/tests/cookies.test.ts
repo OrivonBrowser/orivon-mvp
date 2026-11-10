@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addressOf, followsChange, identityOf, planSet, sameCookie, wouldSend } from '../cookies.js'
+import { addressOf, followsChange, identityOf, planSet, sameCookie, siteOfCookie, wouldSend } from '../cookies.js'
 import { signIn } from './fake-cookie-store.test-helpers.js'
 
 const NOW = 1_800_000_000
@@ -115,5 +115,41 @@ describe('which changes a mirror follows', () => {
     expect(followsChange('expired', true)).toBe(false)
     expect(followsChange('evicted', true)).toBe(false)
     expect(followsChange('inserted-no-change-overwrite', false)).toBe(false)
+  })
+})
+
+describe('the site a cookie belongs to', () => {
+  const siteOfDomain = (domain: string): string | undefined => siteOfCookie({ domain })
+
+  it('is the registrable domain, and a host or domain cookie of any host under it is the same site', () => {
+    expect(siteOfDomain('example.com')).toBe('example.com')
+    expect(siteOfDomain('.www.example.com')).toBe('example.com')
+    expect(siteOfDomain('cdn.shop.example.co.uk')).toBe('example.co.uk')
+    expect(siteOfCookie({})).toBeUndefined()
+  })
+
+  it('tells the customers of a service that hands out domains apart: the private section of the public suffix list counts', () => {
+    expect(siteOfDomain('alice.github.io')).toBe('alice.github.io')
+    expect(siteOfDomain('bob.github.io')).toBe('bob.github.io')
+    expect(siteOfDomain('d111111abcdef8.cloudfront.net')).toBe('d111111abcdef8.cloudfront.net')
+    expect(siteOfDomain('bucket-a.s3.amazonaws.com')).not.toBe(siteOfDomain('bucket-b.s3.amazonaws.com'))
+    expect(siteOfDomain('vitalik.eth.limo')).toBe('vitalik.eth.limo')
+  })
+
+  it('is the whole host for an address Orivon serves, whose parent is a namespace shared by many parties', () => {
+    expect(siteOfDomain('bafyone.ipfs.orivon')).toBe('bafyone.ipfs.orivon')
+    expect(siteOfDomain('.bafytwo.ipfs.orivon')).toBe('bafytwo.ipfs.orivon')
+    expect(siteOfDomain('feed.bzz.orivon')).toBe('feed.bzz.orivon')
+    expect(siteOfDomain('vitalik.eth')).toBe('vitalik.eth')
+    expect(siteOfDomain('www.vitalik.eth')).toBe('www.vitalik.eth')
+    expect(siteOfDomain('alice.base.eth')).toBe('alice.base.eth')
+    expect(siteOfDomain('bob.base.eth')).toBe('bob.base.eth')
+    expect(siteOfDomain('base.eth')).toBe('base.eth')
+  })
+
+  it('is the host itself for an address with no registrable domain', () => {
+    expect(siteOfDomain('127.0.0.1')).toBe('127.0.0.1')
+    expect(siteOfDomain('localhost')).toBe('localhost')
+    expect(siteOfDomain('::1')).toBe('::1')
   })
 })
