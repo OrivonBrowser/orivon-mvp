@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { alwaysState, entryToSave, planAlwaysOff, planAlwaysOn, planMove, tabKeepsSession } from '../site-always.js'
+import { alwaysState, choiceForBlankTab, entryToSave, planAlwaysOff, planAlwaysOn, planMove, tabKeepsSession } from '../site-always.js'
 import type { AlwaysFacts, RoutePlan } from '../site-always.js'
 import { profileForTab, tunnelOfPage } from '../tab-tunnel.js'
 import type { TabTunnelChoice } from '../tab-tunnel.js'
@@ -163,6 +163,40 @@ describe('the session a tab holds once the website\'s entry is gone', () => {
         const was = profileOf(entry)
         expect(tabKeepsSession(choice, entry), `tab ${String(choice)}, entry ${String(entry)}`).toBe(was !== undefined && profileForTab(choice, 'https://news.example', undefined) === was)
       }
+    }
+  })
+})
+
+describe('the choice a blank tab opened from a tab takes', () => {
+  it('is the tab\'s own choice when that is a tunnel, whatever the website\'s entry says', () => {
+    for (const choice of ['nym', 'socks5'] as const) {
+      for (const entry of ENTRIES) expect(choiceForBlankTab({ choice, entry }), `tab ${choice}, entry ${String(entry)}`).toBe(choice)
+    }
+  })
+
+  it('is the tunnel of the entry the tab follows when the tab has no choice, or is direct', () => {
+    for (const choice of [undefined, 'direct'] as const) {
+      expect(choiceForBlankTab({ choice, entry: 'nym' }), `tab ${String(choice)}`).toBe('nym')
+      expect(choiceForBlankTab({ choice, entry: 'socks5' }), `tab ${String(choice)}`).toBe('socks5')
+    }
+  })
+
+  it('is none for a tab with no tunnel on a website with no entry or an off entry, so the new tab follows the browser as the tab would', () => {
+    for (const choice of [undefined, 'direct'] as const) {
+      expect(choiceForBlankTab({ choice, entry: undefined }), `tab ${String(choice)}`).toBeUndefined()
+      expect(choiceForBlankTab({ choice, entry: 'off' }), `tab ${String(choice)}`).toBeUndefined()
+    }
+  })
+
+  it('is never direct, whatever the tab and the entry are', () => {
+    for (const choice of CHOICES) for (const entry of ENTRIES) expect(choiceForBlankTab({ choice, entry }), `tab ${String(choice)}, entry ${String(entry)}`).not.toBe('direct')
+  })
+
+  it('leaves a website with a tunnel in the tab by that tunnel in the new tab too, and never loosens what the tab does', () => {
+    for (const choice of CHOICES) for (const entry of ENTRIES) for (const everywhere of [false, true]) {
+      const taken = choiceForBlankTab({ choice, entry })
+      const inTab = leavesBy(choice, entry, everywhere)
+      if (inTab !== 'direct') expect(leavesBy(taken, entry, everywhere), `tab ${String(choice)}, entry ${String(entry)}, browser ${String(everywhere)}`).toBe(inTab)
     }
   })
 })

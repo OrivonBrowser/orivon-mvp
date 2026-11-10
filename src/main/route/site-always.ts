@@ -60,6 +60,17 @@ export function planAlwaysOff (facts: AlwaysFacts): RoutePlan | undefined {
   return kept === choice ? { entry: 'forget' } : { tab: kept, entry: 'forget' }
 }
 
+/**
+ * The choice a blank tab opened from this tab takes (ADR-0101): the tab's own when it is a tunnel, else the tunnel of the entry the tab
+ * follows (a website's, or an installed app's own), which is what the tab's tunnel button shows. Never `direct`: a tunnel is passed on,
+ * the absence of one is not, so the new tab beside a tab turned off for itself follows the browser and never leaves outside a tunnel the
+ * browser or the website promised. An `off` entry gives none, like no entry.
+ */
+export function choiceForBlankTab ({ choice, entry }: Pick<AlwaysFacts, 'choice' | 'entry'>): TabTunnelChoice | undefined {
+  if (choice !== undefined && choice !== 'direct') return choice
+  return entry === undefined || entry === 'off' ? undefined : entry
+}
+
 /** Whether a tab that takes `choice` once the website's `entry` is gone still runs the page in the session the entry put it in: a tab's choice names the profile it runs in, as an entry does. */
 export function tabKeepsSession (choice: TabTunnelChoice | undefined, entry: TunnelEntry | undefined): boolean {
   return choice !== undefined && choice === profileOf(entry)
