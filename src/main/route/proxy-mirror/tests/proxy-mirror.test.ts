@@ -489,8 +489,10 @@ describe('a listener of the passes', () => {
     mirror.onPass((pass) => { heard.push(pass) })
     world.hang = true
     const started = mirror.start()
-    await vi.advanceTimersByTimeAsync(PAST_A_CALL_MS)
+    await vi.advanceTimersByTimeAsync(START_BOUND_MS)
     await started
+    // The pass goes on past the bound: the question and then the check each wait their five seconds.
+    await vi.advanceTimersByTimeAsync(2 * PAST_A_CALL_MS)
 
     expect(heard[0]?.answers).toEqual(['unanswered', 'unanswered'])
     mirror.stop()
