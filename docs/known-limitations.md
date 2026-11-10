@@ -18,8 +18,8 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   an app that is not routed gets no `orivon.net` sockets and no name lookups, rather than going
   around it. [`architecture/egress.md`](architecture/egress.md) lists every path to the network
   and how each takes the tunnel.
-- **Behind a proxy that a script or automatic detection finds, `.eth` names and other Web3 addresses open only when
-  the proxy would not carry them.** *Provisional.* A name the verifier serves is answered on this computer, and a
+- **Behind a proxy that automatic detection finds, or that a script Orivon cannot copy gives, `.eth` names and other Web3
+  addresses open only when the proxy would not carry them.** *Provisional.* A name the verifier serves is answered on this computer, and a
   proxy that carried it would learn the name and could answer it with a page of its own. On Linux with a proxy set
   only by environment variables (`http_proxy` and the like) Orivon keeps these names out of it and they open. A
   tunnel keeps them out too. Behind a manual proxy in GNOME's settings (and in the desktops that share them: Unity,
@@ -27,15 +27,19 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   servers and exceptions into the sessions that follow the system, with the names it serves added to the exceptions, so they open and ordinary sites still go through the
   proxy. The copy is made only when a session of Orivon's own, set to it, answers as Chromium does for the same
   addresses; a proxy turned on, off or moved is followed within a few seconds, and an edit of the exceptions alone
-  within thirty. Wherever the settings cannot be read or copied exactly, or the check disagrees, the sessions follow
-  the system and the next paragraph applies; KDE's reversed exceptions are one such case. A name written with a dot at the end (`name.eth.`) is not found behind a copied proxy,
-  and is refused behind any other. Where a script or automatic detection gives the proxy, a session
+  within thirty. Behind a proxy script the settings name (GNOME's, KDE's, Windows' or macOS's), Orivon fetches the script, wraps it
+  so that the names it serves always go direct while every other name gets the script's own answer, and gives the sessions the
+  wrapped copy under the same check. Wherever the settings cannot be read or copied exactly, or the check disagrees, the sessions follow
+  the system and the next paragraph applies; KDE's reversed exceptions are one such case, and so are a script that cannot
+  be fetched (not at an `http:` or `https:` address, over a megabyte, not answering) and one that answers differently at every
+  question, by the clock or at random. A name written with a dot at the end (`name.eth.`) is not found behind a copied proxy or script,
+  and is refused behind any other. Where automatic detection, or a script left to the system, gives the proxy, a session
   that follows the system cannot be told to leave a name out, so Orivon asks the session which proxy it would use
   and refuses the request before it is sent unless the answer is "none"; the tab says whether the proxy would have
   seen the name or Orivon could not tell. Ordinary sites still go through the proxy. To open the names there, add
   `*.eth` and the other suffixes Orivon serves to the proxy's exceptions (the list of hosts that bypass it), turn
   the system proxy off, or turn a tunnel on. A name asked for over plain `http:` is refused whatever the proxy is,
-  except the developer names of a run that serves them. A proxy found by a script or by automatic detection is asked
+  except the developer names of a run that serves them. A proxy found by automatic detection, or by a script left to the system, is asked
   for up to fifteen seconds; a name opened in that time waits, and past it the tab says Orivon could not tell.
   Fifteen seconds is provisional: a script that answers after four seconds opens the names, and Windows' automatic
   detection on a network with no detection server answers at once, but how long a slow detection server takes on

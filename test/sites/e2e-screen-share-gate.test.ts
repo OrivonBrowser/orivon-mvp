@@ -10,7 +10,7 @@ import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
 import { assertNoElectronSurvivors, closeElectron, mainOutput } from '../support/launch-electron.mjs'
 import { html, launchShell, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
-import { delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, findViewShowing, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const E2E_TIMEOUT_MS = 240_000
 
@@ -290,40 +290,37 @@ it('refuses the preload\'s call when the page went around the wrapper first, nat
 }, E2E_TIMEOUT_MS)
 
 /**
- * Starts the page's own request and the wrapped call with the timing `script` sets. Timing decides which safe end this
- * takes. The page's request before the ticket opens is refused, and so is the wrapped call after it. After the ticket
- * opens, Blink queues the preload's call behind the page's, the page's is served unconfirmed, and the preload's call is
- * then refused with no ticket: the preload reports it, and main ends the renderer. Either way nothing keeps a capture.
+ * Starts the page's own request and the wrapped call with the timing `script` sets. Whichever of them reaches main first,
+ * the page is never handed a stream: its request is refused before the ticket opens, or when it reaches main with the
+ * ticket open it is the first request, which is refused as the preload's canary would be, and the wrapped call that was
+ * queued behind it is then refused too. Nothing is served, no share starts, and no renderer has to be ended.
  */
-const raceEndsSafely = async (chooser: unknown, script: string): Promise<void> => {
+const raceRefusesBoth = async (chooser: unknown, script: string): Promise<void> => {
   const { app, chrome } = await launchShell()
   try {
     const view = await visit(app, chrome, `${origins.a}/`)
     expect(await waitFor(async () => (await app.evaluate(() => (globalThis as unknown as { __orivonDevDisplayChooser?: unknown }).__orivonDevDisplayChooser)) !== undefined)).toBe(true)
     await useChooser(app, chooser)
     await run(view, script)
-    let ended = false
-    try {
-      expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
-      expect(await result(view, 'wrapped', 30_000)).toBe('ERR:NotAllowedError')
-      expect(await liveTracks(view)).toBe(0)
-    } catch (error) {
-      if (!/Target crashed|has been closed/.test(String(error))) throw error
-      ended = true
-    }
-    if (ended) expect(mainOutput(app)).toMatch(/refused after a request was served against its ticket|a granted request reached no display handler/)
-    expect(await waitFor(async () => (await shares(app)).length === 0, 10_000)).toBe(true)
+    expect(await result(view, 'native')).toBe('ERR:NotAllowedError')
+    expect(await result(view, 'wrapped', 30_000)).toBe('ERR:NotAllowedError')
+    // Settle once: a stream handed late would show as a live track or a share.
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await liveTracks(view)).toBe(0)
+    expect(await view.evaluate(() => (window as unknown as { __got: unknown[] }).__got.length)).toBe(0)
+    expect(await shares(app)).toEqual([])
+    expect(mainOutput(app)).not.toMatch(/the tab's renderer is ended|reached no display handler/)
   } finally {
     await closeElectron(app)
   }
 }
 
-it('refuses the page, or ends its renderer, when its own request races the wrapped call while the picker is open', async () => {
-  await raceEndsSafely({ kind: 'screen', delayMs: 1500 }, "window.__r = {}; window.share('wrapped', { video: true }); setTimeout(() => window.native('native'), 300)")
+it('refuses the page and the wrapped call, and hands out no stream, when its own request races the wrapped call while the picker is open', async () => {
+  await raceRefusesBoth({ kind: 'screen', delayMs: 1500 }, "window.__r = {}; window.share('wrapped', { video: true }); setTimeout(() => window.native('native'), 300)")
 }, E2E_TIMEOUT_MS)
 
-it('refuses the page, or ends its renderer, when its own request and the wrapped call start in the same step', async () => {
-  await raceEndsSafely({ kind: 'screen' }, "window.__r = {}; window.native('native'); window.share('wrapped', { video: true })")
+it('refuses the page and the wrapped call, and hands out no stream, when its own request and the wrapped call start in the same step', async () => {
+  await raceRefusesBoth({ kind: 'screen' }, "window.__r = {}; window.native('native'); window.share('wrapped', { video: true })")
 }, E2E_TIMEOUT_MS)
 
 it('shares honestly once the suspicion that follows a request with no ticket has lapsed', async () => {

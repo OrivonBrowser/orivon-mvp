@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { desktopOf, kdeVersionOf, sourceOf } from '../settings-source.js'
+import { desktopOf, kdeVersionOf, scriptAddress, sourceOf } from '../settings-source.js'
 
 describe('the desktop, as Chromium picks it', () => {
   it.each([
@@ -66,5 +66,17 @@ describe('where the settings are kept', () => {
     expect(sourceOf('linux', { XDG_CURRENT_DESKTOP: 'KDE' })).toBe('kde')
     expect(sourceOf('linux', { XDG_CURRENT_DESKTOP: 'XFCE' })).toBe('environment')
     expect(sourceOf('linux', {})).toBe('environment')
+  })
+})
+
+describe('the address of a proxy script, as GNOME and KDE name it', () => {
+  it.each([
+    ['http://wpad.test/proxy.pac', 'http://wpad.test/proxy.pac'],
+    ['https://wpad.test/proxy.pac?x=1', 'https://wpad.test/proxy.pac?x=1'],
+    ['/etc/proxy.pac', 'file:///etc/proxy.pac'],
+    ['file:///etc/proxy.pac', 'file:///etc/proxy.pac'],
+    ['  http://wpad.test/proxy.pac  ', 'http://wpad.test/proxy.pac']
+  ])('%s is %s', (setting, expected) => {
+    expect(scriptAddress(setting)).toBe(expected)
   })
 })
