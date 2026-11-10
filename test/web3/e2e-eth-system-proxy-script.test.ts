@@ -15,7 +15,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
-import { CANCELLED, gnomeScriptProxy, launchShellOn, macosProxy, ORDINARY, PLAIN_SHEET, PROXY_SHEET, refusalLines, report, reportedMirror, resolved, startLoggingProxy, startScriptServer, tunnelsOpened, UNSURE_SHEET, verifierNames, visitReporting, waitForAnswer, windowsScriptProxy } from './system-proxy-support.js'
+import { CANCELLED, gnomeScriptProxy, launchShellOn, macosProxy, ORDINARY, PLAIN_SHEET, refusalLines, report, reportedMirror, resolved, startLoggingProxy, startScriptServer, tunnelsOpened, UNSURE_SHEET, verifierNames, visitReporting, waitForAnswer, windowsScriptProxy } from './system-proxy-support.js'
 import type { LoggingProxy, Running, ScriptServer } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
@@ -271,7 +271,7 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings name a proxy script tha
     }
   }, SETUP_TIMEOUT_MS)
 
-  it('leaves a script that answers differently at every question to the system, which refuses a name as it does for any script it cannot copy', async () => {
+  it('leaves a script that answers differently at every question to the system, which refuses a name without asking it, as it does for any script it cannot copy', async () => {
     // A different proxy at every question: no copy can agree with Chromium's own session, and a guard that trusted one answer would let a request out that the next answer sends to a proxy.
     scripts.serve('function FindProxyForURL(url, host) { return "PROXY 127.0.0.1:" + String(20000 + Math.floor(Math.random() * 40000)) }')
     const { app, chrome } = await launchShell(gnomeScriptProxy(mkdtempSync(join(scratchDir, 'alternating-')), scripts.url).env)
@@ -284,7 +284,7 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings name a proxy script tha
       expect(settled, 'the mirror said it left the script to the system').toBe(true)
       expect(reported.fact).toEqual({ source: 'gnome', mode: 'script', state: 'system', reason: 'disagrees' })
       expect(plain).toMatchObject({ result: 'error', error: CANCELLED, sheet: PLAIN_SHEET })
-      expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: PROXY_SHEET })
+      expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
       expect(verifierNames(proxy.seen)).toEqual([])
     } finally {
       await closeElectronApp(app)
@@ -307,7 +307,7 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings name a proxy script tha
       expect(settled, 'the mirror said the script could not be fetched').toBe(true)
       expect(reported.fact).toEqual({ source: 'gnome', mode: 'script', state: 'system', reason: 'unfetched' })
       expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
-      expect(refusalLines(app).join('\n')).toContain('it could not be told whether its proxy would carry it')
+      expect(refusalLines(app).join('\n')).toContain('the system\'s proxy settings may run a script, and the session holds no copy of them')
       expect(verifierNames(proxy.seen)).toEqual([])
     } finally {
       await closeElectronApp(app)

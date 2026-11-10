@@ -41,7 +41,8 @@ export const DEV_MARKERS = [
   '__orivonDevDisplayChooser', 'ORIVON_TEST_DEFAULT_BROWSER', '__orivonDevDefaultBrowser', '__orivonDevDefaultBrowserAskNow',
   'ORIVON_TELEMETRY_HOME', 'ORIVON_TELEMETRY_URL', 'ORIVON_TELEMETRY_TICK_MS', 'ORIVON_TELEMETRY_ASSUME_ACTIVE',
   'ORIVON_TEST_NYM_MODULE', 'ORIVON_TEST_RELEASE_NOTES', 'ORIVON_TEST_UPDATE_RELEASE', '__orivonDevUpdateCheckNow', '__orivonDevTabTunnel',
-  '__orivonDevNetworkService', 'ORIVON_TEST_NETWORK_SERVICE_REAPPLY_DELAY_MS', 'ORIVON_TEST_NETWORK_SERVICE_HOLD_BOUND_MS'
+  '__orivonDevNetworkService', 'ORIVON_TEST_NETWORK_SERVICE_REAPPLY_DELAY_MS', 'ORIVON_TEST_NETWORK_SERVICE_HOLD_BOUND_MS',
+  'ORIVON_TEST_NAME_RELAY_DOH_URL'
 ]
 
 /** Retained as the single-marker name earlier callers import. */

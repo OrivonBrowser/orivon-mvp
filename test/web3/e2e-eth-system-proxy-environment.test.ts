@@ -4,7 +4,9 @@
 // own text runs, and given to the sessions that follow the system once it answers as Chromium's own session does: a script that sends a
 // .eth name to a proxy still opens it, the proxy is never asked about it, and the script's split of the other sites between two proxies is
 // kept. A manual proxy in the environment is left to the system, with `no_proxy` keeping the names out of it. An `auto_proxy`
-// that is set and empty is automatic detection, which beats the manual variables and is left to the system. The desktop here is
+// that is set and empty is automatic detection, which beats the manual variables and is left to the system, where a name is asked
+// about only while the mirror's own question about an ordinary address is answered DIRECT, since detection that finds a script would
+// show it the name. The desktop here is
 // XFCE, one Chromium reads no proxy settings of its own for. The proxies are forward proxies on loopback that log every `CONNECT` and
 // every plain-HTTP request. Linux only: the other systems have no such variable to read, so there is nothing to run on a Windows or macOS
 // runner.
@@ -179,7 +181,7 @@ describe.skipIf(!LINUX)('a computer whose environment sets auto_proxy and leaves
   let running: Running
   let settled = false
   let reported: Awaited<ReturnType<typeof reportedMirror>>
-  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, ordinarySessions: Record<string, string> }
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, ordinarySessions: Record<string, string>, refusals: string[] }
 
   beforeAll(async () => {
     proxy = await startLoggingProxy()
@@ -189,7 +191,7 @@ describe.skipIf(!LINUX)('a computer whose environment sets auto_proxy and leaves
     settled = await waitFor(() => mainOutput(app).includes('(environment, detect, detect)'), 60_000)
     const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the proxy')
     const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
-    facts = { ordinary, eth, ordinarySessions: await resolved(app, 'https://ordinary.test/') }
+    facts = { ordinary, eth, ordinarySessions: await resolved(app, 'https://ordinary.test/'), refusals: refusalLines(app) }
     reported = await reportedMirror(app, chrome)
     report('environment empty', { settled, ...facts, mirror: reported.fact, lines: reported.lines, proxySaw: asked(proxy) })
   }, SETUP_TIMEOUT_MS)
@@ -201,13 +203,16 @@ describe.skipIf(!LINUX)('a computer whose environment sets auto_proxy and leaves
 
   it('is automatic detection, which beats the manual variables: the proxy they name is never asked, and the report says detection', () => {
     expect(settled, 'the mirror said it left detection to the system').toBe(true)
-    expect(reported.fact).toEqual({ source: 'environment', mode: 'detect', state: 'system', reason: 'detect' })
+    expect(reported.fact).toMatchObject({ source: 'environment', mode: 'detect', state: 'system', reason: 'detect' })
     expect(asked(proxy)).toEqual([])
     for (const kind of Object.keys(facts.ordinarySessions)) expect(facts.ordinarySessions[kind], `${kind} session, ordinary`).toBe('DIRECT')
     expect(facts.ordinary.result).not.toBe('page')
   })
 
-  it('opens a .eth name, since detection finds no proxy to carry it', () => {
+  it('opens a .eth name while the probe says detection finds no script: Chromium\'s answer for ordinary addresses is DIRECT, the session is asked, and the report carries that', () => {
     expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
+    expect(['direct', 'unsure'], 'never the answer of a search that found something').toContain(reported.fact?.probe)
+    expect(facts.refusals.join('\n')).not.toContain('may run a script')
+    expect(asked(proxy)).toEqual([])
   })
 })

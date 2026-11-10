@@ -2,14 +2,18 @@
 // Chromium's resolver rules, but a session that follows the system's proxy asks that proxy first, and a proxy that carries
 // the request learns the name and can answer it with a page of its own. No setting of a session in system mode can exempt the
 // names, so a request for one is cancelled before it is sent when its session would use a proxy or cannot say which, and
-// always when it asks for plain `http:` or `ws:`, whose proxy answer is given for the whole URL and cannot be trusted. Pure
-// over the facts it is handed: no `electron` import.
+// always when it asks for plain `http:` or `ws:`, whose proxy answer is given for the whole URL and cannot be trusted. Asking
+// is itself a way out for the name: a session on the system's own config hands the URL to the system's script, which can
+// resolve the host or send it anywhere, so such a session is not asked and the name is refused. Pure over the facts it is
+// handed: no `electron` import.
 
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { isDevEthName } from '../dev/eth-resolver.js'
 import { loadRefusals } from './load-refusals.js'
 import { proxyAnswerFor, proxyEpoch, proxySetInFlight, proxySetOverran, proxySettled } from './proxy-answers.js'
 import type { ProxyResolver } from './proxy-answers.js'
+import { wouldRunSystemCode } from './system-code.js'
+import type { LoadRefusal } from './load-refusals.js'
 
 /** What the sheet over a tab and the error of a request made by Orivon itself say when the session's proxy would carry the name. */
 export const PROXY_WOULD_SEE_NAME = 'Your system proxy would see this name, so Orivon did not open it.'
@@ -20,15 +24,21 @@ export const PLAIN_NAME_REFUSED = 'A name like this opens only over a secure con
 /** What the sheet adds for the first two: when the name opens. */
 export const PROXY_REFUSAL_ADVICE = 'Names like this open when your system has no proxy, when the proxy\'s exceptions list names like *.eth, or with a tunnel turned on.'
 
-/** Why a request for a name the verifier serves was cancelled; each kind is a `LoadRefusal` too. */
+/** Why a request for a name the verifier serves was cancelled. `unasked`: the session is on the system's own config and the system's settings may run a script, so the session was not asked and the name was not put to it. */
 export type NameRefusal =
   | { readonly kind: 'would-see', readonly answer: string }
   | { readonly kind: 'unsure' }
+  | { readonly kind: 'unasked' }
   | { readonly kind: 'plain' }
 
-/** The words of an error Orivon's own request fails with. */
+/** The words of an error Orivon's own request fails with, and of the sheet: a name not put to the system's script says what a name it could not tell about says. */
 function refusalWords (refusal: NameRefusal): string {
-  return refusal.kind === 'would-see' ? PROXY_WOULD_SEE_NAME : refusal.kind === 'unsure' ? PROXY_NOT_KNOWN : PLAIN_NAME_REFUSED
+  return refusal.kind === 'would-see' ? PROXY_WOULD_SEE_NAME : refusal.kind === 'plain' ? PLAIN_NAME_REFUSED : PROXY_NOT_KNOWN
+}
+
+/** What the sheet over a tab is told about a refused load. */
+function loadRefusalOf (refusal: NameRefusal): LoadRefusal {
+  return refusal.kind === 'unasked' ? 'unsure' : refusal.kind
 }
 
 /** Every scheme a request that can go to a proxy can use. */
@@ -83,6 +93,8 @@ export interface GuardResponse {
 export interface VerifierNameGuard {
   /** Whether the session follows the system's proxy: one pointed at a tunnel's front or held shut is not the system's to answer for. */
   readonly followsSystem: () => boolean
+  /** Whether a name put to the session would reach code of the system's (a script its settings name, or one detection finds): such a session is not asked, and the name is refused. Nothing runs when left out. */
+  readonly runsSystemCode?: () => boolean
   readonly ask: (url: string) => Promise<string>
   /** Resolves when no change of the session's proxy is under way, and rejects when one still is after the time allowed. Nothing to wait for when left out. */
   readonly settled?: () => Promise<void>
@@ -103,6 +115,7 @@ async function refusalFor (guard: VerifierNameGuard, url: string): Promise<NameR
     const epoch = guard.epoch?.()
     if (!guard.followsSystem()) return undefined
     if (refusesPlain(url, guard.allowsPlain)) return { kind: 'plain' }
+    if (guard.runsSystemCode?.() === true) return UNASKED
     const answer = await guard.ask(url)
     if (guard.epoch?.() === epoch) return proxyWouldCarry(answer) ? { kind: 'would-see', answer } : undefined
   }
@@ -110,6 +123,7 @@ async function refusalFor (guard: VerifierNameGuard, url: string): Promise<NameR
 }
 
 const UNSURE: NameRefusal = { kind: 'unsure' }
+const UNASKED: NameRefusal = { kind: 'unasked' }
 
 /** At most one line a minute of each kind for the log, counting the ones it left out, so a page with many subresources cannot fill the ring. */
 export function createRefusalNotes (options: { now?: () => number, everyMs?: number } = {}): (url: string, refusal: NameRefusal) => string | undefined {
@@ -135,10 +149,18 @@ export function createRefusalNotes (options: { now?: () => number, everyMs?: num
     }
     // The name itself stays out of the line: a report carries the log, and the proxy's own address is the person's.
     const what = refusal.kind === 'plain' ? 'plain request' : 'request'
-    const why = refusal.kind === 'would-see'
-      ? `its proxy (${refusal.answer.trim().split(/[\s;]/)[0] ?? ''}) would have carried it, and so seen the name`
-      : refusal.kind === 'unsure' ? 'it could not be told whether its proxy would carry it' : 'these names open over https only'
+    const why = whyRefused(refusal)
     return `[route] refused a ${what} for a .${suffix} name: ${why}${more > 0 ? `; ${String(more)} more since the last line` : ''}`
+  }
+}
+
+/** The reason a refusal gives in the log, with no name, address or script in it. */
+function whyRefused (refusal: NameRefusal): string {
+  switch (refusal.kind) {
+    case 'would-see': return `its proxy (${refusal.answer.trim().split(/[\s;]/)[0] ?? ''}) would have carried it, and so seen the name`
+    case 'unsure': return 'it could not be told whether its proxy would carry it'
+    case 'unasked': return 'the system\'s proxy settings may run a script, and the session holds no copy of them, so the name was not put to them'
+    case 'plain': return 'these names open over https only'
   }
 }
 
@@ -157,7 +179,7 @@ export function verifierNameGuard (guard: VerifierNameGuard): (details: { readon
     const refusal = await refusalFor(guard, details.url).catch((): NameRefusal => UNSURE)
     if (refusal === undefined) return current
     try {
-      if (details.resourceType === 'mainFrame') loadRefusals.note(details.webContentsId, details.url, refusal.kind)
+      if (details.resourceType === 'mainFrame') loadRefusals.note(details.webContentsId, details.url, loadRefusalOf(refusal))
       note(details.url, refusal)
     } catch {
       // Saying why must not let the request out.
@@ -173,6 +195,7 @@ export function guardOfSession (target: ProxyResolver, tunnelOf: (session: objec
     followsSystem: () => proxySetInFlight(target) || proxySetOverran(target) || tunnelOf(target) === undefined,
     settled: async () => { await proxySettled(target) },
     epoch: () => proxyEpoch(target),
+    runsSystemCode: () => wouldRunSystemCode(target),
     ask: async (url) => await proxyAnswerFor(target, url),
     ...(allowsPlain === undefined ? {} : { allowsPlain })
   }

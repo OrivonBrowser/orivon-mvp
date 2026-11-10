@@ -83,6 +83,7 @@ and in tabs opened from it, runs in that tunnel's profile until the tab closes, 
 | `src/main/pages/serve.ts` | The renderer's dev server on loopback, in a source run only | Answering an `orivon://` page in development | Loopback |
 | `src/main/route/front.ts` | Listens on `127.0.0.1`; opens streams only through the route's provider | The loopback HTTP proxy Chromium is pointed at for a routed app or website | Routed (this is the tunnel's local end) |
 | `src/main/route/dead-end.ts` | Listens on a random `127.0.0.1` port, accepts and closes; reads and sends nothing | The place a session is pointed at to stop it (a session made while the whole browser is on the tunnel, one that could not be pointed, the requests made with no session), so a stopped request fails at once and no other listener on this computer is shown a destination name | Loopback |
+| `src/main/route/name-relay/proxied-lookup.ts` | The DNS-over-HTTPS server of the provider the Secure DNS setting names (Quad9 when it names none, or is `off` or `automatic`), through the one proxy the system names for a connection; the request carries the site's name, as a DNS query with no client subnet and no cookie. This computer's own resolver rules and hosts file are read without a packet (`resolveHost` with `localOnly`) | The address of a site's name, for the name relay | Through that proxy and nowhere else: each query is sent from an in-memory session set to that one proxy with no bypass rule and no direct fallback, and a lookup that cannot be made that way is refused, never answered by Chromium's resolver, this computer's DNS, the proxy by name or a second provider. No session is pointed at the relay yet, so nothing calls it |
 | `src/main/route/proxy-mirror/pac-fetch.ts` | The address of the proxy script the system names (in its settings, or the environment's `auto_proxy`), and only that (`http:` or `https:`, redirects to the same kinds followed), through a session of its own set to `{ mode: 'direct' }`, with no cookies or credentials and nothing cached, at most a megabyte and thirty seconds | Copying the system's proxy script into the sessions that follow the system | Not routed, by design: the script is fetched as the system's own settings would have Chromium fetch it, direct, and the session sets a proxy of its own, so no tunnel, front or system proxy takes the request. It happens only while the settings or the environment name a script; the address and the text reach neither the log nor `orivon://report` |
 | `src/main/route/proxy-mirror/read-kde.ts` | Nothing: uses only `isIPv4` and `isIPv6` | Telling an address from a hostname in KDE's proxy exceptions | Loopback |
 | `src/main/route/route-controller.ts` | Sets the proxy of an app's or a website's sessions, and of every other session the runtime creates while the whole browser is on the tunnel: the front, or the dead end (the moment a session is made or switched on, before the front is had); also `app.setProxy` for the requests made with no session | Where a session takes the tunnel; it marks a session as changing from before each `setProxy` until the call ends (`proxy-answers.ts`) | Routed (it makes sessions take it) |
@@ -199,17 +200,38 @@ HTTPS-only upgrade leaves these names alone, and no certificate exists to refuse
      serves them (`isDevEthName`): the verifier answers TLS only, so such a request never reached a page, and a proxy
      auto-configuration script is shown the whole URL of a plain request, which the question the guard asks (it has no path)
      cannot repeat;
-  3. asks `session.resolveProxy` for the origin and cancels the request unless the answer is exactly `DIRECT`. The answer is
+  3. cancels the request without asking when the session is on the system's own config and the system's settings may run code of
+     their own (`src/main/route/system-code.ts`): a script (a desktop's, or the environment's `auto_proxy`), automatic detection
+     unless the mirror's probe shows it finds none, settings Orivon could not read or carry, a manual proxy (the readers report one
+     even where the system also looks for a script beside it), a desktop that gave Chromium no proxy while `auto_proxy` is set, or
+     a first read not yet made. Such a session hands every URL it is asked about to
+     that code, which can resolve the host it is shown (`dnsResolve`) or send it anywhere, so the name is never put to it. A session
+     that holds a copy (a manual proxy, or a wrapped script) is not on the system's own config and is asked in the next step,
+     where the copy answers before any text of the system's runs. The probe is Chromium's own answer for two ordinary addresses,
+     from a session that stays on the system's config: detection counts as finding no script only while both are `DIRECT` in a
+     sample taken after the settings were last read and no more than ten seconds ago; a missing, pending, older or other
+     answer counts as code. The mirror publishes what a read found as soon as it comes in, and that the sessions are on the
+     system's config before it moves them there, so no session is asked under a status that is behind;
+  4. asks `session.resolveProxy` for the origin and cancels the request unless the answer is exactly `DIRECT`. The answer is
      never kept: only asks that overlap share one question, and an answer asked across a change of the session's proxy is
      asked again (three times at most);
-  4. cancels the request when the session does not say within fifteen seconds, which is long enough for a proxy found by
-     automatic detection or a script, or when anything in the check throws. A held request is never sent.
+  5. cancels the request when the session does not say within fifteen seconds, or when anything in the check throws. A held
+     request is never sent.
 
   The requests Orivon makes itself ask the same question first and fail with the same words: the loader's reads, a tab icon,
   the Web3 Score provider and the fetch of the system-mirror session (`direct-fetch.ts`). So does the session of an app shown
   in a `<webview>`, unless the app is routed. A main-frame load that is cancelled shows a sheet (`load-refusals.ts` holds why):
-  one that says the system proxy would have seen the name, one that says Orivon could not tell whether it would, and one that
-  says the name opens over https only; a line a minute of each kind in the log says so too, without the name.
+  one that says the system proxy would have seen the name, one that says Orivon could not tell whether it would (which is what
+  a name refused in step 3 says), and one that says the name opens over https only; a line a minute of each kind in the log
+  says so too, without the name.
+
+  The question T20 asks about a name the verifier serves (does a system proxy apply, for an unrouted app's `net.lookup` or
+  `tcp.connect`) is never put to `orivon-system-proxy`, the session that only follows the system and so would run the system's
+  script with the name. It goes to `orivon-system-mirror`, which holds the copy, and fails without asking where that session
+  would run the script (`askHolderOfCopy`); a failed question counts as a proxy, so the call is refused. The questions Orivon
+  asks `orivon-system-proxy` are about ordinary addresses only: the canary check of the mirror leaves out every address that
+  names a host the verifier serves (`proxy-mirror/canaries.ts`), whatever exception of the system's covers it, and the proxy checks of the
+  verifier host and the local nodes ask `example.com` and the addresses of the default gateways, none of them a name the verifier serves.
 
 **Not guarded.** The requests made with no session (`app.setProxy`'s) and those of a utility process are not asked about
 beforehand; this build makes none of them for a name the verifier serves. The session that shows a saved local page and an
@@ -217,14 +239,26 @@ app's child host are not website sessions, so a name those ask for is not asked 
 is asked about at its first address only, so a redirect to such a name from a provider the person chose is not caught at
 that hop (a tab icon is, since it follows redirects one by one).
 
-**What remains for `https` and `wss`.** A script that answers the same host differently from one call to the next (by the
-time, by a counter, by load) can send the request to a proxy after the guard was told `DIRECT`. The proxy then learns the
-name from `CONNECT name.eth:443`; it holds no certificate that would be accepted for it, so it cannot serve a page under the
-name. This is the whole of what the guard leaves open for these schemes, and it needs a script written that way.
+**What remains for `https` and `wss`.** The mirror learns that the system's settings name a script or detection by reading them
+(every thirty seconds, and at once when Chromium's answer for an ordinary address changes). Until it has, a session on the system's
+own config is still asked, and a script turned on in that time runs with the name; the proxy it names can then learn the name
+from `CONNECT name.eth:443`, and holds no certificate that would be accepted for it, so it cannot serve a page under the name. A
+session that holds a copy is not asked a script's question for a name: the copy of a script answers `DIRECT` for it before the
+system's text runs. A change of a session to the system's config first waits (up to three seconds) for the questions the session is
+answering, since Chromium holds one at a time and restarts a pending one under the new config.
 
-**What this leaves.** Behind a proxy that macOS settings provide, or KDE settings with reversed exceptions, a name the verifier serves does not
-open while the proxy would carry it, and the sheet says why. Adding the routed suffixes (`*.eth` and the rest) to the proxy's
-exceptions opens them ([`known-limitations.md`](../known-limitations.md)).
+Automatic detection that finds no script opens the names, which is the owner's call, since a stock Windows has it ticked and a
+network rarely serves a script. What it leaves: a hostile network that serves a detection script answering `DIRECT` for every
+address is never noticed by the probe, and the script sees the names; each session runs its own detection, so between two samples
+of the probe a session may already have found a script the probe has not seen.
+
+**What this leaves.** Behind settings Orivon cannot copy exactly, a name the verifier serves does not open: a proxy script it
+cannot fetch or whose answers differ at every question, automatic detection while the probe does not answer `DIRECT`, KDE settings
+with reversed exceptions, settings it could not read, and a manual proxy whose copy did not match Chromium's answers. The name is not put to the system, so it is
+refused also where the script or the proxy would have answered `DIRECT`, and the sheet says Orivon could not tell. Turning the
+system proxy off, listing the routed suffixes (`*.eth` and the rest) among a manual proxy's exceptions, or turning a tunnel on
+opens them. Windows has "Automatically detect settings" ticked in a new installation, which is detection: the names open there
+while it finds no script, as on a computer left as it was installed ([`known-limitations.md`](../known-limitations.md)).
 
 ## The root-dot spelling of a name the verifier serves
 

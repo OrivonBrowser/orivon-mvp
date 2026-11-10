@@ -17,7 +17,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
-import { gnomeProxy, kdeProxy, launchShellOn, macosProxy, ORDINARY, PROXY_SHEET, CANCELLED, refusalLines, report, reportedMirror, resolved, startLoggingProxy, tunnelsOpened, verifierNames, visitReporting, waitForAnswer, windowsAutoDetect, windowsManualProxy } from './system-proxy-support.js'
+import { gnomeProxy, kdeProxy, launchShellOn, macosProxy, ORDINARY, UNSURE_SHEET, CANCELLED, refusalLines, report, reportedMirror, resolved, startLoggingProxy, tunnelsOpened, verifierNames, visitReporting, waitForAnswer, windowsAutoDetect, windowsManualProxy } from './system-proxy-support.js'
 import type { LoggingProxy, MacosProxy, Running, WindowsProxyForm } from './system-proxy-support.js'
 import { ALL_BUT_ROOT_DOT_RESOLVER, readNetLog, startNetLog, stopNetLog } from './root-dot-support.js'
 import type { NetLogFacts } from './root-dot-support.js'
@@ -247,8 +247,8 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings carry a manual proxy th
     await proxy.close()
   })
 
-  it('refuses a .eth name, saying the proxy would see it, and the proxy is never asked', () => {
-    expect(facts.eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: PROXY_SHEET })
+  it('refuses a .eth name without asking the session, saying Orivon could not tell, and the proxy is never asked', () => {
+    expect(facts.eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
     expect(verifierNames(proxy.seen)).toEqual([])
     for (const kind of Object.keys(facts.sessions)) expect(facts.sessions[kind], `${kind} session, .eth`).toMatch(/^PROXY /)
   })
@@ -265,14 +265,15 @@ describe.skipIf(!WINDOWS)('a computer whose Windows settings only detect the pro
   beforeAll(() => { restore = windowsAutoDetect() })
   afterAll(() => { restore() })
 
-  it('copies nothing, opens a .eth name, and the report says the settings only detect', async () => {
+  it('copies nothing, opens a .eth name while detection finds no script, and the report says the settings only detect and what Chromium answered', async () => {
     const { app, chrome } = await launchShell({})
     try {
       const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture', 60_000)
       const reported = await reportedMirror(app, chrome)
       report('windows, detection only', { eth, mirror: reported.fact, lines: reported.lines })
       expect(eth.result, JSON.stringify(eth)).toBe('page')
-      expect(reported.fact).toEqual({ source: 'windows', mode: 'detect', state: 'system', reason: 'detect' })
+      expect(reported.fact).toMatchObject({ source: 'windows', mode: 'detect', state: 'system', reason: 'detect' })
+      expect(['direct', 'unsure'], 'never the answer of a search that found something').toContain(reported.fact?.probe)
       expect(reported.lines).toEqual(['[route] system proxy: left to the system (windows, detect, detect)'])
     } finally {
       await closeElectronApp(app)
@@ -412,8 +413,8 @@ describe.skipIf(!LINUX)('a computer whose KDE settings reverse the exceptions, w
     await proxy.close()
   })
 
-  it('refuses a .eth name, saying the proxy would see it, and the proxy is never asked', () => {
-    expect(facts.eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: PROXY_SHEET })
+  it('refuses a .eth name without asking the session, saying Orivon could not tell, and the proxy is never asked', () => {
+    expect(facts.eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
     expect(verifierNames(proxy.seen)).toEqual([])
     for (const kind of Object.keys(facts.sessions)) expect(facts.sessions[kind], `${kind} session, .eth`).toMatch(/^PROXY /)
   })
