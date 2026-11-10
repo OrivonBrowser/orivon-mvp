@@ -1,7 +1,8 @@
 // Reader view in the running shell: the book appears in the address bar on an article only, F9 opens the
 // article in a tab beside it from a validated block model (nothing from the page's markup survives), the
 // text controls change what is drawn and what is stored, F9 again goes back, a page that is not an article
-// gets a toast, and a private window stores nothing. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
+// gets a toast, and a private window stores nothing. A picture whose answer the browser cannot hold as a response (a header value outside
+// Latin-1, a status outside 200 to 599) leaves the browser running and the Reader open. Set ORIVON_UI_SHOTS_DIR to also write screenshots.
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
@@ -12,17 +13,19 @@ import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying, pressKey } from '../support/e2e-helpers.js'
-import { delay, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+import { ABSENCE_SETTLE_MS, delay, findChrome, HERMETIC_RESOLVER, popoverShown, tabIds, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 const TEST_TIMEOUT_MS = 120_000
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII=', 'base64')
 let server: Server
 let origin = ''
+/** The pictures of the odd-answer article the server was asked for: the address, and what the request said it was for (the tab's own load says `image`, main's fetch for the Reader says `empty`). */
+const oddRequests: string[] = []
 
 const PARAGRAPH = 'The quick brown fox jumps over the lazy dog while the afternoon light moves slowly across the quiet valley, and everyone who passes the old mill stops to listen to the water, which has run the same way for longer than anyone in the village can remember.'
 
-function article (): string {
+function article (pictures: ReadonlyArray<{ src: string, alt: string }> = [{ src: '/pic.png', alt: 'A tiny picture' }]): string {
   const paragraphs = Array.from({ length: 8 }, (_, i) => `<p>${PARAGRAPH} Paragraph ${String(i + 1)} ends here.</p>`)
   return `<!doctype html><html lang="en"><head><title>A Long Walk Home - Example Times</title><meta name="author" content="Ada Writer"><meta property="og:site_name" content="Example Times"></head><body>
 <nav><a href="/menu">Menu</a></nav>
@@ -36,7 +39,7 @@ ${paragraphs.slice(2, 4).join('\n')}
 <p>A link to <a href="/other">another page</a> and a <a href="javascript:document.title='hacked'">dangerous one</a> sit in this paragraph, which also carries <em>emphasis</em> and <strong>weight</strong> and some <code>inline code</code> for good measure, so the text is long enough to count.</p>
 <pre>const walk = () =&gt; 'home'\nwalk()</pre>
 <ul><li>First item of the list</li><li>Second item of the list</li></ul>
-<img src="/pic.png" alt="A tiny picture" onerror="document.title='pwned'">
+${pictures.map(({ src, alt }) => `<img src="${src}" alt="${alt}" onerror="document.title='pwned'">`).join('\n')}
 <script>document.title = 'script ran'</script>
 ${paragraphs.slice(4).join('\n')}
 <table><tr><td>Year</td><td>Miles</td></tr><tr><td>2024</td><td>12</td></tr></table>
@@ -50,9 +53,28 @@ beforeAll(async () => {
       response.end(PNG)
       return
     }
+    if (request.url === '/pic-odd-header.png') {
+      oddRequests.push(`${request.url} ${String(request.headers['sec-fetch-dest'])}`)
+      // Node writes a header value as Latin-1, so these are the bytes of a server that does not mind its encoding: a euro sign in UTF-8, and a lone byte that is no UTF-8 at all.
+      response.setHeader('x-note', Buffer.from('price \u20ac5', 'utf8').toString('latin1'))
+      response.setHeader('content-disposition', 'inline; filename="caf\xe9.png"')
+      response.setHeader('content-type', 'image/png')
+      response.end(PNG)
+      return
+    }
+    if (request.url === '/pic-status-600.png') {
+      oddRequests.push(`${request.url} ${String(request.headers['sec-fetch-dest'])}`)
+      response.writeHead(600, { 'content-type': 'image/png' })
+      response.end(PNG)
+      return
+    }
     response.setHeader('content-type', 'text/html')
     // A page that runs no script of its own must still be readable.
     response.setHeader('content-security-policy', "script-src 'none'")
+    if (request.url === '/article-odd-pictures') {
+      response.end(article([{ src: '/pic-odd-header.png', alt: 'Odd header' }, { src: '/pic-status-600.png', alt: 'Refused status' }, { src: '/pic.png', alt: 'Ordinary' }]))
+      return
+    }
     response.end(request.url === '/article' ? article() : '<!doctype html><title>Not an article</title><p>Just a short note.</p>')
   })
   await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', resolve) })
@@ -301,5 +323,35 @@ it('the reader\'s Print button opens the print dialog when there is a printer, a
   } finally {
     await closeElectron(app)
     rmSync(outDir, { recursive: true, force: true })
+  }
+}, TEST_TIMEOUT_MS)
+
+it('[app:odd-response-from-a-website-never-stops-the-browser] a picture answered with a header value outside Latin-1, or with a status outside 200 to 599, leaves the browser running: the Reader opens with the page, shows the picture whose odd header was dropped, and leaves the refused one out', async () => {
+  const { app, chrome } = await launched()
+  try {
+    await visit(chrome, `${origin}/article-odd-pictures`)
+    expect(await waitFor(async () => await bookShown(chrome))).toBe(true)
+    await runCommand(chrome, 'page.reader')
+    const page = await openedReader(app)
+    await page.waitForSelector('h1')
+    expect(await page.locator('h1').innerText()).toBe('A Long Walk Home')
+    expect(await page.locator('.body').innerText()).toContain('Paragraph 8 ends here.')
+
+    // The picture after the two odd ones lands, so the work was not left hanging on them.
+    const alts = async (): Promise<string[]> => await page.locator('.body figure img').evaluateAll((images) => images.map((image) => (image as HTMLImageElement).alt))
+    expect(await waitFor(async () => (await alts()).includes('Ordinary'))).toBe(true)
+    await delay(ABSENCE_SETTLE_MS)
+    expect(await alts(), 'the odd header was dropped and the picture kept; the refused status left its picture out').toEqual(['Odd header', 'Ordinary'])
+    expect(await page.locator('.body figure img').first().getAttribute('src')).toMatch(/^data:image\/png;base64,/)
+    expect([...oddRequests].sort(), 'each odd picture was asked for by the tab and by the Reader').toEqual([
+      '/pic-odd-header.png empty', '/pic-odd-header.png image', '/pic-status-600.png empty', '/pic-status-600.png image'
+    ])
+
+    // The browser is still the one that was started.
+    expect(typeof await app.evaluate(() => process.pid)).toBe('number')
+    expect(chrome.isClosed()).toBe(false)
+    expect(mainOutput(app)).not.toContain('uncaught exception')
+  } finally {
+    await closeElectron(app)
   }
 }, TEST_TIMEOUT_MS)
