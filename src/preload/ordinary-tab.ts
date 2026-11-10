@@ -11,6 +11,7 @@ import { installNavigationSource } from './navigation-source.js'
 import { installNoDragRegions } from './no-drag-regions.js'
 import { installPermissionQuery } from './permission-query.js'
 import { installWebGpuAsk } from './webgpu-ask.js'
+import { installWorkerControlReport } from './worker-control.js'
 import { installPageKeys } from './page-keys.js'
 import { installPageVisibility } from './page-visibility.js'
 import { hideUserAgentDataOnSignInHosts } from './sign-in-identity.js'
@@ -36,6 +37,9 @@ export function exposeOrdinaryTabSurface (): void {
   installPageVisibility()
   // Notes what starts each of the page's navigations, for the referrer main sends when it moves the tab to another session.
   installNavigationSource()
+  // Tells main a service worker controls this document: a navigation a worker answers reaches no web-request hook, and the
+  // grants of an allowed site's page depend on it (./worker-control.ts).
+  installWorkerControlReport()
   exposeOrivon()
   // ADR-0055, ADR-0061: the page's getDisplayMedia asks for Orivon's picker; this world arms the ticket and starts the
   // real call the wrapper makes in the page's world. A tab's page and a new-tab page that went to a site get it; an

@@ -128,7 +128,7 @@
 ```
 npm run typecheck && npm test
 npm run check:natives && npm run check:contracts && npm run check:vectors && npm run check:secrets
-npm run check:comments && npm run check:size && npm run check:questions && npm run check:devlog
+npm run check:comments && npm run check:size && npm run check:questions
 npm run check:manifest-parity && npm run check:dev-grant-absent && npm run check:advisories
 npm run check:test-paths && npm run check:app-behaviours && npm run check:contracts-surface
 npm run smoke     # only if you touched src/main/

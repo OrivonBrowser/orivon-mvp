@@ -4,6 +4,8 @@
 // installed extension goes last, so it prevails where two disagree.
 // Replies are untrusted data from an extension page: every shape is checked.
 
+import { isOrivonHeader } from './protected-headers.js'
+
 export interface Reply {
   readonly extensionId: string
   /** When the extension was installed; the newest wins a conflict. */
@@ -97,7 +99,7 @@ function applyHeaderDeltas (
   fixed: ReadonlySet<string> = new Set()
 ): Pair[] | undefined {
   const originalKeys = new Set(original.map(pairKey))
-  const isFixed = (key: string): boolean => fixed.has(key.slice(0, key.indexOf('\u0000')))
+  const isFixed = (key: string): boolean => { const name = key.slice(0, key.indexOf('\u0000')); return fixed.has(name) || isOrivonHeader(name) }
   let current = [...original]
   let changed = false
   for (const reply of oldestFirst(replies)) {
@@ -105,7 +107,7 @@ function applyHeaderDeltas (
     if (proposed === undefined) continue
     const proposedKeys = new Set(proposed.map(pairKey))
     const deleted = new Set([...originalKeys].filter((key) => !proposedKeys.has(key) && !isFixed(key)))
-    const added = proposed.filter((pair) => !originalKeys.has(pairKey(pair)) && !fixed.has(pair.name.toLowerCase()))
+    const added = proposed.filter((pair) => !originalKeys.has(pairKey(pair)) && !fixed.has(pair.name.toLowerCase()) && !isOrivonHeader(pair.name))
     if (deleted.size === 0 && added.length === 0) continue
     changed = true
     // A header this reply dropped and wrote again is a replacement, so it also takes the place of a value an older install set.

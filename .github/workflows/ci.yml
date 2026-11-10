@@ -92,9 +92,6 @@ jobs:
       - name: No duplicate entry number in docs/open-questions.md
         run: npm run check:questions
 
-      - name: Every devlog bullet is at most 25 words
-        run: npm run check:devlog
-
       # test/app-behaviours/catalogue.md: each entry is proven by an e2e spec CI runs, and no spec names an
       # entry the page lacks.
       - name: Every app behaviour is proven by a spec CI runs

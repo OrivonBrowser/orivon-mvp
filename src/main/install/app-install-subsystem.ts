@@ -13,7 +13,6 @@
 // see docs/open-questions.md A146 for the one gap that caller still has.
 
 import { net, session } from 'electron'
-import type { Session } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishAppUpdates, publishInstallApp } from '../registry.js'
 import { publishFirstVisit, tabSetupNow } from '../app-setup/tab-setup-ref.js'
@@ -39,22 +38,15 @@ import { localFileApps } from '../local-files/local-file-apps.js'
 import { localPartitionFor } from '../local-files/partition.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import { isLocalFileKey } from '../../broker/policy/origin.js'
+import { servedKnownToHostWithin } from '../verifier/shell-serves.js'
 import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
-import { AppNotReady, onServingChange, servedOrigins } from '../../loader/electron/app-partitions.js'
-import { isCarryPageUrl } from '../../loader/electron/carry-page.js'
-import { beforeAppSessionServes, isOriginServedFromCacheSync, onAppOriginRetired } from '../../loader/electron/serve.js'
-import { couldRunAsWebsite, hasOwnPartition, runsAsWebsite } from '../shell/app-session.js'
-import { appTabContents } from '../shell/tab-partition.js'
-import { clearedOriginsIn, clearedOriginsInMemory, prepareWebsiteWorkers } from '../sessions/website-workers.js'
-import { enteringPage, isEnteringPage, reloadStalePage, reloadStalePagesOfNewlyServed } from '../sessions/stale-pages.js'
-import type { Profile } from '../route/site-partition.js'
-import { profilePartitionsHolding } from '../route/site-partition.js'
-import { sitePartitionForOrigin } from '../route/site-routes.js'
+import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { hasOwnPartition } from '../shell/app-session.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
 import { ownFetch } from '../route/own-requests.js'
 import { blockOpenTabs } from '../app-setup/block-tabs.js'
@@ -65,17 +57,8 @@ import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
 
-/**
- * Every session a website at `origin` may have installed workers in: the shared one, the profile its own entry names, and any
- * profile it has storage in (a tab's choice put it there once). The workers of a website are cleared in all of them, since the
- * app runs in whichever of them the person's entry or a tab's choice picks.
- */
-function websiteSessionsOf (origin: string, store: { isApart: (origin: string, profile: Profile) => boolean } | undefined): Session[] {
-  const names = new Set<string>(store === undefined ? [] : profilePartitionsHolding(origin, (o, p) => store.isApart(o, p)))
-  const own = sitePartitionForOrigin(origin)
-  if (own !== undefined) names.add(own)
-  return [session.defaultSession, ...[...names].map((name) => session.fromPartition(name))]
-}
+/** How long a first visit waits for the verifier host to say it was told the shell serves the app, before the tab loads as the app anyway. */
+const HOST_WORD_MS = 10_000
 
 /**
  * Reads at most `capBytes` of `response`'s body, decoding only what was
@@ -185,27 +168,13 @@ export const appInstallSubsystem: Subsystem = {
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })
-    // An app that runs where its website ran: the workers and response caches that page installed go before the tab loads as the app (`../sessions/website-workers.ts` says when).
-    const clearedWorkers = ctx.privateSession ? clearedOriginsInMemory() : clearedOriginsIn(join(ctx.app.getPath('userData'), 'website-workers-cleared'))
-    onAppOriginRetired((origin) => { clearedWorkers.forget(origin) })
-    beforeAppSessionServes(async (_appSession, origin, from) => {
-      if (!couldRunAsWebsite(origin)) return
-      try {
-        await prepareWebsiteWorkers(websiteSessionsOf(origin, ctx.routes?.store), origin, from, clearedWorkers)
-      } catch (error) {
-        throw new AppNotReady('the workers a website of this address installed could not be removed', 'Open it again in a moment.', { cause: error })
-      }
-    })
-    // The website's pages still open when the app starts to be served load again, so none of them stays as the website left it (`../sessions/stale-pages.ts`).
-    // The hidden pages of the storage carry are not websites' pages: a reload would end the carry they are in the middle of.
-    reloadStalePagesOfNewlyServed({ served: () => servedOrigins().filter(runsAsWebsite), pagesOf: pagesOfOrigin, isAppPage: (page) => appTabContents.has(page) || isEnteringPage(page) || isCarryPageUrl(page.getURL()), reload: reloadStalePage, onServingChange })
     // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
     // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     const firstVisit = createFirstVisit({
-      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), entering: enteringTab, askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
+      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), entering: enteringTab, hostTold: async () => await servedKnownToHostWithin(HOST_WORD_MS), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     })

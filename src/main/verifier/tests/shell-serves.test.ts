@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Session } from 'electron'
+import type { ShellServes } from '../../../protocols/verifier-host/protocol.js'
 import { registerAppOrigin, retireAppOrigin } from '../../../loader/electron/app-partitions.js'
 import { OWN_READ_HEADER } from '../../../loader/fetch/content-root.js'
 import { ownReadToken } from '../../../loader/fetch/own-read.js'
-import { announceServed, hostShell, isHandedToShell, isRelayable, relayHandlerFor, relayableOrigins, serveShell } from '../shell-serves.js'
+import { announceServed, hostShell, isHandedToShell, isRelayable, noteServesApplied, relayHandlerFor, relayableOrigins, serveShell, servedKnownToHost } from '../shell-serves.js'
 
 // Which of the origins the shell serves the verifier's server may hand over: the hosts it answers, on its one port.
 
@@ -85,10 +86,43 @@ describe('what the host is started and kept informed with', () => {
     const host = { send: vi.fn((message: unknown) => { sent.push(message); return true }) }
     serveShell(host)
     registerAppOrigin(session, 'https://changing.eth', async () => new Response('kept'))
-    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.arrayContaining(['https://changing.eth']) })
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.arrayContaining(['https://changing.eth']), seq: expect.any(Number) })
     retireAppOrigin(session, 'https://changing.eth')
-    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.not.arrayContaining(['https://changing.eth']) })
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: expect.not.arrayContaining(['https://changing.eth']), seq: expect.any(Number) })
     announceServed(host)
-    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: relayableOrigins() })
+    expect(sent.at(-1)).toEqual({ type: 'shell-serves', origins: relayableOrigins(), seq: expect.any(Number) })
+  })
+})
+
+function fakeHost (): { sent: ShellServes[], host: { send: (message: ShellServes) => boolean } } {
+  const sent: ShellServes[] = []
+  return { sent, host: { send: (message) => { sent.push(message); return true } } }
+}
+
+describe('the host saying it was told what the shell serves', () => {
+  const settled = async (promise: Promise<void>): Promise<boolean> => await Promise.race([promise.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => { resolve(false) }, 20))])
+
+  it('is waited for: nothing resolves until the host names the announcement it applied, or a later one', async () => {
+    const { sent, host } = fakeHost()
+    announceServed(host)
+    const waiting = servedKnownToHost()
+    expect(await settled(waiting)).toBe(false)
+    noteServesApplied(sent.at(-1)?.seq ?? 0)
+    expect(await settled(waiting)).toBe(true)
+    expect(await settled(servedKnownToHost())).toBe(true)
+  })
+
+  it('is not waited for when no host runs to be told: it takes the set from its configuration when it starts', async () => {
+    announceServed({ send: () => false })
+    expect(await settled(servedKnownToHost())).toBe(true)
+  })
+
+  it('is answered by a later announcement for an earlier one the host never applied', async () => {
+    const { sent, host } = fakeHost()
+    announceServed(host)
+    const waiting = servedKnownToHost()
+    announceServed(host)
+    noteServesApplied(sent.at(-1)?.seq ?? 0)
+    expect(await settled(waiting)).toBe(true)
   })
 })

@@ -93,3 +93,6 @@ test/apps/fixture/__as-page-script.js
 
 # Failure evidence and state captures written by the e2e suite (test/support/qa-evidence.mjs)
 qa-artifacts/
+
+# The team devlog is internal: a local journal, never committed.
+devlog/

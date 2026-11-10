@@ -90,7 +90,12 @@ export const MAX_ANSWERED_ADDRESSES = 32
 /**
  * The origins the shell serves from a copy it keeps, whole each time: a request for one of their hosts is handed to the shell.
  */
-export interface ShellServes { readonly type: 'shell-serves', readonly origins: readonly string[] }
+export interface ShellServes {
+  readonly type: 'shell-serves'
+  readonly origins: readonly string[]
+  /** Counts the shell's announcements: the host answers each with `shell-serves-applied` naming it, once the set is in force. */
+  readonly seq?: number
+}
 
 export interface HostConfig {
   readonly port: number
@@ -233,6 +238,8 @@ export type FromHost =
   | { readonly type: 'reply', readonly id: number, readonly ok: true, readonly value: unknown }
   | { readonly type: 'reply', readonly id: number, readonly ok: false, readonly message: string }
   | { readonly type: 'status', readonly status: LightClientState }
+  /** The set of origins in `shell-serves` number `seq` is in force: every request for one of them from here on is handed to the shell. */
+  | { readonly type: 'shell-serves-applied', readonly seq: number }
   /** A newer finalized checkpoint the light client verified, for the shell to store. */
   | { readonly type: 'checkpoint', readonly root: string, readonly timestamp: number }
   | { readonly type: 'ipns-sequence', readonly key: string, readonly sequence: string }

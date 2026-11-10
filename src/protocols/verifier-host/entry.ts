@@ -96,7 +96,15 @@ function main (): void {
       host?.then((running) => { running.ipfsLookup(message.allowed) }, () => {})
       return
     }
-    if (message.type === 'shell-serves' || message.type === 'relay-head' || message.type === 'relay-body' || message.type === 'relay-end' || message.type === 'relay-error') {
+    if (message.type === 'shell-serves') {
+      const { seq } = message
+      host?.then((running) => {
+        running.shell(message)
+        if (seq !== undefined) post({ type: 'shell-serves-applied', seq })
+      }, () => {})
+      return
+    }
+    if (message.type === 'relay-head' || message.type === 'relay-body' || message.type === 'relay-end' || message.type === 'relay-error') {
       host?.then((running) => { running.shell(message) }, () => {})
       return
     }
