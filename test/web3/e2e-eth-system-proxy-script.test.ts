@@ -248,7 +248,7 @@ describe.skipIf(!LINUX)('a computer whose GNOME settings name a proxy script tha
       expect(settled, 'the mirror said the script could not be fetched').toBe(true)
       expect(reported.fact).toEqual({ source: 'gnome', mode: 'script', state: 'system', reason: 'unfetched' })
       expect(eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
-      expect(refusalLines(app).join('\n')).toContain('it could not be told whether its proxy would carry it')
+      expect(refusalLines(app).join('\n')).toContain('the system\'s proxy settings may run a script, and the session holds no copy of them')
       expect(verifierNames(proxy.seen)).toEqual([])
     } finally {
       await closeElectronApp(app)
