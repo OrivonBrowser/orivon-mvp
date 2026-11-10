@@ -5,6 +5,7 @@
 import type { Session } from 'electron'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import type { AppRequestHandler } from '../serve/serve.js'
+import { answeringCarryPage } from './carry-page.js'
 
 /**
  * Registers `handler` as `origin`'s own scheme's handler on `appSession`.
@@ -20,7 +21,10 @@ import type { AppRequestHandler } from '../serve/serve.js'
  * answers with whatever `handler` the caller just built from the freshly
  * re-verified pin, never a stale one left over from before the update.
  */
-export function registerAppOrigin (appSession: Session, origin: string, handler: AppRequestHandler, from: 'pin' | 'verifier' = 'pin'): void {
+export function registerAppOrigin (appSession: Session, origin: string, answer: AppRequestHandler, from: 'pin' | 'verifier' = 'pin'): void {
+  // The empty document the shell's storage carry loads (carry-page.ts) is answered here, in the one place the partition's handler and
+  // the relayed answer both come from, and reaches the app's own handler never.
+  const handler = answeringCarryPage(answer)
   if (!appSessions.has(appSession)) {
     appSessions.add(appSession)
     for (const listener of [...appSessionListeners]) listener(appSession)
@@ -31,8 +35,13 @@ export function registerAppOrigin (appSession: Session, origin: string, handler:
   }
   appSession.protocol.handle(scheme, handler)
   servedPartitions.add(partitionFor(origin))
+  const wasPinned = pinnedPartitions.has(partitionFor(origin))
   if (from === 'pin') pinnedPartitions.add(partitionFor(origin))
   else pinnedPartitions.delete(partitionFor(origin))
+  const key = originKey(origin)
+  const added = key !== undefined && !servingHandlers.has(key)
+  if (key !== undefined) servingHandlers.set(key, handler)
+  if (added || wasPinned !== pinnedPartitions.has(partitionFor(origin))) notifyServingChange()
 }
 
 /**
@@ -41,11 +50,70 @@ export function registerAppOrigin (appSession: Session, origin: string, handler:
  * a worker or a popup still alive there reaches nothing, the network included. Never for an origin served from its pin.
  */
 export function retireAppOrigin (appSession: Session, origin: string): void {
+  for (const listener of [...retireListeners]) listener(origin)
   const scheme = new URL(origin).protocol.replace(':', '')
   if (appSession.protocol.isProtocolHandled(scheme)) appSession.protocol.unhandle(scheme)
   appSession.protocol.handle(scheme, async () => new Response('Orivon: this app was stopped', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } }))
   servedPartitions.delete(partitionFor(origin))
   pinnedPartitions.delete(partitionFor(origin))
+  const key = originKey(origin)
+  if (key !== undefined && servingHandlers.delete(key)) notifyServingChange()
+}
+
+/**
+ * The handler each served origin is answered with, the very one its partition's protocol handler is. A request for the origin
+ * made anywhere else (the verifier's loopback server, for a shared session) is answered by this same handler, so the answer is
+ * the same wherever the page runs. Keyed by the origin as the URL parser spells it. An entry leaves with `retireAppOrigin`.
+ */
+const servingHandlers = new Map<string, AppRequestHandler>()
+const servingListeners = new Set<() => void>()
+
+function originKey (origin: string): string | undefined {
+  try {
+    return new URL(origin).origin
+  } catch {
+    return undefined
+  }
+}
+
+function notifyServingChange (): void {
+  for (const listener of [...servingListeners]) {
+    // One listener's failure is its own: the others still hear of the change.
+    try {
+      listener()
+    } catch (error) {
+      console.error('[loader] a listener of the origins served failed:', error)
+    }
+  }
+}
+
+/** The handler that answers for `origin` now, or undefined when the shell serves nothing there. */
+export function servingHandlerFor (origin: string): AppRequestHandler | undefined {
+  const key = originKey(origin)
+  return key === undefined ? undefined : servingHandlers.get(key)
+}
+
+/** Every origin the shell serves now, as the URL parser spells it. */
+export function servedOrigins (): readonly string[] {
+  return [...servingHandlers.keys()]
+}
+
+/**
+ * Calls `listener` whenever an origin starts or stops being served, or is served from its pin where it was read live (or the
+ * other way round), after the change; not when a served origin's handler is replaced and nothing the listener could ask
+ * about it differs. Returns the function that stops the calls.
+ */
+export function onServingChange (listener: () => void): () => void {
+  servingListeners.add(listener)
+  return () => { servingListeners.delete(listener) }
+}
+
+const retireListeners = new Set<(origin: string) => void>()
+
+/** Calls `listener` with the origin of every app `retireAppOrigin` stops serving: what was tied to its being served ends there. */
+export function onAppOriginRetired (listener: (origin: string) => void): () => void {
+  retireListeners.add(listener)
+  return () => { retireListeners.delete(listener) }
 }
 
 /** The sessions `registerAppOrigin` has served an origin from, and who wants to hear of each. */
@@ -66,34 +134,51 @@ export function forEachAppSession (listener: (appSession: Session) => void): voi
  * Work to finish for an app's session before the app is served from it, so that nothing loads in a session that is
  * not yet as it must be. Awaited in order by `prepareAppSession`.
  */
-const appSessionPreparers: Array<(appSession: Session, origin: string) => Promise<void>> = []
+const appSessionPreparers: Array<(appSession: Session, origin: string, from: 'pin' | 'verifier') => Promise<void>> = []
 
-export function beforeAppSessionServes (preparer: (appSession: Session, origin: string) => Promise<void>): void {
+/** `from` tells a preparer whether the app is served from its pin (a start, or the pin landing) or live from the verifier (the first time it is let in). */
+export function beforeAppSessionServes (preparer: (appSession: Session, origin: string, from: 'pin' | 'verifier') => Promise<void>): void {
   appSessionPreparers.push(preparer)
 }
 
 /** Runs every preparer for `origin`'s session. A rejection stops the app being served from it. */
-export async function prepareAppSession (appSession: Session, origin: string): Promise<void> {
-  for (const preparer of appSessionPreparers) await preparer(appSession, origin)
+export async function prepareAppSession (appSession: Session, origin: string, from: 'pin' | 'verifier' = 'pin'): Promise<void> {
+  for (const preparer of appSessionPreparers) await preparer(appSession, origin, from)
 }
+
+/** A preparer fails with this to say, in words the person reads, why the app did not open. Any other failure gets `UNKNOWN_REASON`. */
+export class AppNotReady extends Error {
+  /** `reason` completes "Orivon did not open this app because ..."; `advice` is what the person can do about it. */
+  constructor (readonly reason: string, readonly advice = 'Open it again in a moment.', options?: ErrorOptions) {
+    super(reason, options)
+    this.name = 'AppNotReady'
+  }
+}
+
+const UNKNOWN_NOT_READY = new AppNotReady('the session it opens in could not be made ready')
 
 /**
  * `prepareAppSession`, and when it fails the app is still given its partition, answered by a handler that refuses
  * every request and says why, before the failure is passed on. Without that the origin has no partition of its own,
  * so a tab for it opens as an ordinary website on the shared session: for an app whose tunnel could not start,
- * that is a direct connection. The only preparer is the route's, which is what the page says.
+ * that is a direct connection, and for an app whose website's workers could not be cleared, a worker the check never saw.
+ * The page says what a preparer's `AppNotReady` says.
  */
 export async function prepareAppSessionOrStop (appSession: Session, origin: string, from: 'pin' | 'verifier'): Promise<void> {
   try {
-    await prepareAppSession(appSession, origin)
+    await prepareAppSession(appSession, origin, from)
   } catch (error) {
     console.error('[loader] an app\'s session could not be prepared; the app is stopped, not opened as a website:', origin, error)
-    registerAppOrigin(appSession, origin, async () => new Response(STOPPED_PAGE, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }), from)
+    const page = stoppedPage(error instanceof AppNotReady ? error : UNKNOWN_NOT_READY)
+    registerAppOrigin(appSession, origin, async () => new Response(page, { status: 503, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' } }), from)
     throw error
   }
 }
 
-const STOPPED_PAGE = '<!doctype html><meta charset="utf-8"><title>This app did not open</title><body style="font-family:system-ui;margin:3rem"><h1>This app did not open</h1><p>The tunnel could not start, so Orivon did not open this app and sent nothing. Check the tunnel under Tunnels, then open it again.</p></body>'
+/** The page a stopped app answers every request with. The reason and advice are Orivon's own sentences, never a page's text. */
+function stoppedPage (why: AppNotReady): string {
+  return `<!doctype html><meta charset="utf-8"><title>This app did not open</title><body style="font-family:system-ui;margin:3rem"><h1>This app did not open</h1><p>Orivon did not open this app, and sent nothing, because ${why.reason}. ${why.advice}</p></body>`
+}
 
 /** The partitions whose handler answers from the origin's pin, a subset of `servedPartitions`: the rest answer from the verifier until the pin lands. */
 const pinnedPartitions = new Set<string>()

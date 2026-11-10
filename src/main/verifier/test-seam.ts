@@ -9,7 +9,7 @@ const SEAM_ENABLED = typeof __ORIVON_DEV_GRANT_ENABLED__ !== 'undefined' && __OR
 
 // `var`, not `let`/`const`: TypeScript requires it for a `declare global` augmentation.
 declare global {
-  var __orivonDevEthFixtures: { readonly fixtures: Readonly<Record<string, string>>, listening: boolean, start?: () => void, idle?: () => void } | undefined
+  var __orivonDevEthFixtures: { readonly fixtures: Readonly<Record<string, string>>, listening: boolean, start?: () => void, idle?: () => void, holdServed?: (hold: boolean) => void } | undefined
 }
 
 export interface EthTestSeam {
@@ -52,6 +52,25 @@ export function exposeVerifierStart (start: () => void, idle: () => void): void 
   if (!SEAM_ENABLED || ethTestSeam() === undefined || globalThis.__orivonDevEthFixtures === undefined) return
   globalThis.__orivonDevEthFixtures.start = start
   globalThis.__orivonDevEthFixtures.idle = idle
+}
+
+let servedHeld = false
+
+/**
+ * Test builds only: lets a suite hold back the verifier host's word of what the shell serves (`holdServed(true)`), so a page loads in
+ * the window between the shell serving an app and the host knowing it, and release it (`holdServed(false)`), which sends the word at once.
+ */
+export function exposeServedHold (send: () => void): void {
+  if (!SEAM_ENABLED || ethTestSeam() === undefined || globalThis.__orivonDevEthFixtures === undefined) return
+  globalThis.__orivonDevEthFixtures.holdServed = (hold) => {
+    servedHeld = hold
+    if (!hold) send()
+  }
+}
+
+/** Whether a test build holds back the word of what the shell serves; never in an ordinary build. */
+export function servedAnnouncementHeld (): boolean {
+  return SEAM_ENABLED && servedHeld
 }
 
 /** Lets a test build's suite see when the verifier can answer, rather than guess with a delay. */

@@ -130,6 +130,15 @@ scheme shares the `.orivon` suffix, routed once at launch. Registering a protoco
 is not part of this build; the shared suffix is what would let one route with no restart. Each protocol is registered through one function over data the shell can read
 ([`src/protocols/README.md`](src/protocols/README.md) says how to add one).
 
+**An allowed app runs where a website at its address runs**
+([`ADR-0108`](docs/decisions/ADR-0108-an-allowed-web3-site-runs-where-websites-run-and-its-kept-copy-is-served-there-through-the-verifier.md)).
+When the verifier's server answers its host, the shell serves the app's kept copy to the shared session
+through that server, so the session, the tunnel setting, the person's site data and the extensions treat the
+app as the website it is, with one copy of an extension and one set of its data. What the page may do beyond a
+website is decided by the grants held for its origin, never by the session. An app on a host the server does
+not answer (a plain https host, a loopback address) keeps a session of its own, as does one whose route is
+not the shared session's (*provisional*, until the shared session sends the app as its own route does).
+
 **The grant prompt is origin-first.** Any origin can serve a manifest, and the `name` in it is
 self-asserted, so the origin is the largest and primary element and the app's claimed name is
 visibly subordinate. There is no separate "open as app" action anywhere in the browser: a

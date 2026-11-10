@@ -6,7 +6,7 @@ const { ipcOn } = vi.hoisted(() => ({ ipcOn: vi.fn() }))
 vi.mock('electron', () => ({ ipcMain: { on: ipcOn } }))
 const policyHeaderOf = vi.fn((_contents: unknown, _documentUrl: string): string | undefined => '')
 vi.mock('../page-referrer-policy.js', () => ({ referrerPolicyHeaderOf: policyHeaderOf }))
-const { NAVIGATION_NOTE_CHANNEL, installNavigationNotes, referrerOfInitiator, takeNavigationNote, topInitiatorUrl } = await import('../initiator-referrer.js')
+const { NAVIGATION_NOTE_CHANNEL, installNavigationNotes, referrerOfInitiator, startedWithoutBody, takeNavigationNote, topInitiatorUrl } = await import('../initiator-referrer.js')
 
 const SOURCE = 'https://a.eth/page'
 const TARGET = 'https://b.eth/landing'
@@ -100,5 +100,24 @@ describe('topInitiatorUrl', () => {
     expect(topInitiatorUrl({ url: SOURCE, parent: {} })).toBeUndefined()
     expect(topInitiatorUrl(null)).toBeUndefined()
     expect(topInitiatorUrl(undefined)).toBeUndefined()
+  })
+})
+
+describe('startedWithoutBody', () => {
+  it('is true for a navigation the page reported as submitting no form', () => {
+    const wc = tab()
+    takeNavigationNote(wc, topOf(wc), note({ post: false }))
+    expect(startedWithoutBody(wc, SOURCE, TARGET)).toBe(true)
+  })
+
+  it('is false for a form post, for a note that does not say, for a redirect and for a navigation no top frame started', () => {
+    const wc = tab()
+    takeNavigationNote(wc, topOf(wc), note({ post: true }))
+    expect(startedWithoutBody(wc, SOURCE, TARGET)).toBe(false)
+    takeNavigationNote(wc, topOf(wc), note())
+    expect(startedWithoutBody(wc, SOURCE, TARGET)).toBe(false)
+    takeNavigationNote(wc, topOf(wc), note({ post: false }))
+    expect(startedWithoutBody(wc, undefined, TARGET)).toBe(false)
+    expect(startedWithoutBody(tab(), SOURCE, TARGET)).toBe(false)
   })
 })
