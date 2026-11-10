@@ -34,6 +34,7 @@ import { setMirrorStatusSource } from './proxy-mirror/mirror-status.js'
 import { createPacFetch } from './proxy-mirror/pac-fetch.js'
 import { createProxyMirror } from './proxy-mirror/proxy-mirror.js'
 import type { ProxyMirror } from './proxy-mirror/proxy-mirror.js'
+import { environmentReader } from './proxy-mirror/read-environment.js'
 import { readKdeSettings } from './proxy-mirror/read-kde-files.js'
 import { readGnomeSettings, readMacosSettings, readWindowsSettings } from './proxy-mirror/run-readers.js'
 import { sourceOf } from './proxy-mirror/settings-source.js'
@@ -197,7 +198,7 @@ export const routeSubsystem: Subsystem = {
     const source = sourceOf(process.platform, process.env)
     proxyMirror = createProxyMirror({
       source,
-      read: source === 'gnome' ? readGnomeSettings : source === 'kde' ? readKdeSettings : source === 'windows' ? readWindowsSettings : source === 'macos' ? readMacosSettings : undefined,
+      read: source === 'gnome' ? readGnomeSettings : source === 'kde' ? readKdeSettings : source === 'windows' ? readWindowsSettings : source === 'macos' ? readMacosSettings : environmentReader(process.env),
       held: heldToNym,
       // The text of the script the system names is fetched direct by a session of its own; the system's session is made to read it again when the text changed.
       fetchScript: createPacFetch(() => session.fromPartition('orivon-pac-fetch')),
