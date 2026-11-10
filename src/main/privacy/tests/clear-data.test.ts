@@ -71,6 +71,26 @@ describe('clearing browsing data', () => {
     expect(forgetNodeData).toHaveBeenCalledTimes(2)
   })
 
+  it('forgets the sites opened in tunnels, which the mirror of sign-ins lists, with any history that is cleared and with nothing else', async () => {
+    const forgetMirroredSites = vi.fn(async () => {})
+    const { deps } = setup()
+    const withMirror = { ...deps, forgetMirroredSites }
+    await clearBrowsingData({ ...NOTHING, siteData: true, cache: true, zoomLevels: true, siteSettings: true, appData: true }, withMirror)
+    expect(forgetMirroredSites).not.toHaveBeenCalled()
+    await clearBrowsingData({ ...NOTHING, history: 'hour' }, withMirror)
+    expect(forgetMirroredSites, 'the list carries no times, so a part of history takes all of it').toHaveBeenCalledTimes(1)
+    await clearBrowsingData({ ...NOTHING, history: 'all' }, withMirror)
+    expect(forgetMirroredSites).toHaveBeenCalledTimes(2)
+  })
+
+  it('reports the tunnel sign-ins when forgetting the sites fails, and still clears the rest', async () => {
+    const { deps, history } = setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const forgetMirroredSites = vi.fn(async () => { throw new Error('locked') })
+    expect(await clearBrowsingData({ ...NOTHING, history: 'all' }, { ...deps, forgetMirroredSites })).toEqual({ ok: false, failed: ['tunnelSignIns'] })
+    expect(history.clear).toHaveBeenCalledTimes(1)
+  })
+
   it('reports the node\'s data when forgetting it fails, and still clears the rest', async () => {
     const { deps, history } = setup()
     vi.spyOn(console, 'error').mockImplementation(() => {})
