@@ -11,7 +11,7 @@ import type { SystemProxyConfig } from '../system-follow.js'
 import { within } from '../within.js'
 import { BASE_CANARIES, exceptionCanaries } from './canaries.js'
 import { mirroredConfig, mirroredScriptConfig } from './mirrored-config.js'
-import type { MirrorReason, MirrorStatus } from './mirror-status.js'
+import type { MirrorProbe, MirrorReason, MirrorStatus } from './mirror-status.js'
 import type { SettingsSourceName, SystemSettings } from './settings-source.js'
 
 /** How often Chromium's own answer is asked, in process. Provisional: a proxy turned on is followed after about this long. */
@@ -20,6 +20,8 @@ export const ANSWER_EVERY_MS = 2_000
 export const READ_EVERY_MS = 30_000
 /** How long a change in Chromium's answers alone, with the settings the same, starts no read after one did. */
 export const ANSWERS_QUIET_MS = 2 * READ_EVERY_MS
+/** How long Chromium's answer for the ordinary addresses counts as the current one where the settings say to look for a script: five of the two-second questions, so that a busy moment does not make it lapse. */
+export const PROBE_FRESH_MS = 5 * ANSWER_EVERY_MS
 /** How long the first read and check may hold the start of the browser. */
 export const START_BOUND_MS = 6_000
 /** How long one question to a session, or one set of the check session, may take. */
@@ -90,6 +92,12 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
   /** What the last pass looked at, so a pass that sees the same does nothing. */
   let lastInputs = ''
   let lastAnswers = ''
+  /** Moves when a read comes in: an answer of Chromium's taken before it says nothing of the settings it found. */
+  let readGeneration = 0
+  /** Chromium's last answer for the ordinary addresses, whether every one was DIRECT, and under which read. */
+  let probe: { readonly direct: boolean, readonly at: number, readonly generation: number } | undefined
+  /** What the guard reads from the moment a read finds settings that may run code until the pass that checks them ends: the pass takes as long as a script's fetch, and the sessions are put on the system's config only at its end. */
+  let interim: MirrorStatus | undefined
   /** The script the settings name, as last fetched. A failed fetch keeps the text for the same address. */
   let script: { readonly url: string, readonly text: string, readonly fetchedAt: number, readonly tried: number } | undefined
   /** Moves whenever the text of the script changes, so that the pass sees a new script as a new input. */
@@ -115,8 +123,23 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
     }
   }
 
+  /** Chromium's own answer for the ordinary addresses, kept as the probe when no read has come in since it was asked. */
   async function sample (): Promise<string> {
-    return (await Promise.all(BASE_CANARIES.map(async (url) => await ask(deps.systemAnswer, url) ?? 'unanswered'))).join('\n')
+    const generation = readGeneration
+    const answers = await Promise.all(BASE_CANARIES.map(async (url) => await ask(deps.systemAnswer, url) ?? 'unanswered'))
+    if (generation === readGeneration) probe = { direct: answers.every((answer) => answer === 'DIRECT'), at: Date.now(), generation }
+    return answers.join('\n')
+  }
+
+  /** What the probe says now: nothing, where no answer was taken after the last read or the last is old. */
+  function probeNow (): MirrorProbe {
+    if (probe === undefined || probe.generation !== readGeneration || Date.now() - probe.at > PROBE_FRESH_MS) return 'unsure'
+    return probe.direct ? 'direct' : 'not-direct'
+  }
+
+  function published (): MirrorStatus {
+    const current = interim ?? status
+    return current.mode === 'detect' ? { ...current, probe: probeNow() } : current
   }
 
   /** How a session set to `config` answers beside Chromium's own, for the base addresses and the ones the exceptions cover. A real difference outweighs a question that got no answer. */
@@ -234,7 +257,18 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
     if (read === undefined || stopped) return undefined
     passFetched = false
     passReloaded = false
-    const settings = await read()
+    try {
+      const settings = await read()
+      readGeneration += 1
+      // The sessions that follow the system are put on its config only at the end of the pass, and the pass may wait on a script's fetch: until then the guard reads what the read found, where that may run code and the status said it did not.
+      if (applied === SYSTEM && settings.kind !== 'none' && settings.kind !== status.mode) interim = { source: deps.source, mode: settings.kind, state: 'system', reason: 'starting' }
+      return await settle(read, settings)
+    } finally {
+      interim = undefined
+    }
+  }
+
+  async function settle (read: () => Promise<SystemSettings>, settings: SystemSettings): Promise<string | undefined> {
     let answers = await sample()
     if (settings.kind === 'script') {
       if (await updateScript(settings.url, false, answers !== lastAnswers)) answers = await sample()
@@ -258,18 +292,24 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
     lastInputs = inputs
     lastAnswers = answers
     const next: MirrorStatus = { source: deps.source, mode: outcome.mode, state: outcome.config === SYSTEM ? 'system' : 'mirrored', reason: outcome.reason }
+    const publish = (): void => {
+      if (JSON.stringify(next) !== JSON.stringify(status)) log(`[route] system proxy: ${next.state === 'mirrored' ? 'copied' : 'left to the system'} (${next.source}, ${next.mode}, ${next.reason})`)
+      status = next
+      interim = undefined
+    }
+    // Sessions are put on the system's config one by one: one that already is must be judged by what the settings now are, not by the copy it left.
+    if (next.state === 'system') publish()
     if (JSON.stringify(outcome.config) !== JSON.stringify(applied) || !taken) {
       applied = outcome.config
       taken = await applyOnce()
     }
-    if (JSON.stringify(next) !== JSON.stringify(status)) log(`[route] system proxy: ${next.state === 'mirrored' ? 'copied' : 'left to the system'} (${next.source}, ${next.mode}, ${next.reason})`)
-    status = next
+    publish()
     return answers
   }
 
   /** Tells the listeners what a pass saw. `sample` joins the answers with a newline, which no answer holds. */
   function announce (answers: string): void {
-    const seen: MirrorPass = { status, answers: answers.split('\n') }
+    const seen: MirrorPass = { status: published(), answers: answers.split('\n') }
     for (const listener of listeners) {
       try {
         listener(seen)
@@ -308,7 +348,7 @@ export function createProxyMirror (deps: ProxyMirrorDeps): ProxyMirror {
 
   return {
     config: () => applied,
-    status: () => status,
+    status: published,
     onPass: (listener) => {
       listeners.add(listener)
       return () => { listeners.delete(listener) }
