@@ -89,7 +89,7 @@ export interface SiteTunnel {
   readonly unreadable: boolean
   /** The profile the website lives in now, when its entry puts it in one. */
   readonly profile?: SiteTunnelProfile
-  /** Present while "Keep tunneled sites separate" is off: a website in a profile keeps the sign-ins of normal browsing (ADR-0109). */
+  /** Present while "Keep tunneled sites separate" is off: a website in a profile keeps the sign-ins of normal browsing (ADR-0110). */
   readonly signInsShared?: true
   /** The tunnel everything without a choice of its own goes through. */
   readonly defaultKind: SiteTunnelKind
