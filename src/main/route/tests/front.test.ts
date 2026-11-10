@@ -6,8 +6,8 @@ import { connect as netConnect, createServer as createTcpServer } from 'node:net
 import type { AddressInfo, Server, Socket } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { RouteProvider } from '../../../broker/route/provider.js'
-import { NOT_CARRIED_PAGE, startRouteFront } from '../front.js'
-import type { RouteFront } from '../front.js'
+import { FrontRefusal, NOT_CARRIED_PAGE, refusalPage, startRouteFront } from '../front.js'
+import type { FrontTarget, RouteFront, RouteFrontOptions } from '../front.js'
 
 const cleanups: Array<() => Promise<void> | void> = []
 afterEach(async () => {
@@ -312,5 +312,131 @@ describe('closing', () => {
       probe.once('connect', () => { probe.destroy(); resolve() })
       probe.once('error', reject)
     })).rejects.toMatchObject({ code: 'ECONNREFUSED' })
+  })
+})
+
+/** A stream to a local server, handed over paused as a route's is. */
+async function pausedTo (port: number): Promise<Socket> {
+  return await new Promise((resolve, reject) => {
+    const socket = netConnect({ host: '127.0.0.1', port })
+    socket.once('connect', () => { socket.pause(); resolve(socket) })
+    socket.once('error', reject)
+  })
+}
+
+async function frontOpening (open: NonNullable<RouteFrontOptions['open']>, provider?: RouteProvider): Promise<RouteFront> {
+  const started = await startRouteFront({ open, ...(provider === undefined ? {} : { provider: () => provider }) })
+  cleanups.push(async () => { await started.close() })
+  return started
+}
+
+describe('a front given `open`', () => {
+  it('reaches a CONNECT through it in place of the provider, and says what a proxy script would be asked about', async () => {
+    const asked: string[] = []
+    const seen: FrontTarget[] = []
+    const target = await echoServer()
+    const f = await frontOpening(async (wanted) => { seen.push(wanted); return await pausedTo(target) }, providerFor({}, asked))
+
+    const { status, socket } = await connectThrough(f, 'echo.test:8443', basic(f))
+    const echoed = new Promise<string>((resolve) => { socket.once('data', (chunk: Buffer) => { resolve(chunk.toString()) }) })
+    socket.write('ping')
+
+    expect(status).toBe('HTTP/1.1 200 Connection Established')
+    expect(await echoed).toBe('ping')
+    expect(seen.map(({ host, port, url }) => ({ host, port, url }))).toEqual([{ host: 'echo.test', port: 8443, url: 'https://echo.test:8443/' }])
+    expect(asked, 'the provider is not asked when open is given').toEqual([])
+  })
+
+  it('names a tunnel to port 80 as http, a tunnel to port 443 without its port, and an IPv6 host in brackets', async () => {
+    const urls: string[] = []
+    const f = await frontOpening(async ({ url }) => { urls.push(url); throw new Error('stop') })
+    for (const target of ['example.com:443', 'example.com:80', '[::1]:443', 'example.com:8443']) await connectThrough(f, target, basic(f))
+    expect(urls).toEqual(['https://example.com/', 'http://example.com/', 'https://[::1]/', 'https://example.com:8443/'])
+  })
+
+  it('refuses a CONNECT to a host that is no URL\'s, without calling open', async () => {
+    let called = false
+    const f = await frontOpening(async () => { called = true; throw new Error('unused') })
+    expect((await connectThrough(f, '[1:2]:443', basic(f))).status).toMatch(/^HTTP\/1\.1 400 /)
+    expect(called).toBe(false)
+  })
+
+  it('forwards plain http through it as a request in origin form to the stream it returns, and gives it the request\'s own address', async () => {
+    const seen: Seen[] = []
+    const targets: string[] = []
+    const web = await webServer(seen)
+    const f = await frontOpening(async ({ url }) => { targets.push(url); return await pausedTo(web) })
+
+    const response = await getThrough(f, 'http://web.test/path?q=1', { 'proxy-authorization': basic(f) })
+
+    expect(response.status).toBe(200)
+    expect(response.body).toBe('hello from the target')
+    expect(targets).toEqual(['http://web.test/path?q=1'])
+    expect(seen[0]).toMatchObject({ method: 'GET', url: '/path?q=1' })
+    expect(seen[0]?.headers.host).toBe('web.test')
+  })
+
+  it('answers a CONNECT with the status of the refusal it was given, and 502 for any other failure', async () => {
+    const outcomes: Array<() => never> = [
+      () => { throw new FrontRefusal(504, 'It took too long.') },
+      () => { throw new FrontRefusal(403, 'Not here.') },
+      () => { throw new FrontRefusal(503, 'Not now.') },
+      () => { throw new Error('connect ECONNREFUSED 10.0.0.1:3128') }
+    ]
+    const f = await frontOpening(async () => { outcomes.shift()?.(); throw new Error('unused') })
+    const statuses: string[] = []
+    for (let one = 0; one < 4; one += 1) statuses.push((await connectThrough(f, 'any.test:443', basic(f))).status)
+    expect(statuses).toEqual(['HTTP/1.1 504 Gateway Timeout', 'HTTP/1.1 403 Forbidden', 'HTTP/1.1 503 Service Unavailable', 'HTTP/1.1 502 Bad Gateway'])
+  })
+
+  it('shows plain http the reason of the refusal as text, and says nothing of a failure that gave none', async () => {
+    const f = await frontOpening(async ({ host }) => {
+      if (host === 'refused.test') throw new FrontRefusal(504, 'Quad9 <b>did not</b> answer & "that" is all.')
+      throw new Error('connect ECONNREFUSED 10.0.0.1:3128')
+    })
+
+    const refused = await getThrough(f, 'http://refused.test/', { 'proxy-authorization': basic(f) })
+    expect(refused.status).toBe(504)
+    expect(refused.headers['content-type']).toBe('text/html; charset=utf-8')
+    expect(refused.body).toBe(refusalPage('Quad9 <b>did not</b> answer & "that" is all.'))
+    expect(refused.body).not.toContain('<b>')
+    expect(refused.body).toContain('Quad9 &#60;b&#62;did not&#60;/b&#62; answer &#38; &#34;that&#34; is all.')
+    expect(Number(refused.headers['content-length'])).toBe(Buffer.byteLength(refused.body))
+
+    const failed = await getThrough(f, 'http://failed.test/', { 'proxy-authorization': basic(f) })
+    expect(failed.status).toBe(502)
+    expect(failed.body).toContain('Orivon could not reach this site.')
+    expect(failed.body).not.toContain('10.0.0.1')
+    expect(failed.body).not.toBe(NOT_CARRIED_PAGE)
+  })
+
+  it('answers nobody without the secret, and never opens a root-dot name a protocol serves', async () => {
+    const opened: string[] = []
+    const f = await frontOpening(async ({ host }) => { opened.push(host); throw new Error('unused') })
+
+    expect((await connectThrough(f, 'any.test:443', undefined)).status).toBe('HTTP/1.1 407 Proxy Authentication Required')
+    expect((await getThrough(f, 'http://any.test/')).status).toBe(407)
+    expect((await connectThrough(f, 'vitalik.eth.:443', basic(f))).status).toBe('HTTP/1.1 403 Forbidden')
+    expect((await getThrough(f, 'http://vitalik.eth./', { 'proxy-authorization': basic(f) })).status).toBe(403)
+    expect(opened).toEqual([])
+  })
+
+  it('aborts the signal it gave open when the client gives up first', async () => {
+    let aborted = false
+    const f = await frontOpening(async ({ signal }) => await new Promise<Socket>((_resolve, reject) => { signal.addEventListener('abort', () => { aborted = true; reject(new Error('abandoned')) }) }))
+    const socket = netConnect({ host: '127.0.0.1', port: f.port })
+    cleanups.push(() => { socket.destroy() })
+    await new Promise<void>((resolve) => { socket.once('connect', resolve) })
+    socket.write(`CONNECT slow.test:443 HTTP/1.1\r\nHost: slow.test:443\r\nProxy-Authorization: ${basic(f)}\r\n\r\n`)
+    await new Promise<void>((resolve) => { setTimeout(resolve, 50) })
+    socket.destroy()
+
+    await vi.waitFor(() => { expect(aborted).toBe(true) })
+  })
+
+  it('refuses with 503 when it has neither a provider nor open', async () => {
+    const started = await startRouteFront({})
+    cleanups.push(async () => { await started.close() })
+    expect((await connectThrough(started, 'any.test:443', basic(started))).status).toBe('HTTP/1.1 503 Service Unavailable')
   })
 })

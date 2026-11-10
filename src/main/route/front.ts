@@ -1,7 +1,8 @@
 // The loopback HTTP proxy Chromium is pointed at for a routed app. Chromium cannot authenticate to a SOCKS proxy, and
 // Node already has an HTTP server, so this one turns Chromium's CONNECT and absolute-form requests into
-// `provider.connect(host, port)` on the app's route and does nothing else: no local name resolution, no direct dial,
-// no root-dot spelling of a name a protocol serves, and no answer for a caller that lacks the secret. Electron-free; README.md says why it exists.
+// `provider.connect(host, port)` on the app's route (or, given `open`, into whatever that dials) and does nothing else: no
+// local name resolution, no direct dial of its own, no root-dot spelling of a name a protocol serves, and no answer for a
+// caller that lacks the secret. Electron-free; README.md says why it exists.
 
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, request as httpRequest } from 'node:http'
@@ -22,9 +23,38 @@ export interface RouteFront {
   close: () => Promise<void>
 }
 
+/** What a request asked the front to reach. */
+export interface FrontTarget {
+  readonly host: string
+  readonly port: number
+  /** What a proxy script would be asked about: `https://host:port/` for a CONNECT (`http://host/` for port 80), the request's own address for plain http. */
+  readonly url: string
+  /** Aborted when the client gives up before the stream is handed over. */
+  readonly signal: AbortSignal
+}
+
+/** The statuses a refusal may use: 407 is left out, since Chromium would answer it by asking for a sign-in. */
+const REFUSAL_STATUS = { 403: 'Forbidden', 502: 'Bad Gateway', 503: 'Service Unavailable', 504: 'Gateway Timeout' } as const
+
+/** What `open` rejects with to say why a target is not carried: the status the client gets and, to a plain http request, the reason on the page it is shown. */
+export class FrontRefusal extends Error {
+  readonly status: keyof typeof REFUSAL_STATUS
+  readonly reason: string
+  constructor (status: keyof typeof REFUSAL_STATUS, reason: string) {
+    super(reason)
+    this.status = status
+    this.reason = reason
+  }
+}
+
 export interface RouteFrontOptions {
-  /** Read on every request, so a changed proxy applies to the next one. Undefined means the app has no proxy to go through, and the front refuses. */
-  readonly provider: () => RouteProvider | undefined
+  /** Read on every request, so a changed proxy applies to the next one. Undefined, or left out when `open` is given, means the app has no proxy to go through, and the front refuses. */
+  readonly provider?: () => RouteProvider | undefined
+  /**
+   * Reaches a target in place of `provider().connect`, with the same contract: the stream comes back paused. A rejection refuses the request, with the reason when it is a `FrontRefusal`.
+   * The front refuses only a wrong secret, a malformed target and a routed name written with the root dot before calling it, so `open` refuses a routed name and an onion name itself.
+   */
+  readonly open?: (target: FrontTarget) => Promise<Socket>
   /** Called once when the front stops listening, whoever closed it. */
   readonly onClosed?: () => void
   /** Testing only. */
@@ -56,7 +86,7 @@ function parseAuthority (text: string): { host: string, port: number } | undefin
 }
 
 /** `http://host[:port]/path` as a proxy request line carries it, or undefined for any other form: a proxy forwards absolute http requests and nothing else. */
-function absoluteHttpTarget (text: string): { host: string, port: number, authority: string, path: string } | undefined {
+function absoluteHttpTarget (text: string): { host: string, port: number, authority: string, path: string, url: string } | undefined {
   let url: URL
   try {
     url = new URL(text)
@@ -65,11 +95,31 @@ function absoluteHttpTarget (text: string): { host: string, port: number, author
   }
   if (url.protocol !== 'http:' || url.hostname === '' || url.username !== '' || url.password !== '') return undefined
   const host = url.hostname.startsWith('[') ? url.hostname.slice(1, -1) : url.hostname
-  return { host, port: url.port === '' ? 80 : Number(url.port), authority: url.host, path: `${url.pathname}${url.search}` }
+  return { host, port: url.port === '' ? 80 : Number(url.port), authority: url.host, path: `${url.pathname}${url.search}`, url: url.href }
 }
 
+/** What a script is asked about for a CONNECT to `host:port`: a tunnel to port 80 carries plain http or a web socket, any other secure traffic. Undefined for a host that is no URL's, which only a front with `open` refuses. */
+function connectUrl (host: string, port: number): string | undefined {
+  try {
+    return new URL(`${port === 80 ? 'http' : 'https'}://${host.includes(':') ? `[${host}]` : host}:${String(port)}/`).href
+  } catch {
+    return undefined
+  }
+}
+
+const PAGE_STYLE = 'font:16px system-ui,sans-serif;max-width:32em;margin:4em auto;padding:0 1em'
+
 /** What a page asked for as plain http sees when the route could not carry the request: Chromium draws an empty answer as a blank page. */
-export const NOT_CARRIED_PAGE = '<!doctype html><meta charset="utf-8"><title>The tunnel did not carry this page</title><body style="font:16px system-ui,sans-serif;max-width:32em;margin:4em auto;padding:0 1em"><h1>The tunnel did not carry this page</h1><p>Nothing was sent outside it. Open Settings, then Tunnels, to see why it is not working, and try again.</p></body>'
+export const NOT_CARRIED_PAGE = `<!doctype html><meta charset="utf-8"><title>The tunnel did not carry this page</title><body style="${PAGE_STYLE}"><h1>The tunnel did not carry this page</h1><p>Nothing was sent outside it. Open Settings, then Tunnels, to see why it is not working, and try again.</p></body>`
+
+/** The page for a plain http request that `open` refused: the reason, as text. */
+export function refusalPage (reason: string): string {
+  const text = reason.replace(/[&<>"']/g, (character) => `&#${String(character.charCodeAt(0))};`)
+  return `<!doctype html><meta charset="utf-8"><title>Orivon did not load this page</title><body style="${PAGE_STYLE}"><h1>Orivon did not load this page</h1><p>${text}</p></body>`
+}
+
+/** The words for an `open` that failed without saying why. */
+const NOT_REACHED = 'Orivon could not reach this site.'
 
 function refuse (socket: Duplex, status: string, extraHeaders = ''): void {
   socket.end(`HTTP/1.1 ${status}\r\n${extraHeaders}Connection: close\r\nContent-Length: 0\r\n\r\n`)
@@ -90,10 +140,19 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     }
   }
 
-  /** The stream to `host:port` through the app's route, or the status line that says why there is none. A name a protocol serves, written with a root dot, is never carried: no bypass rule lists every count of dots, and the route's far end must not hear it. */
-  async function open (host: string, port: number, signal: AbortSignal): Promise<{ socket: Socket } | { status: string }> {
+  /** The stream to the target through the app's route (or `open`), or the status line that says why there is none, and the reason when `open` gave one. A name a protocol serves, written with a root dot, is never carried: no bypass rule lists every count of dots, and the route's far end must not hear it. */
+  async function reach (host: string, port: number, url: string | undefined, signal: AbortSignal): Promise<{ socket: Socket } | { status: string, reason?: string }> {
     if (host.endsWith('.') && BUILTIN_ADDRESSES.namesServedHost(host)) return { status: '403 Forbidden' }
-    const provider = options.provider()
+    if (options.open !== undefined) {
+      if (url === undefined) return { status: '400 Bad Request' }
+      try {
+        return { socket: await options.open({ host, port, url, signal }) }
+      } catch (error) {
+        const refusal = error instanceof FrontRefusal ? error : new FrontRefusal(502, NOT_REACHED)
+        return { status: `${String(refusal.status)} ${REFUSAL_STATUS[refusal.status]}`, reason: refusal.reason }
+      }
+    }
+    const provider = options.provider?.()
     if (provider === undefined) return { status: '503 Service Unavailable' }
     try {
       return { socket: await provider.connect(host, port, signal) }
@@ -126,7 +185,7 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     // The server accepts half-open connections, so a client that hung up is first heard as 'end'.
     socket.once('close', onClose)
     socket.once('end', onClose)
-    open(target.host, target.port, abandoned.signal).then((opened) => {
+    reach(target.host, target.port, connectUrl(target.host, target.port), abandoned.signal).then((opened) => {
       socket.off('close', onClose)
       socket.off('end', onClose)
       socket.off('data', keepEarly)
@@ -155,9 +214,10 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     }
     const abandoned = new AbortController()
     res.once('close', () => { abandoned.abort() })
-    const opened = await open(target.host, target.port, abandoned.signal)
+    const opened = await reach(target.host, target.port, target.url, abandoned.signal)
     if ('status' in opened) {
-      res.writeHead(Number.parseInt(opened.status, 10), { Connection: 'close', 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(NOT_CARRIED_PAGE) }).end(NOT_CARRIED_PAGE)
+      const page = opened.reason === undefined ? NOT_CARRIED_PAGE : refusalPage(opened.reason)
+      res.writeHead(Number.parseInt(opened.status, 10), { Connection: 'close', 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(page) }).end(page)
       return
     }
     const carrier = opened.socket

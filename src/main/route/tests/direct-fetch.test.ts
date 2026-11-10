@@ -78,4 +78,26 @@ describe('the fetch that leaves on the system\'s proxy', () => {
     await createDirectFetch(net, systemSession('DIRECT'))('https://example.com/a')
     expect(given.mock.calls).toEqual([[]])
   })
+
+  it('signs in to a challenge with the answer it is given, and leaves the system\'s own proxy cancelled', async () => {
+    const { net } = fakeNet()
+    const original = net.request
+    const calls: Array<[string | undefined, string | undefined]> = []
+    ;(net as { request: unknown }).request = (options: Record<string, unknown>) => {
+      const request = original(options as never) as unknown as FakeRequest
+      const end = request.end
+      request.end = () => {
+        request.emit('login', { isProxy: true, host: '127.0.0.1', port: 4545 }, (username?: string, password?: string) => { calls.push([username, password]) })
+        request.emit('login', { isProxy: true, host: '10.0.0.1', port: 3128 }, (username?: string, password?: string) => { calls.push([username, password]) })
+        end()
+      }
+      return request as never
+    }
+    const answer = (info: { host: string, port: number }, callback: (username?: string, password?: string) => void): void => {
+      if (info.host === '127.0.0.1' && info.port === 4545) callback('orivon', 'relay-secret')
+      else callback()
+    }
+    await createDirectFetch(net, systemSession('DIRECT'), answer)('https://example.com/a')
+    expect(calls).toEqual([['orivon', 'relay-secret'], [undefined, undefined]])
+  })
 })
