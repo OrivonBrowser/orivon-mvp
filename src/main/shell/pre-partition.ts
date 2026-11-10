@@ -43,9 +43,10 @@ interface NavigationEvent {
  */
 export function repartitionBeforeCommit (wc: WebContents, id: string, record: TabRecord, shown: () => boolean): void {
   const view = record.view
-  const handle = (event: NavigationEvent, withReferrer: boolean): void => {
-    // A new-tab page moves with its first address, unless the tab has a tunnel choice: then even a link of the page itself is a first request.
-    if (!event.isMainFrame || event.defaultPrevented || !shown() || (record.isDashboardTab && record.tunnelChoice === undefined) || record.internalPage !== null) return
+  const handle = (event: NavigationEvent, redirect: boolean): void => {
+    const withReferrer = !redirect
+    // A new-tab page moves with its first address, unless the tab has a tunnel choice: then even a link of the page itself is a first request. A redirect always counts as a first request, because the new-tab page itself never redirects: the address typed into it does (`ipfs://<cid>` is served at an endpoint that redirects to the CID's own origin).
+    if (!event.isMainFrame || event.defaultPrevented || !shown() || (record.isDashboardTab && record.tunnelChoice === undefined && !redirect) || record.internalPage !== null) return
     if (isNavigationHeld(wc)) return
     // A link written the way the address bar shows an address (`ipfs://app.eth/`) loads at the URL
     // that scheme is served at (`./served-address.ts`), and that URL is the one whose partition counts.
@@ -66,8 +67,8 @@ export function repartitionBeforeCommit (wc: WebContents, id: string, record: Ta
       if (record.view === view && !wc.isDestroyed()) repartitionView(id, record, url, nextPartition, false, referrerOfInitiator(wc, initiatorUrl, target))
     })
   }
-  wc.on('will-navigate', (event) => { handle(event, true) })
-  wc.on('will-redirect', (event) => { handle(event, false) })
+  wc.on('will-navigate', (event) => { handle(event, false) })
+  wc.on('will-redirect', (event) => { handle(event, true) })
 }
 
 /**
