@@ -301,7 +301,7 @@ export const routeSubsystem: Subsystem = {
       targetOf: routes.targetOf,
       providerFor: routes.providerFor,
       sessionFor: (partition) => session.fromPartition(partition),
-      announce: (target) => { announceWebsiteSession(target as unknown as Session) },
+      announce: (target, tunnel) => { announceWebsiteSession(target as unknown as Session, tunnel) },
       liveContentsIn: (inside) => webContents.getAllWebContents().filter((contents) => !contents.isDestroyed() && contents.session === inside).length,
       onContentsGone: (listener) => {
         app.on('web-contents-created', (_event, contents) => {

@@ -5,7 +5,7 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
-import { OWN_READ_HEADER } from '../../../loader/fetch/content-root.js'
+import { OWN_READ_HEADER, SHELL_ANSWERED_HEADER } from '../../../loader/fetch/content-root.js'
 import { isOwnSiteRequest } from '../../../loader/fetch/own-site-request.js'
 import { isHeaderPairs, MAX_RELAYS } from '../protocol.js'
 import type { FromHost, HeaderPairs, RelayToHost } from '../protocol.js'
@@ -13,8 +13,8 @@ import type { FromHost, HeaderPairs, RelayToHost } from '../protocol.js'
 /** Request headers that belong to this connection or describe a body the relay does not carry, and the mark of the shell's own reads. */
 const NOT_RELAYED_REQUEST = new Set(['host', 'connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'te', 'trailer', 'content-length', OWN_READ_HEADER])
 
-/** Response headers that belong to the connection the shell's answer was not made on. */
-const NOT_RELAYED_RESPONSE = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'te', 'trailer'])
+/** Response headers that belong to the connection the shell's answer was not made on, and the mark only this server may put on an answer. */
+const NOT_RELAYED_RESPONSE = new Set(['connection', 'keep-alive', 'proxy-connection', 'transfer-encoding', 'upgrade', 'te', 'trailer', SHELL_ANSWERED_HEADER])
 
 /**
  * How long a relayed answer may go without a message from the shell, nor a write the socket finished, before it is cut. The
@@ -68,20 +68,17 @@ function hostsOf (origins: readonly string[]): Set<string> {
 
 export class ShellRelay {
   private served = new Set<string>()
-  private pinned = new Set<string>()
   private readonly open = new Map<number, Relayed>()
   private nextId = 1
 
   constructor (private readonly deps: ShellRelayDeps) {}
 
   /**
-   * The origins the shell now serves, and those of them it serves from a pin; only a default-port `https:` origin is a host
-   * this server could be asked for. Replaces the sets held. A pinned origin has no bytes to fetch, so a tunnel profile's
-   * request for it may be handed over; one served live reads the network, and stays on the path that leaves through the tunnel.
+   * The origins the shell now serves; only a default-port `https:` origin is a host this server could be asked for. Replaces
+   * the set held.
    */
-  setServed (origins: readonly string[], pinned: readonly string[] = []): void {
+  setServed (origins: readonly string[]): void {
     this.served = hostsOf(origins)
-    this.pinned = hostsOf(pinned)
   }
 
   private isOwnRead (headers: IncomingHttpHeaders): boolean {
@@ -95,13 +92,12 @@ export class ShellRelay {
 
   /**
    * Whether the shell answers this request: its host is one the shell serves, the request is not a read the shell made itself,
-   * and the browser made it for the site (`loader/fetch/own-site-request.ts`). A request of a tunnel profile (`tunnelled`) is
-   * the shell's only while the app is served from its pin. Anything else is answered as it always was, so no page can time an
-   * allowed app's host and learn it is installed (A256), and a read for a tunnel still leaves through it.
+   * and the browser made it for the site (`loader/fetch/own-site-request.ts`), whichever route its session takes: the shell's handler
+   * checks each file, and its own reads of the network leave by that route. Anything else is answered as it always was, so no page
+   * can time an allowed app's host and learn it is installed (A256).
    */
-  wants (host: string, headers: IncomingHttpHeaders, tunnelled = false): boolean {
+  wants (host: string, headers: IncomingHttpHeaders): boolean {
     if (this.deps.ownReadToken === undefined || !this.served.has(host) || this.isOwnRead(headers)) return false
-    if (tunnelled && !this.pinned.has(host)) return false
     return isOwnSiteRequest(headers, host)
   }
 
@@ -162,7 +158,7 @@ export class ShellRelay {
     for (const [name, value] of headers) {
       if (!NOT_RELAYED_RESPONSE.has(name.toLowerCase())) flat.push(name, value)
     }
-    flat.push('content-security-policy', state.extraCsp)
+    flat.push('content-security-policy', state.extraCsp, SHELL_ANSWERED_HEADER, '1')
     try {
       state.res.writeHead(status, flat)
     } catch (error) {

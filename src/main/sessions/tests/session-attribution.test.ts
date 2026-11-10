@@ -49,6 +49,8 @@ const { session } = await import('electron')
 const { setTabTunnelSource } = await import('../../route/tab-tunnel.js')
 const { setSiteRoutes } = await import('../../route/site-routes.js')
 const { profilePartitionFor } = await import('../../route/site-partition.js')
+const { noteMainFrameResponse } = await import('../shell-answered.js')
+const { appTabContents } = await import('../../shell/tab-partition.js')
 
 const APP = 'https://app.example'
 const OTHER = 'https://other.example'
@@ -63,13 +65,17 @@ interface FakeWebContents {
   on: (name: string, listener: (event: unknown, url: string) => void) => void
 }
 
-function fakeWebContents (initialSession: unknown): { wc: FakeWebContents, commit: (url: string) => void } {
-  let didNavigate: ((event: unknown, url: string) => void) | undefined
+function fakeWebContents (initialSession: unknown): { wc: FakeWebContents, commit: (url: string) => void, start: () => void } {
+  const listeners = new Map<string, (event: unknown, url: string) => void>()
   const wc: FakeWebContents = {
     session: initialSession,
-    on: (name, listener) => { if (name === 'did-navigate') didNavigate = listener }
+    on: (name, listener) => { listeners.set(name, listener) }
   }
-  return { wc, commit: (url) => didNavigate?.(undefined, url) }
+  return {
+    wc,
+    commit: (url) => { listeners.get('did-navigate')?.(undefined, url) },
+    start: () => { listeners.get('did-start-navigation')?.({ isMainFrame: true, isSameDocument: false }, '') }
+  }
 }
 
 /** One subsystem instance, publishing its own `senderAttributed` onto a fresh context (registry.ts refuses a second, disagreeing one on the same context). */
@@ -187,21 +193,59 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
   const keptOldPartition = session.fromPartition(partitionFor(originFromUrl(KEPT) as string))
   afterEach(() => { served.delete(KEPT); setSiteRoutes(undefined) })
 
-  it('attributes a document committed in the default session while the shell serves the app', () => {
+  /** A tab view of the app: it carries the app-tab flag, registers with the subsystem, and commits `url`, answered by the shell or by the network. */
+  function appTab (attributed: (sender: unknown, origin: string) => boolean, register: (wc: FakeWebContents) => void, inSession: unknown, options: { answered?: boolean, flagged?: boolean, url?: string } = {}): { wc: FakeWebContents, commit: (answered?: boolean) => void } {
+    const made = fakeWebContents(inSession)
+    register(made.wc)
+    if (options.flagged !== false) appTabContents.add(made.wc as never)
+    const url = options.url ?? `${KEPT}/`
+    const commit = (answered = options.answered ?? true): void => {
+      made.start()
+      noteMainFrameResponse(made.wc, url, answered)
+      made.commit(url)
+    }
+    void attributed
+    return { wc: made.wc, commit }
+  }
+
+  it('attributes a document the shell answered, in an app-tab view in the default session', () => {
     served.add(KEPT)
     const { attributed, register } = attributionRig()
-    const { wc, commit } = fakeWebContents(DEFAULT_SESSION)
-    register(wc)
-    commit(KEPT)
+    const tab = appTab(attributed, register, DEFAULT_SESSION)
+    tab.commit()
 
-    expect(attributed(wc, KEPT)).toBe(true)
+    expect(attributed(tab.wc, KEPT)).toBe(true)
   })
 
-  it('attributes it live, with no commit record', () => {
+  it('denies a document the shell did not answer even though the shell served the app when it committed: it came from the network', () => {
     served.add(KEPT)
-    const { attributed } = attributionRig()
+    const { attributed, register } = attributionRig()
+    const tab = appTab(attributed, register, DEFAULT_SESSION)
+    tab.commit(false)
 
-    expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, KEPT)).toBe(true)
+    expect(attributed(tab.wc, KEPT)).toBe(false)
+  })
+
+  it('denies a document no response was seen for (the cache, a worker), and a sender with no commit record at all', () => {
+    served.add(KEPT)
+    const { attributed, register } = attributionRig()
+    const made = fakeWebContents(DEFAULT_SESSION)
+    register(made.wc)
+    appTabContents.add(made.wc as never)
+    made.start()
+    made.commit(`${KEPT}/`)
+    expect(attributed(made.wc, KEPT)).toBe(false)
+
+    expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, KEPT)).toBe(false)
+  })
+
+  it('denies a document the shell answered in a view that was not built as an app tab: a popup of a website page, say', () => {
+    served.add(KEPT)
+    const { attributed, register } = attributionRig()
+    const tab = appTab(attributed, register, DEFAULT_SESSION, { flagged: false })
+    tab.commit()
+
+    expect(attributed(tab.wc, KEPT)).toBe(false)
   })
 
   it('never attributes a document in the app\'s old partition, with a record or without', () => {
@@ -209,64 +253,88 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
     const { attributed, register } = attributionRig()
     expect(attributed(fakeWebContents(keptOldPartition).wc, KEPT)).toBe(false)
 
-    const { wc, commit } = fakeWebContents(keptOldPartition)
-    register(wc)
-    commit(KEPT)
-    expect(attributed(wc, KEPT)).toBe(false)
+    const tab = appTab(attributed, register, keptOldPartition)
+    tab.commit()
+    expect(attributed(tab.wc, KEPT)).toBe(false)
   })
 
   it('never trusts a stale record: a document that leaves the default session without navigating is denied', () => {
     served.add(KEPT)
     const { attributed, register } = attributionRig()
-    const { wc, commit } = fakeWebContents(DEFAULT_SESSION)
-    register(wc)
-    commit(KEPT)
-    wc.session = session.fromPartition('isolated-context')
+    const tab = appTab(attributed, register, DEFAULT_SESSION)
+    tab.commit()
+    tab.wc.session = session.fromPartition('isolated-context')
 
-    expect(attributed(wc, KEPT)).toBe(false)
+    expect(attributed(tab.wc, KEPT)).toBe(false)
   })
 
-  it('denies a document that committed before the shell served the app, until it commits again', () => {
+  it('denies a document that committed before the shell served the app, until one the shell answered commits', () => {
     const { attributed, register } = attributionRig()
-    const { wc, commit } = fakeWebContents(DEFAULT_SESSION)
-    register(wc)
-    commit(KEPT) // the first visit: an ordinary website, answered by the verifier
+    const tab = appTab(attributed, register, DEFAULT_SESSION)
+    tab.commit(false) // the first visit: an ordinary website, answered by the verifier
     served.add(KEPT) // Allow
 
-    expect(attributed(wc, KEPT)).toBe(false)
+    expect(attributed(tab.wc, KEPT)).toBe(false)
 
-    commit(KEPT) // the reload the allowed app is entered with
-    expect(attributed(wc, KEPT)).toBe(true)
+    tab.commit(true) // the reload the allowed app is entered with
+    expect(attributed(tab.wc, KEPT)).toBe(true)
+  })
+
+  it('takes the answer once: a later commit that no response came for is not the shell\'s', () => {
+    served.add(KEPT)
+    const { attributed, register } = attributionRig()
+    const made = fakeWebContents(DEFAULT_SESSION)
+    register(made.wc)
+    appTabContents.add(made.wc as never)
+    made.start()
+    noteMainFrameResponse(made.wc, `${KEPT}/`, true)
+    made.commit(`${KEPT}/`)
+    expect(attributed(made.wc, KEPT)).toBe(true)
+
+    made.start() // a navigation answered from a cache: no response is seen
+    made.commit(`${KEPT}/`)
+    expect(attributed(made.wc, KEPT)).toBe(false)
   })
 
   it('stays attributed after the shell stops serving the app, until it next navigates', () => {
     served.add(KEPT)
     const { attributed, register } = attributionRig()
-    const { wc, commit } = fakeWebContents(DEFAULT_SESSION)
-    register(wc)
-    commit(KEPT)
+    const tab = appTab(attributed, register, DEFAULT_SESSION)
+    tab.commit()
 
     served.delete(KEPT)
-    expect(attributed(wc, KEPT)).toBe(true)
+    expect(attributed(tab.wc, KEPT)).toBe(true)
   })
 
   it('attributes in the profile session of the app\'s tunnel entry, and not in the default session, as for a website', () => {
     served.add(KEPT)
     setSiteRoutes({ profileFor: (origin) => origin === KEPT ? 'nym' : undefined })
-    const { attributed } = attributionRig()
+    const { attributed, register } = attributionRig()
 
-    expect(attributed(fakeWebContents(session.fromPartition(profilePartitionFor('nym', KEPT))).wc, KEPT)).toBe(true)
-    expect(attributed(fakeWebContents(DEFAULT_SESSION).wc, KEPT)).toBe(false)
-    expect(attributed(fakeWebContents(keptOldPartition).wc, KEPT)).toBe(false)
+    const inProfile = appTab(attributed, register, session.fromPartition(profilePartitionFor('nym', KEPT)))
+    inProfile.commit()
+    const inDefault = appTab(attributed, register, DEFAULT_SESSION)
+    inDefault.commit()
+    const inOld = appTab(attributed, register, keptOldPartition)
+    inOld.commit()
+    expect(attributed(inProfile.wc, KEPT)).toBe(true)
+    expect(attributed(inDefault.wc, KEPT)).toBe(false)
+    expect(attributed(inOld.wc, KEPT)).toBe(false)
   })
 
   it('follows the tunnel choice of the tab the document is in, as a website does', () => {
     served.add(KEPT)
     setSiteRoutes({ profileFor: () => undefined })
     setTabTunnelSource({ choiceOfContents: () => 'nym', kindShowing: () => undefined })
-    const { attributed } = attributionRig()
-    expect(attributed(Object.assign(fakeWebContents(DEFAULT_SESSION).wc, { id: 7 }), KEPT)).toBe(false)
-    expect(attributed(Object.assign(fakeWebContents(session.fromPartition('persist:tunnel-profile')).wc, { id: 7 }), KEPT)).toBe(true)
+    const { attributed, register } = attributionRig()
+    const inDefault = appTab(attributed, register, DEFAULT_SESSION)
+    Object.assign(inDefault.wc, { id: 7 })
+    inDefault.commit()
+    const inProfile = appTab(attributed, register, session.fromPartition('persist:tunnel-profile'))
+    Object.assign(inProfile.wc, { id: 7 })
+    inProfile.commit()
+    expect(attributed(inDefault.wc, KEPT)).toBe(false)
+    expect(attributed(inProfile.wc, KEPT)).toBe(true)
     setTabTunnelSource(undefined)
   })
 })

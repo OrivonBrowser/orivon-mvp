@@ -232,4 +232,51 @@ describe('fetchFromVerifier, for a name the verifier serves', () => {
     await fetchFromVerifier('https://app.eth/index.html', { ...init(), headers: { 'x-orivon-expect-leaf': 'sha256:abc' } })
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { 'x-orivon-expect-leaf': 'sha256:abc', [OWN_READ_HEADER]: ownReadToken() } })
   })
+
+  describe('for an app whose tunnel entry gives it a profile', () => {
+    const profile = { resolveProxy: vi.fn(async () => 'DIRECT') }
+    const through = (siteSession: (origin: string) => Promise<object | undefined>): void => {
+      setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel: async () => new Response(''), direct: async () => new Response(''), directSession: () => ({}), siteSession })
+    }
+    afterEach(() => { setOwnRequests(undefined); profile.resolveProxy.mockClear() })
+
+    it('reads in that profile\'s session, which carries the route of its tunnel to the verifier, and never in the default one', async () => {
+      through(async (origin) => origin === 'https://tunnelled.eth' ? profile : undefined)
+      const sent = fakeRequest([])
+      requestMock.mockReturnValue(sent as never)
+      const response = await fetchFromVerifier('https://tunnelled.eth/app.js', { ...init(), headers: { 'x-orivon-expect-leaf': 'sha256:abc' } })
+      expect(await response.text()).toBe('ok')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(requestMock).toHaveBeenCalledOnce()
+      expect(requestMock.mock.calls[0]?.[0]).toMatchObject({ url: 'https://tunnelled.eth/app.js', session: profile, redirect: 'error', credentials: 'omit' })
+      expect(sent.setHeader).toHaveBeenCalledWith('x-orivon-expect-leaf', 'sha256:abc')
+      expect(sent.setHeader).toHaveBeenCalledWith(OWN_READ_HEADER, ownReadToken())
+    })
+
+    it('asks that profile\'s session whether a proxy would see the name, and sends nothing when one would', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const proxied = { resolveProxy: vi.fn(async () => 'PROXY 127.0.0.1:3128') }
+      through(async () => proxied)
+      await expect(fetchFromVerifier('https://tunnelled.eth/app.js', init())).rejects.toThrow('Your system proxy would see this name')
+      expect(proxied.resolveProxy).toHaveBeenCalledOnce()
+      expect(resolveProxyMock).not.toHaveBeenCalled()
+      expect(requestMock).not.toHaveBeenCalled()
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('reads in the default session for an app with no entry, and sends nothing when its route cannot be had', async () => {
+      through(async () => undefined)
+      resolveProxyMock.mockResolvedValue('DIRECT')
+      fetchMock.mockResolvedValue(new Response('ok'))
+      await fetchFromVerifier('https://plain.eth/app.js', init())
+      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(requestMock).not.toHaveBeenCalled()
+
+      fetchMock.mockClear()
+      through(async () => { throw new Error('the tunnel for this site is not available') })
+      await expect(fetchFromVerifier('https://plain.eth/app.js', init())).rejects.toThrow('the tunnel for this site is not available')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(requestMock).not.toHaveBeenCalled()
+    })
+  })
 })

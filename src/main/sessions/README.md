@@ -31,6 +31,7 @@ from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](..
 media request for `/orivon/app/<path>` to the `orivon-file:` scheme and answers that scheme with the app's own
 file (`app-file-response.ts`, no Electron in it), with the pure decision in
 [`../../broker/policy/app-files-by-url.ts`](../../broker/policy/app-files-by-url.ts).
+`shell-answered.ts` notes which main-frame document the shell answered, for `session-attribution.ts`. `stale-pages.ts` loads the website pages of an origin again when the shell starts to serve it: such a page shares the app's storage and any worker it started, and nothing the shell checked ever ran in it.
 `website-sessions.ts` is the list of sessions a website runs in (the default one, and the tunnel profile and the direct profile a website with an entry of its own lives in, `../route/`): a control that guards or adjusts a website's requests installs through `forEachWebsiteSession`, so a website that moves into a profile keeps it, and a session missing one is refused.
 `session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
@@ -204,10 +205,13 @@ cross-origin move. A cache-served (pinned) origin is the one exception, checked 
 regardless of any record, because its bundle is only ever intercepted in the session it is served in
 (`ADR-0007`): a document attributed to it must run in that session at every call, not merely at whatever
 moment it committed. That session is the app's own partition, or the shared one for an app the verifier
-hands to the shell (`../shell/app-session.ts`'s `runsAsWebsite`, `ADR-0108`). In the shared session a page
-of the origin that committed before the origin was served is a website, not the app, so it is denied: the
-record keeps whether the origin was served at the commit, and a first visit's page left open in another tab
-does not gain the grants an Allow in the first. A local file is the other: the path of a document is fixed for its life, so
+hands to the shell (`../shell/app-session.ts`'s `runsAsWebsite`, `ADR-0108`). A document there is the app's only
+if the shell's own handler answered it ([`shell-answered.ts`](shell-answered.ts): the verifier marks what it relayed,
+the session's response watch notes the mark of a page's main-frame response, and the commit takes it once) and the view
+was built as the app's tab (`../shell/tab-partition.ts`'s `appTabContents`). A page that committed before the origin was
+served, a first visit's page left open in another tab, and a document the host answered itself before it was told the
+shell serves the app are websites, not the app, so they are denied. The record keeps whether the shell answered the
+document, and an origin served where websites run attributes nothing else, even after it stops being served. A local file is the other: the path of a document is fixed for its life, so
 only its session can be wrong, and that must be the one `localPartitionFor` names at this call (a
 record removed since the commit denies the document at once).
 

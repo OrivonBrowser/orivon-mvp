@@ -17,7 +17,8 @@ import { app, session } from 'electron'
 import type { WebContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishSenderAttributed } from '../registry.js'
-import { partitionForTab } from '../shell/tab-partition.js'
+import { appTabContents, partitionForTab } from '../shell/tab-partition.js'
+import { forgetShellAnswered, takeShellAnswered } from './shell-answered.js'
 import { tabChoiceOfContents } from '../route/tab-tunnel.js'
 import { isChildHostFor } from '../children/child-host.js'
 import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
@@ -28,8 +29,8 @@ import { runsAsWebsite } from '../shell/app-session.js'
 interface AttributionRecord {
   readonly origin: string | null
   readonly attributed: boolean
-  /** Whether the shell served the origin from a copy it keeps when this document committed: before that, the document came from the network. */
-  readonly servedAtCommit: boolean
+  /** Whether the shell's own handler answered this document (`./shell-answered.ts`): one the network answered, or the HTTP cache or a worker, did not run the app. */
+  readonly answeredByShell: boolean
 }
 
 /**
@@ -71,19 +72,27 @@ export const sessionAttributionSubsystem: Subsystem = {
     // subsystems.ts does not change this: it is `web-contents-created`
     // firing early that matters, not afterReady's own ordering.
     app.on('web-contents-created', (_createdEvent, wc) => {
+      // A response seen from here on belongs to the next document: a commit nothing answered (the cache, a worker) takes none.
+      wc.on('did-start-navigation', (details) => {
+        if (details.isMainFrame && !details.isSameDocument) forgetShellAnswered(wc)
+      })
       wc.on('did-navigate', (_navEvent, url) => {
         const origin = isolationKeyFromUrl(url)
+        const answeredByShell = takeShellAnswered(wc, url)
+        // An origin the shell serves where websites run attributes only a document it answered, even once it stops serving it.
+        const needsShellAnswer = origin !== null && runsAsWebsite(origin)
         attributionRecords.set(wc, {
           origin,
-          attributed: origin !== null && wc.session === expectedSession(origin, wc),
-          servedAtCommit: origin !== null && isOriginServedFromCacheSync(origin)
+          attributed: origin !== null && wc.session === expectedSession(origin, wc) && (!needsShellAnswer || answeredByShell),
+          answeredByShell
         })
       })
     })
 
-    const committedBeforeServed = (wc: WebContents, origin: string): boolean => {
+    /** Whether `wc`'s current document is `origin`'s, was answered by the shell, and runs in a view built as the app's tab. */
+    const shellDocumentOf = (wc: WebContents, origin: string): boolean => {
       const record = attributionRecords.get(wc)
-      return record !== undefined && record.origin === origin && !record.servedAtCommit
+      return record !== undefined && record.origin === origin && record.answeredByShell && appTabContents.has(wc)
     }
 
     publishSenderAttributed(ctx, (sender, origin) => {
@@ -101,13 +110,15 @@ export const sessionAttributionSubsystem: Subsystem = {
       // Cache-served origins are checked LIVE and STRICTLY, never through a
       // record: the session they run in is the one `partitionForTab` names at
       // this call. An app on a partition of its own is only ever intercepted
-      // there (ADR-0007). An app the verifier hands to the shell runs in the
-      // default session and is never attributed in the partition it had
-      // before, but its document must also have been answered by the shell:
-      // one that committed before the app was served came from the network,
-      // and the grants the app holds now do not reach it (README.md's Design notes).
+      // there (ADR-0007). An app the verifier hands to the shell runs where
+      // websites run and is never attributed in the partition it had before,
+      // but its document must also be one the shell's own handler answered,
+      // in a view built as the app's tab: a document the network answered
+      // (one that committed before the app was served, or one a gateway or a
+      // profile's route gave) does not get the grants the app holds now
+      // (README.md's Design notes).
       if (isOriginServedFromCacheSync(origin)) {
-        if (runsAsWebsite(origin) && committedBeforeServed(wc, origin)) return false
+        if (runsAsWebsite(origin) && !shellDocumentOf(wc, origin)) return false
         return wc.session === expectedSession(origin, wc)
       }
       const record = attributionRecords.get(wc)

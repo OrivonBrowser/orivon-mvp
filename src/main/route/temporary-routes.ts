@@ -51,8 +51,11 @@ export interface TemporaryRoutesDeps {
   /** The provider for a proxy that is not a SOCKS5 address (Nym), or undefined for the SOCKS5 one. */
   readonly providerFor?: (key: string, target: RouteTarget) => RouteProvider | undefined
   readonly sessionFor: (partition: string) => TemporarySession
-  /** Fits the session with what every session a website runs in carries (the privacy settings, the content blocks, the verifier's stamps). Throws when any of it could not be installed: the tab is then refused. */
-  readonly announce: (session: TemporarySession) => void
+  /**
+   * Fits the session with what every session a website runs in carries (the privacy settings, the content blocks, the verifier's stamps), `tunnel` among them:
+   * the verifier then fetches for the session's pages through that tunnel and not directly. Throws when any of it could not be installed: the tab is then refused.
+   */
+  readonly announce: (session: TemporarySession, tunnel: TunnelKind) => void
   /** How many web contents are alive in the session. */
   readonly liveContentsIn: (session: TemporarySession) => number
   /** Called when a web contents that ran in `session` is gone. */
@@ -118,7 +121,7 @@ export function createTemporaryRoutes (deps: TemporaryRoutesDeps): TemporaryRout
       bySession.set(session, partition)
       try {
         // Before the session is pointed at its front: a request made in it never runs without the website controls.
-        deps.announce(session)
+        deps.announce(session, kind)
         await deps.controller.prepareTemporary(session, front, kind)
       } catch (error) {
         await release(partition)

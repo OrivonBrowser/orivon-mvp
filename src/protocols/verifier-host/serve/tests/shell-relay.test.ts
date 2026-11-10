@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createServer, request } from 'node:http'
 import type { IncomingHttpHeaders, Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { OWN_READ_HEADER } from '../../../../loader/fetch/content-root.js'
+import { OWN_READ_HEADER, SHELL_ANSWERED_HEADER } from '../../../../loader/fetch/content-root.js'
 import type { FromHost, RelayRequest, RelayToHost } from '../../protocol.js'
 import { RELAY_IDLE_MS, ShellRelay } from '../shell-relay.js'
 
@@ -74,7 +74,7 @@ async function until (check: () => boolean, what: string): Promise<void> {
 }
 
 describe('which requests are handed to the shell', () => {
-  it('hands over only what the browser made for the site, and a tunnel profile\'s request only for an app served from its pin', () => {
+  it('hands over only what the browser made for the site, whichever route its session takes', () => {
     const { relay } = harness()
     const mark = (site: string, mode?: string, dest?: string): IncomingHttpHeaders => ({ 'sec-fetch-site': site, ...(mode === undefined ? {} : { 'sec-fetch-mode': mode }), ...(dest === undefined ? {} : { 'sec-fetch-dest': dest }) })
     expect(relay.wants('kept.example', mark('same-origin'))).toBe(true)
@@ -89,10 +89,9 @@ describe('which requests are handed to the shell', () => {
     expect(relay.wants('kept.example', stamped('https://kept.example', 'cross-site'))).toBe(true)
     expect(relay.wants('kept.example', stamped('https://evil.example', 'same-origin'))).toBe(false)
     expect(relay.wants('kept.example', { ...stamped('https://evil.example', 'cross-site'), 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' })).toBe(true)
-    expect(relay.wants('kept.example', mark('same-origin'), true)).toBe(false)
-    relay.setServed(['https://kept.example'], ['https://kept.example'])
-    expect(relay.wants('kept.example', mark('same-origin'), true)).toBe(true)
-    expect(relay.wants('other.example', mark('same-origin'), true)).toBe(false)
+    // A tunnel profile's request is the shell's too, whether the app is served from its pin or live: the shell's live reads leave by that profile's tunnel.
+    expect(relay.wants('kept.example', { ...mark('same-origin'), 'x-orivon-route': 'socks5' })).toBe(true)
+    expect(relay.wants('other.example', mark('same-origin'))).toBe(false)
   })
 
   it('hands over a request for a host the shell serves, and answers any other from the network', async () => {
@@ -187,6 +186,30 @@ describe('what is written back', () => {
     expect(done.headers['x-twice']).toBe('a, b')
     const policies = done.rawHeaders.flatMap((value, at) => at % 2 === 0 && value.toLowerCase() === 'content-security-policy' ? [done.rawHeaders[at + 1]] : [])
     expect(policies).toEqual(["default-src 'self'", PUBLIC])
+  })
+
+  it('marks what the shell answered, once, and takes a mark the shell\'s own answer carried: only this server says it was relayed', async () => {
+    const { relay, lastRequest, requests, answer } = harness()
+    const port = await start(relay)
+    const reply = get(port, '/app.js')
+    await until(() => requests().length === 1, 'the request reached the shell')
+    const { id } = lastRequest()
+    answer({ type: 'relay-head', id, status: 200, headers: [['content-type', 'text/html'], [SHELL_ANSWERED_HEADER, 'a-claim'], [SHELL_ANSWERED_HEADER.toUpperCase(), 'another']] })
+    answer({ type: 'relay-end', id })
+    const done = await reply.done
+    expect(done.headers[SHELL_ANSWERED_HEADER]).toBe('1')
+    const marks = done.rawHeaders.filter((value, at) => at % 2 === 0 && value.toLowerCase() === SHELL_ANSWERED_HEADER)
+    expect(marks).toHaveLength(1)
+  })
+
+  it('marks nothing it answers itself: the network\'s answer, and a request kept for the network, carry no mark', async () => {
+    const { relay, requests } = harness()
+    const port = await start(relay)
+    const elsewhere = await get(port, '/app.js', { host: 'elsewhere.example' }).done
+    expect(elsewhere.headers[SHELL_ANSWERED_HEADER]).toBeUndefined()
+    const own = await get(port, '/app.js', { headers: { [OWN_READ_HEADER]: TOKEN } }).done
+    expect(own.headers[SHELL_ANSWERED_HEADER]).toBeUndefined()
+    expect(requests()).toHaveLength(0)
   })
 
   it('leaves out the headers that belong to the connection the answer was made on', async () => {

@@ -37,6 +37,13 @@ export const PARTITION_HEADER = 'x-orivon-partition'
 export const OWN_READ_HEADER = 'x-orivon-own-read'
 
 /**
+ * Set to `1` by the verifier's server, and by nothing else, on every response the shell answered for a request it relayed: the
+ * shell's own headers never carry it (the server drops a copy the shell wrote, and an upstream's headers are never copied to a
+ * response), so a document that has it was answered by the shell's handler and by no gateway or network page.
+ */
+export const SHELL_ANSWERED_HEADER = 'x-orivon-shell-answered'
+
+/**
  * Set to `tunnel` on every request a website session of the tunnel profile makes to the verifier, and stripped from
  * every other: the verifier then reads and proves the name through the tunnel and nowhere else.
  */

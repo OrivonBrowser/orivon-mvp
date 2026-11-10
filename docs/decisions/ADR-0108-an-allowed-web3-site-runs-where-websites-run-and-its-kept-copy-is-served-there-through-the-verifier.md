@@ -39,16 +39,21 @@ to it as to a website. The route code (`route-hub.ts`'s `identityOf`, the contro
 rules) therefore treats an origin that runs as a website as a website, and only an app with a partition of its own as an
 app.
 
-For a request of a tunnel profile (a website tab with a tunnel of its own, whose page links to the app), the verifier
-hands the request to the shell only when the app is served from its pin, since then no byte leaves; while the app is only
-read live, the request keeps the verifier's path, where the read leaves through the tunnel. That split is *provisional*:
-a live-served app in a tunnel profile does not open from the shell until its pin lands, and what would settle it is a
-read of the live handler that also leaves through the profile's tunnel.
+The verifier hands a request of a tunnel profile to the shell as it does any other, whether the app is served from its pin
+or is still read live: the handler checks every file against the declared tree, and its own reads of the network are made
+in that profile's session, whose requests carry the route of its tunnel, so the verifier reads and proves the name
+through that tunnel and the read never shows this computer's address. A temporary session opened for a tab's tunnel
+choice announces that tunnel too, so the verifier treats its pages' requests as tunnelled and not as direct.
 
-`window.orivon` is attributed to a document of such an app in the session `partitionForTab` names, the shared one, and
-never in the partition the app had before. The document must also have committed after the shell began to serve the
-app: one that committed before (the first visit's page, still open in another tab after Allow) came from the network,
-and the grants the app holds now do not reach it until it loads again.
+`window.orivon` is attributed to a document of such an app only when three things hold: it runs in the session
+`partitionForTab` names (the shared one, or its entry's profile), never in the partition the app had before; the view is
+one built as the app's tab; and the shell's own handler answered that very document. The verifier's server puts a mark
+on each response it relayed to the shell and on none it gave itself, and takes any such mark out of what the shell sent
+and out of what an upstream sent, so no gateway or network page can forge it. The session notes, per page, the mark
+of the last main-frame response, and the document's commit takes it once; a commit that no response came for (the HTTP
+cache, a worker) takes none. A document the network answered therefore never gets the grants the app holds now: not the
+first visit's page, still open in another tab after Allow, and not one the host answered itself in the moment between
+the shell serving the app and the host learning it.
 
 ## Context
 
@@ -85,8 +90,13 @@ session where the extensions are.
   session and changes only the app-tab flag (the Node globals and the routed `fetch`). A navigation that gains the flag is
   stopped before the app's first request and issued again in a view that has it, with the referrer Chromium would have
   sent.
-- `window.orivon` attributes a call from such a site to it when the page runs in the shared session and committed after
-  the shell began to serve the app, never in a partition of its own.
+- `window.orivon` attributes a call from such a site to it when the document was answered by the shell's handler, in a
+  view built as the app's tab, in the session a website at that origin runs in, never in a partition of its own. What
+  the host answers itself, a page of the site that was open before Allow and a document in the window before the host
+  knows the app is served alike, has no grants until it loads again.
+- The pages of an origin that were open as a website when the shell starts to serve it are loaded again, in every
+  session: a website page shares the app's storage and any worker it started, and nothing the shell checked ever ran in
+  it. A page that asks "leave this page?" is overruled for that load. A page that is the app's own tab is left alone.
 - A block empties and closes the site's pages in every session they are in.
 - The extensions' install prompt, the grant prompt and the site-info popover name the extensions that reach an allowed
   web3 site, as they do for any website.
@@ -111,7 +121,8 @@ session where the extensions are.
   time the app is served live there, and once at a start for an app served from its pin (one that moved from a partition of
   its own finds them in the shared session), because they would run code nothing checked.
 - A website's page that was open when its origin became an app keeps no `window.opener` link to a popup it opens to the
-  same origin: the popup opens as a tab of its own, since the page would otherwise script the popup and use its grants.
+  same origin: the popup opens as a tab of its own, since the page would otherwise script the popup and use its grants,
+  and a popup that moves itself to the app's address while its opener is such a page loses the link at the navigation.
 - Extensions can block, redirect and record an allowed site, as on any website. A redirect can replace the site's code
   with an extension's while the site holds Orivon permissions; telling safe extensions from unsafe ones is a job for
   Web3 Score providers, later.
@@ -144,4 +155,8 @@ session where the extensions are.
 - **Cost to reverse:** moderate. `partitionForTab` regains its arm for these hosts and the relay stops being fed; data
   stored in the website session meanwhile would not follow back.
 - **What would make us revisit:** evidence that a page outside the app could reach the app's grants through the shared
-  session, or a reason to serve kept copies without the verifier host.
+  session, or a reason to serve kept copies without the verifier host. That evidence came once, from a review: a
+  live-served app in a tunnel profile was answered by the verifier itself and yet held its grants; a document the network
+  answered in the window before the host learned the app was served did too; a website page left open from before Allow
+  shared the app's storage; and a temporary tunnel session was taken for a direct one. The Decision and Consequences
+  above are the fixes, and the first two close on one rule: a document has grants only if the shell's handler answered it.
