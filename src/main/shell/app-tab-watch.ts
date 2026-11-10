@@ -2,12 +2,13 @@
 // that never ran, a dead renderer. Split out of tab-view.ts.
 import type { WebContentsView } from 'electron'
 import { originFromUrl } from '../../broker/policy/origin.js'
-import { APP_TAB_FLAG, appTabOrigins, appTabViews } from './tab-partition.js'
+import { APP_TAB_FLAG, appTabContents, appTabOrigins, appTabViews } from './tab-partition.js'
 
 /** A registered app's tab gets its failures reported; see reportAppFailures. */
 export function watchAppTab (view: WebContentsView, additionalArguments: string[] | undefined, target?: string): void {
   if (additionalArguments?.includes(APP_TAB_FLAG) !== true) return
   appTabViews.add(view)
+  appTabContents.add(view.webContents)
   const origin = target !== undefined ? originFromUrl(target) : null
   if (origin !== null) appTabOrigins.set(view, origin)
   reportAppFailures(view)

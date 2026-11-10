@@ -272,7 +272,7 @@ committed URL (`openerCutNeeded`), and rebuilds the view when it answers yes and
 origin differs -- even when the partition string is not actually changing (two granted,
 network-served apps both carry `partition: undefined`, and so does an app that runs as a website), since a freshly built WebContents is the
 only thing that drops `window.opener` at all. This is also the one case `keepsOpenerSession`
-exempts: the opener link is exactly what must not survive here.
+exempts: the opener link is exactly what must not survive here. The same cut applies when the popup stays on the origin it is in and its opener is a website's page of an app the shell now serves (`isWebsitePageOfApp`, the opener's view having no app-tab flag): that page shares the origin with the popup, so it would script a page that runs with the app's grants.
 
 **[`leave-page-prompt.ts`](leave-page-prompt.ts): closing a tab never asks.** `closeTab()`
 closes the webContents without running `beforeunload` (A231). A navigation does: Electron settles an unload from the

@@ -77,9 +77,8 @@ export type RelayToHost =
 
 /**
  * The origins the shell serves from a copy it keeps, whole each time: a request for one of their hosts is handed to the shell.
- * `pinned` are those of them it serves from a pin, the only ones a tunnel profile's request is handed over for.
  */
-export interface ShellServes { readonly type: 'shell-serves', readonly origins: readonly string[], readonly pinned?: readonly string[] }
+export interface ShellServes { readonly type: 'shell-serves', readonly origins: readonly string[] }
 
 export interface HostConfig {
   readonly port: number
@@ -166,7 +165,7 @@ export interface HostConfig {
    * (`loader/fetch/own-read.ts`). `origins` is the set as of this start; `shell-serves` replaces it while the host runs. Absent, no
    * request is handed to the shell.
    */
-  readonly shell?: { readonly ownReadToken: string, readonly origins: readonly string[], readonly pinned?: readonly string[] }
+  readonly shell?: { readonly ownReadToken: string, readonly origins: readonly string[] }
 }
 
 export type LightClientState =

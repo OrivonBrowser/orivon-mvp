@@ -35,6 +35,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 - **Cookies and site data no longer clears a Web3 site you allowed**: its data sits in the session websites use, so that choice now leaves its cookies and storage alone and App data clears them; the Cache API of every site, an allowed one included, still goes with site data.
 - **A page in an ordinary tab that loads a file from an allowed web3 app's own address gets it from the copy Orivon keeps**, with the app's own rules, and it works with no network. Files are checked as before.
+- **An allowed Web3 site gets its permissions only on a page Orivon checked**: a site with a tunnel of its own opens at once while its copy is still being made, each file checked and read through that tunnel, and a page of the site left open from before you allowed it loads again.
 - **Split view has no ring**: the purple line round the pane in use is gone and the panes meet the edges of their area; the lit tab in the strip shows which one you are in, and the gap between the panes is the toolbar's colour.
 - **New-tab pictures keep their own colours**: nothing dark lies over the Orivon picture or your own any more; the text on it has a soft shadow instead.
 - **The Orivon picture on the new tab is in evening light**: the same scene, darker and still in full colour, so the default background is no longer glaring.

@@ -45,10 +45,12 @@ import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
-import { AppNotReady } from '../../loader/electron/app-partitions.js'
+import { AppNotReady, onServingChange, servedOrigins } from '../../loader/electron/app-partitions.js'
 import { beforeAppSessionServes, isOriginServedFromCacheSync, onAppOriginRetired } from '../../loader/electron/serve.js'
-import { couldRunAsWebsite, hasOwnPartition } from '../shell/app-session.js'
+import { couldRunAsWebsite, hasOwnPartition, runsAsWebsite } from '../shell/app-session.js'
+import { appTabContents } from '../shell/tab-partition.js'
 import { clearedOriginsIn, clearedOriginsInMemory, prepareWebsiteWorkers } from '../sessions/website-workers.js'
+import { reloadStalePage, reloadStalePagesOfNewlyServed } from '../sessions/stale-pages.js'
 import type { Profile } from '../route/site-partition.js'
 import { profilePartitionsHolding } from '../route/site-partition.js'
 import { sitePartitionForOrigin } from '../route/site-routes.js'
@@ -192,6 +194,8 @@ export const appInstallSubsystem: Subsystem = {
         throw new AppNotReady('the workers a website of this address installed could not be removed', 'Open it again in a moment.', { cause: error })
       }
     })
+    // The website's pages still open when the app starts to be served load again, so none of them stays as the website left it (`../sessions/stale-pages.ts`).
+    reloadStalePagesOfNewlyServed({ served: () => servedOrigins().filter(runsAsWebsite), pagesOf: pagesOfOrigin, isAppPage: (page) => appTabContents.has(page), reload: reloadStalePage, onServingChange })
     // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
     // The refusals are kept in `declined-apps.json`, and in memory only in a private session.

@@ -8,7 +8,7 @@ import type { DataGatherer, GatheredFile, MountedSite, NameResolver } from '../.
 import { ProtocolRegistry } from '../../../registry.js'
 import { defineProtocol } from '../../../protocol.js'
 import { ENS } from '../../../ens/descriptor.js'
-import { OWN_READ_HEADER, PARTITION_HEADER, ROUTE_HEADER } from '../../../../loader/fetch/content-root.js'
+import { OWN_READ_HEADER, PARTITION_HEADER, ROUTE_HEADER, SHELL_ANSWERED_HEADER } from '../../../../loader/fetch/content-root.js'
 import type { FromHost, RelayRequest } from '../../protocol.js'
 import { createRunCertificate } from '../certificate.js'
 import { createVerifierServer } from '../server.js'
@@ -150,24 +150,30 @@ describe('the loopback server with a shell behind it', () => {
     expect((await reply).status).toBe(204)
   })
 
-  it('answers a request of a tunnel profile\'s page itself while the app is only served live, so its reads still leave through the tunnel', async () => {
-    const before = relayed().length
-    const reply = await get('/app.js', { headers: { [ROUTE_HEADER]: 'nym' } })
-    expect(reply.status).toBe(200)
-    expect(reply.body.toString()).toBe('from the verifier')
-    expect(relayed()).toHaveLength(before)
+  it('hands over a request of a tunnel profile\'s page for an app served live as well as one served from its pin: the shell checks the file, and its reads leave by that tunnel', async () => {
+    for (const pinned of [false, true]) {
+      relay.setServed(['https://kept.eth'])
+      const before = relayed().length
+      const reply = get(pinned ? '/pinned.js' : '/app.js', { headers: { [ROUTE_HEADER]: 'nym' } })
+      await until(() => relayed().length === before + 1, 'the request was relayed')
+      const sent = relayed().at(-1)!
+      relay.receive({ type: 'relay-head', id: sent.id, status: 204, headers: [] })
+      relay.receive({ type: 'relay-end', id: sent.id })
+      expect((await reply).status).toBe(204)
+    }
   })
 
-  it('hands over a request of a tunnel profile\'s page once the app is served from its pin, which reads nothing from the network', async () => {
-    relay.setServed(['https://kept.eth'], ['https://kept.eth'])
+  it('marks an answer the shell gave, and none of the verifier\'s own, so a document\'s mark says who answered it', async () => {
     const before = relayed().length
-    const reply = get('/app.js', { headers: { [ROUTE_HEADER]: 'nym' } })
+    const relayedReply = get('/app.js')
     await until(() => relayed().length === before + 1, 'the request was relayed')
     const sent = relayed().at(-1)!
-    relay.receive({ type: 'relay-head', id: sent.id, status: 204, headers: [] })
+    relay.receive({ type: 'relay-head', id: sent.id, status: 200, headers: [['content-type', 'text/html'], [SHELL_ANSWERED_HEADER, 'forged by the shell\'s own answer']] })
     relay.receive({ type: 'relay-end', id: sent.id })
-    expect((await reply).status).toBe(204)
-    relay.setServed(['https://kept.eth'])
+    expect((await relayedReply).headers[SHELL_ANSWERED_HEADER]).toBe('1')
+    for (const answer of [await get('/app.js', { headers: { [OWN_READ_HEADER]: TOKEN } }), await get('/app.js', { host: 'plain.eth' }), await get('/app.js', { method: 'DELETE', host: 'plain.eth' })]) {
+      expect(answer.headers[SHELL_ANSWERED_HEADER]).toBeUndefined()
+    }
   })
 
   it('refuses a target that reads as another host before it hands anything over', async () => {

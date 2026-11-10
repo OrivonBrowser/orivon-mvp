@@ -1,7 +1,7 @@
 // Which Electron session a tab's view runs in, and whether it carries the app-tab
 // flag: the two facts a navigation can change, decided from the target URL alone.
 // Split out of tab-view.ts, which re-exports every name here.
-import type { WebContentsView } from 'electron'
+import type { WebContents, WebContentsView } from 'electron'
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
 import { localPartitionFor, partitionAfterFileBlock as fileBlockTarget } from '../local-files/partition.js'
 import { appSessionPartition } from './app-session.js'
@@ -164,6 +164,9 @@ export function appTabFlagGained (target: string, view: WebContentsView, broker:
  * still matches what its origin needs (tab-parking.ts's takeParkedView, the
  * one outside reader -- exported for that, not for general use). */
 export const appTabViews = new WeakSet<WebContentsView>()
+
+/** The pages of the views in `appTabViews`: the document-level check (`../sessions/session-attribution.ts`) and an opener (`./popup-opener.ts`) know a page, not its view. */
+export const appTabContents = new WeakSet<WebContents>()
 
 /** The views built with the new-tab page's preload (tab-view.ts's `makeDashboardView`), for the same reason: only
  * such a view can be the new-tab page, and any other view at that address is an ordinary page. */

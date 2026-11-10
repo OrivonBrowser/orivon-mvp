@@ -322,7 +322,7 @@ async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: Se
     return
   }
   // A host the shell serves from a copy it keeps is the shell's to answer for its own site, with the very handler that app's partition uses, whatever the method: nothing below looks at the request.
-  if (shell?.wants(host, req.headers, routeOf(req) !== 'direct') === true) {
+  if (shell?.wants(host, req.headers) === true) {
     const target = pathOf(req.url, host)
     if (target === undefined) res.writeHead(400, { 'content-type': 'text/plain' }).end('not a path this server serves')
     else shell.relay(req, res, target, SERVED_CONTENT_CSP)
