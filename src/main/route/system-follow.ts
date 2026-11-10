@@ -11,8 +11,8 @@ export type SystemProxyConfig = Parameters<Session['setProxy']>[0]
 const PLAIN_SYSTEM = JSON.stringify({ mode: 'system' })
 
 export interface SystemFollowDeps<S extends object> {
-  /** The config a session that follows the system gets, answered from memory. `{ mode: 'system' }` when left out. */
-  readonly config?: (() => SystemProxyConfig) | undefined
+  /** The config a session that follows the system gets, answered from memory. `{ mode: 'system' }` when left out or when it answers nothing. */
+  readonly config?: (() => SystemProxyConfig | undefined) | undefined
   /** Sets `session` to `config`, tracked and bounded; rejects when the call fails or takes too long. */
   readonly set: (session: S, config: SystemProxyConfig) => Promise<void>
   /** Whether `session` is not to be set to the system's config now: on a front, stopped, in a tunnel of its own, or setting a proxy of its own. Read inside the session's turn. */

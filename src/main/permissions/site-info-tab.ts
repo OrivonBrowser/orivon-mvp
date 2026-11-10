@@ -96,6 +96,7 @@ export function tabSiteTunnel (facts: TabSiteFacts): SiteTunnel {
     following: choice === undefined && entry === undefined,
     subject: 'tab',
     ...(profile === undefined ? {} : { profile }),
+    ...(site.signInsShared === true ? { signInsShared: true as const } : {}),
     ...(choice === undefined ? {} : { tabChoice: choice }),
     always: { ...alwaysState({ choice, entry, everywhere: facts.everywhere }), ...(entry === undefined ? {} : { entry: entry === 'off' ? null : entry }) }
   }

@@ -16,7 +16,7 @@ import { hasOwnPartition } from '../shell/app-session.js'
 import { partitionFor } from '../../broker/grants/origin-hash.js'
 import { isPersistableOrigin } from '../../broker/policy/origin.js'
 import { setLeavingRoutes } from './leaving-routes.js'
-import { answerRouteChallenge, lookupSessionFor, setDirectLookupSource, setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
+import { answerChallengeOnly, answerRouteChallenge, lookupSessionFor, setDirectLookupSource, setLookupSessionSource, setRouteChallengeSource } from './lookup-session.js'
 import { followsSystem, hasOwnProxy, markFollowsSystem, markOwnProxy } from './own-proxy.js'
 import { migrateRouteKinds, moveNymProfileToProxy } from './kinds-migration.js'
 import { migrateLegacySites } from './legacy-sites.js'
@@ -42,6 +42,7 @@ import { askHolderOfCopy } from './system-code.js'
 import { guardOfSession, namesVerifierHost, rootDotBypassRules, routedBypassRules, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
+import { mergeOf } from './cookie-mirror/session-ready.js'
 import { kindOfProfile, profilePartition, profilePartitionFor } from './site-partition.js'
 import { tabChoiceOfContents, tabKindShowing } from './tab-tunnel.js'
 import type { SiteSession } from './site-sessions.js'
@@ -56,6 +57,7 @@ import { tunnelDefaultChanged } from '../verifier/verifier-subsystem.js'
 import { RouteStore } from './route-store.js'
 import { profileIsolationSecret } from './isolation-secret.js'
 import { startDeadEnd } from './dead-end.js'
+import type { NameRelayLink } from './name-relay/relay-link.js'
 import type { DeadEnd } from './dead-end.js'
 
 /** Where an onion guard runs among a session's `onBeforeRequest` handlers: after the main-frame guard (-2) and the hold on a session not yet pointed (-1). */
@@ -94,6 +96,8 @@ export const routeSubsystem: Subsystem = {
     const isolationSecret = profileIsolationSecret(userData)
     // Set below, once the sessions it asks exist; until then, and wherever the system's settings cannot be copied, a session that follows the system is on its own config.
     let proxyMirror: ProxyMirror | undefined
+    // The name relay while one runs; the controller sets the sessions that follow the system to its config and answers its listener's challenge.
+    let nameRelay: NameRelayLink | undefined
     const routes = createRouteService({
       store,
       isolationSecret,
@@ -124,6 +128,7 @@ export const routeSubsystem: Subsystem = {
         followsSystem,
         deadEnd: deadEndRule,
         systemConfig: () => proxyMirror?.config() ?? { mode: 'system' },
+        relay: () => nameRelay,
         embedPartition: embedPartitionFor,
         allContents: () => webContents.getAllWebContents(),
         onContentsCreated: (listener) => { app.on('web-contents-created', (_event, contents) => { listener(contents) }) },
@@ -211,7 +216,7 @@ export const routeSubsystem: Subsystem = {
     setMirrorStatusSource(proxyMirror.status)
     setDirectLookupSource(() => routes.everywhere() ? systemMirrorSession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
-    const directFetch = createDirectFetch(net, systemMirrorSession())
+    const directFetch = createDirectFetch(net, systemMirrorSession(), answerChallengeOnly(() => nameRelay?.credentials))
     // A website with a tunnel of its own, or one a tab with a tunnel choice shows or is loading, is asked about (its app manifest, its files by the loader) in that tunnel's profile session, never the default one, which is direct while the whole browser is off the tunnel and may be the other tunnel when it is on.
     const siteTunnelled = (origin: string): boolean => {
       const profile = routes.hub.profileFor(origin)
@@ -271,7 +276,10 @@ export const routeSubsystem: Subsystem = {
         watch()
         return watch
       },
-      fit: (target, profile) => { announceWebsiteSession(target as Session, kindOfProfile(profile)) }
+      fit: (target, profile, partition) => {
+        announceWebsiteSession(target as Session, kindOfProfile(profile), partition)
+        return mergeOf(target)
+      }
     })
     // The verifier host reads whether a proxy applies once, when it starts, and fetches through the shared front when the whole browser is on the tunnel: it stops at once, with the local nodes, and starts again with the new setting when something asks for it, once the sessions follow.
     routes.hub.onChange((origin) => {

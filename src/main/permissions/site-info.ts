@@ -89,6 +89,8 @@ export interface SiteTunnel {
   readonly unreadable: boolean
   /** The profile the website lives in now, when its entry puts it in one. */
   readonly profile?: SiteTunnelProfile
+  /** Present while "Keep tunneled sites separate" is off: a website in a profile keeps the sign-ins of normal browsing (ADR-0111). */
+  readonly signInsShared?: true
   /** The tunnel everything without a choice of its own goes through. */
   readonly defaultKind: SiteTunnelKind
   /** The person's own proxy: the address saved ('' when none), and what goes through it now (`tabs`: the tabs whose choice is the proxy, a tab with no website yet included), so a change of address can say who it moves. */

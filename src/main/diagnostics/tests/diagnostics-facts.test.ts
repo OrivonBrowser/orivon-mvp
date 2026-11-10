@@ -11,7 +11,7 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
     expect(Object.keys(diagnostics.app)).toEqual(['commit', 'channel', 'electron', 'chromium', 'node', 'v8', 'packaged', 'uptimeSec'])
     expect(Object.keys(diagnostics.system)).toEqual(['platform', 'release', 'arch', 'cpus', 'cpuModel', 'memoryMb', 'freeMemoryMb', 'locale', 'session', 'desktop', 'ozone'])
-    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'networkService', 'systemProxy', 'extensions', 'appSockets', 'settings'])
+    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'networkService', 'systemProxy', 'signIns', 'extensions', 'appSockets', 'settings'])
   })
 
   it('states how many tabs carry each tunnel choice, as counts and nothing else', () => {
@@ -32,6 +32,12 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics.browser.systemProxy)).toEqual(['source', 'mode', 'state', 'reason'])
     const left = buildDiagnostics({ ...FACTS, browser: { ...FACTS.browser, systemProxy: { source: 'gnome', mode: 'script', state: 'system', reason: 'unfetched' } } })
     expect(left.browser.systemProxy).toEqual({ source: 'gnome', mode: 'script', state: 'system', reason: 'unfetched' })
+  })
+
+  it('states whether the tunnel profiles\' cookies are kept in step with normal browsing, as one word and counts', () => {
+    expect(diagnostics.browser.signIns).toEqual({ state: 'mirroring', sessions: 2, copied: 14, removed: 1, failed: 0, suppressed: 0 })
+    expect(Object.keys(diagnostics.browser.signIns)).toEqual(['state', 'sessions', 'copied', 'removed', 'failed', 'suppressed'])
+    expect(Object.values(diagnostics.browser.signIns).filter((value) => typeof value !== 'number')).toEqual(['mirroring'])
   })
 
   it('rounds the uptime to whole seconds', () => {

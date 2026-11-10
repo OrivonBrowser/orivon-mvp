@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SystemProxyConfig } from '../../system-follow.js'
 import { ANSWER_EVERY_MS, createProxyMirror, PROBE_FRESH_MS, READ_EVERY_MS, START_BOUND_MS } from '../proxy-mirror.js'
-import type { ProxyMirror, ProxyMirrorDeps } from '../proxy-mirror.js'
+import type { MirrorPass, ProxyMirror, ProxyMirrorDeps } from '../proxy-mirror.js'
 import type { SystemSettings } from '../settings-source.js'
 import { namesVerifierHost } from '../../verifier-name-guard.js'
 
@@ -601,5 +601,89 @@ describe('the probe: whether Chromium answers DIRECT for ordinary addresses wher
     await mirror.start()
     expect(Object.keys(mirror.status()).sort()).toEqual(['mode', 'reason', 'source', 'state'])
     mirror.stop()
+  })
+})
+
+describe('a listener of the passes', () => {
+  const HTTPS_AND_HTTP = ['PROXY proxy.test:3128', 'PROXY proxy.test:3128']
+
+  it('hears every pass with the status it ended in and Chromium\'s answer for each base address, one that changed nothing included', async () => {
+    const { mirror } = setup()
+    const heard: MirrorPass[] = []
+    mirror.onPass((pass) => { heard.push(pass) })
+
+    await mirror.start()
+    expect(heard).toEqual([{ status: { source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' }, answers: HTTPS_AND_HTTP }])
+
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+    expect(heard).toHaveLength(2)
+    expect(heard[1]).toEqual(heard[0])
+    mirror.stop()
+  })
+
+  it('hears a proxy turned off as the next pass, without waiting for a read', async () => {
+    const { mirror, world } = setup()
+    const heard: MirrorPass[] = []
+    mirror.onPass((pass) => { heard.push(pass) })
+    await mirror.start()
+
+    world.settings = { kind: 'none' }
+    world.truth = { kind: 'none' }
+    await vi.advanceTimersByTimeAsync(ANSWER_EVERY_MS)
+
+    expect(heard.at(-1)).toEqual({ status: { source: 'gnome', mode: 'none', state: 'system', reason: 'no-proxy' }, answers: ['DIRECT', 'DIRECT'] })
+    mirror.stop()
+  })
+
+  it('says unanswered for a question that got no answer', async () => {
+    const { mirror, world } = setup()
+    const heard: MirrorPass[] = []
+    mirror.onPass((pass) => { heard.push(pass) })
+    world.hang = true
+    const started = mirror.start()
+    await vi.advanceTimersByTimeAsync(START_BOUND_MS)
+    await started
+    // The pass goes on past the bound: the question and then the check each wait their five seconds.
+    await vi.advanceTimersByTimeAsync(2 * PAST_A_CALL_MS)
+
+    expect(heard[0]?.answers).toEqual(['unanswered', 'unanswered'])
+    mirror.stop()
+  })
+
+  it('stops hearing once it is removed, and a listener that throws neither stops the others nor the mirror', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { mirror } = setup()
+    const first: number[] = []
+    const second: number[] = []
+    const remove = mirror.onPass(() => { first.push(1) })
+    mirror.onPass(() => { throw new Error('a listener that fails') })
+    mirror.onPass(() => { second.push(1) })
+
+    await mirror.start()
+    remove()
+    await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
+
+    expect(first).toHaveLength(1)
+    expect(second).toHaveLength(2)
+    expect(mirror.status().reason).toBe('copied')
+    expect(logged).toHaveBeenCalled()
+    logged.mockRestore()
+    mirror.stop()
+  })
+
+  it('hears nothing from a mirror that reads nothing, or after it was stopped', async () => {
+    const heard: MirrorPass[] = []
+    const none = setup({ read: false })
+    none.mirror.onPass((pass) => { heard.push(pass) })
+    await none.mirror.start()
+    expect(heard).toEqual([])
+
+    const { mirror } = setup()
+    mirror.onPass((pass) => { heard.push(pass) })
+    await mirror.start()
+    mirror.stop()
+    heard.length = 0
+    await mirror.refresh()
+    expect(heard).toEqual([])
   })
 })
