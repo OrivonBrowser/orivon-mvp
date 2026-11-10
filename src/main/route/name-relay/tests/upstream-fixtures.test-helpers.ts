@@ -3,9 +3,8 @@
 // relay was asked for (a documentation address no test reaches) to the local port that stands in for it. Not *.test.ts, so
 // vitest does not collect it as a suite.
 
-import { createServer } from 'node:net'
+import { connect as netConnect, createServer, isIP } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
-import { connect as netConnect } from 'node:net'
 import { createServer as createTlsServer } from 'node:tls'
 
 export interface Started {
@@ -13,10 +12,13 @@ export interface Started {
 }
 
 const open: Array<() => Promise<void>> = []
+const watched: ConnectProxy[] = []
 
 /** Closes everything started since the last call; a test file runs it after each test. */
 export async function closeAll (): Promise<void> {
   while (open.length > 0) await open.pop()?.()
+  const named = watched.splice(0).flatMap((proxy) => proxy.namesSeen)
+  if (named.length > 0) throw new Error(`a CONNECT proxy was asked for a name: ${named.join(' | ')}`)
 }
 
 /** Listens on a free loopback port and arranges for the server and every connection to it to be closed. */
@@ -91,10 +93,18 @@ export interface ConnectProxyOptions {
 export interface ConnectProxy extends Started {
   /** One entry per request head, in order. */
   readonly seen: SeenConnect[]
+  /** Every request whose line or `Host` named something but an IP literal: `closeAll` fails the test that left one. */
+  readonly namesSeen: string[]
+}
+
+/** The host of `host:port` or `[v6]:port`. */
+function hostOf (authority: string): string {
+  return authority.startsWith('[') ? authority.slice(1, authority.indexOf(']')) : authority.slice(0, authority.lastIndexOf(':'))
 }
 
 export async function startConnectProxy (options: ConnectProxyOptions = {}): Promise<ConnectProxy> {
   const seen: SeenConnect[] = []
+  const namesSeen: string[] = []
   const serve = (socket: Socket): void => {
     socket.on('error', () => {})
     let buffered = Buffer.alloc(0)
@@ -107,16 +117,17 @@ export async function startConnectProxy (options: ConnectProxyOptions = {}): Pro
       const headers: Record<string, string> = {}
       for (const line of lines) headers[line.slice(0, line.indexOf(':')).toLowerCase()] = line.slice(line.indexOf(':') + 1).trim()
       seen.push({ requestLine, headers })
+      const target = requestLine.split(' ')[1] ?? ''
+      if (isIP(hostOf(target)) === 0 || headers.host !== target) namesSeen.push(requestLine)
       const early = buffered.subarray(end + 4)
       if (options.silent === true) return
       if (options.hangUp === true) { socket.destroy(); return }
       if (options.garbage === true) { socket.end('this is not http\r\n\r\n'); return }
-      const authority = requestLine.split(' ')[1] ?? ''
-      const target = options.targets?.[authority]
-      const status = options.status ?? (target === undefined ? 502 : 200)
+      const local = options.targets?.[target]
+      const status = options.status ?? (local === undefined ? 502 : 200)
       if (status < 200 || status >= 300) { socket.end(`HTTP/1.1 ${String(status)} Refused\r\nContent-Length: 0\r\n\r\n`); return }
-      if (target === undefined) { socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'); return }
-      const upstream = netConnect({ host: '127.0.0.1', port: target })
+      if (local === undefined) { socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n'); return }
+      const upstream = netConnect({ host: '127.0.0.1', port: local })
       upstream.on('error', () => { socket.destroy() })
       socket.on('close', () => upstream.destroy())
       upstream.once('connect', () => {
@@ -132,7 +143,9 @@ export async function startConnectProxy (options: ConnectProxyOptions = {}): Pro
     ? createServer(serve)
     : createTlsServer({ key: options.tls.key, cert: options.tls.cert }, serve)
   const port = await listening(server)
-  return { port, seen }
+  const proxy = { port, seen, namesSeen }
+  watched.push(proxy)
+  return proxy
 }
 
 export interface Socks4Seen {

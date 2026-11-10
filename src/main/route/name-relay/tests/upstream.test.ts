@@ -1,6 +1,7 @@
 // The connection to an address through the proxy the system named (or, for a first DIRECT, straight to it), against real
 // loopback upstreams.
 
+import { connect as netConnect } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startSocks5Fixture } from '../../../../broker/route/tests/socks5-fixture.test-helpers.js'
 import { createRunCertificate } from '../../../../protocols/verifier-host/serve/certificate.js'
@@ -32,6 +33,22 @@ async function echoes (socket: Awaited<ReturnType<typeof through>>, text = 'hell
   socket.write(text)
   expect(await readBytes(socket, text.length)).toBe(text)
 }
+
+describe('the CONNECT proxy these tests use', () => {
+  it('notices a request that names a site, so that the tests below prove the relay sends none', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    const socket = keep(netConnect({ host: '127.0.0.1', port: proxy.port }))
+    socket.write('CONNECT shop.example:443 HTTP/1.1\r\nHost: shop.example:443\r\n\r\n')
+    expect(await readBytes(socket, 12)).toContain('502')
+    expect(proxy.namesSeen).toEqual(['CONNECT shop.example:443 HTTP/1.1'])
+    proxy.namesSeen.length = 0
+    const mismatched = keep(netConnect({ host: '127.0.0.1', port: proxy.port }))
+    mismatched.write(`CONNECT ${ADDRESS}:443 HTTP/1.1\r\nHost: shop.example\r\n\r\n`)
+    await readBytes(mismatched, 12)
+    expect(proxy.namesSeen).toHaveLength(1)
+    proxy.namesSeen.length = 0
+  })
+})
 
 describe('through an HTTP proxy', () => {
   it('asks for a tunnel to the address, and says no name anywhere in the request', async () => {
