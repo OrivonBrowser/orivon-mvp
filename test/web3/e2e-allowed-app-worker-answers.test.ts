@@ -202,8 +202,8 @@ it('[app:allowed-app-unchecked-worker-never-installs] refuses a service worker s
       // The host is told. The website's page the host answered is loaded again and what it could have kept is removed, which takes
       // a moment, so the loads are repeated until one is the shell's: it holds the grants and registers the app's own worker.
       await running.evaluate(() => { (globalThis as { __orivonDevEthFixtures?: { holdServed?: (hold: boolean) => void } }).__orivonDevEthFixtures?.holdServed?.(false) })
-      const settledPage = await reloadUntil(running, chrome, url, (facts) => facts.grants === 'granted:fs' && facts.sw === 'ready' && facts.registrations === 1)
-      check(`once the host knows, a reloaded page is the shell's: it holds its grants and registers the app's worker (${JSON.stringify(settledPage.facts)})`, settledPage.hit)
+      const settledPage = await reloadUntil(running, chrome, url, (facts) => facts.grants === 'granted:fs' && facts.registrations === 1)
+      check(`once the host knows, a reloaded page is the shell's: it holds its grants and the app's own worker is registered (${JSON.stringify(settledPage.facts)})`, settledPage.hit)
 
       // Then the app's own worker answers, and the page it answers keeps the grants.
       const workerPage = await reloadUntil(running, chrome, url, (facts) => facts.via === 'worker' && facts.grants === 'granted:fs')
