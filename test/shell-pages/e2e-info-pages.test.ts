@@ -13,6 +13,12 @@ import { activeTabInfo, delay, tabIds, waitFor, waitForTab } from '../support/sm
 
 const SHOTS_DIR = process.env['ORIVON_UI_SHOTS_DIR']
 
+/** Pages drawn on the processor, which is what GitHub's Windows runner says: its only device is Microsoft's Basic Render Driver, which Chromium gives no adapter. */
+const WEBGPU_SOFTWARE_SENTENCE = 'WebGPU is off because this computer draws pages on its processor, and Chromium does not allow WebGPU there. Chromium does that when there is no graphics card, when it blocks the card\'s driver, or after its graphics process has crashed several times.'
+
+/** Every reason a computer other than a Linux launch gives for WebGPU being off. */
+const WEBGPU_OFF_ANYWHERE = /^(WebGPU is off because |Chromium has turned WebGPU off on this computer\.|The page asked for a WebGPU adapter and got none\.)/
+
 /** What a Linux launch under a virtual display says about WebGPU: pages drawn in software when the display gives no graphics card, the X11 session when it gives one. */
 const WEBGPU_OFF_SENTENCE = /^(WebGPU is off because this computer draws pages on its processor, and Chromium does not allow WebGPU there\. Chromium does that when there is no graphics card, when it blocks the card's driver, or after its graphics process has crashed several times\.|WebGPU is off because (this computer runs an X11 session|Orivon is running on X11)\. Chromium turns it off there for every graphics card\. A site that needs WebGPU asks you for it\. You can also turn it on in Settings, under Performance\.|WebGPU is off because Orivon is running through X11 \(XWayland\) on this Wayland session\. WebGPU needs Orivon to run on Wayland\.)$/
 
@@ -108,12 +114,17 @@ it('shows the version table and the graphics report, with Copy details, at real 
       expect(await webGpuBadge.textContent()).toBe('Not available')
       expect(await webGpuBadge.getAttribute('class')).toBe('badge')
       expect(await webGpu.locator('.row.long .value').textContent()).toMatch(WEBGPU_OFF_SENTENCE)
+    } else if (process.platform === 'win32' && process.env['CI'] === 'true') {
+      // A GitHub runner has no graphics card: Microsoft's Basic Render Driver is its only device, Chromium draws pages on
+      // the processor and gives a page no adapter (test/page/e2e-webgpu.test.ts pins the same). A computer with a card does give one.
+      expect(await webGpuBadge.textContent()).toBe('Not available')
+      expect(await webGpu.locator('.row.long .value').textContent()).toBe(WEBGPU_SOFTWARE_SENTENCE)
     } else {
       // Another system may have a graphics card, or only a software adapter, to give.
       const works = await webGpuBadge.textContent() === 'Works'
       expect(['Works', 'Not available']).toContain(await webGpuBadge.textContent())
       if (works) expect(await webGpu.locator('.row-label').allTextContents()).toEqual(['Status', 'Adapter vendor', 'Adapter architecture'])
-      else expect(await webGpu.locator('.row.long .value').textContent()).toMatch(/^WebGPU /)
+      else expect(await webGpu.locator('.row.long .value').textContent()).toMatch(WEBGPU_OFF_ANYWHERE)
     }
 
     // Either the graphics report or, on a machine that reports nothing, the banner with its retry.
