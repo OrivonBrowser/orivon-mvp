@@ -7,6 +7,7 @@ import { isIP } from 'node:net'
 import type { Socket } from 'node:net'
 import { isOnionHost, ONION_NEEDS_TOR } from '../../../broker/route/onion.js'
 import { BUILTIN_ADDRESSES } from '../../../protocols/builtin.js'
+import { ROUTED_NAME_NOT_CARRIED } from '../front.js'
 import type { FrontTarget } from '../front.js'
 import { keepResolverOrder, MAX_ADDRESSES, orderForProxy } from './addresses.js'
 import { onAnonymityPort, parseProxyAnswer } from './proxy-answer.js'
@@ -47,8 +48,21 @@ export interface RelayOpenerDeps {
   readonly upstream?: UpstreamOptions
 }
 
-const ROUTED_NAME = 'Orivon opens this name itself, so it is never sent through your proxy.'
 const BUSY = 'Orivon is already carrying as many connections through your proxy as it allows. Try again in a moment.'
+
+/**
+ * The target with the host of its URL, bracket-free: the name Chromium dials and the one the system is asked about, not the text
+ * written on the request line (`0x7f.1` is 127.0.0.1 and `Shop.Example` is shop.example), so every decision, the lookup and the
+ * failure memory included, is made on one spelling. Undefined for a URL that has no host.
+ */
+function asChromiumReads (target: FrontTarget): FrontTarget | undefined {
+  try {
+    const { hostname } = new URL(target.url)
+    return hostname === '' ? undefined : { ...target, host: hostname.startsWith('[') ? hostname.slice(1, -1) : hostname }
+  } catch {
+    return undefined
+  }
+}
 
 /** This proxy cannot be used, and the next of the list is worth a try. */
 class ProxyDown extends Error {}
@@ -129,7 +143,7 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
 
   async function connect (target: FrontTarget): Promise<Socket> {
     if (isOnionHost(target.host)) throw new RelayRefusal('refused', 403, ONION_NEEDS_TOR)
-    if (BUILTIN_ADDRESSES.namesServedHost(target.host)) throw new RelayRefusal('refused', 403, ROUTED_NAME)
+    if (BUILTIN_ADDRESSES.namesServedHost(target.host)) throw new RelayRefusal('refused', 403, ROUTED_NAME_NOT_CARRIED)
     let answer: ProxyAnswer
     try {
       answer = parseProxyAnswer(await deps.systemAnswer(target.url))
@@ -157,7 +171,9 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
     if (error instanceof RelayRefusal && !target.signal.aborted) deps.failures.note(target.host, target.port, error.word)
   }
 
-  return async (target) => {
+  return async (asked) => {
+    const target = asChromiumReads(asked)
+    if (target === undefined) throw new RelayRefusal('refused')
     if (active >= maxOpen) {
       const refusal = new RelayRefusal('refused', 503, BUSY)
       note(target, refusal)

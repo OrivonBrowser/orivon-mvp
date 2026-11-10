@@ -52,7 +52,7 @@ export interface RouteFrontOptions {
   readonly provider?: () => RouteProvider | undefined
   /**
    * Reaches a target in place of `provider().connect`, with the same contract: the stream comes back paused. A rejection refuses the request, with the reason when it is a `FrontRefusal`.
-   * The front refuses only a wrong secret, a malformed target and a routed name written with the root dot before calling it, so `open` refuses a routed name and an onion name itself.
+   * The front refuses only a wrong secret, a malformed target and a routed name written with the root dot (with `ROUTED_NAME_NOT_CARRIED` as the reason) before calling it, so `open` refuses a routed name and an onion name itself.
    */
   readonly open?: (target: FrontTarget) => Promise<Socket>
   /** Called once when the front stops listening, whoever closed it. */
@@ -121,6 +121,9 @@ export function refusalPage (reason: string): string {
 /** The words for an `open` that failed without saying why. */
 const NOT_REACHED = 'Orivon could not reach this site.'
 
+/** Why a front with `open` refuses a name a protocol serves, which the page of a tunnel front would not say. */
+export const ROUTED_NAME_NOT_CARRIED = 'Orivon opens this name itself, so it is never sent through your proxy.'
+
 function refuse (socket: Duplex, status: string, extraHeaders = ''): void {
   socket.end(`HTTP/1.1 ${status}\r\n${extraHeaders}Connection: close\r\nContent-Length: 0\r\n\r\n`)
 }
@@ -142,7 +145,7 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
 
   /** The stream to the target through the app's route (or `open`), or the status line that says why there is none, and the reason when `open` gave one. A name a protocol serves, written with a root dot, is never carried: no bypass rule lists every count of dots, and the route's far end must not hear it. */
   async function reach (host: string, port: number, url: string | undefined, signal: AbortSignal): Promise<{ socket: Socket } | { status: string, reason?: string }> {
-    if (host.endsWith('.') && BUILTIN_ADDRESSES.namesServedHost(host)) return { status: '403 Forbidden' }
+    if (host.endsWith('.') && BUILTIN_ADDRESSES.namesServedHost(host)) return options.open === undefined ? { status: '403 Forbidden' } : { status: '403 Forbidden', reason: ROUTED_NAME_NOT_CARRIED }
     if (options.open !== undefined) {
       if (url === undefined) return { status: '400 Bad Request' }
       try {

@@ -237,6 +237,42 @@ describe('an address given as a literal', () => {
   })
 })
 
+describe('the host the relay reads', () => {
+  it('is the one of the URL, so a spelling of an inside address is refused as inside and never looked up', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    const { open, asked, lookups, directLookups, failures } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    const spelled: FrontTarget = { host: '0x7f.1', port: 443, url: 'https://127.0.0.1/', signal: new AbortController().signal }
+    expect((await refusal(open(spelled))).word).toBe('inside')
+    expect({ asked, lookups, directLookups, seen: proxy.seen }).toEqual({ asked: ['https://127.0.0.1/'], lookups: [], directLookups: [], seen: [] })
+    expect(failures.reasonFor('127.0.0.1', 443)).toBe('inside')
+    expect(failures.reasonFor('0x7f.1', 443)).toBeUndefined()
+  })
+
+  it('is looked up, and remembered, as the URL spells it', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    const { open, lookups, failures } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [], 6: [] }) })
+    const written: FrontTarget = { host: 'Shop.Example', port: 443, url: 'https://shop.example/', signal: new AbortController().signal }
+    expect((await refusal(open(written))).word).toBe('not-found')
+    expect(lookups.map((lookup) => lookup.host)).toEqual(['shop.example', 'shop.example'])
+    expect(failures.reasonFor('shop.example', 443)).toBe('not-found')
+  })
+
+  it('refuses a target whose URL has no host', async () => {
+    const proxy = await startConnectProxy({ targets: {} })
+    const { open, asked } = rig({ answer: viaHttp(proxy.port) })
+    expect((await refusal(open({ host: 'shop.example', port: 443, url: 'not a url', signal: new AbortController().signal }))).word).toBe('refused')
+    expect(asked).toEqual([])
+  })
+
+  it('sends the proxy a Host header and nothing else, since the seam carries no request headers', async () => {
+    const echo = await startEcho()
+    const proxy = await startConnectProxy({ targets: { [`${PUBLIC_A}:443`]: echo.port } })
+    const { open } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    await echoes(keep(await open(targetOf(SITE))))
+    expect(Object.keys(proxy.seen[0]?.headers ?? {})).toEqual(['host'])
+  })
+})
+
 describe('a name the verifier serves, and an onion address', () => {
   it.each(['vitalik.eth', 'vitalik.eth.', 'Vitalik.ETH', 'abc.onion', 'abc.onion.', 'onion'])('is refused before the system, a lookup or a proxy is asked: %s', async (host) => {
     const proxy = await startConnectProxy({ targets: {} })
