@@ -70,7 +70,10 @@ that waited on any request to a served origin made the shell's own reads of that
 of them itself instead of handing them to the shell. `hold-rule.ts` takes the request type as an argument and the handler returns
 every request that is not a main-frame page at once.
 
-**The old data stays where it is.** The partition's folder is never deleted or cleared here.
+**The old data stays where it is.** The partition's folder is never deleted or cleared here. "App data" (`../privacy/clear-data.ts`) clears that
+partition and the website session's data for the origin together; a carry that runs after it finds the old partition empty and changes
+nothing, and a row already `carried` is never made again, so cleared data does not come back. "Cookies and site data" spares the origin of an
+allowed site in the website sessions, so what the carry wrote stays.
 
 **Two hidden pages, one empty document, one nonce each.** A page of the origin is the only way to reach its local storage and databases
 without running the app's own code. Both sessions answer `/.well-known/orivon/storage-carry-<secret>` with an empty
