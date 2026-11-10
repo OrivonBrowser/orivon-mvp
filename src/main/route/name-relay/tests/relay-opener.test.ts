@@ -10,6 +10,7 @@ import type { LookupAnswer, NameLookup, ProxyEntry } from '../proxied-lookup.js'
 import { createRelayFailures, RelayRefusal } from '../relay-failures.js'
 import type { RefusalWord } from '../relay-failures.js'
 import { createRelayOpener, RELAY_MAX_OPEN } from '../relay-opener.js'
+import type { RelayOpenerDeps } from '../relay-opener.js'
 import { closeAll, closedPort, closeLater, keep, readBytes, startConnectProxy, startEcho, startSocks4Proxy } from './upstream-fixtures.test-helpers.js'
 
 afterEach(closeAll)
@@ -40,6 +41,7 @@ function rig (options: {
   direct?: readonly string[] | Error
   maxOpen?: number
   roots?: readonly string[]
+  connected?: RelayOpenerDeps['connected']
 }) {
   const asked: string[] = []
   const lookups: Array<{ host: string, via: string }> = []
@@ -91,7 +93,8 @@ function rig (options: {
     },
     failures,
     ...(options.maxOpen === undefined ? {} : { maxOpen: options.maxOpen }),
-    ...(options.roots === undefined ? {} : { upstream: { roots: options.roots } })
+    ...(options.roots === undefined ? {} : { upstream: { roots: options.roots } }),
+    ...(options.connected === undefined ? {} : { connected: options.connected })
   })
   return { open, asked, lookups, drops, directLookups, failures }
 }
@@ -455,5 +458,42 @@ describe('the number of connections', () => {
 
   it('has a limit of 512 unless told otherwise', () => {
     expect(RELAY_MAX_OPEN).toBe(512)
+  })
+})
+
+describe('the report of a connection made', () => {
+  const reports = (): { readonly list: Array<readonly [string, number, string, string]>, readonly connected: NonNullable<RelayOpenerDeps['connected']> } => {
+    const list: Array<readonly [string, number, string, string]> = []
+    return { list, connected: (target, address, road) => { list.push([target.host, target.port, address, road]) } }
+  }
+
+  it('names the host asked for, the address connected to and the proxy\'s word, once, for the address that answered', async () => {
+    const echo = await startEcho()
+    const proxy = await startConnectProxy({ targets: { [`${PUBLIC_B}:443`]: echo.port } })
+    const { list, connected } = reports()
+    const { open } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A, PUBLIC_B] }), connected })
+    await echoes(keep(await open(targetOf(SITE))))
+    expect(list).toEqual([[SITE, 443, PUBLIC_B, 'PROXY']])
+  })
+
+  it('says SOCKS5, SOCKS and DIRECT for those roads, and nothing for a connection that failed', async () => {
+    const echo = await startEcho()
+    const socks5 = await startSocks5Fixture({ names: { [`${PUBLIC_A}:443`]: { host: '127.0.0.1', port: echo.port } }, refuseUnmapped: true })
+    closeLater(socks5.close)
+    const socks4 = await startSocks4Proxy({ targets: { [`${PUBLIC_A}:443`]: echo.port } })
+    const refused = await startConnectProxy({ status: 403 })
+    const { list, connected } = reports()
+    await echoes(keep(await rig({ answer: `SOCKS5 127.0.0.1:${String(socks5.port)}`, lookup: () => ({ 4: [PUBLIC_A] }), connected }).open(targetOf(SITE))))
+    await echoes(keep(await rig({ answer: `SOCKS 127.0.0.1:${String(socks4.port)}`, lookup: () => ({ 4: [PUBLIC_A] }), connected }).open(targetOf(SITE))))
+    await echoes(keep(await rig({ answer: 'DIRECT', direct: ['127.0.0.1'], connected }).open(targetOf(SITE, echo.port))))
+    await refusal(rig({ answer: viaHttp(refused.port), lookup: () => ({ 4: [PUBLIC_A] }), connected }).open(targetOf(SITE)))
+    expect(list).toEqual([[SITE, 443, PUBLIC_A, 'SOCKS5'], [SITE, 443, PUBLIC_A, 'SOCKS'], [SITE, echo.port, '127.0.0.1', 'DIRECT']])
+  })
+
+  it('does not fail the connection when the listener throws', async () => {
+    const echo = await startEcho()
+    const proxy = await startConnectProxy({ targets: { [`${PUBLIC_A}:443`]: echo.port } })
+    const { open } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A] }), connected: () => { throw new Error('a listener') } })
+    await echoes(keep(await open(targetOf(SITE))))
   })
 })

@@ -206,10 +206,10 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
  * Where the light client and CCIP-Read leave: through the tunnel's front while the whole browser is on it, unless the person asked them to run
  * outside the tunnel and this host has the path for it. `pace` is the route their waits are stretched for.
  */
-function ethereumRoute (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { readonly web: HostDeps['fetch'], readonly ccip: CcipDeps, readonly pace: RoutePace } {
+export function ethereumRoute (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { readonly web: HostDeps['fetch'], readonly ccip: CcipDeps, readonly pace: RoutePace } {
   const outside = config.ethereumOutside === true && config.front !== undefined ? deps.outside : undefined
   if (outside !== undefined) return { web: outside.send, ccip: { directFetch: deps.ccipFetch, fetch: outside.send, resolveHost: outside.resolveHost, direct: true }, pace: DIRECT_ROUTE }
-  return { web: deps.fetch, ccip: { directFetch: deps.ccipFetch, fetch: deps.fetch, resolveHost: deps.resolveHost, direct: config.ccipDirect, farEnd: config.front !== undefined }, pace: tunnel }
+  return { web: deps.fetch, ccip: { directFetch: deps.ccipFetch, fetch: deps.fetch, resolveHost: deps.resolveForCheck ?? deps.resolveHost, direct: config.ccipDirect, farEnd: config.front !== undefined }, pace: tunnel }
 }
 
 function startEns (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { protocol: Protocol, lightClient: LightClient | undefined } {

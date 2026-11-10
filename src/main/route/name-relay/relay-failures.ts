@@ -22,6 +22,8 @@ export type RefusalWord =
   | 'anonymity'
   /** Orivon could not tell which proxy the system names for this connection. */
   | 'unsure'
+  /** A pinned endpoint was asked for a host and port no caller had pinned. */
+  | 'unpinned'
 
 /** How long a failure is remembered for the sheet. */
 export const FAILURE_MEMORY_MS = 30_000
@@ -73,6 +75,8 @@ export function refusalSentence (word: RefusalWord, provider = 'your Secure DNS 
       return `Your system's proxy looks like an anonymity network. Looking every name up through one connection to one DNS provider could link your visits, so Orivon does not do it while ${SWITCH} is on. You can ${UNDO}.`
     case 'unsure':
       return `Orivon could not tell which proxy your system uses for this site, so it sent nothing. Try again, or ${UNDO}.`
+    case 'unpinned':
+      return 'Orivon read this address for a check that had not cleared it, so it sent nothing.'
   }
 }
 
@@ -81,9 +85,9 @@ type RefusalStatus = ConstructorParameters<typeof FrontRefusal>[0]
 /** A listener refusal that says why in a word, for the sheet, the report and a wrapper that counts. */
 export class RelayRefusal extends FrontRefusal {
   readonly word: RefusalWord
-  /** `status` is 403 for a host that is not carried at all, else 502; `reason` defaults to the word's sentence. */
+  /** `status` is 403 for a host that is not carried at all (`refused`, `anonymity`, `unpinned`), else 502; `reason` defaults to the word's sentence. */
   constructor (word: RefusalWord, status?: RefusalStatus, reason?: string) {
-    super(status ?? (word === 'refused' || word === 'anonymity' ? 403 : 502), reason ?? refusalSentence(word))
+    super(status ?? (word === 'refused' || word === 'anonymity' || word === 'unpinned' ? 403 : 502), reason ?? refusalSentence(word))
     this.word = word
   }
 }

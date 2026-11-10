@@ -14,6 +14,7 @@
 // STRING, and a top-level import would silently bind `undefined` rather
 // than throw.
 
+import { isIP } from 'node:net'
 import { Readable } from 'node:stream'
 import type { Session } from 'electron'
 import { classifyAddress, isPublicUnicast } from '../../broker/policy/address.js'
@@ -27,6 +28,9 @@ import { FaviconCache } from './favicon-cache.js'
 import { MAX_FAVICON_BYTES, toDataUrl } from './favicon-format.js'
 import { faviconTimeoutMs } from './favicon-timeout.js'
 import { answerRouteChallenge, directLookupSession } from '../route/lookup-session.js'
+import { relayLookup, sharedPinnedEndpoint } from '../route/name-relay/pinned-endpoint.js'
+import { sessionThrough } from '../route/name-relay/pinned-session.js'
+import type { RelayHostLookup } from '../route/name-relay/relay-lookup.js'
 import { namesVerifierHost, refuseWhenProxySees } from '../route/verifier-name-guard.js'
 
 /** Real sites redirect a bare-domain icon URL to a `www` host, or move
@@ -253,7 +257,7 @@ async function requestOnce (url: string, signal: AbortSignal, session: Session |
     })
     request.on('error', () => { settle({ kind: 'failed' }) })
     if (signal.aborted) { settle({ kind: 'failed' }); return }
-    // An app's front asks the request itself for the secret made for it: no web contents is there to raise `login` for the application.
+    // An app's front, and a pinned endpoint, ask the request itself for the secret made for it: no web contents is there to raise `login` for the application.
     request.on('login', (info, callback) => { answerRouteChallenge(info, callback) })
     signal.addEventListener('abort', onAbort, { once: true })
     request.end()
@@ -279,6 +283,45 @@ function isPageOwnOrigin (url: string, pageUrl: string): boolean {
     return origin !== 'null' && origin === new URL(pageUrl).origin
   } catch {
     return false
+  }
+}
+
+/** The relay's lookup as a resolver for `isSafeFaviconUrl`: the same lookup a relayed connection to the host makes, never this computer's. */
+function resolvedByRelay (lookup: RelayHostLookup, seen?: Map<string, readonly string[]>): Resolver {
+  return async (host) => {
+    const found = await lookup(host, `https://${host}/`)
+    seen?.set(host, found)
+    return found
+  }
+}
+
+/**
+ * One hop read through the pinned endpoint, while the name relay is active and the hop leaves by the default or the direct
+ * session: judged on the addresses the relay found, then pinned to the first, so the read goes to exactly what was judged and the
+ * proxy is never asked for the name again (a name with a short-lived record could otherwise answer the check with a public address
+ * and the proxy's own lookup with one on this computer or the local network). The session to read through; undefined when the hop
+ * goes the ordinary way (a host on loopback, which Chromium reaches without a proxy); null when it is refused.
+ */
+async function pinHop (url: string, pageUrl: string, lookup: RelayHostLookup): Promise<Session | undefined | null> {
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return null
+  }
+  const seen = new Map<string, readonly string[]>()
+  if (!(await isSafeFaviconUrl(url, pageUrl, resolvedByRelay(lookup, seen), { routed: false }))) return null
+  const host = parsed.hostname.replace(/^\[|\]$/g, '')
+  if (isLoopbackHost(host)) return undefined
+  const address = isIP(host) === 0 ? seen.get(host)?.[0] : host
+  const endpoint = await sharedPinnedEndpoint()?.catch(() => undefined)
+  if (address === undefined || endpoint === undefined) return null
+  try {
+    endpoint.pin(host, parsed.port === '' ? 443 : Number(parsed.port), address)
+    const { session } = await import('electron')
+    return await sessionThrough(endpoint, (partition) => session.fromPartition(partition))
+  } catch {
+    return null
   }
 }
 
@@ -310,9 +353,16 @@ async function fetchUnchecked (url: string, pageUrl: string, pageSession: Sessio
       // Read for every hop: a route switched on or off while the chain is followed applies to the next hop.
       const route = await routeNow(routeLookup)
       if (route === null) return null
-      // The first hop was cleared by the caller, as routed or not: it is judged again only when the route changed since.
-      if ((hop > 0 || (route !== undefined) !== clearedAsRouted) && !(await isSafeFaviconUrl(current, pageUrl, electronResolveHost, { routed: route !== undefined }))) return null
-      const result = await requestOnce(current, controller.signal, sessionForHop(current, pageUrl, pageSession, route), isPageOwnOrigin(current, pageUrl) && isOriginServedFromCacheSync(new URL(current).origin))
+      let via = sessionForHop(current, pageUrl, pageSession, route)
+      // A host that leaves by the default or the direct session, while the name relay runs, is looked up by the relay and read at the address it found.
+      // Otherwise the first hop was cleared by the caller, as routed or not: it is judged again only when the route changed since.
+      const relay = route === undefined && via === undefined && !isPageOwnOrigin(current, pageUrl) ? relayLookup() : undefined
+      if (relay !== undefined) {
+        const pinned = await pinHop(current, pageUrl, relay)
+        if (pinned === null) return null
+        via = pinned
+      } else if ((hop > 0 || (route !== undefined) !== clearedAsRouted) && !(await isSafeFaviconUrl(current, pageUrl, electronResolveHost, { routed: route !== undefined }))) return null
+      const result = await requestOnce(current, controller.signal, via, isPageOwnOrigin(current, pageUrl) && isOriginServedFromCacheSync(new URL(current).origin))
       if (result.kind === 'failed') return null
       if (result.kind === 'ok') return toDataUrl(result.bytes)
       if (hop === MAX_FAVICON_REDIRECTS) return null
@@ -350,7 +400,9 @@ export async function fetchFaviconDataUrlCached (url: string, pageUrl: string, s
   // hit left ungated would be a way straight around that condition.
   const route = await routeNow(routeLookup)
   if (route === null) return null
-  if (!(await isSafeFaviconUrl(url, pageUrl, electronResolveHost, { routed: route !== undefined }))) return null
+  // While the name relay runs, a host this check resolves is resolved by the relay, not from this computer.
+  const relay = route === undefined ? relayLookup() : undefined
+  if (!(await isSafeFaviconUrl(url, pageUrl, relay === undefined ? electronResolveHost : resolvedByRelay(relay), { routed: route !== undefined }))) return null
 
   const cached = faviconCache.get(url)
   if (cached !== undefined) return cached

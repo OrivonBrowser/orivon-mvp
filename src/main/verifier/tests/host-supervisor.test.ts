@@ -437,3 +437,20 @@ describe('HostSupervisor, for the requests the host hands the shell', () => {
     expect(hosts[0]?.sent.at(-1)).toEqual({ type: 'shell-serves', origins: ['https://kept.example'] })
   })
 })
+
+describe('HostSupervisor, for the questions the host asks about the addresses of a name', () => {
+  it('passes on a question with its number and name, and drops a malformed one', () => {
+    const hosts: FakeHost[] = []
+    const heard: Array<[number, string]> = []
+    const supervisor = new HostSupervisor({
+      fork: () => { const h = new FakeHost(); hosts.push(h); return h },
+      config: () => CONFIG,
+      events: { listening: () => {}, down: () => {}, status: () => {}, checkpoint: () => {}, ipnsSequence: () => {}, swarmFeedIndex: () => {}, nameScheme: () => {}, addressLookup: (id, host) => heard.push([id, host]) }
+    })
+    supervisor.start()
+    hosts[0]?.answer({ type: 'address-lookup', id: 1, host: 'gateway.example' })
+    hosts[0]?.answer({ type: 'address-lookup', id: 'one', host: 'gateway.example' })
+    hosts[0]?.answer({ type: 'address-lookup', id: 2 })
+    expect(heard).toEqual([[1, 'gateway.example']])
+  })
+})

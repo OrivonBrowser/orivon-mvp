@@ -43,6 +43,7 @@ import { EthServersSource } from './eth-servers-source.js'
 import { ipfsReadFromNode, nodeEndpointNames, swarmEndpoints } from './node-endpoints.js'
 import type { EthServers } from './eth-servers.js'
 import type { LightClientView } from './status-view.js'
+import { answerAddressLookup } from './address-lookup.js'
 import { ccipDirectFor, tunnelFront, tunnelProfileFronts, unproxiedGatewaysFor } from './host-proxy.js'
 import { HostLifecycle } from './host-lifecycle.js'
 import { mountCeilingMs } from '../../protocols/verifier-host/pace.js'
@@ -54,6 +55,7 @@ import { configureIpfsNode, ipfsNode, ipfsNodeEndpoint, ipfsNodeState } from './
 import type { LocalNodeSubsystem } from './local-node-subsystem.js'
 import { IPFS_NODE_IDENTITY } from '../../protocols/ipfs-node/protocol.js'
 import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
+import { relayLookup } from '../route/name-relay/pinned-endpoint.js'
 import type { RouteService } from '../route/route-service.js'
 import { configureNodeRoute, ethereumOutsideTunnel, nodesMayServeTunnelSites, nodesRunThroughTunnel } from './node-route.js'
 import { forgetNodeData as forgetNodes } from './forget-node-data.js'
@@ -443,6 +445,7 @@ export const verifierSubsystem: Subsystem = {
         },
         nodeTraffic: (name, active, bytes) => { ledger.record(name, active, bytes) },
         relay: (message) => { responder.receive(message) },
+        addressLookup: (id, name) => { void answerAddressLookup(relayLookup(), id, name).then((answer) => host.send(answer)).catch(() => { console.error('[verifier] an address answer could not be sent to the host') }) },
         servesApplied: noteServesApplied,
         abandoned: () => { responder.abortAll() },
         nodeWanted: (name) => {

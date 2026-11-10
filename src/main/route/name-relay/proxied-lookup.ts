@@ -229,6 +229,7 @@ export function createProxiedLookup (options: ProxiedLookupOptions): ProxiedLook
     if (earlier === undefined) {
       const settling = run.then(() => undefined, wordOf)
       slot.settling = settling
+      // orivon:floating-ok -- `settling` never rejects (both of its branches return) and the callback only clears a field
       void settling.then(() => { if (slot.settling === settling) slot.settling = undefined })
     }
     return await run
