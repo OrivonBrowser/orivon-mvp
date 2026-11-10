@@ -152,6 +152,14 @@ describe('repartitionBeforeCommit', () => {
     expect(rig({ internalPage: 'settings' }).fire('will-navigate').preventDefault).not.toHaveBeenCalled()
   })
 
+  it('moves the new-tab page for a redirect, which is its typed address\'s own first request: `ipfs://<cid>` redirects from the scheme\'s endpoint to the CID\'s origin, whose entry may keep it off the shared session', async () => {
+    partitionChanged.mockReturnValue({ to: 'persist:direct-profile' })
+    const event = rig({ isDashboardTab: true }).fire('will-redirect', { url: 'https://cid.ipfs.orivon/' })
+    expect(event.preventDefault).toHaveBeenCalled()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(repartitionView).toHaveBeenCalledWith('tab-1', expect.anything(), 'https://cid.ipfs.orivon/', 'persist:direct-profile', false, undefined)
+  })
+
   describe('a tab with a tunnel choice', () => {
     it('asks for the move with the tab\'s choice, so a link or redirect into a website without an entry still lands in the tunnel\'s profile', async () => {
       partitionChanged.mockReturnValue({ to: 'persist:proxy-profile' })
