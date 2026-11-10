@@ -1,19 +1,20 @@
 // One-shot tickets that tell the permission gate which `media` request with no device type is the display call
-// Orivon's own preload made after the person picked (ADR-0055). Pure: time and randomness are injected, so every
-// rule is unit-tested without a clock.
+// Orivon's own preload made after the person picked (ADR-0055, ADR-0109). Pure: time and randomness are injected, so
+// every rule is unit-tested without a clock.
 import { randomBytes } from 'node:crypto'
 
 /** The pause after the last request arrives before the one held request is allowed, in which a second one would void the ticket. */
 export const QUIET_WINDOW_MS = 250
 
 /**
- * How long before the preload's `arm` message a request may have arrived and still be allowed. The preload sends `arm`
- * in the same step as, and before, its call, but the message and the request travel on different paths, so the request
- * can overtake it; a request that did so by more than this came from the page, not from the preload's step. Provisional:
- * overtakes measured in the shell were under 1 ms, so this leaves room for a loaded machine. It bounds how long a page's
- * own request, sent before the preload's step, can wait for the preload's arm and still be taken for the preload's.
+ * How long the request that follows the first refusal waits for the preload to report its canary refused. The preload
+ * sends that report as soon as the canary is answered, before its real call can even be sent, so the real call
+ * overtakes it only when the two reach main out of order on a loaded machine (they travel on different paths). A
+ * request still waiting after this was not the preload's real call: it was a page's request ahead of the canary or the
+ * canary itself, and the ticket ends. Provisional: it only has to outlast that skew; what would settle it is a measured
+ * honest share that this refuses.
  */
-export const EARLY_SLACK_MS = 50
+export const CANARY_WAIT_MS = 1000
 
 /** How long a ticket lives from `open`, whether or not it was used. */
 export const TICKET_TIMEOUT_MS = 10_000
@@ -46,8 +47,10 @@ export interface DisplayTickets<C> {
   /** Opens the frame's ticket, voiding an older one, and returns the nonce the preload must present. */
   open: (key: string, choice: C) => string
   /**
-   * A `media` request with no device type from the frame: held while a ticket is open, refused at once otherwise. A
-   * refusal for want of a ticket marks the frame suspect, and voids a ticket that was allowed and not yet taken.
+   * A `media` request with no device type from the frame. Refused at once when no ticket is open, which marks the frame
+   * suspect and voids a ticket that was allowed and not yet taken. Under an open ticket the first request is refused at
+   * once (the preload's canary, or a page's request ahead of it), the one that follows is held until the preload says
+   * its canary was refused, and from then on the one request is held for the real call.
    */
   request: (key: string) => Promise<boolean>
   /** True for `SUSPECT_MS` after the frame made a request with no ticket: no picker is shown and no ticket opens meanwhile. */
@@ -55,7 +58,15 @@ export interface DisplayTickets<C> {
   /** A new document committed in the tab: the suspicion its frames earned belongs to the old one. */
   forgetTab: (webContentsId: number) => void
   arm: (key: string, nonce: string) => void
+  /**
+   * The preload's canary call was refused. Blink hands a frame's display requests to the browser one at a time and in
+   * order, and the preload makes the canary and the real call in one synchronous step, so once the canary is answered
+   * every request the page queued before it has been answered too, and the next request is the real call.
+   */
+  canaryRefused: (key: string, nonce: string) => void
   called: (key: string, nonce: string, rejectedEarly: boolean) => void
+  /** The preload's real call was rejected, so a request that follows it is not that call's: ends the ticket when the nonce is its own. */
+  rejected: (key: string, nonce: string) => void
   /** Ends the frame's ticket and denies whatever it held: navigation, a destroyed frame, a renderer gone. */
   void: (key: string) => void
   /** Voids every ticket that was allowed and not yet taken: the display handler was asked for a frame it cannot name. */
@@ -75,12 +86,17 @@ interface Ticket<C> {
   state: 'open' | 'allowed'
   armed: boolean
   called: boolean
+  /** Main refused the first request under this ticket: the preload's canary, or a page's request that queued ahead of it. */
+  refusedFirst: boolean
+  /** The preload reported its canary refused after main had refused one request: the next request is the real call. */
+  flushed: boolean
+  /** The request that came after the first refusal and before the canary was reported, if one did. */
+  waiting: Held | undefined
+  waitTimer: unknown
   held: Held[]
   lastArrival: number
   /** When the preload said its call was made. */
   calledAt: number
-  /** When the first request that arrived before `arm` did, if one did. */
-  earlyAt: number | undefined
   quiet: unknown
   expiry: unknown
 }
@@ -109,10 +125,14 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
     if (tickets.get(key) !== ticket) return
     tickets.delete(key)
     if (ticket.quiet !== undefined) deps.clearTimer(ticket.quiet)
+    if (ticket.waitTimer !== undefined) deps.clearTimer(ticket.waitTimer)
     deps.clearTimer(ticket.expiry)
     const held = ticket.held
     ticket.held = []
     for (const request of held) request.resolve(false)
+    const waiting = ticket.waiting
+    ticket.waiting = undefined
+    waiting?.resolve(false)
     if (!taken) deps.onEnd?.(key, ticket.nonce)
   }
 
@@ -145,12 +165,36 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
     return ticket
   }
 
+  /** The request that follows the canary is held for the quiet window, and allowed when armed and called. */
+  function hold (key: string, ticket: Ticket<C>, request: Held): void {
+    ticket.held.push(request)
+    ticket.lastArrival = deps.now()
+    if (ticket.held.length > 1) { end(key, ticket); return }
+    schedule(key, ticket)
+    settle(key, ticket)
+  }
+
+  /**
+   * A request before the preload reported its canary. The first is refused at once: it is the canary, or a page's request
+   * that queued ahead of it, and either way the page must not be served. A second waits for the report, which only the
+   * canary's refusal can send: when it comes the waiting request is the real call, and when it does not, the waiting
+   * request was the canary behind a request of the page's, or a request of the page's, and the ticket ends.
+   */
+  function beforeCanary (key: string, ticket: Ticket<C>): Promise<boolean> {
+    if (!ticket.refusedFirst) { ticket.refusedFirst = true; return Promise.resolve(false) }
+    if (ticket.waiting !== undefined) { end(key, ticket); return Promise.resolve(false) }
+    return new Promise<boolean>((resolve) => {
+      ticket.waiting = { resolve }
+      ticket.waitTimer = deps.setTimer(() => { end(key, ticket) }, CANARY_WAIT_MS)
+    })
+  }
+
   return {
     open (key, choice) {
       const older = tickets.get(key)
       if (older !== undefined) end(key, older)
       const ticket: Ticket<C> = {
-        nonce: deps.nonce(), choice, state: 'open', armed: false, called: false, held: [], lastArrival: Number.NEGATIVE_INFINITY, calledAt: Number.NEGATIVE_INFINITY, earlyAt: undefined, quiet: undefined, expiry: undefined
+        nonce: deps.nonce(), choice, state: 'open', armed: false, called: false, refusedFirst: false, flushed: false, waiting: undefined, waitTimer: undefined, held: [], lastArrival: Number.NEGATIVE_INFINITY, calledAt: Number.NEGATIVE_INFINITY, quiet: undefined, expiry: undefined
       }
       ticket.expiry = deps.setTimer(() => { end(key, ticket) }, TICKET_TIMEOUT_MS)
       tickets.set(key, ticket)
@@ -166,26 +210,31 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
         if (ticket !== undefined) end(key, ticket)
         return false
       }
-      // A request held while the frame is suspect: the frame has shown it makes requests the preload did not.
+      // A request while the frame is suspect: the frame has shown it makes requests the preload did not.
       if (suspect(key)) { end(key, ticket); return false }
-      return await new Promise<boolean>((resolve) => {
-        ticket.held.push({ resolve })
-        ticket.lastArrival = deps.now()
-        if (ticket.held.length > 1) { end(key, ticket); return }
-        // Held, and judged when `arm` arrives: the preload's own request can overtake its arm message by a moment.
-        if (!ticket.armed) ticket.earlyAt = deps.now()
-        schedule(key, ticket)
-        settle(key, ticket)
-      })
+      if (!ticket.flushed) return await beforeCanary(key, ticket)
+      return await new Promise<boolean>((resolve) => { hold(key, ticket, { resolve }) })
     },
 
     arm (key, nonce) {
       const ticket = ticketFor(key, nonce)
       if (ticket === undefined) return
-      // A request that preceded the arm message by more than the slack was not sent in the preload's step.
-      if (ticket.earlyAt !== undefined && deps.now() - ticket.earlyAt > EARLY_SLACK_MS) { end(key, ticket); return }
       ticket.armed = true
       settle(key, ticket)
+    },
+
+    canaryRefused (key, nonce) {
+      const ticket = ticketFor(key, nonce)
+      if (ticket === undefined) return
+      // The report follows the arm message, and it answers a request main refused: without either it proves nothing.
+      if (!ticket.armed || !ticket.refusedFirst || ticket.flushed) { end(key, ticket); return }
+      ticket.flushed = true
+      const waiting = ticket.waiting
+      if (waiting === undefined) return
+      ticket.waiting = undefined
+      if (ticket.waitTimer !== undefined) deps.clearTimer(ticket.waitTimer)
+      ticket.waitTimer = undefined
+      hold(key, ticket, waiting)
     },
 
     called (key, nonce, rejectedEarly) {
@@ -196,6 +245,11 @@ export function createDisplayTickets<C> (overrides: Partial<DisplayTicketsDeps> 
       ticket.calledAt = deps.now()
       if (ticket.held.length === 1) schedule(key, ticket)
       settle(key, ticket)
+    },
+
+    rejected (key, nonce) {
+      const ticket = tickets.get(key)
+      if (ticket?.state === 'open' && ticket.nonce === nonce) end(key, ticket)
     },
 
     void (key) {

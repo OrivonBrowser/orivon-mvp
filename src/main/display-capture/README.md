@@ -8,7 +8,7 @@ the window shows while a share runs.
 | File | Job |
 |---|---|
 | `types.ts` | Pure: the shapes the gate, the picker, the indicators and the app media grants share |
-| `display-tickets.ts` | Pure: the one-shot ticket per frame that tells the gate which `media` request with no device type is the call Orivon's preload made after the pick; holds requests, allows exactly one, denies the rest, and marks a frame suspect after a request with no ticket |
+| `display-tickets.ts` | Pure: the one-shot ticket per frame that tells the gate which `media` request with no device type is the call Orivon's preload made after the pick; refuses the first request under a ticket (the preload's canary, or a page's request ahead of it), holds the one that follows the canary's report, allows exactly one, denies the rest, and marks a frame suspect after a request with no ticket |
 | `display-asker.ts` | The per-site asker that owns the `media` request with no device type, grants it only against a ticket, answers the `display-capture` check, and after a grant makes sure the display handler took the choice |
 | `end-unexpected-capture.ts` | The backstop for a capture that is not the picked one: ends the tab's renderer and logs why |
 | `frame-key.ts` | The ticket key of a tab's top frame |
@@ -38,21 +38,30 @@ fakes.
 
 ## Design notes
 
-**[`display-tickets.ts`](display-tickets.ts) holds a request until it has heard from the preload, whichever arrives first.** The
-preload's `arm` message and Electron's `media` request travel on different paths and can arrive in either order, so a request
-is held while a ticket is open and allowed only when the ticket is armed with its nonce, the preload said its call was made,
-and no second request arrived for the quiet window after the later of the last request and the called message. A request
-that arrived before the arm message is held too, but only if it was within `EARLY_SLACK_MS` of it: the preload's own request
-can overtake its arm message by a moment, while a page's request sent earlier cannot be told from it by anything else. Two requests, a wrong nonce, a rejected call, the page ending or the
-ticket's timeout deny everything held. A request with no open ticket is refused at once, which is what ends a legacy
+**[`display-tickets.ts`](display-tickets.ts) serves the request that follows the preload's canary, and no other.** Blink hands a
+frame's display requests (`getDisplayMedia`, and the legacy `getUserMedia({ chromeMediaSource })`, from any world of the
+frame) to the browser one at a time and in the order they were made, the next only once the previous was answered. Main
+therefore never holds two of a frame's requests at once, and counting requests cannot tell the preload's from a page's:
+a page's request made before the preload's step is first in the queue, and it can reach main late, after the ticket
+opened. The preload makes two calls in one synchronous step, a canary (its own world's `getDisplayMedia({ video: true })`)
+and then the real call, so nothing can be queued between them. Under an open ticket main refuses the first request at
+once (it is the canary, or a page's request ahead of it), holds the one that follows until the preload reports its canary
+refused, and from then on holds the one request for the real call. The report is sent when the canary's promise
+rejects, and the canary is answered only after every request ahead of it, so by then every request the page made before
+the step has been answered, and the next one is the real call. A page's request that reaches main with the ticket open
+is the first request and is refused; the canary waits behind it for a report that cannot come, `CANARY_WAIT_MS` later
+the ticket ends, and the real call meets no ticket. The real call is then allowed only when the ticket is armed with its
+nonce, the canary was reported, the preload said its call was made, and no second request arrived for the quiet window
+after the later of the last request and the called message. Two requests, a wrong nonce, a canary report that answers no
+refused request, a rejected call (its `failed` report ends a ticket still open), the page ending or the ticket's timeout
+deny everything held. A request with no open ticket is refused at once, which is what ends a legacy
 `getUserMedia({ chromeMediaSource })` call: Electron gives it the same request as `getDisplayMedia`.
 
 **A share starts unconfirmed, and the preload's report of its own call decides whether the page's renderer ends.** The display
 handler runs inside the call that grants the request, so a ticket still waiting for it right after the grant means the granted
-request was not a display request, and the asker ends the renderer. A page's own request can also take the preload's ticket:
-Blink handles a frame's media requests one at a time, so a native `getDisplayMedia` or legacy `chromeMediaSource` call the
-page left pending queues the preload's call behind it, and the ticket then sees one held request, the page's, which is served.
-The registry therefore starts every share unconfirmed. The preload sends `received` when its own call resolves and `failed`
+request was not a display request, and the asker ends the renderer. The canary rule above is what keeps a page's request from being
+served; the confirmation is the backstop for a request it did not account for, which would take the ticket and be served to
+the page. The registry therefore starts every share unconfirmed. The preload sends `received` when its own call resolves and `failed`
 (with one of four names) when it rejects. Only a confirmed share is ended by the tracks ending. A `failed` with
 `NotAllowedError` for an unconfirmed share means the gate refused the preload's call because another request had taken the
 ticket: the stream went to the page, and [`end-unexpected-capture.ts`](end-unexpected-capture.ts) ends the renderer with
