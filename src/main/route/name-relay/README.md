@@ -7,7 +7,7 @@ runs in this build: nothing starts a listener with these files, so no session is
 
 | File | Job | Durable or tied to Electron |
 |---|---|---|
-| `relay-link.ts` | Types only: the config sessions that follow the system take while the relay is active, and the credentials its listener's challenge is answered with | Durable |
+| `relay-link.ts` | What the route controller takes of the relay: the config sessions that follow the system are set to while it is active, and the credentials its listener's proxy challenge is answered with. Types only | Durable: no `electron` import |
 | `proxy-answer.ts` | The system's answer to "which proxy for this URL?" read into the proxies in order (`PROXY`, `HTTPS`, `SOCKS`, `SOCKS4`, `SOCKS5`, lists), a first `DIRECT`, or a reason to refuse; a `DIRECT` after a proxy is never among them; a SOCKS proxy on this computer at a port Tor listens on | Durable: pure |
 | `addresses.ts` | Which addresses a proxy is asked to connect to: IPv4 before IPv6, at most three, never one that means the proxy's own machine (loopback, unspecified, link-local); when the next address is worth a try | Durable: pure |
 | `relay-failures.ts` | The fixed words for why a connection was not carried (`RefusalWord`), the `RelayRefusal` the listener answers with, the sentence for each (`unpinned` is a pinned endpoint's, for a host and port nobody pinned), and the reason noted for a host and port for 30 seconds, which the load-error sheet reads | Durable: pure |
