@@ -37,13 +37,15 @@ function world (zone: Readonly<Record<string, Names>>, overrides: { behave?: Beh
   const sent: Sent[] = []
   const made: string[] = []
   const proxies = new Map<string, string | undefined>()
-  const calls = { userAgent: [] as Array<[string, string | undefined]>, closed: [] as string[], resolved: [] as Array<{ name: string, options: unknown }> }
+  const calls = { userAgent: [] as Array<[string, string | undefined]>, closed: [] as string[], resolved: [] as Array<{ name: string, options: unknown }>, spelling: [] as string[] }
   const state = { behave: overrides.behave, setProxyFails: false }
 
   function makeSession (partition: string): LookupSession {
     made.push(partition)
     return {
       setUserAgent: (userAgent: string, languages?: string) => { calls.userAgent.push([userAgent, languages]) },
+      setSpellCheckerEnabled: (enabled: boolean) => { calls.spelling.push(`${partition} enabled ${String(enabled)}`) },
+      setSpellCheckerLanguages: (languages: string[]) => { calls.spelling.push(`${partition} languages ${languages.join(',')}`) },
       setProxy: async (config: { mode?: string, proxyRules?: string, proxyBypassRules?: string }) => {
         if (state.setProxyFails) throw new Error('could not set')
         expect(config.mode).toBe('fixed_servers')
@@ -332,6 +334,13 @@ describe('the lookup sessions', () => {
     expect(hasOwnProxy(made as object)).toBe(true)
     expect(fake.made).toEqual(['orivon-name-lookup-1'])
     expect(fake.proxies.size).toBe(1)
+  })
+
+  it('have no spell checker, which would fetch a dictionary into them through the proxy', async () => {
+    const fake = world(SITE)
+    const lookup = createProxiedLookup({ makeSession: fake.makeSession, secureDns: () => 'quad9', dohUrl: () => undefined })
+    await lookup.lookup('site.test', http)
+    expect(fake.calls.spelling).toEqual(['orivon-name-lookup-1 enabled false', 'orivon-name-lookup-1 languages '])
   })
 
   it('are four at most: a fifth entry takes the one used longest ago, closing its connections', async () => {

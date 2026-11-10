@@ -10,12 +10,12 @@ import { RelayRefusal } from '../../route/name-relay/relay-failures.js'
 import { closeAll, keep, readBytes, startConnectProxy, startEcho } from '../../route/name-relay/tests/upstream-fixtures.test-helpers.js'
 import type { ConnectProxy } from '../../route/name-relay/tests/upstream-fixtures.test-helpers.js'
 
-const { madeSessions } = vi.hoisted(() => ({ madeSessions: [] as Array<{ partition: string, setProxy: ReturnType<typeof vi.fn> }> }))
+const { madeSessions } = vi.hoisted(() => ({ madeSessions: [] as Array<{ partition: string, setProxy: ReturnType<typeof vi.fn>, setSpellCheckerEnabled: ReturnType<typeof vi.fn>, setSpellCheckerLanguages: ReturnType<typeof vi.fn> }> }))
 vi.mock('electron', () => ({
   net: { request: vi.fn() },
   session: {
     defaultSession: { resolveProxy: vi.fn() },
-    fromPartition: vi.fn((partition: string) => { const made = { partition, setProxy: vi.fn(async () => {}) }; madeSessions.push(made); return made })
+    fromPartition: vi.fn((partition: string) => { const made = { partition, setProxy: vi.fn(async () => {}), setSpellCheckerEnabled: vi.fn(), setSpellCheckerLanguages: vi.fn() }; madeSessions.push(made); return made })
   }
 }))
 
@@ -95,6 +95,8 @@ describe('while the name relay runs', () => {
     expect(lookups.every(([host, url]) => host === 'cdn.example' && url === 'https://cdn.example/')).toBe(true)
     expect(madeSessions).toHaveLength(1)
     expect(madeSessions[0]?.setProxy).toHaveBeenCalledOnce()
+    // A partition of its own, in memory: the browser's default session, which pages and Chromium's own services share, is never set to the endpoint.
+    expect(madeSessions[0]?.partition).toBe('orivon-name-pinned')
     expect(sessionsUsed()).toEqual([madeSessions[0]])
     // The read is what the session's proxy carries: the endpoint connects to the address that was judged, and the proxy never hears the name.
     expect(await connectThroughEndpoint('cdn.example:443')).toBe(200)

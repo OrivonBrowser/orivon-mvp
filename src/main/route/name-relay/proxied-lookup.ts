@@ -14,6 +14,8 @@ import type { AddressFamily } from './doh-message.js'
 import { createNameCache } from './name-cache.js'
 import type { CachedResult, Fetched, NameCache } from './name-cache.js'
 import { dohUrlOverride } from './name-relay-test-seam.js'
+import { quietSession } from './quiet-session.js'
+import type { QuietableSession } from './quiet-session.js'
 
 /** A proxy the system names, as the URL scheme a session's proxy rules give it (`SOCKS` is `socks4`). */
 export interface ProxyEntry {
@@ -54,7 +56,7 @@ export interface ProxiedLookup {
   readonly close: () => Promise<void>
 }
 
-export type LookupSession = Pick<Session, 'fetch' | 'resolveHost' | 'setProxy' | 'setUserAgent' | 'closeAllConnections'>
+export type LookupSession = Pick<Session, 'fetch' | 'resolveHost' | 'setProxy' | 'setUserAgent' | 'closeAllConnections'> & QuietableSession
 
 export interface ProxiedLookupOptions {
   /** An in-memory session by the name given. Called at most four times, ever. */
@@ -155,7 +157,7 @@ export function createProxiedLookup (options: ProxiedLookupOptions): ProxiedLook
       const number = takeNumber()
       let session = sessions.get(number)
       if (session === undefined) {
-        session = options.makeSession(`orivon-name-lookup-${String(number)}`)
+        session = quietSession(options.makeSession(`orivon-name-lookup-${String(number)}`))
         markOwnProxy(session)
         session.setUserAgent(USER_AGENT, ACCEPT_LANGUAGE)
         sessions.set(number, session)

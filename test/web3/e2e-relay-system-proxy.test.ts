@@ -261,6 +261,8 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     expect(dns, JSON.stringify(facts.on.seen)).toBeGreaterThanOrEqual(0)
     expect(connect, JSON.stringify(facts.on.seen)).toBeGreaterThan(dns)
     expect(facts.on.seen.filter((line) => line.includes(NAME) || line.includes('relay.test') && !line.includes(DOH_HOST))).toEqual([])
+    // The relay's own sessions fetch nothing on their own: Electron's spell checker would ask the proxy for a dictionary by name.
+    expect(facts.on.connects.filter((connect) => connect.target.includes('gvt1.com')).map((connect) => connect.target)).toEqual([])
     expect(facts.on.dohAsked).toContain(`${NAME} A`)
   })
 
@@ -330,9 +332,8 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     expect(fact.provider).toBe('quad9')
     expect(fact.resolver).toBe('held')
     for (const word of ['not-found', 'no-answer', 'unreachable', 'sign-in']) expect(fact.refused[word], word).toBeGreaterThanOrEqual(1)
-    for (const word of ['inside', 'anonymity', 'unsure']) expect(fact.refused[word], word).toBe(0)
-    // Chromium's own background fetches (a component update host, say) reach the pinned endpoint's sessions and are refused there: the count exists and is never a reason a page failed.
-    expect(typeof fact.refused.unpinned, 'unpinned').toBe('number')
+    // Only the pinned endpoint says `unpinned`, and only the favicon read is pointed at it: every page, subresource and background request of the default session goes the relay's way and is never counted here.
+    for (const word of ['inside', 'anonymity', 'unsure', 'unpinned']) expect(fact.refused[word], word).toBe(0)
     // The log carries Electron's own line for each failed load, with the page's address: the relay adds none of its own.
     for (const secret of [ADDRESS, DOH_HOST, String(proxy.port), EXCEPTED]) expect(facts.reportedOn.text, secret).not.toContain(secret)
     for (const secret of [ADDRESS, NAME, DOH_HOST, 'relay.test', String(proxy.port), EXCEPTED]) expect(JSON.stringify({ fact, lines: facts.reportedOn.lines }), secret).not.toContain(secret)
