@@ -5,7 +5,7 @@ import { blockOpenTabs } from '../block-tabs.js'
 import type { TabRef, TabScreens, TabSetup } from '../tab-screens.js'
 
 // An app found to be bad after its tabs were let in: each tab showing it is stopped and emptied whatever its
-// beforeunload says, the other pages of its partition are closed, then each tab is covered with the warning and
+// beforeunload says, the other pages of the app are closed, then each tab is covered with the warning and
 // sent away when the person has read it.
 
 const ORIGIN = 'https://abc.ipfs.orivon'
@@ -76,7 +76,7 @@ describe('blockOpenTabs', () => {
     expect(kept.vetoes.has('will-prevent-unload')).toBe(false)
   })
 
-  it('closes every other page of the origin\'s partition, a popup or a host, and leaves the tabs to the sheet', async () => {
+  it('closes every other page of the app, a popup or a host, in whichever session it is, and leaves the tabs to the sheet', async () => {
     const calls: string[] = []
     const covered = tab(calls)
     const popup = tab(calls, `${ORIGIN}/popup`)

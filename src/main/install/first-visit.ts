@@ -39,6 +39,11 @@ export interface FirstVisitDeps {
    * nothing of the app runs any more; `dismissed` once the person has read the sheet.
    */
   readonly blocked?: ((origin: string, sheet: SetupSheet, entered: object | undefined) => Blocking) | undefined
+  /**
+   * Names the tab this visit sends into the app, from before the app is served until the tab is sent: the pages of the origin
+   * that load again when the app starts to be served leave it out, since the visit loads it itself. Returns the end of that.
+   */
+  readonly entering?: ((tab: object | undefined) => () => void) | undefined
   /** The question a pinned app's update asks when it wants more than it holds, asked of a new version of an app that is not yet pinned; "keep the current version" is a no. Without it a widened version is never followed. */
   readonly capabilityPrompt?: CapabilityPromptPrompt | undefined
   /** Who to ask, in which tab, when a new version of an app asks for more than it was granted. */
@@ -203,6 +208,15 @@ export interface Entry {
  * the site as a website with nothing granted), then the registration and grants, then the tab.
  */
 async function letIn (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitResult> {
+  const release = deps.entering?.(entry.host.tab?.())
+  try {
+    return await letInTab(deps, entry)
+  } finally {
+    release?.()
+  }
+}
+
+async function letInTab (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisitResult> {
   const { origin, read, host, keeper } = entry
   const { name } = read.manifest
   const left = (): FirstVisitResult => { host.end(); return { outcome: 'left' } }
@@ -300,7 +314,7 @@ export interface FirstVisitOptions {
   readonly deps: FirstVisitDeps
   /** True for an origin the first visit never applies to: a local file, a loopback or developer origin, anything not https. */
   readonly untouched: (origin: string) => boolean
-  /** The origin runs in a partition of its own, served from its pin or from the verifier. */
+  /** The shell serves the origin, from its pin or from the verifier. */
   readonly servedFromCache: (origin: string) => boolean
 }
 

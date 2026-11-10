@@ -12,7 +12,8 @@ export interface PageRequest {
   readonly topUrl: string | undefined
 }
 
-function originOf (url: string): string | undefined {
+/** The origin of `url`, or undefined when it has none. */
+export function originOf (url: string): string | undefined {
   try {
     const origin = new URL(url).origin
     return origin === 'null' ? undefined : origin
@@ -29,6 +30,16 @@ function originOf (url: string): string | undefined {
 export function requestPartition (request: PageRequest): string | undefined {
   if (request.resourceType === 'mainFrame') return originOf(request.url)
   return request.topUrl === undefined ? undefined : originOf(request.topUrl)
+}
+
+/**
+ * `headers` with a condition no cache can answer, which Chromium's HTTP cache reads as "neither read nor write this
+ * request": the answer comes from the server or not at all. A conditional header the page set itself is replaced.
+ */
+export function withoutHttpCache (headers: Readonly<Record<string, string>>): Record<string, string> {
+  const out = Object.fromEntries(Object.entries(headers).filter(([name]) => name.toLowerCase() !== 'if-match'))
+  out['If-Match'] = '*'
+  return out
 }
 
 /**

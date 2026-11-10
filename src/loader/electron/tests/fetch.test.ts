@@ -14,14 +14,16 @@ vi.mock('electron', () => ({
 
 const { net, session } = await import('electron')
 const { setOwnRequests } = await import('../../../main/route/own-requests.js')
+const { OWN_READ_HEADER } = await import('../../fetch/content-root.js')
+const { ownReadToken } = await import('../../fetch/own-read.js')
 const { MAX_REDIRECTS, electronFetch, fetchFromVerifier, netFetch, redirectRefusal } = await import('../fetch.js')
 
 const requestMock = vi.mocked(net.request)
 const resolveHostMock = vi.mocked(net.resolveHost)
 
 /** A ClientRequest double: `hops` redirect targets, announced in turn once `end()` is called, then a 200 whose body is `body`. */
-function fakeRequest (hops: readonly string[], body = 'ok'): EventEmitter & { followRedirect: ReturnType<typeof vi.fn>, abort: ReturnType<typeof vi.fn>, end: () => void } {
-  const request = Object.assign(new EventEmitter(), { followRedirect: vi.fn(), abort: vi.fn(), end: () => {} })
+function fakeRequest (hops: readonly string[], body = 'ok'): EventEmitter & { followRedirect: ReturnType<typeof vi.fn>, abort: ReturnType<typeof vi.fn>, setHeader: ReturnType<typeof vi.fn>, end: () => void } {
+  const request = Object.assign(new EventEmitter(), { followRedirect: vi.fn(), abort: vi.fn(), setHeader: vi.fn(), end: () => {} })
   request.end = () => {
     queueMicrotask(() => {
       for (const target of hops) {
@@ -187,6 +189,21 @@ describe('netFetch, for a name the verifier serves', () => {
     await netFetch('https://example.com/a.js', new AbortController().signal)
     expect(resolveProxyMock).not.toHaveBeenCalled()
   })
+
+  it('carries the mark of the shell\'s own reads, with the headers it was given, and sends the mark to no other host', async () => {
+    resolveProxyMock.mockResolvedValue('DIRECT')
+    const sent = fakeRequest([])
+    requestMock.mockReturnValue(sent as never)
+    await netFetch('https://ok.eth/a.js', new AbortController().signal, { 'x-orivon-content-root': 'bafy' })
+    expect(sent.setHeader).toHaveBeenCalledWith('x-orivon-content-root', 'bafy')
+    expect(sent.setHeader).toHaveBeenCalledWith(OWN_READ_HEADER, ownReadToken())
+
+    const other = fakeRequest([])
+    requestMock.mockReturnValue(other as never)
+    await netFetch('https://example.com/a.js', new AbortController().signal, { accept: '*/*' })
+    expect(other.setHeader).toHaveBeenCalledTimes(1)
+    expect(other.setHeader).not.toHaveBeenCalledWith(OWN_READ_HEADER, expect.anything())
+  })
 })
 
 describe('fetchFromVerifier, for a name the verifier serves', () => {
@@ -207,5 +224,59 @@ describe('fetchFromVerifier, for a name the verifier serves', () => {
     fetchMock.mockResolvedValue(new Response('ok'))
     await fetchFromVerifier('https://app.eth/index.html', init())
     expect(fetchMock).toHaveBeenCalledOnce()
+  })
+
+  it('carries the mark of the shell\'s own reads beside the headers it was given, so the verifier\'s server never hands it back to this handler', async () => {
+    resolveProxyMock.mockResolvedValue('DIRECT')
+    fetchMock.mockResolvedValue(new Response('ok'))
+    await fetchFromVerifier('https://app.eth/index.html', { ...init(), headers: { 'x-orivon-expect-leaf': 'sha256:abc' } })
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { 'x-orivon-expect-leaf': 'sha256:abc', [OWN_READ_HEADER]: ownReadToken() } })
+  })
+
+  describe('for an app whose tunnel entry gives it a profile', () => {
+    const profile = { resolveProxy: vi.fn(async () => 'DIRECT') }
+    const through = (siteSession: (origin: string) => Promise<object | undefined>): void => {
+      setOwnRequests({ everywhere: () => false, isRouted: () => true, tunnel: async () => new Response(''), direct: async () => new Response(''), directSession: () => ({}), siteSession })
+    }
+    afterEach(() => { setOwnRequests(undefined); profile.resolveProxy.mockClear() })
+
+    it('reads in that profile\'s session, which carries the route of its tunnel to the verifier, and never in the default one', async () => {
+      through(async (origin) => origin === 'https://tunnelled.eth' ? profile : undefined)
+      const sent = fakeRequest([])
+      requestMock.mockReturnValue(sent as never)
+      const response = await fetchFromVerifier('https://tunnelled.eth/app.js', { ...init(), headers: { 'x-orivon-expect-leaf': 'sha256:abc' } })
+      expect(await response.text()).toBe('ok')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(requestMock).toHaveBeenCalledOnce()
+      expect(requestMock.mock.calls[0]?.[0]).toMatchObject({ url: 'https://tunnelled.eth/app.js', session: profile, redirect: 'error', credentials: 'omit' })
+      expect(sent.setHeader).toHaveBeenCalledWith('x-orivon-expect-leaf', 'sha256:abc')
+      expect(sent.setHeader).toHaveBeenCalledWith(OWN_READ_HEADER, ownReadToken())
+    })
+
+    it('asks that profile\'s session whether a proxy would see the name, and sends nothing when one would', async () => {
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const proxied = { resolveProxy: vi.fn(async () => 'PROXY 127.0.0.1:3128') }
+      through(async () => proxied)
+      await expect(fetchFromVerifier('https://tunnelled.eth/app.js', init())).rejects.toThrow('Your system proxy would see this name')
+      expect(proxied.resolveProxy).toHaveBeenCalledOnce()
+      expect(resolveProxyMock).not.toHaveBeenCalled()
+      expect(requestMock).not.toHaveBeenCalled()
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('reads in the default session for an app with no entry, and sends nothing when its route cannot be had', async () => {
+      through(async () => undefined)
+      resolveProxyMock.mockResolvedValue('DIRECT')
+      fetchMock.mockResolvedValue(new Response('ok'))
+      await fetchFromVerifier('https://plain.eth/app.js', init())
+      expect(fetchMock).toHaveBeenCalledOnce()
+      expect(requestMock).not.toHaveBeenCalled()
+
+      fetchMock.mockClear()
+      through(async () => { throw new Error('the tunnel for this site is not available') })
+      await expect(fetchFromVerifier('https://plain.eth/app.js', init())).rejects.toThrow('the tunnel for this site is not available')
+      expect(fetchMock).not.toHaveBeenCalled()
+      expect(requestMock).not.toHaveBeenCalled()
+    })
   })
 })

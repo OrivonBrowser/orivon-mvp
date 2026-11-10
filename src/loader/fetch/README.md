@@ -4,7 +4,7 @@
 fetch and the bounded pool), `budget.ts` (the `Fetch` type, byte cap and idle deadline),
 `install-origin.ts` (T12/A46's public-unicast guard), `verifier-origin.ts` (the hosts a protocol
 serves, exempt from that guard and given a longer idle deadline), `content-root.ts` (the root-CID
-request header), `update-check.ts` (the update-check interval and conditional-request validators),
+request header, and the other headers shared with the verifier), `own-site-request.ts` (whether the browser's Fetch Metadata says a request for a site's host is the site's own, which the verifier's server and the shell's session both ask), `own-read.ts` (the secret that marks the main process's own reads of a host the verifier serves, so the verifier never hands one to the handler of an app served at that name), `update-check.ts` (the update-check interval and conditional-request validators),
 `undeclared-assets.ts` (warning about subresources the manifest doesn't declare), `read-order.ts` (the order the declared files are downloaded in) and
 `manifest-at-root.ts` (the manifest of the content a root CID names, and nothing else of the bundle; a 404 means "no manifest" only when it echoes that root in the root header, because a name pointing at no content answers 404 too).
 
@@ -22,6 +22,8 @@ The install-origin guard, the fetch pool and its deadlines, the same-origin redi
 root `entry`, HTML served in place of a script, and the undeclared-file warning are each
 documented where they are enforced: `install-origin.ts`, `asset.ts`, `budget.ts` (the `Fetch`
 type), `../electron/fetch.ts`, `../manifest/manifest.ts` and `undeclared-assets.ts`.
+
+**[`own-site-request.ts`](own-site-request.ts) judges a request by the stamp the shell sets and the headers Chromium sets, never by anything a page can send.** A request is the site's own when the top-level page the stamp names is the site's, or, with no stamp, when Chromium marks it `Sec-Fetch-Site` `same-origin` or `none`, or when it is the navigation of a top-level document (`Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`) from any site. The stamp comes first because the Fetch Metadata describes a request against the document that made it: a frame of another site that embeds the site makes `same-origin` requests for it, and a sandboxed frame of the site makes `cross-site` ones. The verifier's server hands only such a request to the shell, and the shell's session keeps only such a request out of its HTTP cache, so the two read it through this one function and cannot drift. Another site's page asking for the host is not the site's own, which is what stops it from learning that an app is kept by timing the answer.
 
 **A file that meets a transient fault is fetched again, a bounded number of times.** A gateway's
 502/503/504 or a dropped connection ([`budget.ts`](budget.ts) marks the rejection `transient`) is

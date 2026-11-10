@@ -1,0 +1,147 @@
+import { describe, expect, it } from 'vitest'
+import type { Session } from 'electron'
+import type { AppRequestHandler } from '../../serve/serve.js'
+import { onAppOriginRetired, onServingChange, registerAppOrigin, retireAppOrigin, servedOrigins, servingHandlerFor } from '../app-partitions.js'
+import { carryPageUrl } from '../carry-page.js'
+
+// The handler each origin is answered with, kept beside the partition sets: the verifier's server hands a request of
+// the shared session for such an origin to it.
+
+function fakeSession (): Session {
+  const handled = new Set<string>()
+  return {
+    protocol: {
+      isProtocolHandled: (scheme: string) => handled.has(scheme),
+      unhandle: (scheme: string) => { handled.delete(scheme) },
+      handle: (scheme: string) => { handled.add(scheme) }
+    }
+  } as unknown as Session
+}
+
+const answering = (text: string): AppRequestHandler => async () => new Response(text)
+
+/** What the handler registered for `origin` answers a page of the app with. */
+async function answerFor (origin: string): Promise<string | undefined> {
+  const handler = servingHandlerFor(origin)
+  return handler === undefined ? undefined : await (await handler(new Request(`${new URL(origin).origin}/index.html`))).text()
+}
+
+describe('the handler each served origin is answered with', () => {
+  it('is found by the origin once registered, whichever way the origin is spelled', async () => {
+    registerAppOrigin(fakeSession(), 'https://kept.example', answering('first'))
+    expect(await answerFor('https://kept.example')).toBe('first')
+    expect(await answerFor('https://KEPT.example')).toBe('first')
+    expect(await answerFor('https://kept.example:443')).toBe('first')
+    expect(servedOrigins()).toContain('https://kept.example')
+    expect(servingHandlerFor('https://other.example')).toBeUndefined()
+    expect(servingHandlerFor('not an origin')).toBeUndefined()
+  })
+
+  it('is replaced in place when the origin registers again, as the partition\'s own handler is', async () => {
+    registerAppOrigin(fakeSession(), 'https://replaced.example', answering('from the verifier'), 'verifier')
+    const pinned = answering('from the pin')
+    registerAppOrigin(fakeSession(), 'https://replaced.example', pinned)
+    expect(await answerFor('https://replaced.example')).toBe('from the pin')
+    expect(servedOrigins().filter((origin) => origin === 'https://replaced.example')).toHaveLength(1)
+  })
+
+  it('is gone when the origin is retired, and back when it is registered anew', async () => {
+    const session = fakeSession()
+    registerAppOrigin(session, 'https://ending.example', answering('the app'), 'verifier')
+    retireAppOrigin(session, 'https://ending.example')
+    expect(servingHandlerFor('https://ending.example')).toBeUndefined()
+    expect(servedOrigins()).not.toContain('https://ending.example')
+    registerAppOrigin(session, 'https://ending.example', answering('again'), 'verifier')
+    expect(await answerFor('https://ending.example')).toBe('again')
+  })
+
+  it('answers the shell\'s empty document for itself and hands every other path to the app\'s handler', async () => {
+    registerAppOrigin(fakeSession(), 'https://carried.example', answering('the app'), 'verifier')
+    const handler = servingHandlerFor('https://carried.example')!
+    const nonce = 'ab'.repeat(16)
+    const empty = await handler(new Request(carryPageUrl('https://carried.example', nonce)))
+    expect(empty.status).toBe(200)
+    expect(empty.headers.get('content-type')).toContain('text/html')
+    const body = await empty.text()
+    expect(body).not.toContain('the app')
+    expect(body).toContain(`<meta name="orivon-storage-carry" content="${nonce}">`)
+    expect(await (await handler(new Request('https://carried.example/.well-known/orivon/storage-carry-guessed'))).text()).toBe('the app')
+    expect(await (await handler(new Request(carryPageUrl('https://carried.example', nonce), { method: 'POST', body: 'x' }))).text()).toBe('the app')
+  })
+
+  it('repeats only a nonce of the shape the shell makes, so that the document cannot be made to carry markup', async () => {
+    registerAppOrigin(fakeSession(), 'https://carried.example', answering('the app'), 'verifier')
+    const handler = servingHandlerFor('https://carried.example')!
+    const hostile = await (await handler(new Request(`${carryPageUrl('https://carried.example', 'ab'.repeat(16))}&x=1`.replace(/n=[^&]*/, 'n=%22%3E%3Cscript%3E')))).text()
+    expect(hostile).not.toContain('<script')
+    expect(hostile).not.toContain('orivon-storage-carry')
+  })
+})
+
+describe('hearing of the origins served changing', () => {
+  it('calls the listener when an origin is added or removed, and not when its handler is only replaced', async () => {
+    const session = fakeSession()
+    let heard = 0
+    const stop = onServingChange(() => { heard += 1 })
+    registerAppOrigin(session, 'https://heard.example', answering('one'), 'verifier')
+    expect(heard).toBe(1)
+    registerAppOrigin(session, 'https://heard.example', answering('two'), 'verifier')
+    expect(heard).toBe(1)
+    registerAppOrigin(session, 'https://heard.example', answering('pinned'))
+    registerAppOrigin(session, 'https://heard.example', answering('pinned again'))
+    retireAppOrigin(session, 'https://heard.example')
+    expect(heard).toBe(3)
+    stop()
+    registerAppOrigin(session, 'https://heard.example', answering('three'))
+    expect(heard).toBe(3)
+  })
+
+  it('calls the listener when an origin read live is served from its pin, and when a pinned one is read live again, since the host asks which', async () => {
+    const session = fakeSession()
+    let heard = 0
+    const stop = onServingChange(() => { heard += 1 })
+    registerAppOrigin(session, 'https://switching.example', answering('live'), 'verifier')
+    expect(heard).toBe(1)
+    registerAppOrigin(session, 'https://switching.example', answering('pinned'))
+    expect(heard).toBe(2)
+    registerAppOrigin(session, 'https://switching.example', answering('live again'), 'verifier')
+    expect(heard).toBe(3)
+    stop()
+    retireAppOrigin(session, 'https://switching.example')
+  })
+
+  it('has the set already changed when the listener is called', async () => {
+    const session = fakeSession()
+    const seen: string[][] = []
+    const stop = onServingChange(() => { seen.push([...servedOrigins()].filter((origin) => origin.endsWith('seen.example'))) })
+    registerAppOrigin(session, 'https://a.seen.example', answering('a'))
+    retireAppOrigin(session, 'https://a.seen.example')
+    stop()
+    expect(seen).toEqual([['https://a.seen.example'], []])
+  })
+
+  it('does not let one listener that throws stop the others', async () => {
+    const session = fakeSession()
+    const heard: string[] = []
+    const stopThrowing = onServingChange(() => { throw new Error('a listener that fails') })
+    const stopHearing = onServingChange(() => { heard.push('heard') })
+    registerAppOrigin(session, 'https://throwing.example', answering('x'))
+    stopThrowing()
+    stopHearing()
+    expect(heard).toEqual(['heard'])
+  })
+})
+
+describe('hearing of an app being retired', () => {
+  it('calls the listener with the origin of each retired app, and not after the listener is stopped', async () => {
+    const session = fakeSession()
+    const retired: string[] = []
+    const stop = onAppOriginRetired((origin) => { retired.push(origin) })
+    registerAppOrigin(session, 'https://one.retired.example', answering('1'), 'verifier')
+    retireAppOrigin(session, 'https://one.retired.example')
+    stop()
+    registerAppOrigin(session, 'https://two.retired.example', answering('2'), 'verifier')
+    retireAppOrigin(session, 'https://two.retired.example')
+    expect(retired).toEqual(['https://one.retired.example'])
+  })
+})

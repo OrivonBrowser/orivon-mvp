@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { expect } from 'vitest'
 import { bundleTreeFromLeaves } from '../../src/broker/policy/bundle-hash.js'
-import { originHash, partitionFor } from '../../src/broker/grants/origin-hash.js'
+import { originHash } from '../../src/broker/grants/origin-hash.js'
 import { leafOf } from '../../src/loader/leaf-hash.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 
@@ -181,11 +181,14 @@ export async function pageValue (app: App, url: string, expression: string): Pro
   }, [url, expression] as const).catch(() => null)
 }
 
-/** Whether the app's own partition still holds `needle` in its local storage on disk, after what is unwritten was written. */
-export async function partitionHolds (app: App, userData: string, origin: string, needle: string): Promise<boolean> {
-  const partition = partitionFor(origin)
-  await app.evaluate(async ({ session }, name) => { await session.fromPartition(name).flushStorageData() }, partition)
-  const directory = join(userData, 'Partitions', partition.replace(/^persist:/, ''), 'Local Storage', 'leveldb')
+/**
+ * Whether the session named by `partition` (undefined: the shared one websites run in) still holds `needle` in its local
+ * storage on disk, after what is unwritten was written.
+ */
+export async function sessionHolds (app: App, userData: string, partition: string | undefined, needle: string): Promise<boolean> {
+  await app.evaluate(async ({ session }, name) => { await (name === null ? session.defaultSession : session.fromPartition(name)).flushStorageData() }, partition ?? null)
+  const root = partition === undefined ? userData : join(userData, 'Partitions', partition.replace(/^persist:/, ''))
+  const directory = join(root, 'Local Storage', 'leveldb')
   if (!existsSync(directory)) return false
   // Only the data files: Windows keeps the store's LOCK file locked, and reading it fails with EBUSY.
   return readdirSync(directory).filter((file) => /\.(log|ldb)$/.test(file)).some((file) => readFileSync(join(directory, file)).includes(needle))

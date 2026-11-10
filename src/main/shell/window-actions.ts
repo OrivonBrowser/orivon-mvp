@@ -2,7 +2,7 @@
 // collection: opening one popover closes the others, and a tab can be sent to
 // another window. Assembled per window from the pieces window.ts made.
 import { isolationKeyFromUrl, originFromUrl } from '../../broker/policy/origin.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { hasOwnPartition } from './app-session.js'
 import type { ShellActions } from '../ipc/ipc.js'
 import { copyAddress } from '../os/address-clipboard-runner.js'
 import { copyLinkCommand, copyWebLinkCommand, emailLinkCommand } from '../os/share-commands.js'
@@ -67,7 +67,7 @@ export function shellActions (parts: WindowParts): ShellActions {
   /** The tab the tunnels popup opens for: the tab's own list, or on a page of the shell the tab whose popup is the browser's alone (the controller tells them apart from the tab's record). */
   const aboutTab = (): string | undefined => {
     const state = tabs.getState()
-    return tabForTunnelPopover(state, (id) => tabs.partitionOf(id), isOriginServedFromCacheSync, openingAddress) ?? shellPageTabForTunnelPopover(state)
+    return tabForTunnelPopover(state, (id) => tabs.partitionOf(id), hasOwnPartition, openingAddress) ?? shellPageTabForTunnelPopover(state)
   }
 
   const showTabMenuFor = (id: string): void => {

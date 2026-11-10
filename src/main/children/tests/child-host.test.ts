@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Broker } from '../../../broker/broker-contracts.js'
+import { partitionFor } from '../../../broker/grants/origin-hash.js'
 
 // child-host.ts imports `session`/`WebContentsView` from 'electron' at module
 // scope (as web-context-host.test.ts's own header explains for its file), so
@@ -103,15 +104,12 @@ function fakeSessionFactory (partition: string): FakeSession {
   return fakeSession(partition)
 }
 
+// Not served by default: no cache-served app is registered for these origins, so the host falls back to the default session,
+// exactly as it does for a granted app the shell does not serve. A test names the origins it makes served.
+const { served } = vi.hoisted(() => ({ served: new Set<string>() }))
 vi.mock('../../../loader/electron/serve.js', () => ({
-  liveCspHeaderFor: vi.fn(async () => 'default-src \'self\'')
-}))
-
-vi.mock('../../shell/tab-view.js', () => ({
-  // undefined: no grant/cache registered for this origin in these tests, so
-  // appSessionFor falls back to the default session, exactly as it does for
-  // a defensive read the registry never actually reaches this far for.
-  partitionForTarget: vi.fn(() => undefined)
+  liveCspHeaderFor: vi.fn(async () => 'default-src \'self\''),
+  isOriginServedFromCacheSync: vi.fn((origin: string) => served.has(origin))
 }))
 
 vi.mock('../../shell/lock-navigation.js', () => ({ lockNavigation: vi.fn() }))
@@ -123,6 +121,8 @@ function stubBroker (manifest: { crossOriginIsolated?: boolean } | undefined = u
 }
 
 beforeEach(() => {
+  served.clear()
+  defaultSessionFetch.mockClear()
   sessionsByPartition.clear()
   lastWebContents.current = fakeWebContents()
 })
@@ -184,6 +184,23 @@ describe('createChildHostPool', () => {
     const other = await httpsHandler?.(new Request('https://app.example/some/asset.js'))
     expect(await other?.text()).toBe('app session response')
     expect(defaultSessionFetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('delegates a served app\'s requests to the app\'s own partition, never the default session, so the handler that gates a third party answers them', async () => {
+    served.add('https://app.example')
+    const pool = createChildHostPool(() => stubBroker())
+    await pool.getOrCreate('https://app.example')
+
+    const hostSession = [...sessionsByPartition.values()][0] as FakeSession
+    const own = sessionsByPartition.get(partitionFor('https://app.example')) as FakeSession | undefined
+    expect(own).toBeDefined()
+    const handler = hostSession.protocol.handlers.get('https')
+    const thirdParty = await handler?.(new Request('https://ungranted.example/steal.js'))
+
+    expect(await thirdParty?.text()).toBe('app session response')
+    expect(own?.fetch).toHaveBeenCalledTimes(1)
+    expect((own?.fetch.mock.calls[0] as [Request])[0].url).toBe('https://ungranted.example/steal.js')
+    expect(defaultSessionFetch).not.toHaveBeenCalled()
   })
 
   it('F2: a live grant change since the host was built closes it and rebuilds fresh for the next child', async () => {

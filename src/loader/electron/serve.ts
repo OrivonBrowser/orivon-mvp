@@ -35,7 +35,7 @@ import type { LiveBundle } from '../serve/live-serve.js'
 import { fetchFromVerifier } from './fetch.js'
 import { isOriginPinnedSync, isOriginServedFromCacheSync, prepareAppSessionOrStop, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 
-export { beforeAppSessionServes, forEachAppSession, prepareAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
+export { beforeAppSessionServes, forEachAppSession, onAppOriginRetired, prepareAppSession, isOriginPinnedSync, isOriginServedFromCacheSync, registerAppOrigin, retireAppOrigin } from './app-partitions.js'
 import { saveCheckRecord } from '../fetch/update-check.js'
 import type { AppRequestHandler, AuthoriseReach } from '../serve/serve.js'
 import { cspHeaderValue } from '../serve/csp.js'

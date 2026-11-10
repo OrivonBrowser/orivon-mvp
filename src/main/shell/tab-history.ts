@@ -2,6 +2,7 @@
 // in the original would.
 import type { WebContents } from 'electron'
 import { isShellSchemeUrl } from './shell-session.js'
+import type { NavigationReferrer } from './navigation-referrer.js'
 import { EMPTY_OUTER, leaveOnlyShown, noteCommit } from './tab-outer-history.js'
 import type { HistoryEntry, OuterHistory } from './tab-outer-history.js'
 
@@ -24,18 +25,20 @@ export function withoutShellPages<T extends { readonly url: string }> (entries: 
  * Gives `wc` a back and forward list, ending on entry `index`. The load its tab was created with is stopped
  * first: left running, it commits as one more entry after the restored ones and the page loads twice. Electron
  * leaves the restored entry unloaded, so the reload is what loads it (once). With `then` the list is restored
- * as it stands and that address is loaded after it, as one more entry. Entries on the shell's own scheme are
+ * as it stands and that address is loaded after it, as one more entry, with `referrer` when the caller stopped a page's
+ * own navigation to make the move. Entries on the shell's own scheme are
  * left out, the index shifted to match; a list whose shown entry is one is not restored. A list that cannot be
  * restored leaves the tab on its address alone and answers false.
  */
-export function restoreHistory (wc: WebContents, entries: ReadonlyArray<{ readonly url: string, readonly title: string }>, index: number, then?: string): boolean {
+export function restoreHistory (wc: WebContents, entries: ReadonlyArray<{ readonly url: string, readonly title: string }>, index: number, then?: string, referrer?: NavigationReferrer): boolean {
   const kept = withoutShellPages(entries, index)
   if (kept === null) return false
   try {
     wc.stop()
     wc.navigationHistory.restore({ entries: kept.entries.map(({ url, title }) => ({ url, title })), index: kept.index }).catch(() => {})
     if (then === undefined) wc.reload()
-    else void wc.loadURL(then)
+    else if (referrer === undefined) void wc.loadURL(then)
+    else void wc.loadURL(then, { httpReferrer: referrer })
     return true
   } catch {
     // The tab already loads its address.
@@ -47,9 +50,9 @@ export function restoreHistory (wc: WebContents, entries: ReadonlyArray<{ readon
  * travel: an entry's saved page state holds form values and a form's POST body, which a copy must not resubmit or
  * show. A history of one page has nothing to carry. When `expectedUrl` is given and `from` is not yet on it (a swap
  * made before the address has committed), the pages `from` has been through are carried up to the one it is on, and
- * `expectedUrl` loads after them, so Back returns to that page. `leaveOut` is an address that does not travel, and a
+ * `expectedUrl` loads after them (with `referrer`, when given), so Back returns to that page. `leaveOut` is an address that does not travel, and a
  * list showing it carries nothing. True when `to` was given the list and loads its current page. */
-export function carryHistory (from: WebContents | undefined, to: WebContents | undefined, expectedUrl?: string, leaveOut?: string): boolean {
+export function carryHistory (from: WebContents | undefined, to: WebContents | undefined, expectedUrl?: string, leaveOut?: string, referrer?: NavigationReferrer): boolean {
   if (from === undefined || to === undefined) return false
   const listed = from.navigationHistory.getAllEntries().map(({ url, title }) => ({ url, title }))
   const active = from.navigationHistory.getActiveIndex()
@@ -58,7 +61,7 @@ export function carryHistory (from: WebContents | undefined, to: WebContents | u
   const index = listed.slice(0, active).filter(({ url }) => url !== leaveOut).length
   if (expectedUrl !== undefined && entries[index]?.url !== expectedUrl) {
     if (entries[index]?.url === 'about:blank') return false
-    return restoreHistory(to, entries.slice(0, index + 1), index, expectedUrl)
+    return restoreHistory(to, entries.slice(0, index + 1), index, expectedUrl, referrer)
   }
   if (entries.length < 2) return false
   return restoreHistory(to, entries, index)

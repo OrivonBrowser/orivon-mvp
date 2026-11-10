@@ -112,4 +112,25 @@ describe('carryHistory', () => {
     carryHistory(contents([{ url: 'https://a.example/1', title: '' }], 0).wc, to.wc)
     expect(to.calls).toEqual([])
   })
+
+  describe('an address that has not committed yet', () => {
+    const pages = [{ url: 'https://a.example/1', title: 'One' }, { url: 'https://a.example/2', title: 'Two' }]
+    const loading = (): { wc: WebContents, loadURL: ReturnType<typeof vi.fn> } => {
+      const loadURL = vi.fn(async () => {})
+      const { wc } = contents()
+      return { wc: Object.assign(wc, { loadURL }), loadURL }
+    }
+
+    it('loads after the pages carried, with the referrer the caller was given', () => {
+      const to = loading()
+      expect(carryHistory(contents(pages, 1).wc, to.wc, 'https://app.example/', undefined, { url: 'https://a.example/2', policy: 'default' })).toBe(true)
+      expect(to.loadURL).toHaveBeenCalledExactlyOnceWith('https://app.example/', { httpReferrer: { url: 'https://a.example/2', policy: 'default' } })
+    })
+
+    it('loads it with no referrer option when the caller has none', () => {
+      const to = loading()
+      carryHistory(contents(pages, 1).wc, to.wc, 'https://app.example/')
+      expect(to.loadURL).toHaveBeenCalledExactlyOnceWith('https://app.example/')
+    })
+  })
 })
