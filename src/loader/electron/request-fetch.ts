@@ -37,6 +37,27 @@ function bodyBytes (body: BodyInit | null | undefined): Uint8Array | undefined {
   throw new TypeError('a request made through the tunnel carries a string or bytes as its body')
 }
 
+/** The statuses a `Response` can carry. */
+const FIRST_STATUS = 200
+const LAST_STATUS = 599
+
+/**
+ * Copies the headers the network stack handed over into `into`. A name or a value a `Headers` cannot hold (a value with a
+ * character above U+00FF, which a server's raw UTF-8 or an undecodable byte becomes, or a line break) is left out one value at
+ * a time, and the rest is kept: a server's odd header must not decide whether its page can be read.
+ */
+function copyHeaders (from: Readonly<Record<string, string | string[]>>, into: Headers): void {
+  for (const [name, value] of Object.entries(from)) {
+    for (const one of Array.isArray(value) ? value : [value]) {
+      try {
+        into.append(name, one)
+      } catch {
+        // This header is left out; the others are kept.
+      }
+    }
+  }
+}
+
 /** Every header the call asked for, by lower-cased name, less the ones the stack sets. */
 function headersOf (init: HeadersInit | undefined): Array<[string, string]> {
   if (init === undefined) return []
@@ -46,7 +67,8 @@ function headersOf (init: HeadersInit | undefined): Array<[string, string]> {
 /**
  * A `fetch` that rejects with the signal's reason when it fires (also while the body is read) and with the request's
  * own error when it fails. A `redirect: 'manual'` call answers the redirect as a response with its `location`, and
- * follows nothing.
+ * follows nothing. An answer is read whatever its headers hold (a value that does not fit is left out), and one with a
+ * status no `Response` carries rejects with a `TypeError`.
  */
 export function createRequestFetch (options: RequestFetchOptions): (url: string, init?: RequestInit) => Promise<Response> {
   return async (url, init = {}) => {
@@ -70,27 +92,58 @@ export function createRequestFetch (options: RequestFetchOptions): (url: string,
         reject(signal?.reason)
         request.abort()
       }
-      request.on('login', (info, callback) => { options.answer(info, callback) })
+      // Electron calls a listener from its own emit, outside this promise: a throw out of one is an uncaught exception, which ends the browser. So nothing leaves a listener, and a failure inside one is a rejection.
+      let cutOff: (() => void) | undefined
+      const fail = (cause: unknown, stream?: Readable): void => {
+        signal?.removeEventListener('abort', onAbort)
+        if (cutOff !== undefined) signal?.removeEventListener('abort', cutOff)
+        reject(cause instanceof TypeError ? cause : new TypeError('the answer could not be read as a response', { cause }))
+        // No argument: a destroy with an error would emit it on a stream nobody listens to.
+        try { stream?.destroy() } catch { /* the stream is gone either way */ }
+        try { request.abort() } catch { /* so is the request */ }
+      }
+      request.on('login', (info, callback) => {
+        try {
+          options.answer(info, callback)
+        } catch (error) {
+          fail(error)
+        }
+      })
       if (redirect === 'manual') {
         request.on('redirect', (status, _method, redirectUrl, headers) => {
           signal?.removeEventListener('abort', onAbort)
-          const out = new Headers()
-          for (const [name, value] of Object.entries(headers)) for (const one of Array.isArray(value) ? value : [value]) out.append(name, one)
-          if (!out.has('location')) out.set('location', redirectUrl)
-          resolve(new Response(null, { status, headers: out }))
-          request.abort()
+          try {
+            const out = new Headers()
+            copyHeaders(headers, out)
+            if (!out.has('location')) out.set('location', redirectUrl)
+            resolve(new Response(null, { status, headers: out }))
+            request.abort()
+          } catch (error) {
+            fail(error)
+          }
         })
       }
       request.on('response', (response) => {
         signal?.removeEventListener('abort', onAbort)
         const stream = response as unknown as Readable
-        const cutOff = (): void => { stream.destroy(signal?.reason as Error) }
-        signal?.addEventListener('abort', cutOff, { once: true })
-        stream.once('close', () => { signal?.removeEventListener('abort', cutOff) })
-        const headers = new Headers()
-        for (const [name, value] of Object.entries(response.headers)) for (const one of Array.isArray(value) ? value : [value]) headers.append(name, one)
-        const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
-        resolve(new Response(response.statusCode === 204 || response.statusCode === 205 || response.statusCode === 304 ? null : body, { status: response.statusCode, headers }))
+        try {
+          if (response.statusCode < FIRST_STATUS || response.statusCode > LAST_STATUS) throw new TypeError('the server answered with a status no response can carry')
+          // The copy and the check come before the listener that destroys the stream on the signal: nothing is left to fire into an answer that was refused.
+          const headers = new Headers()
+          copyHeaders(response.headers, headers)
+          const cut = (): void => { stream.destroy(signal?.reason as Error) }
+          cutOff = cut
+          signal?.addEventListener('abort', cut, { once: true })
+          stream.once('close', () => {
+            signal?.removeEventListener('abort', cut)
+            // Destroying the response does not end the transfer: only aborting the request does, so an answer let go before its end is aborted here.
+            if (!stream.readableEnded) request.abort()
+          })
+          const body = Readable.toWeb(stream) as ReadableStream<Uint8Array>
+          resolve(new Response(response.statusCode === 204 || response.statusCode === 205 || response.statusCode === 304 ? null : body, { status: response.statusCode, headers }))
+        } catch (error) {
+          fail(error, stream)
+        }
       })
       request.on('error', (error) => {
         signal?.removeEventListener('abort', onAbort)
