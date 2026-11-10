@@ -1,4 +1,4 @@
-# ADR-0111: Behind the system's proxy, a switch that is off by default has Orivon look each site name up through that proxy and ask it for the address
+# ADR-0112: Behind the system's proxy, a switch that is off by default has Orivon look each site name up through that proxy and ask it for the address
 
 - **Status:** accepted. Built in steps (see Consequences): the first changes no behaviour.
 - **Date:** 2026-11-10
