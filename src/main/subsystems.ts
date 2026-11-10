@@ -45,6 +45,7 @@ import { pagesSubsystem } from './pages/pages-subsystem.js'
 import { diagnosticsSubsystem } from './diagnostics/diagnostics-runner.js'
 import { networkServiceSubsystem } from './sessions/network-service-runner.js'
 import { verifierNetworkServiceSubsystem } from './verifier/network-service-reapply.js'
+import { storageCarrySubsystem } from './storage-carry/install-storage-carry.js'
 
 export const subsystems: Subsystem[] = [
   diagnosticsSubsystem, // native crash dumps, collected here and never uploaded -> src/main/diagnostics/. Reads neither ctx.broker nor ctx.loader.
@@ -88,6 +89,7 @@ export const subsystems: Subsystem[] = [
   manifestHintSubsystem,
   ownListenerMediaGateSubsystem, // ADR-0069: the loopback ports a listen-granted page may load media from -> src/main/sessions/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
   appFilesByUrlSubsystem, // ADR-0070: an app's page shows its own files at /orivon/app/<path> -> src/main/sessions/. Reads ctx.broker -- must stay below brokerIpcSubsystem.
+  storageCarrySubsystem, // what an app stored in its own partition before it moved to the session websites run in, carried over once at its first page -> src/main/storage-carry/. Reads neither ctx.broker nor ctx.loader.
   // build step 7: trust     -> src/trust/
   // nostr -> src/nostr/, parked: an idea, not a build step
   telemetrySubsystem, // build step 8: telemetry -> src/telemetry/

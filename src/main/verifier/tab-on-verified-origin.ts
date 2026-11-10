@@ -10,8 +10,9 @@ export interface TabsOfWindow {
   readonly window: { isDestroyed: () => boolean }
 }
 
-/** A sleeping tab has a blank page and so shows nothing: waking it asks for the host again. An installed app served
- * from its pin (`servedFromCache`) shares the name but needs no host. */
+/** A sleeping tab has a blank page and so shows nothing: waking it asks for the host again. An installed app that
+ * `servedFromCache` says needs no host (one served from its pin in a session of its own) shares the name but does not keep it
+ * awake; an app in the shared session is answered through the host and does. */
 export function anyTabOnVerifiedOrigin (windows: readonly TabsOfWindow[], servedFromCache: (origin: string) => boolean = () => false): boolean {
   for (const { tabs, window } of windows) {
     if (window.isDestroyed()) continue

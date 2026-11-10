@@ -111,6 +111,21 @@ describe('routePopup -- isApp: a granted or cache-served origin never keeps an o
     expect(routePopup(popupWindow(`${APP}auth`), inGrantedApp, undefined, isGrantedApp)).toBe('adopt')
   })
 
+  it('a website\'s page at an origin that is an app now never keeps its opener on a popup to the same origin, since it would script the app', () => {
+    const websitePage = { url: APP, partition: undefined, websitePageOfApp: true }
+    expect(routePopup(scripted(`${APP}popout`), websitePage, undefined, isGrantedApp)).toBe('new-tab')
+    expect(routePopup(popupWindow(`${APP}auth`), websitePage, undefined, isGrantedApp)).toBe('new-tab')
+  })
+
+  it('the app\'s own page, and a granted page served from the network that has no app-tab flag, keep adopting a popup to the same origin', () => {
+    expect(routePopup(popupWindow(`${APP}auth`), { url: APP, partition: undefined, websitePageOfApp: false }, undefined, isGrantedApp)).toBe('adopt')
+    expect(routePopup(popupWindow(`${APP}auth`), { url: APP, partition: undefined }, undefined, isGrantedApp)).toBe('adopt')
+  })
+
+  it('a website\'s page at an origin that is no app keeps adopting its popups to itself', () => {
+    expect(routePopup(popupWindow('https://news.example/share'), { ...onWeb, websitePageOfApp: false }, undefined, notAnApp)).toBe('adopt')
+  })
+
   it('a cache-served app (with its own real partition) popped from a different origin stays severed -- isApp only reinforces the existing partition check', () => {
     const isCacheServed = (url: string): boolean => url.startsWith(APP)
     expect(routePopup(popupWindow(`${APP}signin`), onWeb, APP_PARTITION, isCacheServed)).toBe('new-tab')

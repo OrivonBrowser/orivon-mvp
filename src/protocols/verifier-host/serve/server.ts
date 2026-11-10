@@ -16,7 +16,8 @@ import type { ProtocolRegistry } from '../../registry.js'
 import { MAX_ASSET_BYTES } from '../../../broker/policy/bundle-hash.js'
 import { contentTypeFor } from '../../../loader/serve/content-type.js'
 import { parseRange } from '../../../loader/serve/range.js'
-import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER, PARTITION_HEADER } from '../../../loader/fetch/content-root.js'
+import { CONTENT_ROOT_HEADER, DDOC_MISMATCH, FAILURE_HEADER } from '../../../loader/fetch/content-root.js'
+import { namedPartition } from '../../../loader/fetch/own-site-request.js'
 import type { RunCertificate } from './certificate.js'
 import { ERROR_PAGE_CSP, renderErrorPage } from './error-pages.js'
 import type { GatewayOffer } from './error-pages.js'
@@ -25,6 +26,7 @@ import { answerConsent, gatewayOffer, isDocumentLoad } from './gateway-offer.js'
 import { BufferBudget, MAX_BUFFERED_BYTES } from './buffer-budget.js'
 import { checkLeaf, expectedLeafOf, sliceChunks } from './leaf-check.js'
 import type { SiteSource } from './sites.js'
+import type { ShellRelay } from './shell-relay.js'
 import { paceOf, routeOf } from './route-of.js'
 import type { ServeRoutes } from './route-of.js'
 import { FILE_RETRIES, readWithRetries } from './retry.js'
@@ -71,9 +73,6 @@ function hostOf (req: IncomingMessage, addresses: ProtocolAddresses): string | u
   return host
 }
 
-/** An origin, as the shell names a request's top-level page; nothing else is taken as a partition. */
-const PARTITION = /^[a-z][a-z0-9+.-]*:\/\/[\x21-\x7e]{1,253}$/
-
 /**
  * The cache this request may use, or undefined for none at all:
  * - the one the shell named for the request's top-level page;
@@ -84,8 +83,8 @@ const PARTITION = /^[a-z][a-z0-9+.-]*:\/\/[\x21-\x7e]{1,253}$/
  * - otherwise none: the request is served, and nothing it fetched is kept.
  */
 function partitionOf (req: IncomingMessage, host: string): string | undefined {
-  const named = req.headers[PARTITION_HEADER]
-  if (typeof named === 'string' && PARTITION.test(named)) return named
+  const named = namedPartition(req.headers)
+  if (named !== undefined) return named
   const site = req.headers['sec-fetch-site']
   return site === 'none' || site === 'same-origin' ? `https://${host}` : undefined
 }
@@ -104,7 +103,9 @@ function isNavigation (req: IncomingMessage): boolean {
 function pathOf (target: string | undefined, host: string): URL | undefined {
   if (target === undefined || !target.startsWith('/') || target.startsWith('//')) return undefined
   try {
-    return new URL(target, `https://${host}`)
+    const url = new URL(target, `https://${host}`)
+    // `/\other.eth/x` reads as another host to a URL parser: the address stays the request's own host.
+    return url.host === host ? url : undefined
   } catch {
     return undefined
   }
@@ -314,10 +315,17 @@ function redirectToCanonical (registry: ProtocolRegistry, scheme: string, url: U
   }
 }
 
-async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, consent: GatewayConsent, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
+async function handle (registry: ProtocolRegistry, sites: SiteSource, routes: ServeRoutes, consent: GatewayConsent, shell: ShellRelay | undefined, req: IncomingMessage, res: ServerResponse, budget: BufferBudget, bufferedResponseDeadlineMs: number): Promise<void> {
   const host = hostOf(req, registry.addresses)
   if (host === undefined || (registry.addresses.servedName(host) === undefined && registry.addresses.schemeEndpoint(host) === undefined)) {
     res.writeHead(421, { 'content-type': 'text/plain' }).end("this server answers only the names and addresses Orivon's protocols serve")
+    return
+  }
+  // A host the shell serves from a copy it keeps is the shell's to answer for its own site, with the very handler that app's partition uses, whatever the method: nothing below looks at the request.
+  if (shell?.wants(host, req.headers) === true) {
+    const target = pathOf(req.url, host)
+    if (target === undefined) res.writeHead(400, { 'content-type': 'text/plain' }).end('not a path this server serves')
+    else shell.relay(req, res, target, SERVED_CONTENT_CSP)
     return
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -420,13 +428,13 @@ interface ReadPlan {
 }
 
 /** `bufferedResponseDeadlineMs` defaults to `BUFFERED_RESPONSE_DEADLINE_MS`; a test shortens it rather than waiting the real deadline out. */
-export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: () => DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent()): Server {
+export function createVerifierServer (registry: ProtocolRegistry, sites: SiteSource, certificate: RunCertificate, bufferedResponseDeadlineMs: number = BUFFERED_RESPONSE_DEADLINE_MS, routes: ServeRoutes = { direct: DIRECT_ROUTE, tunnel: () => DIRECT_ROUTE }, consent: GatewayConsent = new GatewayConsent(), shell?: ShellRelay): Server {
   // One budget for every request this server ever handles, not one per
   // request: it is what lets it track every partition's own share, and their combined total.
   const budget = new BufferBudget()
   return createServer({ key: certificate.keyPem, cert: certificate.certPem }, (req, res) => {
     // A rejection left unobserved would end the host process, and with it every protocol's page.
-    handle(registry, sites, routes, consent, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
+    handle(registry, sites, routes, consent, shell, req, res, budget, bufferedResponseDeadlineMs).catch((error: unknown) => {
       console.error('[verifier] request failed:', error)
       if (res.headersSent) res.destroy()
       else res.writeHead(500, { 'content-type': 'text/plain' }).end('the verifier failed on this request')

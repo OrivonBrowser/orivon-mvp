@@ -52,6 +52,11 @@ export function profilePartitionsToClear (hasEntries: (profile: Profile) => bool
   return names
 }
 
+/** The kept profile sessions the website at `origin` has storage in, by `isApart`, for what must reach every place the website's data may be. */
+export function profilePartitionsHolding (origin: string, isApart: (origin: string, profile: Profile) => boolean): string[] {
+  return PROFILES.filter((profile) => isApart(origin, profile)).map((profile) => profilePartitionFor(profile, origin))
+}
+
 /** The profile a session name stands for, or undefined for any other session. */
 export function profileOfPartition (partition: string | undefined): Profile | undefined {
   if (partition === undefined) return undefined

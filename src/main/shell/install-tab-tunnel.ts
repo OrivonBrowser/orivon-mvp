@@ -3,7 +3,7 @@
 import { webContents } from 'electron'
 import type { ShellInstaller } from './shell-installers.js'
 import { kindShowing, tabsWithChoice } from './tab-tunnel-facts.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { hasOwnPartition } from './app-session.js'
 import { exposeTabTunnelForTests } from './tab-tunnel-test-hook.js'
 import { setTabTunnelSource } from '../route/tab-tunnel.js'
 
@@ -17,7 +17,7 @@ export const installTabTunnel: ShellInstaller = {
         const found = services.windows.findTab(contents)
         return found?.window.tabs.record(found.tabId)?.tunnelChoice
       },
-      kindShowing: (origin) => kindShowing(tabsWithChoice(services.windows), origin, isOriginServedFromCacheSync)
+      kindShowing: (origin) => kindShowing(tabsWithChoice(services.windows), origin, hasOwnPartition)
     })
     exposeTabTunnelForTests({
       set: (tabId, choice) => {

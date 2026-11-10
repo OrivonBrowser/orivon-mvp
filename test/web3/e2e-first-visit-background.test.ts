@@ -10,8 +10,9 @@ import { findChrome, HERMETIC_RESOLVER, waitFor, waitForTab } from '../support/s
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
 import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { answerQuestion, noNativeDialogs, questionGone, stubNativeDialogs, waitQuestion } from '../support/question-support.js'
+import { partitionFor } from '../../src/broker/grants/origin-hash.js'
 import type { PageFacts } from './first-visit-support.js'
-import { pageAt, pageLog, pageValue, partitionHolds, pinPath, pressSheet, savedGrants, sheetGone, waitSheet, watchPages, withDeclaredTree } from './first-visit-support.js'
+import { pageAt, pageLog, pageValue, pinPath, pressSheet, savedGrants, sessionHolds, sheetGone, waitSheet, watchPages, withDeclaredTree } from './first-visit-support.js'
 
 const files = (name: string, id: string, script = 'document.body.dataset.app = "ran"'): Record<string, string> => ({
   'index.html': `<!doctype html><meta charset="utf-8"><title>${name}</title><link rel="orivon-manifest" href="/.well-known/orivon.json"><body>${name}<script src="app.js"></script></body>`,
@@ -113,7 +114,8 @@ it('[app:first-visit-background-mismatch-blocks] blocks an allowed app whose fil
       check(`it names the file that differs (${JSON.stringify(warning.text.files)})`, warning.text.files.includes('/later.js'))
       check('nothing was pinned', !existsSync(pinPath(userData, lateOrigin)))
       check(`no grant is left (${JSON.stringify(savedGrants(userData, lateOrigin))})`, savedGrants(userData, lateOrigin).length === 0)
-      check('what the person\'s app stored is still there: a block takes permissions, never data', await waitFor(async () => await partitionHolds(running, userData, lateOrigin, 'kept-by-person'), 15_000) && !(await partitionHolds(running, userData, lateOrigin, 'a-value-nobody-wrote')))
+      check('what the person\'s app stored is still there, in the session websites run in: a block takes permissions, never data', await waitFor(async () => await sessionHolds(running, userData, undefined, 'kept-by-person'), 15_000) && !(await sessionHolds(running, userData, undefined, 'a-value-nobody-wrote')))
+      check('the app has no partition of its own to hold it', !(await sessionHolds(running, userData, partitionFor(lateOrigin), 'kept-by-person')))
       await pressSheet(warning.page, 'Go back')
       check('Go back takes the sheet away', await waitFor(() => sheetGone(running), 10_000))
 

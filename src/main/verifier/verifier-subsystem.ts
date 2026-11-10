@@ -10,14 +10,14 @@ import { app, session } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { devEthNames, isDevEthName } from '../dev/eth-resolver.js'
-import type { HostConfig, LightClientState, NodeNotice, SiteProvenance, TunnelRoute } from '../../protocols/verifier-host/protocol.js'
+import type { HostConfig, LightClientState, SiteProvenance, TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import type { ContentAddress, PinRecord } from '../../broker/policy/pin.js'
 import { servedByVerifier } from '../../loader/fetch/verifier-origin.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { PARTITION_HEADER, ROUTE_HEADER } from '../../loader/fetch/content-root.js'
 import { noteCertificate } from '../auth/note-certificate.js'
 import { ACCEPT, CHROMIUM_VERDICT, REJECT, refusalNote, verifierCertificateVerdict } from './certificate-check.js'
-import { installFileFailureWatch, installPartitionStamp, targetsVerifiedHost, verifiedHostFilter } from './partition-stamp.js'
+import { installFileFailureWatch, installPartitionStamp, installShellAnswerWatch, targetsVerifiedHost, verifiedHostFilter } from './partition-stamp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { contentAddressOf } from './content-address.js'
@@ -57,6 +57,8 @@ import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 import { configureNodeRoute, ethereumOutsideTunnel, nodesMayServeTunnelSites, nodesRunThroughTunnel } from './node-route.js'
 import { forgetNodeData as forgetNodes } from './forget-node-data.js'
+import { announceServed, hostShell, serveShell } from './shell-serves.js'
+import { followNodes, tellHost } from './node-notices.js'
 
 /** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
 const MOUNT_GRACE_MS = 5_000
@@ -254,7 +256,8 @@ async function hostConfig (): Promise<HostConfig> {
     ...(ipfsFromNode(seam) && { ipfsNode: { endpoint: ipfsNodeEndpoint(), partitionSalt: stored.partitionSalt(), lookupService: ipfsLookupServiceChoice(), ...(seam?.ipfsNode?.retryWaitMs !== undefined && { retryWaitMs: seam.ipfsNode.retryWaitMs }) } }),
     swarmFeedIndexes: stored.swarmFeedIndexes(),
     ...(swarmChunks !== undefined && { swarmChunks }),
-    ...(seam === undefined ? {} : { fixtures: seam.fixtures })
+    ...(seam === undefined ? {} : { fixtures: seam.fixtures }),
+    shell: hostShell()
   }
 }
 
@@ -371,7 +374,7 @@ export const verifierSubsystem: Subsystem = {
     BUILTIN_ADDRESSES.learnSchemes((name) => verifierStore().nameScheme(name))
     installCertificateCheck(session.defaultSession)
     // The shared session and each session of its own a website gets: any of them can load a `.eth` page.
-    forEachWebsiteSession((target, tunnel) => { installPartitionStamp(target, tunnel); installFileFailureWatch(target); installListeningGate(target) })
+    forEachWebsiteSession((target, tunnel) => { installPartitionStamp(target, tunnel); installShellAnswerWatch(target); installFileFailureWatch(target); installListeningGate(target) })
     const host = new HostSupervisor({
       fork: hostForker({ module: join(__dirname, 'verifier-host.js'), serviceName: 'Orivon verifier', prefix: '[verifier]', unlimited: process.env['ORIVON_VERIFIER_LOG'] === '1' }),
       config: hostConfig,
@@ -402,6 +405,7 @@ export const verifierSubsystem: Subsystem = {
           hostDown = undefined
           hostAsleep = false
           noteVerifierListening(true)
+          announceServed(host)
           listeningGate.listening()
           changed()
         },
@@ -438,6 +442,8 @@ export const verifierSubsystem: Subsystem = {
           if (verifierStore().saveNameScheme(name, scheme)) announceNameSchemeChange()
         },
         nodeTraffic: (name, active, bytes) => { ledger.record(name, active, bytes) },
+        relay: (message) => { responder.receive(message) },
+        abandoned: () => { responder.abortAll() },
         nodeWanted: (name) => {
           const node = NODES.get(name)
           if (node === undefined) return
@@ -447,25 +453,13 @@ export const verifierSubsystem: Subsystem = {
             pending = node.ensure().finally(() => { asking.delete(name) })
             asking.set(name, pending)
           }
-          pending.then(() => { tellHost(name, node) }, (error: unknown) => { console.error(`[verifier] could not ask for the ${name}:`, error) })
+          pending.then(() => { tellHost(host, name, node) }, (error: unknown) => { console.error(`[verifier] could not ask for the ${name}:`, error) })
         }
       }
     })
     supervisor = host
-    /** Tells the host what a node is doing; it holds a mount that reads from the node on the answer. */
-    function tellHost (name: string, node: LocalNodeSubsystem): void {
-      const state = node.state()
-      const notice: NodeNotice = { type: 'node', node: name, state: state.state, ...(state.state === 'off' && state.reason !== undefined && { reason: state.reason }), ...(state.state === 'failed' && { reason: state.reason }) }
-      host.send(notice)
-    }
-    for (const [name, node] of NODES) {
-      node.onChange(() => {
-        tellHost(name, node)
-        changed()
-      })
-      // The host holds the node's endpoint from its start: with the port renewed, it starts afresh (its next request forks it with the new one).
-      node.onEndpointChange(() => { host.idle() })
-    }
+    const responder = serveShell(host)
+    followNodes(NODES, host, changed)
     const lifecycle = new HostLifecycle({
       start: () => { host.start() },
       idle: () => { host.idle() },
