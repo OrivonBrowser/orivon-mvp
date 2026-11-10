@@ -47,19 +47,26 @@ shell serves such an origin, it settles in this order, and until step 4 no docum
    announcement counts as applied: the host takes the set from its configuration when it starts.
 2. Every website page of the origin open at that moment, in every session the origin runs in, is loaded again, and the wait ends
    when each new document has committed. A document the shell answered and the hidden page of the storage carry are left alone.
-   The tab a first visit is sending in is emptied by the visit, under its setup cover, and the settling waits for it to leave
-   the website's document instead of loading it.
-3. When any such page existed, the origin's service workers and Cache Storage are removed in every session a website at the
-   origin ran in. What the pages' old documents wrote is gone, and the pages that remain are the shell's.
+   The tab a first visit is sending in is not loaded again: the visit loads it as the app once the host has said it was told (it
+   waits for that, within a bound), and the settling waits for the tab to show the shell's document.
+3. When a page showing a website's document was seen at the origin at any time since the serving began (open when it began,
+   open when the host was heard, or the tab a first visit sent in, whether or not it has closed since), the origin's service
+   workers and Cache Storage are removed in every session a website at the origin ran in. What those documents wrote is gone, and
+   the pages that remain are the shell's.
 4. The origin is marked settled. A document counts only if it committed after step 3 (a clock shared by commits and settlings
    keeps the order), so a document the removal did not precede never counts, however long it lives. When no website page was
    open, the serving's own start is the line.
 
-Each wait is bounded: 10 s for the host's word, 15 s for each page to load again, 10 s for the first visit's tab to leave the
-website's document and 15 s for the removal (*provisional*: field reports of a slow host would settle the numbers). A bound that
-runs out leaves the origin unsettled, so a document its worker answers has no grants, and the settling is tried again after
-3 s, then 6 s and so on to a minute, for as long as the shell serves the origin. A first visit lets its tab in when the first
-attempt ends, settled or not: the app opens, and the pages its worker answers wait for the settling.
+A worker script the shell served is held until the origin has settled (the guard of rule 4 answers it then), so the registration
+it starts comes after the removal in step 3 and cannot be wiped by it; the app's first page registers its worker as soon as the
+origin settles. A script of an origin that cannot settle is cancelled, as an unmarked one is.
+
+Each wait is bounded: 10 s for the host's word (the first visit's too), 15 s for each page to load again, 10 s for the first
+visit's tab to show the shell's document and 15 s for the removal (*provisional*: field reports of a slow host would settle the
+numbers). A bound that runs out leaves the origin unsettled, so a document its worker answers has no grants and the worker
+scripts of the origin are cancelled, and the settling is tried again after 3 s, then 6 s and so on to a minute, for as long as
+the shell serves the origin. A first visit loads its tab as the app when the host has said it was told or the bound ran out,
+without waiting for the removal: the app's first page is the shell's, and the pages its worker answers wait for the settling.
 
 ## Context
 
@@ -109,19 +116,18 @@ that is open: the host is known to answer as the shell before the website's page
 worker's answer counts. Removing the caches before the pages were gone would let a page write again, and doing it while the
 host still answered from the network would let the new document be one the network gave. The order is the fix.
 
-What it does not reach: a page opened and closed wholly before the host was told, or between its reload and the removal, is
-not open when the settling looks, so what it wrote to Cache Storage is not seen and the settling does not remove it when no
-other website page was open (*provisional*: noting each website document that commits while an origin is unsettled, in every
-view, would close it). The removal also takes a worker the app registered between a page's reload and the removal (the next load
-registers it again); an offline-first app opened with no network in that moment starts online-only once.
+What it does not reach: a page opened and closed wholly between two looks of the settling (it looks when the serving begins and
+again when the host has been heard) is never seen, so what it wrote to Cache Storage is not removed when no other website page
+was seen (*provisional*: noting each website document that commits while an origin is unsettled, in every view, would close it).
 
 ## Consequences
 
 - An offline-first allowed site keeps `window.orivon` on every page its worker answers once the origin has settled, on a
   reload, on a start and with the gateway gone.
-- While an origin is unsettled, a document its worker answers has no grants. At a start the settling has nothing to wait for
-  but the host's word, which an unstarted host counts as given, so it ends at once; a slow or hung host makes the answers of
-  the worker wait, never the shell's own.
+- While an origin is unsettled, a document its worker answers has no grants, and the worker scripts of the origin wait (a
+  registration of the app's own worker starts when the origin settles). At a start the settling has nothing to wait for but the
+  host's word, which an unstarted host counts as given, so it ends at once; a slow or hung host makes the worker's answers
+  wait, never the shell's own.
 - A website page at the origin that registers a worker while the host does not yet know the site is served (the page open
   before Allow, or loaded in that moment) has its worker script refused: its registration fails with a network error, and the
   log says `[verifier] refused a service worker script the shell did not serve`. The page it came from is a website's, and was

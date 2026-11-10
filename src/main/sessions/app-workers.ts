@@ -39,12 +39,22 @@ export interface ScriptResponse {
   readonly initiatorOrigin?: string
 }
 
-/** Whether the response is a worker script of a guarded origin that the shell did not serve. */
-export function refusesWorkerScript (response: ScriptResponse): boolean {
-  if (response.resourceType !== 'script' || response.hasPage || response.answeredByShell) return false
+/** Whether the response is a worker script (or one it imports) of a guarded origin, the shell's or not. */
+function isGuardedWorkerScript (response: ScriptResponse): boolean {
+  if (response.resourceType !== 'script' || response.hasPage) return false
   const key = originKey(response.url)
   if (key === undefined || !guarded.has(key)) return false
-  // Only a request another parseable origin issued is let go: an unknown or opaque initiator is refused, as the origin's own is.
+  // Only a request another parseable origin issued is let go: an unknown or opaque initiator is treated as the origin's own.
   const initiator = response.initiatorOrigin === undefined ? undefined : originKey(response.initiatorOrigin)
   return initiator === undefined || initiator === key
+}
+
+/** Whether the response is a worker script of a guarded origin that the shell did not serve. */
+export function refusesWorkerScript (response: ScriptResponse): boolean {
+  return !response.answeredByShell && isGuardedWorkerScript(response)
+}
+
+/** Whether the response is a worker script of a guarded origin that the shell served: it waits for the origin to settle (`./worker-settle.ts`), so the registration it starts cannot race the removal of what a website left. */
+export function holdsWorkerScript (response: ScriptResponse): boolean {
+  return response.answeredByShell && isGuardedWorkerScript(response)
 }

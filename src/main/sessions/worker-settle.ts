@@ -3,12 +3,13 @@
 //   1. the verifier host has been told the shell serves the origin, and has said so: from then on every page it loads is answered
 //      by the shell;
 //   2. every page of the origin that is not a document the shell answered is loaded again (it was answered by the network, by the
-//      HTTP cache or by a worker, before the host knew), and the page a first visit is sending in has left its website's document;
-//   3. when any such page existed, the origin's service workers and Cache Storage are removed: nothing a website's document wrote
-//      is left for the app's worker to answer with;
+//      HTTP cache or by a worker, before the host knew), and the page a first visit is sending in shows the shell's document;
+//   3. when a website's page was open at any time since the serving began, the origin's service workers and Cache Storage are
+//      removed: nothing a website's document wrote is left for the app's worker to answer with;
 //   4. the origin is marked settled, and documents that commit from then on count.
-// Each wait is bounded, and a bound that runs out leaves the origin unsettled: worker-answered documents get no grants until a
-// later attempt completes. Electron-free: the steps come in.
+// A worker script the shell served is held until then (`./app-workers.ts`), so no registration races the removal. Each wait is
+// bounded, and a bound that runs out leaves the origin unsettled: worker-answered documents get no grants until a later attempt
+// completes. Electron-free: the steps come in.
 
 interface Settling {
   state: 'pending' | 'settled'
@@ -16,6 +17,8 @@ interface Settling {
   trustedFrom: number
   /** The moment the serving was prepared: a document committed since then has nothing of a website's behind it unless a page of one was open. */
   readonly began: number
+  /** Whether a page showing a website's document was seen at the origin since the serving began, open or since closed: what it wrote must go. */
+  sawWebsite: boolean
   /** Resolves when the first attempt ends: true when it settled, false when a wait ran out. */
   settled: Promise<boolean>
   finish: (settled: boolean) => void
@@ -43,7 +46,7 @@ function originKey (origin: string): string | undefined {
 function fresh (): Settling {
   let finish: (settled: boolean) => void = () => {}
   const settled = new Promise<boolean>((resolve) => { finish = resolve })
-  return { state: 'pending', trustedFrom: Number.POSITIVE_INFINITY, began: nextTick(), settled, finish, running: false, attempts: 0 }
+  return { state: 'pending', trustedFrom: Number.POSITIVE_INFINITY, began: nextTick(), sawWebsite: false, settled, finish, running: false, attempts: 0 }
 }
 
 /** The shell is about to serve `origin` where websites run: until it settles, a worker's answer is not the app's. */
@@ -68,11 +71,13 @@ export function workerAnswersTrusted (origin: string, committedAt: number): bool
   return held !== undefined && held.state === 'settled' && committedAt >= held.trustedFrom
 }
 
-/** Resolves when the first attempt at settling `origin` ends: true when it settled, false when a wait ran out (a later attempt may still settle it). False for an origin that is not being settled. */
+/** Whether `origin` has settled, waiting for the first attempt to end when none has: false when a wait ran out (a later attempt may still settle it), and for an origin that is not being settled. */
 export async function settledOrigin (origin: string): Promise<boolean> {
   const key = originKey(origin)
   const held = key === undefined ? undefined : origins.get(key)
-  return held === undefined ? false : await held.settled
+  if (held === undefined) return false
+  if (held.state !== 'settled') await held.settled
+  return held.state === 'settled'
 }
 
 export interface SettleLimits {
@@ -80,7 +85,7 @@ export interface SettleLimits {
   readonly hostMs: number
   /** How long one page may take to load again. */
   readonly pageMs: number
-  /** How long the page a visit is sending in may keep its website's document. */
+  /** How long the page a visit is sending in may take to show the shell's document. */
   readonly enteringMs: number
   /** How long the removal may take. */
   readonly clearMs: number
@@ -93,12 +98,12 @@ export interface SettleDeps<Page> {
   readonly pagesOf: (origin: string) => readonly Page[]
   /** Whether the page is the app's own: its document is one the shell answered, or it is a page the shell itself opened at the origin. */
   readonly isOwnDocument: (page: Page) => boolean
-  /** Whether a first visit is sending the page into the app. */
+  /** Whether a first visit is sending the page into the app: its document is a website's until the visit's own load commits. */
   readonly isEntering: (page: Page) => boolean
   /** Loads the page again; resolves once the new document has committed, or the page is gone. */
   readonly reload: (page: Page) => Promise<void>
-  /** Resolves once the page no longer shows the document it showed (a first visit emptied it), or is gone. */
-  readonly leftDocument: (page: Page) => Promise<void>
+  /** Resolves once the page shows a document the shell answered, or is gone. */
+  readonly becameOwn: (page: Page) => Promise<void>
   /** Removes the origin's service workers and Cache Storage in every session a website at the origin ran in. */
   readonly clear: (origin: string) => Promise<void>
   readonly limits: SettleLimits
@@ -136,17 +141,23 @@ export async function settleServedOrigin<Page> (origin: string, deps: SettleDeps
   if (key === undefined || held === undefined || held.running || held.state === 'settled') return held?.state === 'settled'
   held.running = true
   held.attempts += 1
+  // A page that shows a website's document: one no response of the shell's was seen for, or the page a first visit is sending in.
+  // The first look is taken before any wait, while that page still shows it.
+  const look = (): Page[] => {
+    const website = deps.pagesOf(origin).filter((page) => deps.isEntering(page) || !deps.isOwnDocument(page))
+    if (website.length > 0) held.sawWebsite = true
+    return website
+  }
+  look()
   try {
     await within(deps.hostKnows(), deps.limits.hostMs, 'the verifier host saying it was told what the shell serves')
-    const website = deps.pagesOf(origin).filter((page) => !deps.isOwnDocument(page))
-    const sentIn = website.filter(deps.isEntering)
-    const others = website.filter((page) => !deps.isEntering(page))
-    await Promise.all([
-      ...others.map(async (page) => { await within(deps.reload(page), deps.limits.pageMs, 'a website page loading again') }),
-      ...sentIn.map(async (page) => { await within(deps.leftDocument(page), deps.limits.enteringMs, 'the page being sent in leaving its website document') })
-    ])
+    const website = look()
+    await Promise.all(website.map(async (page) => {
+      if (deps.isEntering(page)) await within(deps.becameOwn(page), deps.limits.enteringMs, 'the page being sent in showing the shell\'s document')
+      else await within(deps.reload(page), deps.limits.pageMs, 'a website page loading again')
+    }))
     let trustedFrom = held.began
-    if (website.length > 0) {
+    if (held.sawWebsite) {
       await within(deps.clear(origin), deps.limits.clearMs, 'the removal of the origin\'s workers and caches')
       trustedFrom = nextTick()
     }

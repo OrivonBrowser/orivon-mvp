@@ -19,6 +19,7 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
 const { registerAppOrigin, retireAppOrigin } = await import('../../../loader/electron/app-partitions.js')
 const { installPartitionStamp, installShellAnswerWatch, installWorkerScriptGuard } = await import('../partition-stamp.js')
 const { guardWorkerScripts, releaseWorkerScripts } = await import('../../sessions/app-workers.js')
+const { beginSettling, forgetSettling, settleServedOrigin } = await import('../../sessions/worker-settle.js')
 const { takeMainFrameAnswer, forgetShellAnswered } = await import('../../sessions/shell-answered.js')
 const { SHELL_ANSWERED_HEADER } = await import('../../../loader/fetch/content-root.js')
 
@@ -134,32 +135,57 @@ describe('which document the shell answered', () => {
 })
 
 describe('the service worker scripts of a served origin', () => {
-  const answer = (over: Partial<Started> = {}, headers: Record<string, string[]> = {}): { responseHeaders: Record<string, string[]>, cancel?: boolean } => {
+  const answer = async (over: Partial<Started> = {}, headers: Record<string, string[]> = {}): Promise<{ responseHeaders: Record<string, string[]>, cancel?: boolean }> => {
     installWorkerScriptGuard({} as Session)
     if (captured.received === undefined) throw new Error('nothing was registered for response headers')
     const current = { responseHeaders: headers }
-    return captured.received({ resourceType: 'script', url: `${HOST_ORIGIN}/sw.js`, responseHeaders: headers, ...over }, current)
+    return await captured.received({ resourceType: 'script', url: `${HOST_ORIGIN}/sw.js`, responseHeaders: headers, ...over }, current)
   }
-  afterEach(() => { releaseWorkerScripts(HOST_ORIGIN) })
+  const settle = async (hostKnows: () => Promise<void> = async () => {}): Promise<boolean> => await settleServedOrigin(HOST_ORIGIN, { hostKnows, pagesOf: () => [], isOwnDocument: () => true, isEntering: () => false, reload: async () => {}, becameOwn: async () => {}, clear: async () => {}, limits: { hostMs: 300, pageMs: 300, enteringMs: 300, clearMs: 300 }, log: () => {} })
+  const pending = async (promise: Promise<unknown>): Promise<boolean> => await Promise.race([promise.then(() => false), new Promise<boolean>((resolve) => setTimeout(() => { resolve(true) }, 20))])
+  afterEach(() => { releaseWorkerScripts(HOST_ORIGIN); forgetSettling(HOST_ORIGIN) })
 
-  it('are refused when the shell did not serve them, so a worker the check never saw is never registered', () => {
+  it('are refused when the shell did not serve them, so a worker the check never saw is never registered', async () => {
     guardWorkerScripts(HOST_ORIGIN)
-    expect(answer().cancel).toBe(true)
-    expect(answer({}, { [SHELL_ANSWERED_HEADER]: ['yes'] }).cancel).toBe(true)
+    beginSettling(HOST_ORIGIN)
+    await settle()
+    expect((await answer()).cancel).toBe(true)
+    expect((await answer({}, { [SHELL_ANSWERED_HEADER]: ['yes'] })).cancel).toBe(true)
   })
 
-  it('are let through when the shell served them, with the headers as the others left them', () => {
+  it('are let through when the shell served them and the origin has settled, with the headers as the others left them', async () => {
     guardWorkerScripts(HOST_ORIGIN)
+    beginSettling(HOST_ORIGIN)
+    await settle()
     const headers = { [SHELL_ANSWERED_HEADER]: ['1'], 'content-type': ['text/javascript'] }
-    const result = answer({}, headers)
+    const result = await answer({}, headers)
     expect(result.cancel).toBeUndefined()
     expect(result.responseHeaders).toBe(headers)
   })
 
-  it('are left alone for a website, a page\'s own script and every other kind of request', () => {
-    expect(answer().cancel).toBeUndefined()
+  it('wait for the origin to settle when the shell served them, so the registration they start follows the removal of what a website left', async () => {
     guardWorkerScripts(HOST_ORIGIN)
-    expect(answer({ webContents: {} }).cancel).toBeUndefined()
-    expect(answer({ resourceType: 'xhr' }).cancel).toBeUndefined()
+    beginSettling(HOST_ORIGIN)
+    let told = (): void => {}
+    const attempt = settle(async () => { await new Promise<void>((resolve) => { told = resolve }) })
+    const waiting = answer({}, { [SHELL_ANSWERED_HEADER]: ['1'] })
+    expect(await pending(waiting)).toBe(true)
+    told()
+    await attempt
+    expect((await waiting).cancel).toBeUndefined()
+  })
+
+  it('are cancelled when the origin could not settle, so no registration comes of a script the removal did not precede', async () => {
+    guardWorkerScripts(HOST_ORIGIN)
+    beginSettling(HOST_ORIGIN)
+    expect(await settle(async () => { await new Promise<void>(() => {}) })).toBe(false)
+    expect((await answer({}, { [SHELL_ANSWERED_HEADER]: ['1'] })).cancel).toBe(true)
+  })
+
+  it('are left alone for a website, a page\'s own script and every other kind of request', async () => {
+    expect((await answer()).cancel).toBeUndefined()
+    guardWorkerScripts(HOST_ORIGIN)
+    expect((await answer({ webContents: {} })).cancel).toBeUndefined()
+    expect((await answer({ resourceType: 'xhr' })).cancel).toBeUndefined()
   })
 })

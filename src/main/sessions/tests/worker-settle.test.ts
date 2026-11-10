@@ -16,7 +16,7 @@ function harness (pages: readonly FakePage[], over: Partial<SettleDeps<FakePage>
     isOwnDocument: (page) => page.shell === true,
     isEntering: (page) => page.entering === true,
     reload: async (page) => { events.push(`reload:${page.name}`) },
-    leftDocument: async (page) => { events.push(`left:${page.name}`) },
+    becameOwn: async (page) => { events.push(`own:${page.name}`) },
     clear: async () => { events.push('clear') },
     limits: { hostMs: 40, pageMs: 40, enteringMs: 40, clearMs: 40 },
     log: () => {},
@@ -35,7 +35,7 @@ describe('settling a served origin', () => {
     expect(workerAnswersTrusted(ORIGIN, nextTick())).toBe(false)
     expect(await settleServedOrigin(ORIGIN, deps)).toBe(true)
     expect(events[0]).toBe('host-knows')
-    expect(events.slice(1, 4).sort()).toEqual(['left:sent-in', 'reload:a', 'reload:b'])
+    expect(events.slice(1, 4).sort()).toEqual(['own:sent-in', 'reload:a', 'reload:b'])
     expect(events[4]).toBe('clear')
     expect(events).toHaveLength(5)
     expect(workerAnswersTrusted(ORIGIN, committedBefore)).toBe(false)
@@ -49,6 +49,27 @@ describe('settling a served origin', () => {
     expect(await settleServedOrigin(ORIGIN, deps)).toBe(true)
     expect(events).toEqual(['host-knows'])
     expect(workerAnswersTrusted(ORIGIN, during)).toBe(true)
+  })
+
+  it('clears what a website page wrote though the page is gone or has become the app\'s by the time the host has been heard', async () => {
+    beginSettling(ORIGIN)
+    let pages: readonly FakePage[] = [{ name: 'sent-in', entering: true }, { name: 'closed' }]
+    const { deps, events } = harness([], { pagesOf: () => pages, hostKnows: async () => { events.push('host-knows'); pages = [{ name: 'sent-in', shell: true }] } })
+    expect(await settleServedOrigin(ORIGIN, deps)).toBe(true)
+    expect(events).toEqual(['host-knows', 'clear'])
+    expect(workerAnswersTrusted(ORIGIN, nextTick())).toBe(true)
+  })
+
+  it('remembers a website page across attempts: the attempt that settles clears for a page an earlier one saw', async () => {
+    beginSettling(ORIGIN)
+    let pages: readonly FakePage[] = [{ name: 'gap' }]
+    let told = false
+    const { deps, events } = harness([], { pagesOf: () => pages, hostKnows: async () => { if (!told) await new Promise(() => {}) } })
+    expect(await settleServedOrigin(ORIGIN, deps)).toBe(false)
+    pages = []
+    told = true
+    expect(await settleServedOrigin(ORIGIN, deps)).toBe(true)
+    expect(events).toEqual(['clear'])
   })
 
   it('does not load a page the shell answered again, and counts only the others as the website\'s', async () => {
@@ -75,7 +96,7 @@ describe('settling a served origin', () => {
 
   it.each([
     ['a page that does not load again', { reload: async () => await new Promise<void>(() => {}) }],
-    ['a page being sent in that keeps its website\'s document', { leftDocument: async () => await new Promise<void>(() => {}) }],
+    ['a page being sent in that never shows the shell\'s document', { becameOwn: async () => await new Promise<void>(() => {}) }],
     ['a removal that does not end', { clear: async () => await new Promise<void>(() => {}) }],
     ['a removal that fails', { clear: async () => { throw new Error('storage busy') } }]
   ] as const)('stays untrusted for %s', async (_what, over) => {
@@ -83,6 +104,14 @@ describe('settling a served origin', () => {
     const { deps } = harness([{ name: 'gap' }, { name: 'sent-in', entering: true }], over as Partial<SettleDeps<FakePage>>)
     expect(await settleServedOrigin(ORIGIN, deps)).toBe(false)
     expect(workerAnswersTrusted(ORIGIN, nextTick())).toBe(false)
+  })
+
+  it('answers whether an origin has settled, waiting for the first attempt when none has ended', async () => {
+    beginSettling(ORIGIN)
+    const waiting = settledOrigin(ORIGIN)
+    await settleServedOrigin(ORIGIN, harness([]).deps)
+    expect(await waiting).toBe(true)
+    expect(await settledOrigin(ORIGIN)).toBe(true)
   })
 
   it('trusts nothing for an origin it was never asked to settle, or one that stopped being served', async () => {

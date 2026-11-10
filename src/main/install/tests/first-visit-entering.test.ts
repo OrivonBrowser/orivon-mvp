@@ -25,21 +25,18 @@ describe('runFirstVisit and the tab it enters', () => {
     expect(released).toHaveBeenCalledOnce()
   })
 
-  it('empties the website\'s page, then waits for the origin to settle its workers, and only then loads the tab as the app', async () => {
+  it('waits for the host to say it was told the app is served, and only then loads the tab as the app', async () => {
     const h = harness()
-    const host = { ...h.host, blank: async () => { h.events.push('blank') } }
-    const settledOrigin = vi.fn(async () => { h.events.push('settled'); return true })
-    const result = await runFirstVisit({ ...depsOf(h), settled: settledOrigin }, h.origin, h.url, present, host)
+    const hostTold = vi.fn(async () => { h.events.push('host-told'); return true })
+    const result = await runFirstVisit({ ...depsOf(h), hostTold }, h.origin, h.url, present, h.host)
     await settled(result)
-    expect(h.events.indexOf('serve-live')).toBeLessThan(h.events.indexOf('blank'))
-    expect(h.events.indexOf('blank')).toBeLessThan(h.events.indexOf('settled'))
-    expect(h.events.indexOf('settled')).toBeLessThan(h.events.indexOf('enter'))
-    expect(settledOrigin).toHaveBeenCalledWith(h.origin)
+    expect(h.events.indexOf('serve-live')).toBeLessThan(h.events.indexOf('host-told'))
+    expect(h.events.indexOf('host-told')).toBeLessThan(h.events.indexOf('enter'))
   })
 
-  it('loads the tab as the app even when the origin could not settle, so the app opens; its worker\'s answers then have no grants', async () => {
+  it('loads the tab as the app even when the host never said so, so the app opens; the page the host answered has no grants', async () => {
     const h = harness()
-    const result = await runFirstVisit({ ...depsOf(h), settled: async () => false }, h.origin, h.url, present, h.host)
+    const result = await runFirstVisit({ ...depsOf(h), hostTold: async () => false }, h.origin, h.url, present, h.host)
     await settled(result)
     expect(h.events).toContain('enter')
   })

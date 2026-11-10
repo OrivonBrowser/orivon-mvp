@@ -15,6 +15,7 @@ const seen = vi.hoisted(() => ({
   failClear: false,
   pages: [] as unknown[],
   carry: new Set<string>(),
+  entering: new Set<object>(),
   reloads: [] as string[]
 }))
 const forgotten = vi.hoisted(() => ({ origins: [] as string[] }))
@@ -38,7 +39,7 @@ vi.mock('../../verifier/shell-serves.js', () => ({ servedKnownToHost: async () =
 vi.mock('../session-attribution.js', () => ({ documentAnsweredByShell: (page: { ownDocument?: boolean }) => page.ownDocument === true }))
 vi.mock('../stale-pages.js', () => ({
   forNewlyServed: (_deps: unknown, run: (origin: string) => void) => { seen.settle = run },
-  isEnteringPage: () => false,
+  isEnteringPage: (page: object) => seen.entering.has(page),
   reloadStalePage: (page: { url: string, emit: (event: string) => void }) => { seen.reloads.push(page.url); seen.events.push(`reload:${page.url}`); page.emit('did-navigate') }
 }))
 vi.mock('../../route/site-routes.js', () => ({ sitePartitionForOrigin: () => undefined }))
@@ -64,7 +65,7 @@ const APP = 'https://kept.eth'
 const script = (origin: string): Parameters<typeof refusesWorkerScript>[0] => ({ url: `${origin}/sw.js`, resourceType: 'script', hasPage: false, answeredByShell: false })
 const ctx = (privateSession = false): ReturnType<typeof createSubsystemContext> => createSubsystemContext({ getPath: () => '/nonexistent/orivon-test-profile' } as unknown as App, privateSession)
 
-interface FakePage { url: string, ownDocument?: boolean, isDestroyed: () => boolean, getURL: () => string, on: (event: string, listener: () => void) => void, removeListener: (event: string, listener: () => void) => void, emit: (event: string) => void }
+interface FakePage { url: string, ownDocument: boolean, isDestroyed: () => boolean, getURL: () => string, on: (event: string, listener: () => void) => void, removeListener: (event: string, listener: () => void) => void, emit: (event: string) => void }
 function pageAt (url: string, ownDocument = false): FakePage {
   const listeners = new Map<string, Set<() => void>>()
   return {
@@ -82,6 +83,7 @@ afterEach(() => {
   resetSettlingForTests()
   seen.pages = []
   seen.carry.clear()
+  seen.entering.clear()
   seen.reloads = []
   releaseWorkerScripts(APP)
   seen.events.length = 0
@@ -152,5 +154,22 @@ describe('the website workers subsystem', () => {
     await vi.waitFor(() => { expect(workerAnswersTrusted(APP, nextTick())).toBe(true) })
     expect(seen.reloads).toEqual([])
     expect(seen.events).toEqual(['host-knows'])
+  })
+
+  it('waits for the page a first visit sends in to show the shell\'s document, then removes what the website wrote', async () => {
+    await websiteWorkersSubsystem.afterReady?.(ctx(true))
+    await seen.preparer?.({}, APP, 'pin')
+    seen.events.length = 0
+    const sentIn = pageAt(`${APP}/`)
+    seen.entering.add(sentIn)
+    seen.pages = [sentIn]
+    seen.settle?.(APP)
+    await vi.waitFor(() => { expect(seen.events).toEqual(['host-knows']) })
+    expect(workerAnswersTrusted(APP, nextTick())).toBe(false)
+    sentIn.ownDocument = true
+    sentIn.emit('did-navigate')
+    await vi.waitFor(() => { expect(workerAnswersTrusted(APP, nextTick())).toBe(true) })
+    expect(seen.reloads).toEqual([])
+    expect(seen.events).toEqual(['host-knows', `forget:${APP}`])
   })
 })

@@ -38,7 +38,7 @@ import { localFileApps } from '../local-files/local-file-apps.js'
 import { localPartitionFor } from '../local-files/partition.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import { isLocalFileKey } from '../../broker/policy/origin.js'
-import { settledOrigin } from '../sessions/worker-settle.js'
+import { servedKnownToHostWithin } from '../verifier/shell-serves.js'
 import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { forEachWebsiteSession } from '../sessions/website-sessions.js'
@@ -56,6 +56,9 @@ import { asOwnRead } from '../../loader/fetch/own-read.js'
 import { MAX_MANIFEST_BYTES } from '../../loader/manifest/manifest.js'
 
 const GRANT_MANIFEST_TIMEOUT_MS = 5_000
+
+/** How long a first visit waits for the verifier host to say it was told the shell serves the app, before the tab loads as the app anyway. */
+const HOST_WORD_MS = 10_000
 
 /**
  * Reads at most `capBytes` of `response`'s body, decoding only what was
@@ -171,7 +174,7 @@ export const appInstallSubsystem: Subsystem = {
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     const firstVisit = createFirstVisit({
-      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), entering: enteringTab, settled: settledOrigin, askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
+      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), entering: enteringTab, hostTold: async () => await servedKnownToHostWithin(HOST_WORD_MS), askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     })

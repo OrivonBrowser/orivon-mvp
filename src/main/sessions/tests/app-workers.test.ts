@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { guardWorkerScripts, refusesWorkerScript, releaseWorkerScripts } from '../app-workers.js'
+import { guardWorkerScripts, holdsWorkerScript, refusesWorkerScript, releaseWorkerScripts } from '../app-workers.js'
 
 // The service workers an allowed app that runs where websites run may have: only ones whose script the shell served.
 
@@ -30,6 +30,21 @@ describe('a worker script of a guarded origin', () => {
     guardWorkerScripts(APP)
     releaseWorkerScripts(APP)
     expect(refusesWorkerScript(script())).toBe(false)
+  })
+
+  it('is held, not refused, when the shell answered it: its registration waits for the origin to settle', () => {
+    guardWorkerScripts(APP)
+    expect(holdsWorkerScript(script({ answeredByShell: true }))).toBe(true)
+    expect(holdsWorkerScript(script())).toBe(false)
+    expect(refusesWorkerScript(script({ answeredByShell: true }))).toBe(false)
+  })
+
+  it('is neither held nor refused for an origin that is not guarded, a page\'s own script, or a request another origin issued', () => {
+    expect(holdsWorkerScript(script({ answeredByShell: true }))).toBe(false)
+    guardWorkerScripts(APP)
+    expect(holdsWorkerScript(script({ answeredByShell: true, hasPage: true }))).toBe(false)
+    expect(holdsWorkerScript(script({ answeredByShell: true, resourceType: 'xhr' }))).toBe(false)
+    expect(holdsWorkerScript(script({ answeredByShell: true, initiatorOrigin: 'https://other.eth' }))).toBe(false)
   })
 })
 

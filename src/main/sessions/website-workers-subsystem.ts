@@ -39,15 +39,6 @@ function websiteSessionsOf (origin: string, store: { isApart: (origin: string, p
   return [session.defaultSession, ...[...names].map((name) => session.fromPartition(name))]
 }
 
-function originOfAddress (address: string): string | undefined {
-  try {
-    const { origin } = new URL(address)
-    return origin === 'null' ? undefined : origin
-  } catch {
-    return undefined
-  }
-}
-
 /** Loads `page` again and resolves once the new document has committed, or the page is gone. */
 async function reloadAndWait (page: WebContents): Promise<void> {
   if (page.isDestroyed()) return
@@ -59,12 +50,12 @@ async function reloadAndWait (page: WebContents): Promise<void> {
   })
 }
 
-/** Resolves once `page` no longer shows a document of `origin` (a first visit emptied it), or is gone. */
-async function leftOrigin (page: WebContents, origin: string): Promise<void> {
-  const left = (): boolean => page.isDestroyed() || originOfAddress(page.getURL()) !== origin
-  if (left()) return
+/** Resolves once `page` shows a document the shell answered, or is gone. */
+async function becameOwnDocument (page: WebContents): Promise<void> {
+  const own = (): boolean => page.isDestroyed() || documentAnsweredByShell(page)
+  if (own()) return
   await new Promise<void>((resolve) => {
-    const check = (): void => { if (left()) { page.removeListener('did-navigate', check); page.removeListener('destroyed', check); resolve() } }
+    const check = (): void => { if (own()) { page.removeListener('did-navigate', check); page.removeListener('destroyed', check); resolve() } }
     page.on('did-navigate', check)
     page.on('destroyed', check)
   })
@@ -89,7 +80,7 @@ export const websiteWorkersSubsystem: Subsystem = {
         isOwnDocument: (page) => documentAnsweredByShell(page) || isCarryPageUrl(page.getURL()),
         isEntering: isEnteringPage,
         reload: reloadAndWait,
-        leftDocument: async (page) => { await leftOrigin(page, originOfAddress(origin) ?? origin) },
+        becameOwn: becameOwnDocument,
         clear: async (target) => { for (const where of websiteSessionsOf(target, ctx.routes?.store)) await forgetWebsiteWorkers(where, target) },
         limits: LIMITS,
         log: (message, error) => { console.warn(message, error) }

@@ -78,6 +78,7 @@ describe('isFromHost, for a request the host hands the shell', () => {
     expect(isFromHost(request)).toBe(true)
     expect(isFromHost({ type: 'relay-abort', id: 3 })).toBe(true)
     expect(isFromHost({ type: 'relay-wrote', id: 3, bytes: 4096 })).toBe(true)
+    expect(isFromHost({ type: 'shell-serves-applied', seq: 2 })).toBe(true)
   })
 
   it.each([
@@ -100,5 +101,8 @@ describe('isFromHost, for a request the host hands the shell', () => {
     expect(isFromHost({ type: 'relay-wrote', id: 3, bytes: -1 })).toBe(false)
     expect(isFromHost({ type: 'relay-wrote', id: 3 })).toBe(false)
     expect(isFromHost({ type: 'relay-abort' })).toBe(false)
+    expect(isFromHost({ type: 'shell-serves-applied' })).toBe(false)
+    expect(isFromHost({ type: 'shell-serves-applied', seq: -1 })).toBe(false)
+    expect(isFromHost({ type: 'shell-serves-applied', seq: '2' })).toBe(false)
   })
 })

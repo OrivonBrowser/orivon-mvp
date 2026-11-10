@@ -85,6 +85,16 @@ export async function servedKnownToHost (): Promise<void> {
   await new Promise<void>((resolve) => { waiting.push({ needs, resolve }) })
 }
 
+/** Like `servedKnownToHost`, but gives up after `ms`: true when the host had said it was told by then. */
+export async function servedKnownToHostWithin (ms: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([servedKnownToHost().then(() => true), new Promise<boolean>((resolve) => { timer = setTimeout(() => { resolve(false) }, ms) })])
+  } finally {
+    if (timer !== undefined) clearTimeout(timer)
+  }
+}
+
 /** Answers the host's relayed requests with the handlers the shell serves from, and tells it of every change in what the shell serves. */
 export function serveShell (host: { send: (message: ToHost) => boolean }): ShellResponder {
   onServingChange(() => { announceServed(host) })

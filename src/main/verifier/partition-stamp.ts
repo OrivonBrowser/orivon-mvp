@@ -6,9 +6,10 @@ import { webContents } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import { PARTITION_HEADER, ROUTE_HEADER, SHELL_ANSWERED_HEADER } from '../../loader/fetch/content-root.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
-import { refusesWorkerScript } from '../sessions/app-workers.js'
+import { holdsWorkerScript, refusesWorkerScript } from '../sessions/app-workers.js'
 import { noteMainFrameResponse } from '../sessions/shell-answered.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { settledOrigin } from '../sessions/worker-settle.js'
 import type { TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import { failedFiles } from './failed-files-store.js'
 import { noteCompletedFile } from './failed-files.js'
@@ -107,14 +108,22 @@ const MAIN_FRAME_MARKS_KEPT = 256
 /**
  * Refuses a service worker script (or one it imports) of an origin the shell serves where websites run, unless the shell
  * answered it (`../sessions/app-workers.ts`). A worker registered in the moment the host has not yet learned the app is served
- * would otherwise be one the check never saw, and would answer the app's navigations with the grants of its document.
+ * would otherwise be one the check never saw, and would answer the app's navigations with the grants of its document. A script
+ * the shell did answer waits until the origin has settled (`../sessions/worker-settle.ts`), so the registration it starts
+ * comes after the removal of what a website left; one that settles never is cancelled.
  */
 export function installWorkerScriptGuard (target: Session): void {
-  webRequestOwnerFor(target).onHeadersReceived(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
-    const refused = refusesWorkerScript({ url: details.url, resourceType: details.resourceType, hasPage: details.webContents !== undefined && details.webContents !== null, answeredByShell: carriesShellMark(details.responseHeaders), ...(details.initiatorOrigin === undefined ? {} : { initiatorOrigin: details.initiatorOrigin }) })
-    if (!refused) return current
-    console.warn('[verifier] refused a service worker script the shell did not serve:', details.url)
-    return { ...current, cancel: true }
+  webRequestOwnerFor(target).onHeadersReceived(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, async (details, current) => {
+    const response = { url: details.url, resourceType: details.resourceType, hasPage: details.webContents !== undefined && details.webContents !== null, answeredByShell: carriesShellMark(details.responseHeaders), ...(details.initiatorOrigin === undefined ? {} : { initiatorOrigin: details.initiatorOrigin }) }
+    if (refusesWorkerScript(response)) {
+      console.warn('[verifier] refused a service worker script the shell did not serve:', details.url)
+      return { ...current, cancel: true }
+    }
+    if (holdsWorkerScript(response) && !(await settledOrigin(new URL(details.url).origin))) {
+      console.warn('[verifier] refused a service worker script of an origin that had not settled:', details.url)
+      return { ...current, cancel: true }
+    }
+    return current
   })
 }
 
