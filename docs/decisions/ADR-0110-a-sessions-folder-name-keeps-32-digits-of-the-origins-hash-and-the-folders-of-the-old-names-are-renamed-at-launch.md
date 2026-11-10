@@ -1,4 +1,4 @@
-# ADR-0108: A session's folder name keeps 32 digits of the origin's hash, and the folders of the old names are renamed at launch
+# ADR-0110: A session's folder name keeps 32 digits of the origin's hash, and the folders of the old names are renamed at launch
 
 - **Status:** accepted
 - **Date:** 2026-11-09

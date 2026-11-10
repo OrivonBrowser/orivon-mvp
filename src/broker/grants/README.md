@@ -29,7 +29,7 @@ both, apart, so the narrowing happens in one place: the capability entry points.
 folder has to fit Windows' 259-character path limit: 32 digits leave room for a profile folder of 80 characters (the
 whole hash, 48), and 128 bits are enough that no two origins share a name. The
 folders of the 64-digit names are renamed at launch by `../../main/launch/partition-folders.ts`, which reads the kinds from
-`HASHED_PARTITION_KINDS` so a new kind of session cannot be left out of the move (ADR-0108).
+`HASHED_PARTITION_KINDS` so a new kind of session cannot be left out of the move (ADR-0110).
 
 **Three storage roots.** `ledger-storage.ts`'s real implementation keeps the ledger under its own
 `grants/` root; the `fs` capability's files live under their own `app-data/<hash>/files`

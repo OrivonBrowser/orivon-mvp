@@ -8,7 +8,7 @@ on a request that arrives from another process; `local-operand.ts` reads an oper
 right place and steps aside if that profile is already open; `profile-store.ts` is the profiles (one directory each, with a `profile.json`);
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions, and
 `private-extensions.ts` gives a new one the extensions its opener allows in private windows, with a copy of their data;
-`partition-folders.ts` renames, before any session is made, each `Partitions/<kind>-<64 hex>` folder to the 32-digit name its session opens (ADR-0108), never copying or deleting;
+`partition-folders.ts` renames, before any session is made, each `Partitions/<kind>-<64 hex>` folder to the 32-digit name its session opens (ADR-0110), never copying or deleting;
 `pid-liveness.ts` is the one check both it and `profile-store.ts` use to tell a marker's process from one
 the OS has since reused its pid for;
 `private-picture.ts` gives a new private session the new tab's picture of the profile that opened it, copied asynchronously because it can be 20 MB;
