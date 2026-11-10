@@ -5,13 +5,15 @@
 // it connects. The verifier host reads the node from a utility process, which is no
 // session, so it is unaffected. Registered through the web-request owner, never a raw
 // `session.webRequest.onBeforeRequest`, which would replace a sibling's listener.
+// Match patterns name hosts one by one and cannot say every spelling of an address, so it takes
+// every URL, lets the owner's predicate drop all but the held ports, and decides the host itself.
 
 import { app, session } from 'electron'
 import type { Session } from 'electron'
 import { forEachAppSession } from '../../loader/electron/serve.js'
 import type { Subsystem } from '../registry.js'
 import { heldNodePorts } from '../verifier/loopback-port.js'
-import { LOOPBACK_URL_PATTERNS, reachesLocalNode } from './local-node-ports.js'
+import { reachesLocalNode, requestsHeldPort } from './local-node-ports.js'
 import { webRequestOwnerFor } from './web-request-owner.js'
 
 const gated = new WeakSet<Session>()
@@ -20,7 +22,7 @@ const gated = new WeakSet<Session>()
 export function installLocalNodePortGate (target: Session, ports: () => ReadonlySet<number> = heldNodePorts): void {
   if (gated.has(target)) return
   gated.add(target)
-  webRequestOwnerFor(target).onBeforeRequest(0, { urls: [...LOOPBACK_URL_PATTERNS] }, () => true, async (details, current) =>
+  webRequestOwnerFor(target).onBeforeRequest(0, { urls: ['<all_urls>'] }, (url) => requestsHeldPort(url, ports()), async (details, current) =>
     reachesLocalNode(details.url, ports()) ? { ...current, cancel: true } : current)
 }
 
