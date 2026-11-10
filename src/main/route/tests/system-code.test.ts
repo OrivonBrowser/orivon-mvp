@@ -51,6 +51,7 @@ describe('whether the system\'s settings may run code on a name', () => {
     expect(settingsMayRunCode(bare, { auto_proxy: 'http://wpad/proxy.pac' })).toBe(true)
     expect(settingsMayRunCode(bare, { auto_proxy: '' }), 'empty is automatic detection').toBe(true)
     expect(settingsMayRunCode(bare, { AUTO_PROXY: 'http://wpad/proxy.pac' })).toBe(true)
+    expect(settingsMayRunCode(status({ source: 'environment' }), { auto_proxy: '/a/path/is/no/address' }), 'a value Chromium cannot parse leaves no proxy at all').toBe(false)
     for (const source of ['kde', 'gnome'] as const) {
       const desktop = status({ source })
       expect(settingsMayRunCode(desktop, {}), `${source} with no proxy`).toBe(false)

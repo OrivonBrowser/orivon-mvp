@@ -22,8 +22,8 @@ function environmentNamesScript (env: Environment): boolean {
  */
 export function settingsMayRunCode (status: MirrorStatus, env: Environment): boolean {
   switch (status.mode) {
-    // Where the desktop gave Chromium no proxy it reads the environment: KDE with none set, GNOME's manual mode with no server (read as none too), and a desktop it has no reader for.
-    case 'none': return status.source !== 'windows' && status.source !== 'macos' && environmentNamesScript(env)
+    // Where the desktop gave Chromium no proxy it reads the environment: KDE with none set, and GNOME's manual mode with no server (read as none too). The environment's own reader says exactly what `auto_proxy` came to, and none is nothing.
+    case 'none': return (status.source === 'gnome' || status.source === 'kde') && environmentNamesScript(env)
     case 'manual': return status.state !== 'mirrored'
     case 'unknown': return status.source !== 'environment' || status.reason !== 'no-reader' || environmentNamesScript(env)
     default: return true
