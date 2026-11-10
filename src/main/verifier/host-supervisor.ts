@@ -22,6 +22,8 @@ export interface SupervisorEvents extends ProcessEvents {
   nodeTraffic?: (node: string, active: number, bytes: number) => void
   /** The host hands the shell a request for a host the shell serves, or says it wrote some of the answer, or that the client left. */
   relay?: (message: RelayFromHost) => void
+  /** The host has put the set of origins in the shell's announcement number `seq` in force. */
+  servesApplied?: (seq: number) => void
   /** The host is gone or asleep: every request it handed the shell is waiting for nothing. */
   abandoned?: () => void
 }
@@ -85,6 +87,7 @@ export class HostSupervisor extends ProcessSupervisor<HostConfig, FromHost, Supe
       case 'ipns-sequence': events.ipnsSequence(message.key, message.sequence); break
       case 'node-wanted': events.nodeWanted?.(message.node); break
       case 'node-traffic': events.nodeTraffic?.(message.node, message.active, message.bytes); break
+      case 'shell-serves-applied': events.servesApplied?.(message.seq); break
       case 'swarm-feed-index': events.swarmFeedIndex(message.feed, message.index); break
       case 'name-scheme': events.nameScheme(message.host, message.scheme); break
       case 'relay-request':

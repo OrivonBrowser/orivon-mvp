@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -52,6 +52,7 @@ const { setSiteRoutes } = await import('../../route/site-routes.js')
 const { profilePartitionFor } = await import('../../route/site-partition.js')
 const { noteMainFrameResponse } = await import('../shell-answered.js')
 const { noteWorkerControl } = await import('../worker-control.js')
+const { beginSettling, resetSettlingForTests, settleServedOrigin } = await import('../worker-settle.js')
 const { appTabContents } = await import('../../shell/tab-partition.js')
 
 const APP = 'https://app.example'
@@ -242,6 +243,21 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
   })
 
   describe('a document the app\'s own service worker answers', () => {
+    /** What the origin's settling finds: the pages of websites still open at the origin, and whether the host was told. */
+    const settle = async (websitePages = 0): Promise<boolean> => await settleServedOrigin(KEPT, {
+      hostKnows: async () => {},
+      pagesOf: () => Array.from({ length: websitePages }, () => ({})),
+      isOwnDocument: () => false,
+      isEntering: () => false,
+      reload: async () => {},
+      leftDocument: async () => {},
+      clear: async () => {},
+      limits: { hostMs: 50, pageMs: 50, enteringMs: 50, clearMs: 50 },
+      log: () => {}
+    })
+    beforeEach(async () => { beginSettling(KEPT); await settle() })
+    afterEach(() => { resetSettlingForTests() })
+
     /** A tab whose navigation to `url` is answered by no response the session sees, as a worker's answer is, with the preload's report of a controller. */
     function workerAnswered (attributed: (sender: unknown, origin: string) => boolean, register: (wc: FakeWebContents) => void, options: { report?: 'before' | 'after' | 'none', reportUrl?: string, flagged?: boolean, inSession?: unknown } = {}): { wc: FakeWebContents, commit: () => void, start: () => void } {
       const made = fakeWebContents(options.inSession ?? DEFAULT_SESSION)
@@ -269,6 +285,43 @@ describe('senderAttributed -- an app the verifier hands to the shell runs in the
       tab.commit()
 
       expect(attributed(tab.wc, KEPT)).toBe(true)
+    })
+
+    it('denies it while the origin has not settled: the host may not have been told, and a website\'s page may still be open', async () => {
+      served.add(KEPT)
+      resetSettlingForTests()
+      beginSettling(KEPT)
+      const { attributed, register } = attributionRig()
+      const tab = workerAnswered(attributed, register)
+      tab.commit()
+      expect(attributed(tab.wc, KEPT)).toBe(false)
+
+      await settle()
+      expect(attributed(tab.wc, KEPT)).toBe(true)
+    })
+
+    it('denies a document that committed before a website page\'s caches were removed, and attributes the next one', async () => {
+      served.add(KEPT)
+      resetSettlingForTests()
+      beginSettling(KEPT)
+      const { attributed, register } = attributionRig()
+      const early = workerAnswered(attributed, register)
+      early.commit()
+
+      await settle(1)
+      expect(attributed(early.wc, KEPT)).toBe(false)
+      const late = workerAnswered(attributed, register)
+      late.commit()
+      expect(attributed(late.wc, KEPT)).toBe(true)
+    })
+
+    it('denies it for an origin whose serving was never prepared: nothing says its workers are the app\'s', () => {
+      served.add(KEPT)
+      resetSettlingForTests()
+      const { attributed, register } = attributionRig()
+      const tab = workerAnswered(attributed, register)
+      tab.commit()
+      expect(attributed(tab.wc, KEPT)).toBe(false)
     })
 
     it('attributes it whichever of the commit and the preload\'s report arrives first', () => {

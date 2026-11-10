@@ -38,18 +38,15 @@ import { localFileApps } from '../local-files/local-file-apps.js'
 import { localPartitionFor } from '../local-files/partition.js'
 import type { DialogCaller } from '../consent/request-grant.js'
 import { isLocalFileKey } from '../../broker/policy/origin.js'
+import { settledOrigin } from '../sessions/worker-settle.js'
 import { defaultSessionGrantedOriginCsp, GRANTED_ORIGIN_CSP_FILTER } from './granted-origin-csp.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
 import { forEachWebsiteSession } from '../sessions/website-sessions.js'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
-import { onServingChange, servedOrigins } from '../../loader/electron/app-partitions.js'
-import { isCarryPageUrl } from '../../loader/electron/carry-page.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
-import { hasOwnPartition, runsAsWebsite } from '../shell/app-session.js'
-import { appTabContents } from '../shell/tab-partition.js'
-import { enteringPage, isEnteringPage, reloadStalePage, reloadStalePagesOfNewlyServed } from '../sessions/stale-pages.js'
+import { hasOwnPartition } from '../shell/app-session.js'
 import { outsideOriginQueue, withOriginQueue } from './origin-queue.js'
 import { ownFetch } from '../route/own-requests.js'
 import { blockOpenTabs } from '../app-setup/block-tabs.js'
@@ -168,16 +165,13 @@ export const appInstallSubsystem: Subsystem = {
       },
       intervalMs: updateWatchMs() ?? OPEN_TAB_CHECK_MS
     })
-    // The website's pages still open when the app starts to be served load again, so none of them stays as the website left it (`../sessions/stale-pages.ts`).
-    // The hidden pages of the storage carry are not websites' pages: a reload would end the carry they are in the middle of.
-    reloadStalePagesOfNewlyServed({ served: () => servedOrigins().filter(runsAsWebsite), pagesOf: pagesOfOrigin, isAppPage: (page) => appTabContents.has(page) || isEnteringPage(page) || isCarryPageUrl(page.getURL()), reload: reloadStalePage, onServingChange })
     // A page's first visit (ADR-0075): asks, lets the tab into the app at once with every file checked as it is served, and pins the app in the background. It
     // leaves alone the origins that never install: a local file, loopback and developer origins, anything not https.
     // The refusals are kept in `declined-apps.json`, and in memory only in a private session.
     const declined = new DeclinedApps(ctx.privateSession ? undefined : join(ctx.app.getPath('userData'), 'declined-apps.json'))
     installDeclinedApps(declined)
     const firstVisit = createFirstVisit({
-      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), entering: enteringTab, askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
+      deps: { broker, loader, consent, capabilityPrompt, declined, changed: announceEntryChange, blocked: blockOpenTabs({ tabsOn: (origin) => ctx.openTabs?.on(origin) ?? [], pagesOf: pagesOfOrigin, setup: tabSetupNow }), entering: enteringTab, settled: settledOrigin, askerFor: (origin) => { const tab = ctx.openTabs?.on(origin)[0]; return tab === undefined ? undefined : dialogCallerFor(tab, (sender) => ctx.windowForSender?.(sender as never)) }, backgroundDelayMs: backgroundPinDelayMs() },
       untouched: (origin) => isLocalFileKey(origin) || grantableWithoutInstall(origin, devModeEnabled()) || !origin.startsWith('https://'),
       servedFromCache: isOriginServedFromCacheSync
     })

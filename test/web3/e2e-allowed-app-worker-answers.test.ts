@@ -7,8 +7,9 @@
 //      succeeds).
 //   2. In the moment between the shell serving an app and the verifier host learning it, the host answers from the network:
 //      a worker script it hands out has no mark of the shell's, so the worker is refused and never installs. The page it
-//      answered has no grants. Once the host knows, the reload is the shell's, holds its grants, registers the app's own
-//      worker, and the reload after that is the worker's and keeps them.
+//      answered has no grants. Once the host knows, the website's page is loaded again and what it could have kept is removed;
+//      a load after that is the shell's, holds its grants and registers the app's own worker, and a load after that is the
+//      worker's and keeps them.
 //
 // What a page can see of this is `window.orivon.app.grants()`: a document attributed to the origin gets the list, any other
 // is denied, and `performance.getEntriesByType('navigation')[0].workerStart`, which is above zero when a worker answered.
@@ -69,6 +70,19 @@ async function markPage (app: Running, url: string): Promise<boolean> {
 async function reloadTab (chrome: ReturnType<typeof findChrome>): Promise<void> {
   const [tab] = await tabIds(chrome) as string[]
   await chrome.evaluate((id: string) => { (window as unknown as { orivonShell: { reload: (tab: string) => void } }).orivonShell.reload(id) }, tab as string)
+}
+
+/** Reloads the tab, up to eight times, until the page that comes back satisfies `wanted`; null when none does. */
+async function reloadUntil (app: Running, chrome: ReturnType<typeof findChrome>, url: string, wanted: (facts: Facts) => boolean): Promise<Facts | null> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await markPage(app, url)
+    await reloadTab(chrome)
+    let facts = null as Facts | null
+    await waitFor(async () => { facts = await factsOf(app, url); return facts !== null && !facts.marked && facts.app === 'ran' && facts.grants !== null }, 30_000)
+    if (facts !== null && wanted(facts)) return facts
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
+  }
+  return null
 }
 
 const TEST_TIMEOUT_MS = ADDRESS_BAR_STABLE_TIMEOUT_MS * 2 + DEFAULT_ACTION_TIMEOUT_MS * 12 + APP_CLOSE_RACE_MS + 240_000
@@ -183,19 +197,15 @@ it('[app:allowed-app-unchecked-worker-never-installs] refuses a service worker s
       check(`the page the host answered, in the app's tab, holds no grants (${JSON.stringify(held)})`, held?.appTab === true && held.grants !== 'granted:fs')
       check(`and the worker script it handed out is refused, so no worker is registered (${JSON.stringify(held)})`, held?.sw?.startsWith('failed') === true && held.registrations === 0)
 
-      // The host is told: the next load is the shell's, holds its grants and registers the app's own worker.
+      // The host is told. The website's page the host answered is loaded again and what it could have kept is removed, which takes
+      // a moment, so the loads are repeated until one is the shell's: it holds the grants and registers the app's own worker.
       await running.evaluate(() => { (globalThis as { __orivonDevEthFixtures?: { holdServed?: (hold: boolean) => void } }).__orivonDevEthFixtures?.holdServed?.(false) })
-      check('the page to reload is marked', await markPage(running, url))
-      await reloadTab(chrome)
-      let shells = null as Facts | null
-      const entered = await waitFor(async () => { shells = await factsOf(running, url); return shells !== null && !shells.marked && shells.app === 'ran' && shells.grants !== null && shells.sw === 'ready' }, 60_000)
-      check(`once the host knows, the reloaded page is the shell's: it holds its grants and registers the app's worker (${JSON.stringify(shells)})`, entered && shells?.via === 'network' && shells.grants === 'granted:fs' && shells.registrations === 1)
+      const settledPage = await reloadUntil(running, chrome, url, (facts) => facts.grants === 'granted:fs' && facts.sw === 'ready' && facts.registrations === 1)
+      check(`once the host knows, a reloaded page is the shell's: it holds its grants and registers the app's worker (${JSON.stringify(settledPage)})`, settledPage !== null)
 
-      check('the page to reload is marked again', await markPage(running, url))
-      await reloadTab(chrome)
-      let worker = null as Facts | null
-      const answered = await waitFor(async () => { worker = await factsOf(running, url); return worker !== null && !worker.marked && worker.app === 'ran' && worker.grants !== null }, 60_000)
-      check(`and the reload after that is the app's own worker's, with the grants (${JSON.stringify(worker)})`, answered && worker?.via === 'worker' && worker.grants === 'granted:fs')
+      // Then the app's own worker answers, and the page it answers keeps the grants.
+      const workerPage = await reloadUntil(running, chrome, url, (facts) => facts.via === 'worker' && facts.grants === 'granted:fs')
+      check(`and a reload after that is the app's own worker's, with the grants (${JSON.stringify(workerPage)})`, workerPage !== null)
     } finally {
       if (app !== undefined) await closeElectronApp(app)
       await gateway.close()

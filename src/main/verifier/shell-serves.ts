@@ -56,10 +56,33 @@ export function hostShell (): NonNullable<HostConfig['shell']> {
   return { ownReadToken: ownReadToken(), origins: relayableOrigins() }
 }
 
+// The shell's announcements, counted: `asked` is how many the shell wanted to make, `acknowledged` the last one the host said is in
+// force. The two differ while the host has not been told (the word is held back, or in flight), and `servedKnownToHost` waits for them.
+let asked = 0
+let acknowledged = 0
+let waiting: Array<{ readonly needs: number, readonly resolve: () => void }> = []
+
 /** Tells the host the whole set it is to hand to the shell: at the host's report that it listens too, before the held requests are let go, so an origin served since its configuration was built is in its set. */
 export function announceServed (host: { send: (message: ShellServes) => unknown }): void {
+  asked += 1
   if (servedAnnouncementHeld()) return
-  host.send({ type: 'shell-serves', origins: relayableOrigins() })
+  // A host that is not running takes the set from its configuration when it starts, so there is nobody to wait for.
+  if (host.send({ type: 'shell-serves', origins: relayableOrigins(), seq: asked }) === false) noteServesApplied(asked)
+}
+
+/** The host says the set of announcement `seq` is in force. */
+export function noteServesApplied (seq: number): void {
+  if (seq > acknowledged) acknowledged = seq
+  const ready = waiting.filter((waiter) => waiter.needs <= acknowledged)
+  waiting = waiting.filter((waiter) => waiter.needs > acknowledged)
+  for (const waiter of ready) waiter.resolve()
+}
+
+/** Resolves when the host has been told what the shell serves as it is now: every request it answers from then on, it hands to the shell where it should. A caller bounds the wait. */
+export async function servedKnownToHost (): Promise<void> {
+  const needs = asked
+  if (acknowledged >= needs) return
+  await new Promise<void>((resolve) => { waiting.push({ needs, resolve }) })
 }
 
 /** Answers the host's relayed requests with the handlers the shell serves from, and tells it of every change in what the shell serves. */

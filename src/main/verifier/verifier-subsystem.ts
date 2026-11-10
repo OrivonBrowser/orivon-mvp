@@ -57,7 +57,7 @@ import { SWARM_NODE_IDENTITY } from '../../protocols/swarm-node/protocol.js'
 import type { RouteService } from '../route/route-service.js'
 import { configureNodeRoute, ethereumOutsideTunnel, nodesMayServeTunnelSites, nodesRunThroughTunnel } from './node-route.js'
 import { forgetNodeData as forgetNodes } from './forget-node-data.js'
-import { announceServed, hostShell, serveShell } from './shell-serves.js'
+import { announceServed, hostShell, noteServesApplied, serveShell } from './shell-serves.js'
 import { followNodes, tellHost } from './node-notices.js'
 
 /** A mount may wait for the light client to sync, resolve a name and follow its pointers: the host's own bound (verifier-host/pace.ts) and this much beyond it, so the host's answer is the one that comes. */
@@ -443,6 +443,7 @@ export const verifierSubsystem: Subsystem = {
         },
         nodeTraffic: (name, active, bytes) => { ledger.record(name, active, bytes) },
         relay: (message) => { responder.receive(message) },
+        servesApplied: noteServesApplied,
         abandoned: () => { responder.abortAll() },
         nodeWanted: (name) => {
           const node = NODES.get(name)

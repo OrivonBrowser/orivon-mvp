@@ -47,3 +47,18 @@ describe('what is not a worker script', () => {
     expect(refusesWorkerScript(script({ url: 'not an address' }))).toBe(false)
   })
 })
+
+describe('a script another origin\'s worker asked for', () => {
+  it('is not refused: a worker at another site importing from a served origin registers nothing there', () => {
+    guardWorkerScripts(APP)
+    expect(refusesWorkerScript(script({ initiatorOrigin: 'https://other.eth' }))).toBe(false)
+  })
+
+  it('is refused when the served origin asked, or when the initiator is unknown or opaque', () => {
+    guardWorkerScripts(APP)
+    expect(refusesWorkerScript(script({ initiatorOrigin: APP }))).toBe(true)
+    expect(refusesWorkerScript(script({ initiatorOrigin: 'null' }))).toBe(true)
+    expect(refusesWorkerScript(script({ initiatorOrigin: 'not an origin' }))).toBe(true)
+    expect(refusesWorkerScript(script())).toBe(true)
+  })
+})

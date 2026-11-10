@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { onAppOriginRetired, registerAppOrigin, retireAppOrigin } from '../../../loader/electron/app-partitions.js'
 import type { Session } from 'electron'
-import { clearedOriginsIn, clearedOriginsInMemory, forgetWebsiteWorkers, prepareWebsiteWorkers } from '../website-workers.js'
+import { CLEARED_MARKS_DIRECTORY, LEGACY_CLEARED_MARKS_DIRECTORY, clearedOriginsIn, clearedOriginsInMemory, forgetWebsiteWorkers, prepareWebsiteWorkers } from '../website-workers.js'
 
 describe('forgetWebsiteWorkers', () => {
   it("drops the origin's service workers and Cache Storage, and nothing else of the session", async () => {
@@ -114,6 +114,27 @@ describe('prepareWebsiteWorkers', () => {
       expect(clearedOriginsIn(directory).has('https://other.ipfs.orivon')).toBe(false)
     } finally {
       rmSync(directory, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('the marks that say a website\'s workers were cleared', () => {
+  const ORIGIN = 'https://app.ipfs.orivon'
+
+  it('live in a directory of their own, so a mark an earlier build wrote does not stand for the guard this build arms', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'orivon-marks-'))
+    try {
+      expect(CLEARED_MARKS_DIRECTORY).not.toBe(LEGACY_CLEARED_MARKS_DIRECTORY)
+      mkdirSync(join(base, LEGACY_CLEARED_MARKS_DIRECTORY), { recursive: true })
+      clearedOriginsIn(join(base, LEGACY_CLEARED_MARKS_DIRECTORY)).add(ORIGIN)
+      const marks = clearedOriginsIn(join(base, CLEARED_MARKS_DIRECTORY))
+      expect(marks.has(ORIGIN)).toBe(false)
+      const cleared: string[] = []
+      await prepareWebsiteWorkers([{ clearStorageData: async (options) => { cleared.push(options.origin) } }], ORIGIN, 'pin', marks)
+      expect(cleared).toEqual([ORIGIN])
+      expect(clearedOriginsIn(join(base, CLEARED_MARKS_DIRECTORY)).has(ORIGIN)).toBe(true)
+    } finally {
+      rmSync(base, { recursive: true, force: true })
     }
   })
 })

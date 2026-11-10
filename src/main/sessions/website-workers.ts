@@ -40,6 +40,10 @@ export async function prepareWebsiteWorkers (targets: readonly WorkerStorage[], 
   cleared.add(origin)
 }
 
+/** Where the marks of origins whose workers were cleared are kept; a mark an earlier build wrote (`LEGACY_CLEARED_MARKS_DIRECTORY`) does not count, since that build let workers in without the script guard. */
+export const CLEARED_MARKS_DIRECTORY = 'website-workers-cleared-v2'
+export const LEGACY_CLEARED_MARKS_DIRECTORY = 'website-workers-cleared'
+
 /** The cleared origins as empty files in `directory`, named by the origin's hash. */
 export function clearedOriginsIn (directory: string): ClearedOrigins {
   return {

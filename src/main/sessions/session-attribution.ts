@@ -27,6 +27,7 @@ import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.
 import { localPartitionFor } from '../local-files/partition.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { runsAsWebsite } from '../shell/app-session.js'
+import { nextTick, workerAnswersTrusted } from './worker-settle.js'
 
 interface AttributionRecord {
   readonly origin: string | null
@@ -38,6 +39,8 @@ interface AttributionRecord {
   readonly inExpectedSession: boolean
   /** Whether the shell served the origin where websites run when the document committed: only then can the app's own worker have answered it. */
   readonly servedAsWebsite: boolean
+  /** When the document committed, on `worker-settle.ts`'s clock: a worker's answer counts only if it came after the origin's website left nothing in its storage. */
+  readonly committedAt: number
   /** Whether the preload reported a worker controlling this document, which can arrive before or after its commit: it is kept with the document, so a navigation that starts and never commits does not take it away. */
   controlled: boolean
 }
@@ -46,11 +49,17 @@ interface AttributionRecord {
  * Whether the shell's own handler, or the app's own worker, answered this document. The worker's code is the shell's: while an
  * origin is served where websites run, a worker script is installed only when the shell answered it (`./app-workers.ts`),
  * and the workers a website left were removed before the serving began. So a document no response was seen for, committed
- * while the origin was served, whose preload reported a controller, was answered by the app.
+ * while the origin was served, whose preload reported a controller, was answered by the app's worker; its bytes are the app's
+ * only once the origin has settled (`./worker-settle.ts`), which keeps a page of the website from having written them.
  */
 function answeredByShell (record: AttributionRecord): boolean {
   if (record.answer === 'shell') return true
-  return record.answer === 'none' && record.servedAsWebsite && record.controlled
+  return record.answer === 'none' && record.servedAsWebsite && record.controlled && record.origin !== null && workerAnswersTrusted(record.origin, record.committedAt)
+}
+
+/** Whether the document `page` shows now was answered by the shell's own handler. */
+export function documentAnsweredByShell (page: WebContents): boolean {
+  return attributionRecords.get(page)?.answer === 'shell'
 }
 
 /**
@@ -115,6 +124,7 @@ export const sessionAttributionSubsystem: Subsystem = {
           inExpectedSession: origin !== null && wc.session === expectedSession(origin, wc),
           // An origin the shell serves where websites run attributes only a document it answered, even once it stops serving it.
           servedAsWebsite: origin !== null && runsAsWebsite(origin),
+          committedAt: nextTick(),
           controlled: isControlledByWorker(wc, url)
         })
       })

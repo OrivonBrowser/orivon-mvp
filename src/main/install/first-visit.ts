@@ -44,6 +44,8 @@ export interface FirstVisitDeps {
    * that load again when the app starts to be served leave it out, since the visit loads it itself. Returns the end of that.
    */
   readonly entering?: ((tab: object | undefined) => () => void) | undefined
+  /** Resolves when the origin the shell now serves has settled its workers (`../sessions/worker-settle.ts`): the website's pages are gone and what they could have written is removed. The tab loads as the app after it, so none of that races the app's own first page. */
+  readonly settled?: ((origin: string) => Promise<boolean>) | undefined
   /** The question a pinned app's update asks when it wants more than it holds, asked of a new version of an app that is not yet pinned; "keep the current version" is a no. Without it a widened version is never followed. */
   readonly capabilityPrompt?: CapabilityPromptPrompt | undefined
   /** Who to ask, in which tab, when a new version of an app asks for more than it was granted. */
@@ -76,6 +78,8 @@ export type SetupSheet =
 export interface SetupHost {
   /** Resolves what the person chose; a sheet with no way forward resolves `leave`. */
   sheet: (sheet: SetupSheet) => Promise<'retry' | 'leave'>
+  /** Empties the page the tab shows (the website's), under the screens the visit put up, so nothing of the website runs while its leftovers are removed. Without it the page stays until the tab loads as the app. */
+  blank?: () => Promise<void>
   /** The app is let in: the tab reloads as the app. */
   enter: () => void
   /** The site stays the plain website the tab already shows: not an app, or the person said no. */
@@ -264,6 +268,13 @@ async function letInTab (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisit
   if (keeper.landed()) await keeper.start()
   // A block that landed meanwhile has the tab and takes the origin away; the tab is not sent into it.
   if (keeper.stopped()) return left()
+  // The page the person was looking at is the website's, and what it wrote at the origin must not answer as the app: it is emptied, the
+  // origin settles (the host is told, the website's other pages load again, its leftovers go), and only then does the tab load as the app.
+  if (!entry.gone()) {
+    await host.blank?.().catch((error: unknown) => { console.warn('[first-visit] the website\'s page could not be emptied:', error) })
+    if (!(await (deps.settled?.(origin) ?? Promise.resolve(true)))) console.warn(`[first-visit] ${origin} had not settled its workers when its tab was let in; a page its worker answers has no grants until it has`)
+    if (keeper.stopped()) return left()
+  }
   if (entry.gone()) host.end()
   else host.enter()
   keeper.enteredTab(host.tab?.())

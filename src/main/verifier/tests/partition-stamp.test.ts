@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Session } from 'electron'
 
 type Handler = (details: { url: string, resourceType: string, frame?: { top: { url: string } } }, current: { requestHeaders: Record<string, string> }) => { requestHeaders: Record<string, string> }
-interface Started { resourceType: string, url: string, webContents?: object, fromCache?: boolean, responseHeaders?: Record<string, string[]> }
+interface Started { id?: number, resourceType: string, url: string, webContents?: object, fromCache?: boolean, responseHeaders?: Record<string, string[]>, initiatorOrigin?: string }
 type Received = (details: Started, current: { responseHeaders: Record<string, string[]>, cancel?: boolean }) => { responseHeaders: Record<string, string[]>, cancel?: boolean }
 const { captured } = vi.hoisted(() => ({ captured: { handler: undefined as Handler | undefined, started: undefined as ((details: Started) => void) | undefined, received: undefined as Received | undefined } }))
 vi.mock('electron', () => ({ webContents: { fromId: () => undefined } }))
@@ -64,10 +64,19 @@ describe('the HTTP cache a request of a served app is kept out of', () => {
 
 describe('which document the shell answered', () => {
   const contents = {}
-  const watch = (): ((details: Started) => void) => {
+  let requestId = 0
+  /** A response as the session sees it: its headers reach the hooks as the network gave them (`received`), then as the listeners left them (`started`). */
+  const watch = (): ((details: Started, received?: Record<string, string[]>) => void) => {
     installShellAnswerWatch({} as Session)
-    if (captured.started === undefined) throw new Error('nothing was registered for responses')
-    return captured.started
+    const started = captured.started
+    const received = captured.received
+    if (started === undefined || received === undefined) throw new Error('nothing was registered for responses')
+    return (details, original) => {
+      requestId += 1
+      const headers = original ?? details.responseHeaders ?? {}
+      received({ ...details, id: requestId, responseHeaders: headers } as Started, { responseHeaders: headers })
+      started({ ...details, id: requestId })
+    }
   }
   const main = (url: string, headers: Record<string, string[]> | undefined, more: Partial<Started> = {}): Started => ({ resourceType: 'mainFrame', url, webContents: contents, fromCache: false, ...(headers === undefined ? {} : { responseHeaders: headers }), ...more })
   afterEach(() => { forgetShellAnswered(contents) })
@@ -111,6 +120,16 @@ describe('which document the shell answered', () => {
   it('ignores a response with no page behind it', () => {
     const { webContents: _none, ...bare } = main(`${HOST_ORIGIN}/`, { [SHELL_ANSWERED_HEADER]: ['1'] })
     expect(() => { watch()(bare) }).not.toThrow()
+  })
+
+  it('does not count a mark a listener added after the network answered: an extension cannot make a page the shell\'s', () => {
+    watch()(main(`${HOST_ORIGIN}/`, { [SHELL_ANSWERED_HEADER]: ['1'] }), { 'content-type': ['text/html'] })
+    expect(takeMainFrameAnswer(contents, `${HOST_ORIGIN}/`)).toBe('other')
+  })
+
+  it('counts the mark the network gave even when a listener took it away, since the host answered', () => {
+    watch()(main(`${HOST_ORIGIN}/`, { 'content-type': ['text/html'] }), { [SHELL_ANSWERED_HEADER]: ['1'] })
+    expect(takeMainFrameAnswer(contents, `${HOST_ORIGIN}/`)).toBe('shell')
   })
 })
 

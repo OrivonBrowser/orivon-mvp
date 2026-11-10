@@ -1,73 +1,57 @@
 import { describe, expect, it, vi } from 'vitest'
-import { enteringPage, isEnteringPage, reloadStalePage, reloadStalePagesOfNewlyServed } from '../stale-pages.js'
+import { enteringPage, forNewlyServed, isEnteringPage, reloadStalePage } from '../stale-pages.js'
 
-// An origin the shell starts to serve where websites run: the pages the website left open must not stay as they were.
-
-interface Page { readonly name: string, readonly app: boolean }
+// An origin the shell starts to serve where websites run is settled once, when it starts.
 
 const KEPT = 'https://kept.eth'
 const OTHER = 'https://other.eth'
 
-function rig (initial: readonly string[], pages: Record<string, readonly Page[]>) {
+function rig (initial: readonly string[]) {
   let served = [...initial]
   let changed: (() => void) | undefined
-  const reloaded: string[] = []
-  const stop = reloadStalePagesOfNewlyServed<Page>({
+  const started: string[] = []
+  const stop = forNewlyServed({
     served: () => served,
-    pagesOf: (origin) => pages[origin] ?? [],
-    isAppPage: (page) => page.app,
-    reload: (page) => { reloaded.push(page.name) },
     onServingChange: (listener) => { changed = listener; return () => { changed = undefined } }
-  })
-  return { reloaded, serve: (...next: string[]) => { served = next; changed?.() }, stop, listening: () => changed !== undefined }
+  }, (origin) => { started.push(origin) })
+  return { started, serve: (...next: string[]) => { served = next; changed?.() }, stop, listening: () => changed !== undefined }
 }
 
-describe('the pages of an origin the shell starts to serve', () => {
-  it('reloads every page the website left open, in whichever session, and none that is the app\'s own', () => {
-    const { reloaded, serve } = rig([], { [KEPT]: [{ name: 'tab', app: false }, { name: 'second window', app: false }, { name: 'app tab', app: true }] })
+describe('the origins the shell starts to serve', () => {
+  it('names each origin once, as it starts', () => {
+    const { started, serve } = rig([])
     serve(KEPT)
-    expect(reloaded).toEqual(['tab', 'second window'])
+    serve(KEPT, OTHER)
+    expect(started).toEqual([KEPT, OTHER])
   })
 
-  it('reloads nothing for an origin that was served already, or for one whose serving stops', () => {
-    const { reloaded, serve } = rig([KEPT], { [KEPT]: [{ name: 'tab', app: false }] })
+  it('names nothing for an origin that was served already, or for one whose serving stops', () => {
+    const { started, serve } = rig([KEPT])
     serve(KEPT, OTHER)
     serve(OTHER)
-    expect(reloaded).toEqual([])
+    expect(started).toEqual([OTHER])
   })
 
-  it('reloads again when an origin is served anew after it stopped', () => {
-    const { reloaded, serve } = rig([], { [KEPT]: [{ name: 'tab', app: false }] })
+  it('names an origin again when it is served anew after it stopped', () => {
+    const { started, serve } = rig([])
     serve(KEPT)
     serve()
     serve(KEPT)
-    expect(reloaded).toEqual(['tab', 'tab'])
+    expect(started).toEqual([KEPT, KEPT])
   })
 
-  it('reloads the pages of the origin served and no other', () => {
-    const { reloaded, serve } = rig([], { [KEPT]: [{ name: 'kept page', app: false }], [OTHER]: [{ name: 'other page', app: false }] })
-    serve(KEPT)
-    expect(reloaded).toEqual(['kept page'])
-  })
-
-  it('goes on to the next page when one cannot be reloaded', () => {
-    const reloaded: string[] = []
+  it('goes on to the next origin when one cannot be settled', () => {
+    const started: string[] = []
     let changed: (() => void) | undefined
     let served: string[] = []
-    reloadStalePagesOfNewlyServed<string>({
-      served: () => served,
-      pagesOf: () => ['gone', 'alive'],
-      isAppPage: () => false,
-      reload: (page) => { if (page === 'gone') throw new Error('Object has been destroyed'); reloaded.push(page) },
-      onServingChange: (listener) => { changed = listener; return () => {} }
-    })
-    served = [KEPT]
+    forNewlyServed({ served: () => served, onServingChange: (listener) => { changed = listener; return () => {} } }, (origin) => { if (origin === KEPT) throw new Error('gone'); started.push(origin) })
+    served = [KEPT, OTHER]
     expect(() => { changed?.() }).not.toThrow()
-    expect(reloaded).toEqual(['alive'])
+    expect(started).toEqual([OTHER])
   })
 
   it('stops listening when told to', () => {
-    const { stop, listening } = rig([], {})
+    const { stop, listening } = rig([])
     expect(listening()).toBe(true)
     stop()
     expect(listening()).toBe(false)

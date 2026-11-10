@@ -9,6 +9,7 @@ import type { TabScreens } from './tab-screens.js'
 export function tabHost (screens: TabScreens, address: () => string): SetupHost {
   return {
     sheet: async (sheet) => await screens.sheet(sheet),
+    blank: async () => { await screens.blank() },
     enter: () => { screens.navigate(address()) },
     plain: () => { screens.end() },
     end: () => { screens.end() },
