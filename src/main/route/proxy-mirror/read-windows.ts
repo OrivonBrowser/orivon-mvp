@@ -116,7 +116,8 @@ export function parseWindowsSettings (registry: WindowsRegistry): SystemSettings
     if (stored !== undefined && parsed === undefined) return { kind: 'unsupported' }
     const blob = parsed === 'empty' ? undefined : parsed
     // A script wins over a manual proxy in both forms, and detection beside a manual proxy is left to the canary check.
-    if (text(values.get('autoconfigurl')) !== '' || (blob !== undefined && (blob.flags & SCRIPT) !== 0 && blob.script !== '')) return { kind: 'script' }
+    const script = text(values.get('autoconfigurl')) || (blob !== undefined && (blob.flags & SCRIPT) !== 0 ? blob.script : '')
+    if (script !== '') return { kind: 'script', url: script }
     const manual = manualOf(values, blob)
     if (manual !== undefined && manual.server !== '') {
       return { kind: 'manual', proxyRules: manual.server, exceptions: manual.bypass.split(OVERRIDE_SEPARATORS).filter((entry) => entry !== '') }
