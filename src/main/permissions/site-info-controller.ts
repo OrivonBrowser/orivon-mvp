@@ -70,6 +70,8 @@ export interface SiteTrustSources {
   readonly isOriginServedFromCacheSync: (origin: string) => boolean
   /** Whether the origin's files are served from its pin; an app served from the verifier before its pin lands is in its own partition but not delivered from a cache. Defaults to `isOriginServedFromCacheSync`. */
   readonly isOriginPinnedSync?: (origin: string) => boolean
+  /** Whether the origin is an app that runs in a partition of its own, which the person's extensions do not reach: an app the shell serves in the shared session is reached as any website is. Defaults to `isOriginServedFromCacheSync`. */
+  readonly hasOwnPartition?: (origin: string) => boolean
   readonly pinCoverageFor: (origin: string) => PinCoverageEvidence | undefined
   /** How a `.eth` name led to this origin's content; undefined for any other origin. */
   readonly nameEvidenceFor: (origin: string, pin: PinRecord | null, servedFromCache: boolean) => Promise<NameEvidence | undefined>
@@ -165,7 +167,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   async function extensionsFor (origin: string): Promise<readonly string[]> {
     const extensions: ExtensionLister | undefined = ctx.extensions
     if (extensions === undefined) return []
-    return await extensionNamesForOrigin(extensions, origin, trustSources.isOriginServedFromCacheSync)
+    return await extensionNamesForOrigin(extensions, origin, trustSources.hasOwnPartition ?? trustSources.isOriginServedFromCacheSync)
   }
 
   /** The offer pending for `origin`, in the words the popover shows. */
@@ -304,10 +306,13 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
     }
   }
 
+  /** An app with a session of its own keeps its own route; one that runs where websites run has a website's. */
+  const ownsItsSession = trustSources.hasOwnPartition ?? trustSources.isOriginServedFromCacheSync
+
   async function setTunnel (origin: string, kind: SiteTunnelKind | null): Promise<boolean> {
     const routes = ctx.routes
     // Only a web origin has an entry: nothing of the shell's own (`orivon://`) ever gets one, whatever the loader says it is.
-    if (routes === undefined || originFromUrl(origin) !== origin || (!trustSources.isOriginServedFromCacheSync(origin) && !canTunnel(origin))) return false
+    if (routes === undefined || originFromUrl(origin) !== origin || (!ownsItsSession(origin) && !canTunnel(origin))) return false
     // A window held to Nym keeps every switch where it is (the store refuses it too).
     if (ctx.privateTunnel === 'nym' && kind !== 'nym') return false
     if (kind !== null && (routes.routeSwitch.blockedFor(origin, kind) !== undefined || (kind === 'nym' && nymSwitchedOff(routes)))) return false
@@ -321,7 +326,7 @@ export function createSiteInfoController (ctx: SubsystemContext, trustSources: S
   }
 
   const tabs = createTabTunnelController({
-    ctx, tabTunnels, isApp: trustSources.isOriginServedFromCacheSync, websiteTunnel: tunnelFor, blocked: tabBlocked, extensionsFor, setWebsiteTunnel: setTunnel,
+    ctx, tabTunnels, isApp: ownsItsSession, websiteTunnel: tunnelFor, blocked: tabBlocked, extensionsFor, setWebsiteTunnel: setTunnel,
     proxy: (routes) => ({ address: proxySetup.address(), users: proxyUsers(routes) })
   })
 

@@ -30,20 +30,21 @@ export interface ExtensionSiteCandidate {
  * already cover any origin under that grammar, so no separate case is
  * needed for either.
  *
- * An origin served from its pinned cache runs no extensions at all
- * (`../../broker/policy/extension-manifest.js`'s `GRANTED_APPS_CLAUSE`:
- * "except an app running from its pinned copy"), so this returns none for
- * it without ever looking at `extensions`. `isOriginServedFromCacheSync` is
- * injected rather than imported -- the real implementation lives in
- * `../../loader/electron/serve.js`, which this directory does not depend
- * on -- so this file stays pure and testable against a fake.
+ * An app that runs in a partition of its own runs no extensions at all
+ * (`../../broker/policy/extension-manifest.js`'s `GRANTED_APPS_CLAUSE`),
+ * so this returns none for it without ever looking at `extensions`. An app
+ * the shell serves in the shared session, a Web3 site's, is reached as any
+ * website is. `runsApart` is injected rather than imported -- the real
+ * implementation (`../shell/app-session.js`'s `hasOwnPartition`) needs the
+ * loader's serving state, which this directory does not depend on -- so this
+ * file stays pure and testable against a fake.
  */
 export function extensionsReachingOrigin (
   origin: string,
   extensions: readonly ExtensionSiteCandidate[],
-  isOriginServedFromCacheSync: (origin: string) => boolean
+  runsApart: (origin: string) => boolean
 ): readonly string[] {
-  if (isOriginServedFromCacheSync(origin)) return []
+  if (runsApart(origin)) return []
   const url = `${origin}/`
   return extensions
     .filter((extension) => matchesAnyHostPattern(extension.hostPatterns, url))

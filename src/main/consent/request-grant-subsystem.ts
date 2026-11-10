@@ -20,7 +20,7 @@ import type { PendingGrantPrompts, PendingGrantRequests } from './request-grant.
 import { createGrantPrompt } from './request-grant-prompt.js'
 import { scoreLevelOverrideFor } from '../dev/score-levels.js'
 import { extensionNamesForOrigin } from '../extensions/site-reach-runner.js'
-import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
+import { hasOwnPartition } from '../shell/app-session.js'
 import { join } from 'node:path'
 import { FirstPromptNote, installFirstPromptNote } from './first-prompt-note.js'
 
@@ -40,7 +40,7 @@ export const requestGrantSubsystem: Subsystem = {
     // published by the time a real page can trigger a prompt.
     const extensionsOnSite = async (origin: string): Promise<readonly string[]> => {
       const extensions = ctx.extensions
-      return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, isOriginServedFromCacheSync)
+      return extensions === undefined ? [] : await extensionNamesForOrigin(extensions, origin, hasOwnPartition)
     }
     // The same note app-install-subsystem.ts installs: the first question of a profile, from either, carries the line.
     installFirstPromptNote(new FirstPromptNote(ctx.privateSession ? null : join(ctx.app.getPath('userData'), 'consent-notes.json')))

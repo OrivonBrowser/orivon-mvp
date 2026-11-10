@@ -68,13 +68,19 @@ describe('what an app\'s session needs before it is served', () => {
     const { beforeAppSessionServes, prepareAppSession } = await import('../serve.js')
     const session = fakeSession()
     const seen: string[] = []
-    beforeAppSessionServes(async (given, origin) => { seen.push(`first ${origin} ${String(given === session)}`); await Promise.resolve() })
+    const from: string[] = []
+    beforeAppSessionServes(async (given, origin, where) => { seen.push(`first ${origin} ${String(given === session)}`); from.push(where); await Promise.resolve() })
     beforeAppSessionServes(async () => { seen.push('second') })
 
     await prepareAppSession(session, 'https://prepared.example')
     expect(seen).toEqual(['first https://prepared.example true', 'second'])
 
+    // A preparer is told whether the app is served from its pin (the default) or live from the verifier.
+    await prepareAppSession(session, 'https://prepared.example', 'verifier')
+    expect(from).toEqual(['pin', 'verifier'])
+
     beforeAppSessionServes(async () => { throw new Error('could not point the session at its route') })
     await expect(prepareAppSession(session, 'https://prepared.example')).rejects.toThrow('could not point')
   })
+
 })

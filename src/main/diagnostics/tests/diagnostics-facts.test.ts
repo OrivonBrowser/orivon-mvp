@@ -30,8 +30,8 @@ describe('buildDiagnostics', () => {
   it('states whether the system\'s proxy is copied and why not, as four fixed words and nothing else', () => {
     expect(diagnostics.browser.systemProxy).toEqual({ source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' })
     expect(Object.keys(diagnostics.browser.systemProxy)).toEqual(['source', 'mode', 'state', 'reason'])
-    const left = buildDiagnostics({ ...FACTS, browser: { ...FACTS.browser, systemProxy: { source: 'gnome', mode: 'script', state: 'system', reason: 'script' } } })
-    expect(left.browser.systemProxy).toEqual({ source: 'gnome', mode: 'script', state: 'system', reason: 'script' })
+    const left = buildDiagnostics({ ...FACTS, browser: { ...FACTS.browser, systemProxy: { source: 'gnome', mode: 'script', state: 'system', reason: 'unfetched' } } })
+    expect(left.browser.systemProxy).toEqual({ source: 'gnome', mode: 'script', state: 'system', reason: 'unfetched' })
   })
 
   it('states whether the tunnel profiles\' cookies are kept in step with normal browsing, as one word and counts', () => {

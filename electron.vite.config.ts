@@ -317,6 +317,7 @@ export default defineConfig({
           overlay: resolve(root, 'src/preload/overlay.ts'),
           'split-frame': resolve(root, 'src/preload/split-frame.ts'),
           'drop-catcher': resolve(root, 'src/preload/drop-catcher.ts'),
+          'storage-carry': resolve(root, 'src/preload/storage-carry.ts'),
           embed: resolve(root, 'src/preload/embed.ts'),
           'child-host': resolve(root, 'src/preload/child-host.ts'),
           'extension-api': resolve(root, 'src/preload/extension-api.ts'),

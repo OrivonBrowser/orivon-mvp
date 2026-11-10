@@ -4,6 +4,7 @@
 import { app, session, type BaseWindow } from 'electron'
 import { deleteLocalFileData } from '../local-files/delete-local-file-data.js'
 import { isOriginPinnedSync, isOriginServedFromCacheSync, pinCoverageFor } from '../../loader/electron/serve.js'
+import { hasOwnPartition } from './app-session.js'
 import { verifierNameEvidence } from '../verifier/verifier-subsystem.js'
 import { createSiteInfoController } from '../permissions/site-info-controller.js'
 import type { SiteInfoController } from '../permissions/site-info-controller.js'
@@ -54,7 +55,7 @@ export function createWindowPanels ({ ctx, win, services, tabs, overlays, dirnam
   // `scoreLevelOverrideFor`/`deliveryLevelOverrideFor` (`../dev/score-levels.ts`)
   // and `localDdocHashFor` (`../dev/local-ddoc.ts`) are developer-only: no-ops
   // outside developer mode.
-  const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, isOriginPinnedSync, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocHashFor, providerVerdictFor: services.scoreProvider.verdictFor },
+  const siteInfoController = createSiteInfoController(ctx, { isOriginServedFromCacheSync, isOriginPinnedSync, hasOwnPartition, pinCoverageFor, nameEvidenceFor: verifierNameEvidence, levelOverrideFor: scoreLevelOverrideFor, deliveryOverrideFor: deliveryLevelOverrideFor, localDdocHashFor, providerVerdictFor: services.scoreProvider.verdictFor },
     async (key) => await deleteLocalFileData({ broker: ctx.broker, userDataPath: app.getPath('userData'), clearPartition: async (partition) => { await session.fromPartition(partition).clearData() } }, key),
     // The first visit is built after the windows, so it is read at the moment of use.
     { notLetIn: (origin) => firstVisitNow()?.notLetIn(origin), askAgain: async (origin) => await firstVisitNow()?.askAgain(origin) ?? false, changed: announceEntryChange },

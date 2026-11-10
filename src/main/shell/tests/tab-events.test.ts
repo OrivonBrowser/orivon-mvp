@@ -30,9 +30,9 @@ vi.mock('electron', () => ({
 // every const in this file, so a reference to APP here would run before it
 // is initialised.
 vi.mock('../question/ask-question.js', () => ({ askQuestion }))
-vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' }))
+vi.mock('../../../loader/electron/serve.js', () => ({ isOriginServedFromCacheSync: (origin: string) => origin === 'https://app.example' || origin === 'https://kept.eth' }))
 
-const { wireView, makeTabView } = await import('../tab-view.js')
+const { appTabViews, wireView, makeTabView } = await import('../tab-view.js')
 type Record_ = Parameters<typeof wireView>[1]
 type Host = Record_['host']
 
@@ -94,6 +94,13 @@ function fakeHost (overrides: Partial<Host> = {}): Host & Record<string, unknown
 
 function record (wc: FakeContents, partition?: string, host: Host = fakeHost()): Record_ {
   return { host, view: { webContents: wc } as never, favicon: null, faviconOrigin: null, pendingFaviconUrl: null, partition, isDashboardTab: false, internalPage: null, parkedViews: new Map() }
+}
+
+/** A record of the view a tab of the app itself has: the shell marks such a view as an app tab when it builds it. */
+function appTabRecord (wc: FakeContents, partition?: string, host: Host = fakeHost()): Record_ {
+  const tab = record(wc, partition, host)
+  appTabViews.add(tab.view)
+  return tab
 }
 
 function openHandler (wc: FakeContents): (details: Partial<HandlerDetails>) => WindowOpenHandlerResponse {
@@ -217,10 +224,23 @@ describe('wireView -- window.open', () => {
 
   it('flags a popup onto a registered app\'s own origin as an app tab, exactly as a tab opened there would be', () => {
     const wc = fakeContents(`${APP}/`)
-    wireView('tab-1', record(wc, APP_PARTITION))
+    wireView('tab-1', appTabRecord(wc, APP_PARTITION))
 
     const prefs = openHandler(wc)({ url: `${APP}/popout` }).overrideBrowserWindowOptions?.webPreferences
     expect(prefs?.additionalArguments).toEqual(['--orivon-app-tab'])
+  })
+
+  it('opens a same-origin popup of a website page that was open when the site became an app as a tab of its own, and adopts the app\'s own page\'s', () => {
+    const KEPT = 'https://kept.eth'
+    const websiteHost = fakeHost()
+    const websitePage = fakeContents(`${KEPT}/`)
+    wireView('tab-1', record(websitePage, undefined, websiteHost))
+    expect(openHandler(websitePage)({ url: `${KEPT}/popout`, disposition: 'new-window', features: 'width=500' }).action).toBe('deny')
+    expect(websiteHost.openWindow).toHaveBeenCalled()
+
+    const appPage = fakeContents(`${KEPT}/`)
+    wireView('tab-2', appTabRecord(appPage, undefined, fakeHost()))
+    expect(openHandler(appPage)({ url: `${KEPT}/popout`, disposition: 'new-window', features: 'width=500' }).action).toBe('allow')
   })
 
   it('adopts the popup into its opener\'s partition, which is where Chromium created it', () => {
@@ -297,7 +317,7 @@ describe('wireView -- window.open', () => {
     const opened = fakeContents(`${APP}/other`)
     const openTab = vi.fn((): never => opened as never)
     const host = fakeHost({ openTab })
-    wireView('tab-1', record(wc, APP_PARTITION, host))
+    wireView('tab-1', appTabRecord(wc, APP_PARTITION, host))
 
     const response = openHandler(wc)({ url: `${APP}/other`, disposition: 'background-tab' })
     const returned = response.createWindow?.({ webPreferences: {} } as never)

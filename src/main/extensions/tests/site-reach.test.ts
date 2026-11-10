@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { extensionsReachingOrigin } from '../site-reach.js'
 
-const NEVER_CACHED = (): boolean => false
+const NEVER_APART = (): boolean => false
 
 describe('extensionsReachingOrigin', () => {
   it('names an extension whose host pattern covers the origin', () => {
     const names = extensionsReachingOrigin(
       'https://a.example',
       [{ name: 'Ad Blocker', hostPatterns: ['https://a.example/*'] }],
-      NEVER_CACHED
+      NEVER_APART
     )
     expect(names).toEqual(['Ad Blocker'])
   })
@@ -17,7 +17,7 @@ describe('extensionsReachingOrigin', () => {
     const names = extensionsReachingOrigin(
       'https://a.example',
       [{ name: 'Scoped Tool', hostPatterns: ['https://b.example/*'] }],
-      NEVER_CACHED
+      NEVER_APART
     )
     expect(names).toEqual([])
   })
@@ -26,7 +26,7 @@ describe('extensionsReachingOrigin', () => {
     const names = extensionsReachingOrigin(
       'https://a.example',
       [{ name: 'Everywhere', hostPatterns: ['<all_urls>'] }],
-      NEVER_CACHED
+      NEVER_APART
     )
     expect(names).toEqual(['Everywhere'])
   })
@@ -35,7 +35,7 @@ describe('extensionsReachingOrigin', () => {
     const names = extensionsReachingOrigin(
       'https://a.example',
       [{ name: 'Everywhere Too', hostPatterns: ['*://*/*'] }],
-      NEVER_CACHED
+      NEVER_APART
     )
     expect(names).toEqual(['Everywhere Too'])
   })
@@ -48,12 +48,12 @@ describe('extensionsReachingOrigin', () => {
         { name: 'Not Covering', hostPatterns: ['https://b.example/*'] },
         { name: 'Second', hostPatterns: ['https://a.example/*'] }
       ],
-      NEVER_CACHED
+      NEVER_APART
     )
     expect(names).toEqual(['First', 'Second'])
   })
 
-  it('returns none for an origin served from its pinned cache, without consulting the extension list', () => {
+  it('returns none for an app that runs in a partition of its own, without consulting the extension list', () => {
     const names = extensionsReachingOrigin(
       'https://a.example',
       [{ name: 'Everywhere', hostPatterns: ['<all_urls>'] }],
@@ -63,6 +63,6 @@ describe('extensionsReachingOrigin', () => {
   })
 
   it('returns none for no extensions', () => {
-    expect(extensionsReachingOrigin('https://a.example', [], NEVER_CACHED)).toEqual([])
+    expect(extensionsReachingOrigin('https://a.example', [], NEVER_APART)).toEqual([])
   })
 })

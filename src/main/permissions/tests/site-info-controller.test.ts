@@ -458,16 +458,30 @@ describe('createSiteInfoController -- extensionsOnSite (the extensions disclosur
     expect(info.capabilityRows.length).toBeGreaterThan(0)
   })
 
-  it('names none for an origin served from its pinned cache', async () => {
+  it('names none for an app that runs in a partition of its own', async () => {
     const extensions = fakeExtensions([await seededExtension('Ad Blocker')])
     const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), undefined, extensions), {
       ...NO_TRUST,
-      isOriginServedFromCacheSync: (origin) => origin === OTHER
+      isOriginServedFromCacheSync: (origin) => origin === OTHER,
+      hasOwnPartition: (origin) => origin === OTHER
     })
 
     const info = await controller.siteInfoFor(OTHER)
 
     expect(info.extensionsOnSite).toEqual([])
+  })
+
+  it('names a covering extension on an app the shell serves in the shared session, where websites run', async () => {
+    const extensions = fakeExtensions([await seededExtension('Ad Blocker')])
+    const controller = createSiteInfoController(ctxWith(createBroker(baseDeps()), undefined, extensions), {
+      ...NO_TRUST,
+      isOriginServedFromCacheSync: (origin) => origin === OTHER,
+      hasOwnPartition: () => false
+    })
+
+    const info = await controller.siteInfoFor(OTHER)
+
+    expect(info.extensionsOnSite).toEqual(['Ad Blocker'])
   })
 
   it('names none with no ctx.extensions published yet, rather than throwing', async () => {

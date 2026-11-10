@@ -208,7 +208,8 @@ describe('a manual proxy', () => {
 
 describe('settings that are not copied', () => {
   it.each([
-    [{ kind: 'none' }, 'no-proxy'], [{ kind: 'script' }, 'script'], [{ kind: 'detect' }, 'detect'], [{ kind: 'unsupported' }, 'unsupported'], [{ kind: 'unreadable' }, 'unreadable']
+    [{ kind: 'none' }, 'no-proxy'], [{ kind: 'detect' }, 'detect'], [{ kind: 'unsupported' }, 'unsupported'], [{ kind: 'unreadable' }, 'unreadable'],
+    [{ kind: 'script', url: 'http://wpad.test/proxy.pac' }, 'unfetched']
   ] as Array<[SystemSettings, string]>)('(%j) leave the sessions on the system\'s own, for the reason %s', async (settings, reason) => {
     const { mirror, world } = setup({ settings })
     await mirror.start()
@@ -219,7 +220,7 @@ describe('settings that are not copied', () => {
     mirror.stop()
   })
 
-  it('put a copied proxy back on the system\'s own when it is turned off or replaced by a script', async () => {
+  it('put a copied proxy back on the system\'s own when it is turned off or replaced by a script that cannot be fetched', async () => {
     const { mirror, world } = setup()
     await mirror.start()
     world.settings = { kind: 'none' }
@@ -231,11 +232,11 @@ describe('settings that are not copied', () => {
     world.truth = MANUAL
     await vi.advanceTimersByTimeAsync(ANSWER_EVERY_MS)
     expect(mirror.status().state).toBe('mirrored')
-    world.settings = { kind: 'script' }
-    world.truth = { kind: 'script' }
+    world.settings = { kind: 'script', url: 'http://wpad.test/proxy.pac' }
+    world.truth = world.settings
     await vi.advanceTimersByTimeAsync(READ_EVERY_MS)
     expect(mirror.config()).toEqual({ mode: 'system' })
-    expect(mirror.status()).toMatchObject({ state: 'system', reason: 'script' })
+    expect(mirror.status()).toMatchObject({ state: 'system', reason: 'unfetched' })
     mirror.stop()
   })
 

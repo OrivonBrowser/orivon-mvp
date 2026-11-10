@@ -31,6 +31,7 @@ from, with the pure decision in [`../../broker/policy/own-listener-media.ts`](..
 media request for `/orivon/app/<path>` to the `orivon-file:` scheme and answers that scheme with the app's own
 file (`app-file-response.ts`, no Electron in it), with the pure decision in
 [`../../broker/policy/app-files-by-url.ts`](../../broker/policy/app-files-by-url.ts).
+`shell-answered.ts` notes which main-frame document the shell answered, for `session-attribution.ts`. `stale-pages.ts` loads the website pages of an origin again when the shell starts to serve it: such a page shares the app's storage and any worker it started, and nothing the shell checked ever ran in it.
 `website-sessions.ts` is the list of sessions a website runs in (the default one, and the tunnel profile and the direct profile a website with an entry of its own lives in, `../route/`): a control that guards or adjusts a website's requests installs through `forEachWebsiteSession`, so a website that moves into a profile keeps it, and a session missing one is refused. An installer is also told the name of a profile session (`persist:tunnel-profile`, `direct-profile-memory`, ...), which is how [`../route/cookie-mirror/`](../route/cookie-mirror/README.md) picks the kept ones.
 `session-attribution.ts` publishes
 `ctx.senderAttributed` (`../registry.ts`): whether a WebContents is attributed to the origin it
@@ -187,6 +188,8 @@ are the only thing keeping every name above away from a document running another
 they look like duplication and are not. The grant ledger is untouched by the gate: it governs
 `orivon.*` capabilities, not Chromium's own.
 
+**[`website-workers.ts`](website-workers.ts) clears what a website left at an origin before the app is served there.** An allowed app that runs in the shared session was a website there first, and a service worker or a Cache Storage entry that website installed would answer the app's requests with bytes the declared tree never checked. The preparer in `../install/app-install-subsystem.ts` removes both each time the app is served live, and once when it is served from its pin at a start (an app that moved here from a partition of its own finds the website's workers already in the shared session); a file per origin in `website-workers-cleared/` of the profile says it has been done, so the workers the app registers itself are left alone after (`ADR-0108`). The data the site kept (cookies, local storage, databases) stays, since one origin has one set of data, and the app registers its own worker through the check.
+
 **[`session-attribution.ts`](session-attribution.ts) decides attribution at a document's own
 commit, never by re-checking a live document against the CURRENT state.** A live re-check
 sounds simpler, but it strands every already-open, already-attributed document of an origin the
@@ -199,9 +202,16 @@ was found to be at its own last main-frame `did-navigate`, and trusting that rec
 lets an already-attributed document keep calling successfully until it next navigates -- the same
 navigation that already triggers `../shell/tab-view.ts`'s own partition swap for any other
 cross-origin move. A cache-served (pinned) origin is the one exception, checked live and strictly
-regardless of any record, because its bundle is only ever intercepted inside its own partition
-(`ADR-0007`): a document attributed to it must run there at every call, not merely at whatever
-moment it committed. A local file is the other: the path of a document is fixed for its life, so
+regardless of any record, because its bundle is only ever intercepted in the session it is served in
+(`ADR-0007`): a document attributed to it must run in that session at every call, not merely at whatever
+moment it committed. That session is the app's own partition, or the shared one for an app the verifier
+hands to the shell (`../shell/app-session.ts`'s `runsAsWebsite`, `ADR-0108`). A document there is the app's only
+if the shell's own handler answered it ([`shell-answered.ts`](shell-answered.ts): the verifier marks what it relayed,
+the session's response watch notes the mark of a page's main-frame response, and the commit takes it once) and the view
+was built as the app's tab (`../shell/tab-partition.ts`'s `appTabContents`). A page that committed before the origin was
+served, a first visit's page left open in another tab, and a document the host answered itself before it was told the
+shell serves the app are websites, not the app, so they are denied. The record keeps whether the shell answered the
+document, and an origin served where websites run attributes nothing else, even after it stops being served. A local file is the other: the path of a document is fixed for its life, so
 only its session can be wrong, and that must be the one `localPartitionFor` names at this call (a
 record removed since the commit denies the document at once).
 

@@ -52,7 +52,7 @@ import { createPageScoreLookup } from './browsing/page-score-lookup.js'
 import { installSchemeRouting } from './scheme-routing/install-scheme-routing.js'
 import { netFetchJson } from './browsing/score-provider-client.js'
 import { isDevEthName } from './dev/eth-resolver.js'
-import { isOriginPinnedSync } from '../loader/electron/serve.js'
+import { needsNoVerifierHost } from './shell/app-session.js'
 import type { Runtime } from './launch/start-launch.js'
 import { decideDefaultProfile } from './default-profile/profile-start.js'
 import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
@@ -258,7 +258,7 @@ export function boot (runtime: Runtime): void {
     configureVerifier({
       lightClientEnabled: () => shell.settings.get('web3.lightClient'),
       windows: () => shell.windows.all(),
-      servedFromCache: isOriginPinnedSync,
+      servedFromCache: needsNoVerifierHost,
       ipfsSource: () => shell.settings.get('web3.ipfsSource') === 'gateways' ? 'gateways' : 'node',
       ipfsLookupService: () => shell.settings.get('web3.ipfsLookupService'),
       swarmNodeEnabled: () => shell.settings.get('web3.swarmNode'),

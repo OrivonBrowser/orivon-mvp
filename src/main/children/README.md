@@ -26,8 +26,8 @@ itself, and hands the page's own main-world code a small set of plain closures
 **What it depends on.** `electron`; [`../../broker/`](../../broker/) (`broker-contracts.ts`
 types, `policy/origin.ts`, `grants/origin-hash.ts`, `transport/relay/port-transport.ts`'s
 `ControlEvent`/`PortDeliveryFrame`); [`../../loader/electron/serve.ts`](../../loader/electron/serve.ts)
-(`liveCspHeaderFor`); [`../../loader/serve/csp.ts`](../../loader/serve/csp.ts) (`ISOLATION_HEADERS`);
-[`../shell/tab-view.ts`](../shell/tab-view.ts) (`partitionForTarget`); [`../shell/lock-navigation.ts`](../shell/lock-navigation.ts);
+(`liveCspHeaderFor`, `isOriginServedFromCacheSync`); [`../../loader/serve/csp.ts`](../../loader/serve/csp.ts) (`ISOLATION_HEADERS`);
+[`../shell/lock-navigation.ts`](../shell/lock-navigation.ts);
 the top-level `channels.ts` and `registry.ts`. `watch-pages.ts` and `child-host.ts` import
 `electron` at module scope; `registry.ts` imports `MessageChannelMain` from it as a value too
 (everything else it needs is a type). `page-tracker.ts` is unit-tested under plain vitest, and
@@ -65,9 +65,9 @@ no headers of its own, so it can never be cross-origin isolated -- measured in
 `docs/decisions/ADR-0046-an-app-s-children-live-until-its-last-page-closes.md`'s Context. The
 host's own session answers that one path itself and delegates everything else (a child's
 module imports, a spawned program's bytes, any network request the app's own grants admit) to
-the session the app's own tabs already load from -- `../shell/tab-view.ts`'s
-`partitionForTarget`, so a cached app and a network-served one are each served exactly as their
-own tabs are.
+the app's own partition when the shell serves the app there, whether or not its tabs run in that
+session, since the handler that gates a third party the app holds no grant for is registered on
+the partition alone; an app the shell does not serve uses the default session, as its tabs do.
 
 **The host is never a counted window, so it never keeps the process alive on its own.** An
 offscreen, never-attached `WebContentsView` is not what Electron's own `window-all-closed`

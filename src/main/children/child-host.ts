@@ -8,10 +8,9 @@ import { session as electronSession, WebContentsView } from 'electron'
 import type { Session, WebContents } from 'electron'
 import { join } from 'node:path'
 import type { MessagePortMain } from 'electron'
-import { originHash } from '../../broker/grants/origin-hash.js'
-import { liveCspHeaderFor } from '../../loader/electron/serve.js'
+import { originHash, partitionFor } from '../../broker/grants/origin-hash.js'
+import { isOriginServedFromCacheSync, liveCspHeaderFor } from '../../loader/electron/serve.js'
 import { ISOLATION_HEADERS } from '../../loader/serve/csp.js'
-import { partitionForTarget } from '../shell/tab-view.js'
 import { lockNavigation } from '../shell/lock-navigation.js'
 import { CHILD_HOST_PAGE_CHANNEL, CHILD_HOST_READY_CHANNEL } from '../channels.js'
 import type { Broker } from '../../broker/broker-contracts.js'
@@ -35,13 +34,13 @@ function wellKnownUrl (origin: string): string {
 const EMPTY_CHILD_HOST_DOCUMENT = '<!DOCTYPE html><html><head><title></title></head><body></body></html>'
 
 /**
- * The session the app's own tabs use for `origin`: `tab-view.ts`'s own
- * `partitionForTarget`, an app served from cache having a partition of its
- * own and every other app the default session.
+ * The session the host's requests are answered from: the partition an app the shell serves has, whether or not its tabs run
+ * there. The app's handler is registered on that partition, and it is what refuses a third party the app holds no grant for;
+ * the shared session has no such handler, so a request sent there would reach any host. An app the shell does not serve
+ * (granted, network-served) has no partition and uses the default session.
  */
 function appSessionFor (origin: string): Session {
-  const partition = partitionForTarget(origin)
-  return partition === undefined ? electronSession.defaultSession : electronSession.fromPartition(partition)
+  return isOriginServedFromCacheSync(origin) ? electronSession.fromPartition(partitionFor(origin)) : electronSession.defaultSession
 }
 
 /**
