@@ -151,3 +151,23 @@ describe('mergeResponseHeaders', () => {
     expect(mergeResponseHeaders(original, [reply({ cancel: true })])).toEqual({ cancel: true })
   })
 })
+
+describe('the headers Orivon sets between the shell and its pages', () => {
+  it('cannot be added, changed or removed from a response by a listener', () => {
+    const original = { 'content-type': ['text/html'], 'x-orivon-shell-answered': ['1'] }
+    expect(mergeResponseHeaders({ 'content-type': ['text/html'] }, [reply({ responseHeaders: [{ name: 'Content-Type', value: 'text/html' }, { name: 'X-Orivon-Shell-Answered', value: '1' }] })])).toBeUndefined()
+    expect(mergeResponseHeaders(original, [reply({ responseHeaders: [{ name: 'content-type', value: 'text/html' }, { name: 'x-orivon-shell-answered', value: '0' }] })])).toBeUndefined()
+    expect(mergeResponseHeaders(original, [reply({ responseHeaders: [{ name: 'content-type', value: 'text/html' }] })])).toBeUndefined()
+  })
+
+  it('keep what a listener changes beside them', () => {
+    const merged = mergeResponseHeaders({ 'content-type': ['text/html'] }, [reply({ responseHeaders: [{ name: 'content-type', value: 'text/html' }, { name: 'x-orivon-shell-answered', value: '1' }, { name: 'x-extra', value: 'a' }] })])
+    expect(merged).toEqual({ responseHeaders: { 'content-type': ['text/html'], 'x-extra': ['a'] } })
+  })
+
+  it('cannot be added, changed or removed from a request by a listener', () => {
+    expect(mergeRequestHeaders({ Accept: '*/*' }, [reply({ requestHeaders: [{ name: 'Accept', value: '*/*' }, { name: 'X-Orivon-Partition', value: 'x' }] })])).toBeUndefined()
+    expect(mergeRequestHeaders({ Accept: '*/*', 'x-orivon-partition': 'p' }, [reply({ requestHeaders: [{ name: 'Accept', value: '*/*' }] })])).toBeUndefined()
+    expect(mergeRequestHeaders({ Accept: '*/*', 'x-orivon-partition': 'p' }, [reply({ requestHeaders: [{ name: 'Accept', value: '*/*' }, { name: 'x-orivon-partition', value: 'q' }] })])).toBeUndefined()
+  })
+})

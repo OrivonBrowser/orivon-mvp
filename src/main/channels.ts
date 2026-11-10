@@ -233,3 +233,6 @@ export const STORAGE_CARRY_PORT_CHANNEL = 'orivon-storage-carry:port'
 
 /** What the storage-carry preload posts to its page with the port, before the carry's nonce: the page takes the port only when the message names its own nonce. */
 export const STORAGE_CARRY_PORT_MESSAGE = 'orivon-storage-carry-port:'
+
+/** Ordinary tab's top frame -> main: a service worker controls the document that just began, so the shell can tell a page its worker answered from one nothing answered. See ./sessions/worker-control.ts. */
+export const WORKER_CONTROL_CHANNEL = 'orivon-worker-control:report'

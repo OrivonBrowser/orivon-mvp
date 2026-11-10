@@ -18,19 +18,48 @@ import type { WebContents } from 'electron'
 import type { Subsystem, SubsystemContext } from '../registry.js'
 import { publishSenderAttributed } from '../registry.js'
 import { appTabContents, partitionForTab } from '../shell/tab-partition.js'
-import { forgetShellAnswered, takeShellAnswered } from './shell-answered.js'
+import { forgetShellAnswered, takeMainFrameAnswer } from './shell-answered.js'
+import type { MainFrameAnswer } from './shell-answered.js'
+import { forgetWorkerControl, installWorkerControlReports, isControlledByWorker, onWorkerControl } from './worker-control.js'
 import { tabChoiceOfContents } from '../route/tab-tunnel.js'
 import { isChildHostFor } from '../children/child-host.js'
 import { isLocalFileKey, isolationKeyFromUrl } from '../../broker/policy/origin.js'
 import { localPartitionFor } from '../local-files/partition.js'
 import { isOriginServedFromCacheSync } from '../../loader/electron/serve.js'
 import { runsAsWebsite } from '../shell/app-session.js'
+import { nextTick, workerAnswersTrusted } from './worker-settle.js'
 
 interface AttributionRecord {
   readonly origin: string | null
-  readonly attributed: boolean
-  /** Whether the shell's own handler answered this document (`./shell-answered.ts`): one the network answered, or the HTTP cache or a worker, did not run the app. */
-  readonly answeredByShell: boolean
+  /** The address the document committed at, which the preload's report of a worker is matched against. */
+  readonly url: string
+  /** What answered the document (`./shell-answered.ts`): the shell's own handler, the network or the HTTP cache, or no response the session saw (a worker). */
+  readonly answer: MainFrameAnswer
+  /** Whether the document ran in the session a website at its origin runs in. */
+  readonly inExpectedSession: boolean
+  /** Whether the shell served the origin where websites run when the document committed: only then can the app's own worker have answered it. */
+  readonly servedAsWebsite: boolean
+  /** When the document committed, on `worker-settle.ts`'s clock: a worker's answer counts only if it came after the origin's website left nothing in its storage. */
+  readonly committedAt: number
+  /** Whether the preload reported a worker controlling this document, which can arrive before or after its commit: it is kept with the document, so a navigation that starts and never commits does not take it away. */
+  controlled: boolean
+}
+
+/**
+ * Whether the shell's own handler, or the app's own worker, answered this document. The worker's code is the shell's: while an
+ * origin is served where websites run, a worker script is installed only when the shell answered it (`./app-workers.ts`),
+ * and the workers a website left were removed before the serving began. So a document no response was seen for, committed
+ * while the origin was served, whose preload reported a controller, was answered by the app's worker; its bytes are the app's
+ * only once the origin has settled (`./worker-settle.ts`), which keeps a page of the website from having written them.
+ */
+function answeredByShell (record: AttributionRecord): boolean {
+  if (record.answer === 'shell') return true
+  return record.answer === 'none' && record.servedAsWebsite && record.controlled && record.origin !== null && workerAnswersTrusted(record.origin, record.committedAt)
+}
+
+/** Whether the document `page` shows now was answered by the shell's own handler. */
+export function documentAnsweredByShell (page: WebContents): boolean {
+  return attributionRecords.get(page)?.answer === 'shell'
 }
 
 /**
@@ -52,9 +81,16 @@ interface AttributionRecord {
  */
 const attributionRecords = new WeakMap<WebContents, AttributionRecord>()
 
+// A report about a worker's control can arrive after the document committed, so it reaches the document's record here.
+onWorkerControl((page) => {
+  const record = attributionRecords.get(page as WebContents)
+  if (record !== undefined && isControlledByWorker(page, record.url)) record.controlled = true
+})
+
 export const sessionAttributionSubsystem: Subsystem = {
   name: 'session-attribution',
   afterReady: (ctx: SubsystemContext) => {
+    installWorkerControlReports()
     // The session `wc`'s tab puts `origin` in: a tab with a tunnel choice puts every website in its profile.
     const expectedSession = (origin: string, wc: WebContents): unknown => {
       const partition = partitionForTab(origin, tabChoiceOfContents(wc.id))
@@ -74,17 +110,22 @@ export const sessionAttributionSubsystem: Subsystem = {
     app.on('web-contents-created', (_createdEvent, wc) => {
       // A response seen from here on belongs to the next document: a commit nothing answered (the cache, a worker) takes none.
       wc.on('did-start-navigation', (details) => {
-        if (details.isMainFrame && !details.isSameDocument) forgetShellAnswered(wc)
+        if (details.isMainFrame && !details.isSameDocument) {
+          forgetShellAnswered(wc)
+          forgetWorkerControl(wc)
+        }
       })
       wc.on('did-navigate', (_navEvent, url) => {
         const origin = isolationKeyFromUrl(url)
-        const answeredByShell = takeShellAnswered(wc, url)
-        // An origin the shell serves where websites run attributes only a document it answered, even once it stops serving it.
-        const needsShellAnswer = origin !== null && runsAsWebsite(origin)
         attributionRecords.set(wc, {
           origin,
-          attributed: origin !== null && wc.session === expectedSession(origin, wc) && (!needsShellAnswer || answeredByShell),
-          answeredByShell
+          url,
+          answer: takeMainFrameAnswer(wc, url),
+          inExpectedSession: origin !== null && wc.session === expectedSession(origin, wc),
+          // An origin the shell serves where websites run attributes only a document it answered, even once it stops serving it.
+          servedAsWebsite: origin !== null && runsAsWebsite(origin),
+          committedAt: nextTick(),
+          controlled: isControlledByWorker(wc, url)
         })
       })
     })
@@ -92,7 +133,7 @@ export const sessionAttributionSubsystem: Subsystem = {
     /** Whether `wc`'s current document is `origin`'s, was answered by the shell, and runs in a view built as the app's tab. */
     const shellDocumentOf = (wc: WebContents, origin: string): boolean => {
       const record = attributionRecords.get(wc)
-      return record !== undefined && record.origin === origin && record.answeredByShell && appTabContents.has(wc)
+      return record !== undefined && record.origin === origin && answeredByShell(record) && appTabContents.has(wc)
     }
 
     publishSenderAttributed(ctx, (sender, origin) => {
@@ -122,7 +163,7 @@ export const sessionAttributionSubsystem: Subsystem = {
         return wc.session === expectedSession(origin, wc)
       }
       const record = attributionRecords.get(wc)
-      if (record !== undefined && record.origin === origin) return record.attributed
+      if (record !== undefined && record.origin === origin) return record.inExpectedSession && (!record.servedAsWebsite || answeredByShell(record))
       // No record yet (a call arriving before this WebContents' first
       // did-navigate, or one this subsystem never saw) -- the live check,
       // today's original rule, is the fallback.

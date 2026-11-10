@@ -4,6 +4,7 @@
 // Design notes: a second direct registration would silently replace
 // whichever handler on that event registered first).
 
+import { isOrivonHeader } from './web-request/protected-headers.js'
 import type {
   CallbackResponse,
   OnBeforeRequestListenerDetails,
@@ -130,6 +131,7 @@ export function applyRequestHeaders(base: Record<string, string>, ops: DnrModify
   }
   const headers = { ...base }
   for (const op of ops) {
+    if (isOrivonHeader(op.header)) continue
     applyHeaderOp(headers, op)
   }
   return headers
@@ -148,6 +150,7 @@ export function applyResponseHeaders(
   }
   const headers = { ...base }
   for (const op of ops) {
+    if (isOrivonHeader(op.header)) continue
     const key = findHeaderKey(headers, op.header) ?? op.header
     if (op.operation === 'remove') {
       delete headers[key]

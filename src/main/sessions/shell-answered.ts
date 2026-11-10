@@ -2,7 +2,8 @@
 // (`loader/fetch/content-root.ts`, `SHELL_ANSWERED_HEADER`); the response watch of each website session
 // (`../verifier/partition-stamp.ts`) notes the mark of the main frame's last response here, and the commit of that
 // document takes it once (`./session-attribution.ts`). Per page, never for a worker or a frame inside one: only a
-// document that is a page's own can be attributed.
+// document that is a page's own can be attributed. A commit no response was seen for (a service worker answered it) is
+// told apart from one the network or the HTTP cache answered, so the caller can ask the document's own worker.
 
 interface Answered {
   readonly url: string
@@ -34,10 +35,14 @@ export function forgetShellAnswered (page: object): void {
   lastResponse.delete(page)
 }
 
-/** Whether the shell answered the document of `page` that committed at `url`; asked once per commit. */
-export function takeShellAnswered (page: object, url: string): boolean {
+/** What answered a document: the shell's handler, the network or the HTTP cache (or a response for another address), or nothing the session saw. */
+export type MainFrameAnswer = 'shell' | 'other' | 'none'
+
+/** What answered the document of `page` that committed at `url`; asked once per commit. `none` is a commit no response came for. */
+export function takeMainFrameAnswer (page: object, url: string): MainFrameAnswer {
   const noted = lastResponse.get(page)
   lastResponse.delete(page)
+  if (noted === undefined) return 'none'
   const at = documentUrl(url)
-  return noted !== undefined && noted.answered && at !== undefined && noted.url === at
+  return noted.answered && at !== undefined && noted.url === at ? 'shell' : 'other'
 }

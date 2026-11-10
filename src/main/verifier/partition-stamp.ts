@@ -6,8 +6,10 @@ import { webContents } from 'electron'
 import type { Session, WebFrameMain, WebRequestFilter } from 'electron'
 import { PARTITION_HEADER, ROUTE_HEADER, SHELL_ANSWERED_HEADER } from '../../loader/fetch/content-root.js'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
+import { holdsWorkerScript, refusesWorkerScript } from '../sessions/app-workers.js'
 import { noteMainFrameResponse } from '../sessions/shell-answered.js'
 import { RUN_LAST, webRequestOwnerFor } from '../sessions/web-request-owner.js'
+import { settledOrigin } from '../sessions/worker-settle.js'
 import type { TunnelRoute } from '../../protocols/verifier-host/protocol.js'
 import { failedFiles } from './failed-files-store.js'
 import { noteCompletedFile } from './failed-files.js'
@@ -81,9 +83,50 @@ function carriesShellMark (headers: Record<string, string[]> | undefined): boole
  * itself, and a response read from the HTTP cache is none of the shell's.
  */
 export function installShellAnswerWatch (target: Session): void {
+  // The mark is read where the network's headers arrive, before any extension's rule or listener can change them: an extension
+  // may rewrite a response, but what the host said stays what decides whether the shell answered it.
+  const given = new Map<number, boolean>()
+  webRequestOwnerFor(target).onHeadersReceived(0, verifiedHostFilter(), targetsVerifiedHost, (details, current) => {
+    if (details.resourceType === 'mainFrame' && details.webContents !== undefined && details.webContents !== null) {
+      given.set(details.id, carriesShellMark(details.responseHeaders))
+      // A request that never reaches a response started leaves its entry; the oldest go first.
+      if (given.size > MAIN_FRAME_MARKS_KEPT) given.delete(given.keys().next().value as number)
+    }
+    return current
+  })
   webRequestOwnerFor(target).onResponseStarted(verifiedHostFilter(), targetsVerifiedHost, (details) => {
     if (details.resourceType !== 'mainFrame' || details.webContents === undefined || details.webContents === null) return
-    noteMainFrameResponse(details.webContents, details.url, !details.fromCache && carriesShellMark(details.responseHeaders))
+    const marked = given.get(details.id) === true
+    given.delete(details.id)
+    noteMainFrameResponse(details.webContents, details.url, !details.fromCache && marked)
+  })
+}
+
+/** How long a shell-served worker script waits for its origin to settle before it is cancelled: a registration that waits longer is one the next load makes again. */
+const SCRIPT_HOLD_MS = 20_000
+
+/** How many main-frame responses' marks are held between the headers arriving and the response starting. */
+const MAIN_FRAME_MARKS_KEPT = 256
+
+/**
+ * Refuses a service worker script (or one it imports) of an origin the shell serves where websites run, unless the shell
+ * answered it (`../sessions/app-workers.ts`). A worker registered in the moment the host has not yet learned the app is served
+ * would otherwise be one the check never saw, and would answer the app's navigations with the grants of its document. A script
+ * the shell did answer waits until the origin has settled (`../sessions/worker-settle.ts`), so the registration it starts
+ * comes after the removal of what a website left; one that settles never is cancelled.
+ */
+export function installWorkerScriptGuard (target: Session, holdMs: number = SCRIPT_HOLD_MS): void {
+  webRequestOwnerFor(target).onHeadersReceived(RUN_LAST, verifiedHostFilter(), targetsVerifiedHost, async (details, current) => {
+    const response = { url: details.url, resourceType: details.resourceType, hasPage: details.webContents !== undefined && details.webContents !== null, answeredByShell: carriesShellMark(details.responseHeaders), ...(details.initiatorOrigin === undefined ? {} : { initiatorOrigin: details.initiatorOrigin }) }
+    if (refusesWorkerScript(response)) {
+      console.warn('[verifier] refused a service worker script the shell did not serve:', details.url)
+      return { ...current, cancel: true }
+    }
+    if (holdsWorkerScript(response) && !(await settledOrigin(new URL(details.url).origin, holdMs))) {
+      console.warn('[verifier] refused a service worker script of an origin that had not settled:', details.url)
+      return { ...current, cancel: true }
+    }
+    return current
   })
 }
 

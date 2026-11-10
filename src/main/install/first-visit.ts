@@ -44,6 +44,8 @@ export interface FirstVisitDeps {
    * that load again when the app starts to be served leave it out, since the visit loads it itself. Returns the end of that.
    */
   readonly entering?: ((tab: object | undefined) => () => void) | undefined
+  /** Resolves, within a bound, when the verifier host has been told the shell serves the origin: true when it has. The tab loads as the app after it, so the host answers that load as the shell. */
+  readonly hostTold?: (() => Promise<boolean>) | undefined
   /** The question a pinned app's update asks when it wants more than it holds, asked of a new version of an app that is not yet pinned; "keep the current version" is a no. Without it a widened version is never followed. */
   readonly capabilityPrompt?: CapabilityPromptPrompt | undefined
   /** Who to ask, in which tab, when a new version of an app asks for more than it was granted. */
@@ -264,6 +266,11 @@ async function letInTab (deps: FirstVisitDeps, entry: Entry): Promise<FirstVisit
   if (keeper.landed()) await keeper.start()
   // A block that landed meanwhile has the tab and takes the origin away; the tab is not sent into it.
   if (keeper.stopped()) return left()
+  // The host answers the tab's load as the shell only once it has been told the shell serves the origin; a bound keeps a host that never says so from holding the person back.
+  if (!entry.gone() && deps.hostTold !== undefined) {
+    if (!(await deps.hostTold())) console.warn(`[first-visit] the verifier host had not said it was told ${origin} is served when its tab was let in`)
+    if (keeper.stopped()) return left()
+  }
   if (entry.gone()) host.end()
   else host.enter()
   keeper.enteredTab(host.tab?.())

@@ -6,7 +6,8 @@
 request. `visibility.ts` says whether an extension may see a request at all (Chrome's protected
 requests, in Orivon's terms). `details.ts` builds the Chrome-shaped details an extension reads from
 the details Electron's session listeners give. `merge.ts` combines the replies of several blocking
-listeners into the one answer the session gets.
+listeners into the one answer the session gets. `protected-headers.ts` names the headers no
+extension may add, change or remove (`x-orivon-*`).
 
 **What it depends on.** [`../dnr/resource-types.ts`](../dnr/resource-types.ts) (Electron's resource
 types to Chrome's), [`../request-frames.ts`](../request-frames.ts) (frame ids and the initiating
@@ -63,3 +64,12 @@ extension's pages included, is dropped before the session sees it.
 **A sub_frame's initiator is its embedding document.** Electron's frame for a navigation is the
 frame being navigated, so the initiating origin is read from that frame's parent; a top-level
 navigation has none, as in Chrome for a navigation the person started.
+
+**An extension never touches an `x-orivon-*` header, on a request or a response.** Orivon sets
+them between the shell and its pages, and a page's right to `window.orivon` rests on one of them
+(`x-orivon-shell-answered`, which the verifier host writes on what the shell answered). `merge.ts`
+ignores a listener's attempt to add, change or remove one, and `../dnr-webrequest.ts` ignores a
+rule's `modifyHeaders` operation on one. The
+watch that reads the mark (`../../verifier/partition-stamp.ts`) reads it where the headers arrive,
+before any extension's change, so the rule is not the only thing keeping an extension from
+attributing a page.
