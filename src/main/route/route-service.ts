@@ -13,14 +13,15 @@ import { createNymProvider, isNymTarget, NYM_TARGET } from './nym-provider.js'
 import type { NymEndpoint, NymSubsystem } from './nym-subsystem.js'
 import type { RouteEndpoint } from '../../protocols/local-node/protocol.js'
 import type { NymPrivacy } from '../../protocols/nym-tunnel/protocol.js'
+import type { SecureDnsValue } from '../privacy/secure-dns.js'
 import { createRouteSwitch } from './route-switch.js'
 import type { RouteSwitch, RouteSwitchWorld } from './route-switch.js'
 import type { RouteStore } from './route-store.js'
 import type { TunnelKind } from './route-state.js'
 
-/** The part of the settings store the proxy, the choice of tunnel and the browser-wide setting are read from. */
+/** The part of the settings store the proxy, the choice of tunnel, the browser-wide setting and the name relay's switch and provider are read from. */
 export interface ProxySettings {
-  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => TunnelKind) & ((key: 'network.tunnel.everywhere') => boolean) & ((key: 'network.nym.privacy') => NymPrivacy) & ((key: 'network.nym.enabled') => boolean)
+  get: ((key: 'network.route.proxy') => string) & ((key: 'network.route.kind') => TunnelKind) & ((key: 'network.tunnel.everywhere') => boolean) & ((key: 'network.nym.privacy') => NymPrivacy) & ((key: 'network.nym.enabled') => boolean) & ((key: 'privacy.resolveBehindProxy') => boolean) & ((key: 'privacy.secureDns') => SecureDnsValue)
   onChange: (listener: (change: { readonly key: string }) => void) => () => void
 }
 
@@ -75,6 +76,8 @@ export interface RouteServiceOptions {
   readonly everywhere?: () => boolean
   /** What the switch reads about the world: the app's files held here, its origin written to disk, and a website's own storage. */
   readonly switchWorld?: RouteSwitchWorld
+  /** Reads the name relay's switch and the Secure DNS choice from the settings store, once `followSettings` has them. */
+  readonly followRelay?: (settings: ProxySettings) => void
   readonly electron: Omit<RouteControllerDeps, 'hub'>
 }
 
@@ -158,6 +161,7 @@ export function createRouteService (options: RouteServiceOptions): RouteService 
       readEverywhere()
       readNym()
       options.nym.setPrivacy(settings.get(PRIVACY_KEY))
+      options.followRelay?.(settings)
       settings.onChange((change) => {
         if (change.key === KEY || change.key === KIND_KEY) read()
         else if (change.key === EVERYWHERE_KEY) readEverywhere()

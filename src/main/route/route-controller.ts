@@ -105,6 +105,8 @@ export interface RouteController {
   mirrorSystem: (session: RouteSession) => Promise<void>
   /** Points the shared identity once at start: its sessions, and the requests made with no session. Nothing while the browser-wide setting is off. */
   startShared: () => void
+  /** The name relay started or stopped: the pages of the sessions that follow the system take the WebRTC policy that keeps UDP off this computer's address while the relay's config is theirs, and lose it when it is not. */
+  relayChanged: () => void
   /** Resolves when the switches heard so far have been applied. */
   settled: () => Promise<void>
   /** Resolves when the shared identity's changes have been applied: what Orivon's own requests wait for, not one app's switch. */
@@ -151,6 +153,8 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   const unpoint = (session: RouteSession): void => { pointedAt.delete(session); pointedVia.delete(session) }
   /** Web contents given the policy here, which are the only ones restored. */
   const confined = new WeakSet<RouteContents>()
+  /** Web contents confined because their session is on the name relay: restored when it is not. */
+  const relayConfined = new WeakSet<RouteContents>()
   const fetchSessions = new Map<string, RouteSession>()
   /** The host rules a session reaches directly besides this machine. */
   const bypasses = new Map<RouteSession, string>()
@@ -177,6 +181,29 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       .catch((error: unknown) => { console.error('[route] could not apply a change of route:', error) })
       .finally(() => { if (queues.get(origin) === next) queues.delete(origin) })
     queues.set(origin, next)
+  }
+
+  /** Whether pages in `session` are held to the proxy because it follows the system, is not on a front or the dead end, and the name relay has the config it is set to. A session whose pages confine WebRTC themselves is not the controller's. */
+  const onRelay = (session: object): boolean => {
+    if (deps.relay?.()?.config() === undefined) return false
+    if (pointedAt.has(session as RouteSession) || temporarySessions.has(session) || deps.ownProxy?.(session as RouteSession) === true) return false
+    for (const [origin, sessions] of known) if (!hub.isRouted(origin) && sessions.get(session as RouteSession) === true) return true
+    return false
+  }
+  /** Gives the policy to the pages that are on the relay and takes it from those that no longer are. A page an app's route already confines keeps that policy. */
+  const confineRelayed = (): void => {
+    if (deps.relay === undefined) return
+    for (const contents of deps.allContents()) {
+      if (contents.isDestroyed()) continue
+      if (onRelay(contents.session)) {
+        if (confined.has(contents) || relayConfined.has(contents)) continue
+        relayConfined.add(contents)
+        contents.setWebRTCIPHandlingPolicy(CONFINED)
+      } else if (relayConfined.has(contents)) {
+        relayConfined.delete(contents)
+        if (!confined.has(contents)) contents.setWebRTCIPHandlingPolicy('default')
+      }
+    }
   }
 
   /** One change to a session at a time: two callers must not both see it unpointed and both point it. */
@@ -336,12 +363,15 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     for (const contents of contentsIn(origin, true)) {
       if (routed) {
         confined.add(contents)
+        relayConfined.delete(contents)
         contents.setWebRTCIPHandlingPolicy(CONFINED)
       } else if (confined.has(contents)) {
         confined.delete(contents)
         contents.setWebRTCIPHandlingPolicy('default')
       }
     }
+    // A session an app's route let go of follows the system again, on the relay's config while it has one.
+    confineRelayed()
     // What was opened before the switch is on the old route (or none), whatever the proxy now says. The sessions are
     // already on the new one, so nothing new opens on the old while the broker's handles are closed.
     await Promise.allSettled(sessions.map(async ([session]) => { await within(session.closeAllConnections(), callMs) }))
@@ -367,6 +397,10 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   deps.onContentsCreated((contents) => {
     if (temporarySessions.has(contents.session)) {
       confined.add(contents)
+      contents.setWebRTCIPHandlingPolicy(CONFINED)
+    }
+    if (onRelay(contents.session)) {
+      relayConfined.add(contents)
       contents.setWebRTCIPHandlingPolicy(CONFINED)
     }
     for (const [origin, sessions] of known) {
@@ -479,6 +513,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       temporaryFronts.delete(front.port)
       unpoint(session)
     },
+    relayChanged: confineRelayed,
     sharedSettled: async () => {
       await hub.settled()
       let seen: Promise<void> | undefined

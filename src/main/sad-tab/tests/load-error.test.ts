@@ -5,6 +5,9 @@ import type { OverlayHandler, OverlayWindow } from '../../overlays/overlay-types
 import type { LoadRefusal } from '../../route/load-refusals.js'
 import type { SlotAsk } from '../../overlays/tab-slots.js'
 import type { ShellWindow } from '../../shell/window-registry.js'
+import { REFUSAL_WORDS, refusalSentence } from '../../route/name-relay/relay-failures.js'
+import type { RefusalWord } from '../../route/name-relay/relay-failures.js'
+import { nameRelayStatus, setNameRelayStatusSource } from '../../route/name-relay/relay-status.js'
 import { loadErrorOverlay } from '../load-error-overlay.js'
 import { isErrorName, loadErrorText } from '../load-error-text.js'
 import { forgetLoadErrors, watchLoadErrors } from '../load-error-watch.js'
@@ -49,6 +52,16 @@ describe('what the load-error sheet says', () => {
     const text = loadErrorText(-20, 'plain')
     expect(text.title).toBe('This name opens only over https')
     expect(text.body).toBe('A name like this opens only over a secure connection, so Orivon did not open it over plain http.')
+  })
+
+  it('says why the name relay did not carry a connection, in the words for that refusal with the provider named, in place of the tunnel\'s', () => {
+    for (const word of REFUSAL_WORDS) {
+      const text = loadErrorText(-111, undefined, { word, provider: 'Cloudflare' })
+      expect(text, word).toEqual({ title: 'This site can\'t be reached', body: refusalSentence(word, 'Cloudflare') })
+      expect(text.body, word).not.toContain('tunnel did not carry')
+    }
+    expect(loadErrorText(-111, undefined, { word: 'not-found', provider: 'Quad9' }).body).toContain('Look up site addresses in Orivon')
+    expect(loadErrorText(-111, undefined, { word: 'no-answer', provider: 'Quad9' }).body).toContain('Quad9')
   })
 
   it('shows an error name only when it is one of Chromium\'s', () => {
@@ -137,6 +150,20 @@ describe('the load-error watcher', () => {
     ])
   })
 
+  it('marks a failed secure connection with the word the name relay noted for it, and only that one', () => {
+    const s = setup()
+    const noted = new Map<string, RefusalWord>([['https://gone.example/', 'not-found'], ['https://slow.example/', 'no-answer']])
+    ;(s.deps as { relay?: (url: string, code: number) => RefusalWord | undefined }).relay = (url, code) => code === -111 ? noted.get(url) : undefined
+    watchLoadErrors(s.contents as unknown as WebContents, s.deps)
+    for (const [url, code] of [['https://gone.example/', -111], ['https://slow.example/', -111], ['https://gone.example/', -105], ['https://other.example/', -111]] as const) fail(s, code, url, true, 'ERR_TUNNEL_CONNECTION_FAILED')
+    expect(s.asks.map((ask) => ask.payload)).toEqual([
+      { code: -111, name: 'ERR_TUNNEL_CONNECTION_FAILED', relay: 'not-found' },
+      { code: -111, name: 'ERR_TUNNEL_CONNECTION_FAILED', relay: 'no-answer' },
+      { code: -105, name: 'ERR_TUNNEL_CONNECTION_FAILED' },
+      { code: -111, name: 'ERR_TUNNEL_CONNECTION_FAILED' }
+    ])
+  })
+
   it('passes no error name that is not one of Chromium\'s', () => {
     const s = setup()
     watchLoadErrors(s.contents as unknown as WebContents, s.deps)
@@ -211,6 +238,20 @@ describe('the load-error overlay', () => {
       expect(s.handler.show?.({ code: -20, name: 'ERR_BLOCKED_BY_CLIENT', refusal }), refusal).toEqual({ ...loadErrorText(-20, refusal), address: 'unresolvable.invalid', name: 'ERR_BLOCKED_BY_CLIENT' })
     }
     for (const refusal of ['yes', true, 'proxy', 7, null]) expect(s.handler.show?.({ code: -20, name: '', refusal }), String(refusal)).toMatchObject(loadErrorText(-20))
+  })
+
+  it('draws the sentence of the word the relay noted, naming the provider the lookups ask, and ignores a word that is not one of its own', () => {
+    const s = setup()
+    setNameRelayStatusSource(() => nameRelayStatus({ enabled: true, heldToNym: false, active: true, listening: true, resolverHeld: true, provider: 'cloudflare', refused: Object.fromEntries(REFUSAL_WORDS.map((word) => [word, 0])) as Record<RefusalWord, number> }))
+    expect(s.handler.show?.({ code: -111, name: 'ERR_TUNNEL_CONNECTION_FAILED', relay: 'no-answer' })).toEqual({
+      title: 'This site can\'t be reached',
+      body: refusalSentence('no-answer', 'Cloudflare'),
+      address: 'unresolvable.invalid',
+      name: 'ERR_TUNNEL_CONNECTION_FAILED'
+    })
+    setNameRelayStatusSource(undefined)
+    expect(s.handler.show?.({ code: -111, name: '', relay: 'no-answer' })).toMatchObject({ body: refusalSentence('no-answer', 'Quad9') })
+    for (const relay of ['onion', 'yes', 3, null]) expect(s.handler.show?.({ code: -111, name: '', relay }), String(relay)).toMatchObject(loadErrorText(-111))
   })
 
   it('tries the tab again and closes', () => {

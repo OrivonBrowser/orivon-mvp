@@ -20,6 +20,7 @@ import { createFallbackSheets } from './https-fallback-runner.js'
 import { httpsState } from './https-state.js'
 import { createNetHandlers } from './net-handlers.js'
 import { applySecureDns, configureResolver, effectiveSecureDns, needsResolverCall, reapplyResolver, secureDnsForcedOff } from './secure-dns.js'
+import { onResolverHold, resolverHeld } from './resolver-hold.js'
 import { PROBE_NAME, QUAD9_PROBE_TIMEOUT_MS, createQuad9Fallback, probeWithin } from './secure-dns-fallback.js'
 import type { Quad9Fallback } from './secure-dns-fallback.js'
 import type { SecureDnsValue } from './secure-dns.js'
@@ -101,6 +102,11 @@ export const installPrivacyNet: ShellInstaller = {
     const applyDns = (): void => {
       quad9First?.stop()
       quad9First = undefined
+      // While the name relay is active none of Chromium's probes may reach the provider from this computer, so it asks this computer's DNS and Orivon's Quad9 check stays stopped; the setting applies again when the hold ends.
+      if (resolverHeld()) {
+        applySecureDns(app, 'off')
+        return
+      }
       const value = dns()
       if (value === 'quad9Fallback') {
         quad9First = quad9FallbackFor(app)
@@ -109,8 +115,9 @@ export const installPrivacyNet: ShellInstaller = {
         applySecureDns(app, value)
       }
     }
-    if (needsResolverCall(dns())) applyDns()
+    if (needsResolverCall(dns()) || resolverHeld()) applyDns()
     reapplyAfterNetworkServiceRestart('secure DNS', () => reapplyResolver(app))
     services.settings.onChange(({ key }) => { if (key === 'privacy.secureDns') applyDns() })
+    onResolverHold(applyDns)
   }
 }

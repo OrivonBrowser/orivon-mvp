@@ -11,7 +11,7 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
     expect(Object.keys(diagnostics.app)).toEqual(['commit', 'channel', 'electron', 'chromium', 'node', 'v8', 'packaged', 'uptimeSec'])
     expect(Object.keys(diagnostics.system)).toEqual(['platform', 'release', 'arch', 'cpus', 'cpuModel', 'memoryMb', 'freeMemoryMb', 'locale', 'session', 'desktop', 'ozone'])
-    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'networkService', 'systemProxy', 'signIns', 'extensions', 'appSockets', 'settings'])
+    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'networkService', 'systemProxy', 'nameRelay', 'signIns', 'extensions', 'appSockets', 'settings'])
   })
 
   it('states how many tabs carry each tunnel choice, as counts and nothing else', () => {
@@ -32,6 +32,17 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics.browser.systemProxy)).toEqual(['source', 'mode', 'state', 'reason'])
     const left = buildDiagnostics({ ...FACTS, browser: { ...FACTS.browser, systemProxy: { source: 'gnome', mode: 'script', state: 'system', reason: 'unfetched' } } })
     expect(left.browser.systemProxy).toEqual({ source: 'gnome', mode: 'script', state: 'system', reason: 'unfetched' })
+  })
+
+  it('states what the name relay is doing as one state, the provider, whether Chromium\'s resolver is held and a count for each refusal, and nothing else', () => {
+    expect(diagnostics.browser.nameRelay).toEqual({ state: 'relaying', provider: 'quad9', resolver: 'held', refused: { 'not-found': 2, 'no-answer': 0, 'sign-in': 0, refused: 0, unreachable: 1, inside: 0, anonymity: 0, unsure: 0 } })
+    expect(Object.keys(diagnostics.browser.nameRelay)).toEqual(['state', 'provider', 'resolver', 'refused'])
+    expect(Object.values(diagnostics.browser.nameRelay.refused).every((count) => Number.isInteger(count))).toBe(true)
+  })
+
+  it('reports the relay\'s switch among the settings, as a value only', () => {
+    expect(REPORTED_SETTINGS).toContain('privacy.resolveBehindProxy')
+    expect(reportedSettings((key) => key === 'privacy.resolveBehindProxy' ? true : undefined)).toEqual({ 'privacy.resolveBehindProxy': true })
   })
 
   it('states whether the tunnel profiles\' cookies are kept in step with normal browsing, as one word and counts', () => {

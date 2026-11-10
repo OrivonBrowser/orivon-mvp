@@ -20,6 +20,8 @@ export interface RouteFront {
   readonly secret: string
   /** Ends every tunnel and forwarded request in flight; the front keeps answering new ones. */
   closeTunnels: () => void
+  /** Stops accepting connections and lets the ones in flight finish; resolves when the last has. */
+  drain: () => Promise<void>
   close: () => Promise<void>
 }
 
@@ -271,6 +273,11 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     username: USERNAME,
     secret,
     closeTunnels,
+    drain: async () => {
+      // A connection with no request in flight has nothing to finish.
+      server.closeIdleConnections()
+      await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+    },
     close: async () => {
       closeTunnels()
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })

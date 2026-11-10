@@ -9,6 +9,7 @@ import { currentOzonePlatform, x11VulkanReading } from '../graphics/x11-vulkan-r
 import { ownFetch } from '../route/own-requests.js'
 import { networkServiceRestart } from '../sessions/network-service-hold.js'
 import { cookieMirrorStatus } from '../route/cookie-mirror/mirror-status.js'
+import { currentNameRelayStatus } from '../route/name-relay/relay-status.js'
 import { mirrorStatus } from '../route/proxy-mirror/mirror-status.js'
 import type { SubsystemContext } from '../registry.js'
 import type { ShellServices } from '../shell/shell-services.js'
@@ -89,6 +90,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       tunnels: { tabs: tabChoiceCounts(services.windows) },
       networkService: networkServiceRestart.counts(),
       systemProxy: mirrorStatus(),
+      nameRelay: currentNameRelayStatus(),
       signIns: cookieMirrorStatus(),
       extensions: (ctx.extensions?.list() ?? []).map(({ id, name, version, enabled }) => ({ id, name, version, enabled })),
       appSockets: readAppSockets(broker),

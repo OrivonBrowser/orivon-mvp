@@ -315,6 +315,38 @@ describe('closing', () => {
   })
 })
 
+describe('draining', () => {
+  it('stops accepting and lets a tunnel in flight finish, then resolves when it has', async () => {
+    const target = await echoServer()
+    const f = await front(providerFor({ 'echo.test:443': target }))
+    const { socket } = await connectThrough(f, 'echo.test:443', basic(f))
+    let drained = false
+    const draining = f.drain().then(() => { drained = true })
+
+    await expect(new Promise<void>((resolve, reject) => {
+      const probe = netConnect({ host: '127.0.0.1', port: f.port })
+      probe.once('connect', () => { probe.destroy(); resolve() })
+      probe.once('error', reject)
+    })).rejects.toMatchObject({ code: 'ECONNREFUSED' })
+    const echoed = new Promise<string>((resolve) => { socket.once('data', (chunk: Buffer) => { resolve(chunk.toString()) }) })
+    socket.write('still here')
+    expect(await echoed).toBe('still here')
+    expect(drained).toBe(false)
+
+    socket.destroy()
+    await draining
+    expect(drained).toBe(true)
+  })
+
+  it('calls onClosed once, when the last connection has ended', async () => {
+    const onClosed = vi.fn()
+    const started = await startRouteFront({ provider: () => undefined, onClosed })
+    cleanups.push(async () => { await started.close() })
+    await started.drain()
+    expect(onClosed).toHaveBeenCalledTimes(1)
+  })
+})
+
 /** A stream to a local server, handed over paused as a route's is. */
 async function pausedTo (port: number): Promise<Socket> {
   return await new Promise((resolve, reject) => {
