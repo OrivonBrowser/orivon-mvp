@@ -143,6 +143,56 @@ describe('clearing browsing data', () => {
     expect(websites.clearData).not.toHaveBeenCalled()
   })
 
+  describe('an allowed app that runs where websites run', () => {
+    const KEPT = 'https://kept.eth'
+    const OTHER = 'https://other.eth'
+
+    it('keeps its data when cookies and site data are cleared, in the shared session and in a profile\'s, and clears the other websites\'', async () => {
+      const { deps, websites } = setup()
+      const profile = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
+      const withApps = { ...deps, appOrigins: () => [KEPT, OTHER], siteSessions: () => [profile] }
+      await clearBrowsingData({ ...NOTHING, siteData: true }, withApps)
+      for (const where of [websites, profile]) {
+        expect((where.clearData.mock.calls as unknown[][])[0]?.[0]).toEqual({ dataTypes: expect.arrayContaining(['cookies', 'localStorage', 'indexedDB']), excludeOrigins: [KEPT, OTHER] })
+      }
+    })
+
+    it('asks for no exclusion while no app runs there', async () => {
+      const { deps, websites } = setup()
+      await clearBrowsingData({ ...NOTHING, siteData: true }, { ...deps, appOrigins: () => [] })
+      expect((websites.clearData.mock.calls as unknown[][])[0]?.[0]).not.toHaveProperty('excludeOrigins')
+    })
+
+    it('does not clear the cache of local files with an exclusion, which no app runs in', async () => {
+      const { deps } = setup()
+      const local = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
+      await clearBrowsingData({ ...NOTHING, siteData: true }, { ...deps, appOrigins: () => [KEPT], localFiles: () => [local] })
+      expect((local.clearData.mock.calls as unknown[][])[0]?.[0]).not.toHaveProperty('excludeOrigins')
+    })
+
+    it('has its data cleared by App data, in the shared session and in a profile\'s, and by nothing else', async () => {
+      const { deps, websites, app } = setup()
+      const profile = { clearData: vi.fn(async () => {}), clearStorageData: vi.fn(async () => {}) }
+      const withApps = { ...deps, appOrigins: () => [KEPT, OTHER], siteSessions: () => [profile] }
+      await clearBrowsingData({ ...NOTHING, appData: true }, withApps)
+      expect(app.clearData).toHaveBeenCalledTimes(2)
+      for (const where of [websites, profile]) {
+        expect(where.clearData).toHaveBeenCalledWith({ origins: [KEPT, OTHER] })
+        expect(where.clearStorageData.mock.calls).toEqual([[{ origin: KEPT, storages: ['cachestorage'] }], [{ origin: OTHER, storages: ['cachestorage'] }]])
+      }
+      await clearBrowsingData({ ...NOTHING, history: 'all', cache: true, zoomLevels: true }, withApps)
+      expect(websites.clearData).toHaveBeenCalledTimes(2)
+    })
+
+    it('says appData failed when its data could not be cleared, and still clears the rest', async () => {
+      const { deps, websites, zoom } = setup()
+      websites.clearData.mockRejectedValueOnce(new Error('storage busy'))
+      const result = await clearBrowsingData({ ...NOTHING, appData: true, zoomLevels: true }, { ...deps, appOrigins: () => [KEPT] })
+      expect(result).toEqual({ ok: false, failed: ['appData'] })
+      expect(zoom.clear).toHaveBeenCalled()
+    })
+  })
+
   it('forgets the saved zoom levels', async () => {
     const { deps, zoom } = setup()
     await clearBrowsingData({ ...NOTHING, zoomLevels: true }, deps)

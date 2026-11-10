@@ -24,20 +24,20 @@ export interface ExtensionLister {
  * prompt, or the site-info popup, is actually about to be shown, never on
  * a hot path.
  *
- * An origin served from its pinned cache short-circuits before `list()` is
- * even called: `extensionsReachingOrigin` would return none for it anyway
- * (its own doc says why), so there is nothing to read a manifest for.
+ * An app that runs apart from the extensions (`hasOwnPartition`) short-circuits
+ * before `list()` is even called: `extensionsReachingOrigin` would return none
+ * for it anyway (its own doc says why), so there is nothing to read a manifest for.
  */
 export async function extensionNamesForOrigin (
   extensions: ExtensionLister,
   origin: string,
-  isOriginServedFromCacheSync: (origin: string) => boolean
+  runsApart: (origin: string) => boolean
 ): Promise<readonly string[]> {
-  if (isOriginServedFromCacheSync(origin)) return []
+  if (runsApart(origin)) return []
   const enabled = extensions.list().filter((entry) => entry.enabled)
   const candidates: ExtensionSiteCandidate[] = await Promise.all(enabled.map(async (entry) => {
     const facts = await readExtensionFacts(entry)
     return { name: facts.resolvedName, hostPatterns: facts.manifestFacts?.hostPatterns ?? [] }
   }))
-  return extensionsReachingOrigin(origin, candidates, isOriginServedFromCacheSync)
+  return extensionsReachingOrigin(origin, candidates, runsApart)
 }

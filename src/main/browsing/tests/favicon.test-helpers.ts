@@ -12,6 +12,7 @@ export const PUBLIC_PAGE = 'https://example.com/page'
 export interface FakeClientRequest extends EventEmitter {
   end: () => void
   abort: ReturnType<typeof vi.fn>
+  setHeader: ReturnType<typeof vi.fn>
 }
 
 /** Every request the harness below handed out, in order. */
@@ -20,6 +21,7 @@ export const requests: FakeClientRequest[] = []
 export function fakeClientRequest (): FakeClientRequest {
   const emitter = new EventEmitter() as FakeClientRequest
   emitter.end = vi.fn()
+  emitter.setHeader = vi.fn()
   emitter.abort = vi.fn(() => { emitter.emit('error', new Error('aborted')) })
   requests.push(emitter)
   return emitter

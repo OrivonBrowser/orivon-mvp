@@ -3,7 +3,7 @@
 // that navigation in another session (./navigation-referrer.ts).
 import { ipcMain } from 'electron'
 import type { WebContents } from 'electron'
-import { parseReport, referrerFor } from './navigation-referrer.js'
+import { carriesNoBody, parseReport, referrerFor } from './navigation-referrer.js'
 import type { NavigationReferrer, NavigationReport } from './navigation-referrer.js'
 import { referrerPolicyHeaderOf } from './page-referrer-policy.js'
 import type { ShellInstaller } from './shell-installers.js'
@@ -53,4 +53,13 @@ export function referrerOfInitiator (wc: WebContents, initiatorUrl: string | und
   } catch {
     return undefined
   }
+}
+
+/**
+ * Whether the navigation the top frame (at `initiatorUrl`) started to `target` is known to carry no body, so that loading
+ * `target` again as a plain GET is the same navigation. False for a redirect, a navigation no top frame started, and one the
+ * page did not report.
+ */
+export function startedWithoutBody (wc: WebContents, initiatorUrl: string | undefined, target: string): boolean {
+  return initiatorUrl !== undefined && carriesNoBody(initiatorUrl, target, notes.get(wc))
 }

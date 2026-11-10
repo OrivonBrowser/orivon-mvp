@@ -27,6 +27,8 @@ export interface NavigationReport {
   readonly destination: string
   /** What started that navigation, or undefined when the page cannot say (the platform names no source). */
   readonly source: NavigationSource | undefined
+  /** Whether that navigation submits a form body (a POST), as the platform's `navigate` event says; absent when the page does not say. */
+  readonly post?: boolean
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null
@@ -38,7 +40,8 @@ export function parseReport (value: unknown): NavigationReport | undefined {
   const { href, documentUrl, destination, metaPolicies, source } = value
   if (typeof href !== 'string' || typeof documentUrl !== 'string' || typeof destination !== 'string') return undefined
   if (!Array.isArray(metaPolicies) || !metaPolicies.every((one): one is string => typeof one === 'string')) return undefined
-  const common = { href, documentUrl, destination, metaPolicies: [...metaPolicies] as string[] }
+  const post = value['post']
+  const common = { href, documentUrl, destination, metaPolicies: [...metaPolicies] as string[], ...(typeof post === 'boolean' ? { post } : {}) }
   if (source === undefined || source === null) return { ...common, source: undefined }
   if (!isRecord(source)) return undefined
   if (source['kind'] === 'script') return { ...common, source: { kind: 'script' } }
@@ -158,6 +161,14 @@ function sameOrigin (source: URL, target: string): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Whether the navigation `initiator` started to `target` is known to carry no body: the page's note is about this navigation
+ * and says no form was submitted. A navigation the page did not report, or reported without saying, is not known to be one.
+ */
+export function carriesNoBody (initiator: string, target: string, report: NavigationReport | undefined): boolean {
+  return report !== undefined && report.post === false && report.href === initiator && sameAddress(report.destination, target)
 }
 
 /**

@@ -2,11 +2,13 @@
 import type { WebContents } from 'electron'
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { isNavigationHeld } from './navigation-hold.js'
-import { partitionAfterFileBlock, partitionChanged } from './tab-partition.js'
+import { appTabFlagGained, partitionAfterFileBlock, partitionChanged } from './tab-partition.js'
 import { repartitionView } from './tab-parking.js'
 import { sessionRoutesLike } from '../route/site-routes.js'
 import { isTemporaryRoutePartition } from '../route/temporary-routes.js'
-import { referrerOfInitiator, topInitiatorUrl } from './initiator-referrer.js'
+import { referrerOfInitiator, startedWithoutBody, topInitiatorUrl } from './initiator-referrer.js'
+import { runsAsWebsite } from './app-session.js'
+import { originFromUrl } from '../../broker/policy/origin.js'
 import type { InitiatorFrame } from './initiator-referrer.js'
 import type { TabRecord } from './tab-types.js'
 
@@ -20,17 +22,19 @@ interface NavigationEvent {
 }
 
 /**
- * A link or redirect into an address Orivon serves from its cache loads that address in the
+ * A link or redirect into an app that has a partition of its own loads that address in the
  * partition the tab is in until `did-navigate` swaps it, and for that moment a document can
  * commit from the network, so a name that moved would show its new content before anyone
  * accepted it. This stops the navigation before it starts and loads the address in its own
  * partition, where the pinned files answer (ADR-0056). Typed addresses already do the same
- * (`./tab-navigation.ts`).
+ * (`./tab-navigation.ts`). An app the verifier hands to the shell needs none of this: every
+ * session's request for it is answered by the app's own handler.
  *
  * A move INTO a session of its own is made here. A move to the shared session still swaps at
  * `did-navigate`, where nothing of the app's is exposed to the page it reaches, unless the tab's session
  * would send the address less tunnelled than the shared one: then the first request must not
- * commit there either.
+ * commit there either. So is the move of a tab that stays in its session into an app that runs
+ * there, as a website does: the view is rebuilt with the app-tab flag before the app's first request.
  *
  * Stopping a navigation loses the referrer Chromium would have sent with it, so a page's link, form or
  * script navigation is re-issued with the one the initiating page would have sent (`./initiator-referrer.ts`):
@@ -48,12 +52,15 @@ export function repartitionBeforeCommit (wc: WebContents, id: string, record: Ta
     // that scheme is served at (`./served-address.ts`), and that URL is the one whose partition counts.
     const url = BUILTIN_ADDRESSES.servedUrl(event.url) ?? event.url
     const swap = partitionChanged(url, record.partition, record.tunnelChoice)
-    if (swap === undefined) return
-    // A move to the shared session waits for `did-navigate` when the tab's session sends the address as the shared one would (a popup then keeps its opener); when it would send it differently, as a direct profile or an app set to off does for an address on the tunnel, the first request must not commit there, so the tab moves now and a popup's opener is cut.
-    if (swap.to === undefined && (isTemporaryRoutePartition(record.partition) || sessionRoutesLike(record.partition, url))) return
-    const nextPartition = swap.to
-    event.preventDefault()
     const initiatorUrl = withReferrer ? topInitiatorUrl(event.initiator) : undefined
+    // An app that runs where websites run, reached by a plain GET the page reported, needs a view built with the app-tab flag, and the first request must not commit in one built without it. Any other navigation (a form's POST, whose body a re-issue would drop; a redirect, whose method is not visible here) is let through and the view rebuilt at `did-navigate`.
+    const origin = originFromUrl(url)
+    const flagOnly = swap === undefined && origin !== null && runsAsWebsite(origin) && appTabFlagGained(url, record.view, record.host.broker) && startedWithoutBody(wc, initiatorUrl, event.url)
+    if (swap === undefined && !flagOnly) return
+    // A move to the shared session waits for `did-navigate` when the tab's session sends the address as the shared one would (a popup then keeps its opener); when it would send it differently, as a direct profile or an app set to off does for an address on the tunnel, the first request must not commit there, so the tab moves now and a popup's opener is cut.
+    if (swap !== undefined && swap.to === undefined && (isTemporaryRoutePartition(record.partition) || sessionRoutesLike(record.partition, url))) return
+    const nextPartition = swap === undefined ? record.partition : swap.to
+    event.preventDefault()
     const target = event.url
     // Not in the event: a view closed from inside its own navigation event is not safe to close. The page's note of the navigation was sent before it began, so it is here by this turn.
     setImmediate(() => {

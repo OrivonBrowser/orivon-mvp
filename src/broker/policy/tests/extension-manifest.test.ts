@@ -353,7 +353,7 @@ describe('describeExtensionInstall', () => {
     const facts = factsOf({ manifest_version: 3, name: 'AllSites', version: '1.0.0', host_permissions: ['<all_urls>'] })
     const description = describeExtensionInstall(facts, 'unpacked')
     expect(description.detail).toContain('Read and change all your data on all websites')
-    expect(description.detail).toContain('It also runs on Web3 sites and on apps you have given permissions to, except an app running from its pinned copy. Orivon keeps its code from using the permissions you have given those apps.')
+    expect(description.detail).toContain('It also runs on Web3 sites and on apps you have given permissions to, except an app that runs in a session of its own. Orivon keeps its code from using the permissions you have given those apps.')
     expect(description.warning).toBe(true)
   })
 

@@ -7,13 +7,14 @@
 // Design notes.
 //
 // This handler covers every granted origin's document that reaches the
-// default session, including one that is also cache-served: a navigation
-// into a cache-served origin commits its network-delivered document here,
-// in the default session, before the tab's partition swap moves later
-// requests to protocol.handle (A296) -- that document needs this policy
-// exactly as much as one that is never cache-served. The pinned copy's own
-// response, served through protocol.handle, never reaches onHeadersReceived
-// at all (A110), so it carries its own policy from csp.ts regardless.
+// default session, including one that is also cache-served. An app that
+// runs in its own partition commits its network-delivered document here
+// before the tab's partition swap moves later requests to protocol.handle
+// (A296), and its pinned copy, served through protocol.handle, never
+// reaches onHeadersReceived (A110), so that copy carries its own policy
+// from csp.ts. An app that runs in the default session is served through
+// the verifier, so its pinned copy's responses reach this handler too and
+// carry both policies, which a browser enforces together.
 
 import type { OnHeadersReceivedListenerDetails, WebRequestFilter } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
