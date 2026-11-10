@@ -243,7 +243,8 @@ cannot fetch or whose answers differ at every question, automatic detection, KDE
 could not read, and a manual proxy whose copy did not match Chromium's answers. The name is not put to the system, so it is
 refused also where the script or the proxy would have answered `DIRECT`, and the sheet says Orivon could not tell. Turning the
 system proxy off, listing the routed suffixes (`*.eth` and the rest) among a manual proxy's exceptions, or turning a tunnel on
-opens them ([`known-limitations.md`](../known-limitations.md)).
+opens them. Windows has "Automatically detect settings" ticked in a new installation, which is detection, so the names open there
+only once it is cleared ([`known-limitations.md`](../known-limitations.md)).
 
 ## The root-dot spelling of a name the verifier serves
 

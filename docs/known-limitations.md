@@ -40,7 +40,9 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   "none" for the name, and for Orivon's own questions about a name too: an app that is not routed gets no lookup of and no connection to
   a name the verifier serves. Ordinary sites still go through the proxy. To open the names there, turn
   the system proxy off, give it a manual setting that lists `*.eth` and the other suffixes Orivon serves among its exceptions (the
-  hosts that bypass it), or turn a tunnel on. A name asked for over plain `http:` is refused whatever the proxy is,
+  hosts that bypass it), or turn a tunnel on. Windows has "Automatically detect settings" ticked in a new installation, so
+  on a Windows computer left as it was installed the names open only once that box is cleared (*provisional*: whether a name
+  should open when detection found no script is not decided, and a run that finds how often a network offers one would inform it). A name asked for over plain `http:` is refused whatever the proxy is,
   except the developer names of a run that serves them. The settings are read every thirty seconds, and at once when Chromium's
   answer for an ordinary address changes: for the time between a script being turned on and that read, a session still on the system's own is asked,
   and the script then runs with the name. A copy follows the system by polling, not as it

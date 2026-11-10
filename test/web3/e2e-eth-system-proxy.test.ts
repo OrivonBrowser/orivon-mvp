@@ -28,7 +28,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp, readShield } from '../support/e2e-helpers.js'
 import { activeTabInfo } from '../support/smoke-helpers.mjs'
-import { CANCELLED, gnomeProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, proxyEnvironment, refusalLines, report, resolved, startLoggingProxy, SUBRESOURCES_BODY, UNSURE_SHEET, verifierNames, visitReporting, visitSubresources, windowsAutoDetect } from './system-proxy-support.js'
+import { CANCELLED, gnomeProxy, launchShellOn, loadFailures, ORDINARY, PLAIN_SHEET, proxyEnvironment, refusalLines, report, resolved, startLoggingProxy, SUBRESOURCES_BODY, UNSURE_SHEET, verifierNames, visitReporting, visitSubresources, windowsAutoDetect, windowsNoProxy } from './system-proxy-support.js'
 import type { LoggingProxy, Running, Visit } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
@@ -70,15 +70,21 @@ const launchShell = async (env: Record<string, string>, seedProfile?: (dir: stri
 
 describe('no proxy at all (the control)', () => {
   it('a .eth name loads and an ordinary name does not resolve, so a failure with a proxy is the proxy\'s', async () => {
-    const { app, chrome } = await launchShell({})
+    // A new Windows installation has "Automatically detect settings" ticked, which is not "no proxy at all".
+    const restoreSettings = WINDOWS ? windowsNoProxy() : () => {}
     try {
-      const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
-      const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the proxy')
-      report('control', { eth, ordinary, failures: await loadFailures(app) })
-      expect(eth.result).toBe('page')
-      expect(ordinary).toMatchObject({ result: 'error', error: 'ERR_NAME_NOT_RESOLVED' })
+      const { app, chrome } = await launchShell({})
+      try {
+        const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
+        const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the proxy')
+        report('control', { eth, ordinary, failures: await loadFailures(app) })
+        expect(eth.result).toBe('page')
+        expect(ordinary).toMatchObject({ result: 'error', error: 'ERR_NAME_NOT_RESOLVED' })
+      } finally {
+        await closeElectronApp(app)
+      }
     } finally {
-      await closeElectronApp(app)
+      restoreSettings()
     }
   }, SETUP_TIMEOUT_MS)
 })

@@ -248,6 +248,18 @@ export function windowsAutoDetect (): () => void {
   return restore
 }
 
+/**
+ * A computer whose Windows settings carry no proxy, no script and no detection: the "Automatically detect settings" box a new
+ * installation has ticked is cleared, since a session on detection is never asked about a name the verifier serves. Returns what
+ * puts the user's own settings back. Chromium reads them when a session starts, so it is done before a launch.
+ */
+export function windowsNoProxy (): () => void {
+  const restore = rememberIeSettings()
+  setIeBlob(ieBlob(1))
+  setIeValues({ ProxyEnable: 0, ProxyServer: null, ProxyOverride: null, AutoConfigURL: null, AutoDetect: 0 })
+  return restore
+}
+
 /** A manual proxy as Windows keeps it: `bypass` is the list written in Internet Options, `detect` the "Automatically detect settings" box. */
 export interface WindowsProxy {
   readonly server: string
@@ -368,8 +380,8 @@ Promise.allSettled([fetch('https://fetched.eth/a'), new Promise((done) => { cons
 /** The lines of a proxy's log that name a host the verifier serves. */
 export const verifierNames = (log: readonly string[]): string[] => log.filter((line) => /\.(eth|orivon)\b/.test(line))
 
-/** Hosts the operating system's own services ask through the system-wide proxy, on a runner whose settings the spec changed: the component updater of Chromium, and Apple's CloudKit and certificate checks. */
-const SYSTEM_SERVICE_HOSTS = ['gvt1.com', 'apple.com', 'apple-cloudkit.com']
+/** Hosts the operating system's own services ask through the system-wide proxy, on a runner whose settings the spec changed: the component updater of Chromium, and Apple's CloudKit, iCloud and certificate checks. */
+const SYSTEM_SERVICE_HOSTS = ['gvt1.com', 'apple.com', 'apple-cloudkit.com', 'icloud.com']
 
 /** The `CONNECT` lines of `log` that the shell could have sent: a tunnel to a host the system's own services use says nothing about Orivon. */
 export const tunnelsOpened = (log: readonly string[]): string[] => log.filter((line) => line.startsWith('CONNECT') && !SYSTEM_SERVICE_HOSTS.some((host) => line.includes(host)))
