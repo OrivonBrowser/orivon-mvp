@@ -258,7 +258,7 @@ describe('a local file runs in the local-files session', () => {
 describe('a recorded local file runs in a session of its own', () => {
   const FILE = 'file:///home/u/app/index.html'
   const SIBLING = 'file:///home/u/app/other.html'
-  const OWN = `persist:local-${originHash(FILE)}`
+  const OWN = `persist:local-${originHash(FILE).slice(0, 32)}`
   let dir: string
 
   beforeEach(() => {
@@ -286,7 +286,7 @@ describe('a recorded local file runs in a session of its own', () => {
 
 describe('partitionAfterFileBlock -- the fence cancelled a file load, so the tab moves to the file\'s session once', () => {
   const FILE = 'file:///home/u/app/index.html'
-  const OWN = `persist:local-${originHash(FILE)}`
+  const OWN = `persist:local-${originHash(FILE).slice(0, 32)}`
   let dir: string
 
   beforeEach(() => {

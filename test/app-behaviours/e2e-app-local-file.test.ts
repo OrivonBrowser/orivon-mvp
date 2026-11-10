@@ -22,7 +22,7 @@ const DOUBLE_PRESS_LATE_MS = 1700
 
 let dir: string
 const urlOf = (name: string): string => pathToFileURL(join(dir, name)).href
-const ownPartition = (key: string): string => `persist:local-${createHash('sha256').update(key, 'utf8').digest('hex')}`
+const ownPartition = (key: string): string => `persist:local-${createHash('sha256').update(key, 'utf8').digest('hex').slice(0, 32)}`
 
 const MANIFEST = JSON.stringify({
   orivonApiVersion: 0, id: 'dev.example.local-notes', name: 'Local notes', version: '1.0.0', entry: 'app.html',
