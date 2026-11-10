@@ -4,7 +4,8 @@
 // own text runs, and given to the sessions that follow the system once it answers as Chromium's own session does: a script that sends a
 // .eth name to a proxy still opens it, the proxy is never asked about it, and the script's split of the other sites between two proxies is
 // kept. A manual proxy in the environment is left to the system, with `no_proxy` keeping the names out of it. An `auto_proxy`
-// that is set and empty is automatic detection, which beats the manual variables and is left to the system. The desktop here is
+// that is set and empty is automatic detection, which beats the manual variables and is left to the system, where a name is refused
+// without being asked about, since detection may find a script that would be shown it. The desktop here is
 // XFCE, one Chromium reads no proxy settings of its own for. The proxies are forward proxies on loopback that log every `CONNECT` and
 // every plain-HTTP request. Linux only: the other systems have no such variable to read, so there is nothing to run on a Windows or macOS
 // runner.
@@ -15,7 +16,7 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors, mainOutput } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
-import { launchShellOn, ORDINARY, proxyEnvironment, refusalLines, report, reportedMirror, resolved, startLoggingProxy, startScriptServer, tunnelsOpened, verifierNames, visitReporting, waitForAnswer } from './system-proxy-support.js'
+import { CANCELLED, launchShellOn, ORDINARY, proxyEnvironment, refusalLines, report, reportedMirror, resolved, startLoggingProxy, startScriptServer, tunnelsOpened, UNSURE_SHEET, verifierNames, visitReporting, waitForAnswer } from './system-proxy-support.js'
 import type { LoggingProxy, Running, ScriptServer } from './system-proxy-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
@@ -179,7 +180,7 @@ describe.skipIf(!LINUX)('a computer whose environment sets auto_proxy and leaves
   let running: Running
   let settled = false
   let reported: Awaited<ReturnType<typeof reportedMirror>>
-  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, ordinarySessions: Record<string, string> }
+  let facts: { ordinary: Awaited<ReturnType<typeof visitReporting>>, eth: Awaited<ReturnType<typeof visitReporting>>, ordinarySessions: Record<string, string>, refusals: string[] }
 
   beforeAll(async () => {
     proxy = await startLoggingProxy()
@@ -189,7 +190,7 @@ describe.skipIf(!LINUX)('a computer whose environment sets auto_proxy and leaves
     settled = await waitFor(() => mainOutput(app).includes('(environment, detect, detect)'), 60_000)
     const ordinary = await visitReporting(app, chrome, ORDINARY, 'ordinary via the proxy')
     const eth = await visitReporting(app, chrome, 'https://fixture.eth/', 'verified fixture')
-    facts = { ordinary, eth, ordinarySessions: await resolved(app, 'https://ordinary.test/') }
+    facts = { ordinary, eth, ordinarySessions: await resolved(app, 'https://ordinary.test/'), refusals: refusalLines(app) }
     reported = await reportedMirror(app, chrome)
     report('environment empty', { settled, ...facts, mirror: reported.fact, lines: reported.lines, proxySaw: asked(proxy) })
   }, SETUP_TIMEOUT_MS)
@@ -207,7 +208,9 @@ describe.skipIf(!LINUX)('a computer whose environment sets auto_proxy and leaves
     expect(facts.ordinary.result).not.toBe('page')
   })
 
-  it('opens a .eth name, since detection finds no proxy to carry it', () => {
-    expect(facts.eth.result, JSON.stringify(facts.eth)).toBe('page')
+  it('refuses a .eth name without asking the session, saying Orivon could not tell: detection may find a script, which would be shown the name', () => {
+    expect(facts.eth).toMatchObject({ result: 'error', error: CANCELLED, sheet: UNSURE_SHEET })
+    expect(facts.refusals.join('\n')).toContain('the system\'s proxy settings may run a script, and the session holds no copy of them')
+    expect(asked(proxy)).toEqual([])
   })
 })
