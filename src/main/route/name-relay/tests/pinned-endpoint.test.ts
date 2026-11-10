@@ -84,6 +84,21 @@ describe('a host and port nobody pinned', () => {
     expect(reports).toEqual([])
   })
 
+  it('says so, in the relay\'s words, to a plain http request that nobody pinned', async () => {
+    const { endpoint, secret } = await start('DIRECT')
+    const socket = keep(connect({ host: '127.0.0.1', port: portOf(endpoint) }))
+    const credential = Buffer.from(`orivon:${secret()}`).toString('base64')
+    socket.write(`GET http://${SITE}/ HTTP/1.1\r\nHost: ${SITE}\r\nProxy-Authorization: Basic ${credential}\r\nConnection: close\r\n\r\n`)
+    const answer = await new Promise<string>((resolve) => {
+      let text = ''
+      socket.on('data', (chunk: Buffer) => { text += chunk.toString('utf8') })
+      socket.once('close', () => { resolve(text) })
+    })
+    expect(answer).toMatch(/^HTTP\/1\.1 403 /)
+    expect(answer).toContain('had not cleared it, so it sent nothing')
+    expect(answer).not.toContain(SITE)
+  })
+
   it('is told apart by host and by port: a pin is for one of each', async () => {
     const echo = await startEcho()
     const proxy = await startConnectProxy({ targets: { [`${PUBLIC_A}:443`]: echo.port } })
