@@ -1,5 +1,5 @@
 // When the workers at an origin the shell serves where websites run are the app's. A document no response was seen for, that a
-// worker controls, is the app's only after the origin has settled, in this order (`ADR-0111`):
+// worker controls, is the app's only after the origin has settled, in this order (`ADR-0112`):
 //   1. the verifier host has been told the shell serves the origin, and has said so: from then on every page it loads is answered
 //      by the shell;
 //   2. every page of the origin that is not a document the shell answered is loaded again (it was answered by the network, by the

@@ -8,6 +8,7 @@ import { runShellInstallers } from './shell/shell-installers.js'
 import { askQuestion } from './shell/question/ask-question.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
+import { installCookieMirror } from './route/cookie-mirror/install-cookie-mirror.js'
 import { startFirstRunFlavour } from './flavour/start-first-run-flavour.js'
 import { registerNewTabIpc } from './ipc/newtab-ipc.js'
 import { newTabUpdate } from './self-update/update-pill.js'
@@ -250,6 +251,8 @@ export function boot (runtime: Runtime): void {
     applyThemeSetting(shell.settings, nativeTheme)
     // The proxy an app can be routed through is the saved one until now; from here the setting itself.
     ctx.routes?.followSettings(shell.settings)
+    // With "Keep tunneled sites separate" off, the tunnel profiles' cookies follow the default session's.
+    installCookieMirror({ settings: shell.settings, isPrivate: runtime.isPrivate, userData: app.getPath('userData') })
     // The Ethereum servers the person chose. Their addresses may hold a key: whatever the choice is now, each is noted for the log and report scrub before anything is printed.
     const ethServers = (choice = shell.settings.get('web3.ethServers')): ReturnType<typeof effectiveEthServers> => effectiveEthServers({ choice, rpcs: shell.settings.get('web3.ethRpcs'), beacon: shell.settings.get('web3.ethBeacon') })
     const noteEthServers = (): void => { noteEthSecrets(ethServers('custom'), noteSecret) }

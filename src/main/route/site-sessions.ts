@@ -23,8 +23,8 @@ export interface SiteSessionsDeps {
    * again whenever the returned function is called, which is when a new attempt replaced it.
    */
   readonly hold: (session: SiteSession, current: () => Promise<void>) => () => void
-  /** Fits the session with what every session a website runs in carries: the privacy settings, the content blocks, the verifier's stamps. Throws when any of it could not be installed. */
-  readonly fit: (session: SiteSession, profile: Profile) => void
+  /** Fits the session with what every session a website runs in carries: the privacy settings, the content blocks, the verifier's stamps. Throws when any of it could not be installed. A promise it returns is waited for before the session's requests go on. */
+  readonly fit: (session: SiteSession, profile: Profile, partition: string) => Promise<void> | void
   /**
    * Makes the session ready for the person's extensions (`persistable`: Electron can load them there; `partition` names the profile
    * session): the part that must exist before a view is made in it, so it is synchronous. Throws nothing the caller need handle.
@@ -94,9 +94,11 @@ export function createSiteSessions (deps: SiteSessionsDeps): SiteSessions {
       const attempt = (async () => {
         // A session name that is not a profile's: nothing says whose front it belongs to.
         if (profile === undefined) throw new Error('a view was made in a website session this process did not name')
-        deps.fit(session, profile)
+        const fitted = deps.fit(session, profile, partition)
         deps.prepare?.(session, partition.startsWith('persist:'), partition)
         await deps.controller.prepareSite(profileOrigin(profile), session, deps.bypass())
+        // What the session must hold before its first request (the cookies the person's normal browsing has, when they asked for the same accounts).
+        await fitted
         // The extensions load after the session is held on its route, never before: they make requests of their own. Electron loads none in a session kept in memory only, which is where a plain-http website lives.
         if (wanted.wake) await deps.wake?.(session)
       })().catch(async (error: unknown) => {

@@ -5,6 +5,7 @@ import type { X11Reading } from '../graphics/x11-vulkan.js'
 import { SETTINGS } from '../settings/schema.js'
 import type { SettingKey } from '../settings/schema.js'
 import type { RestartCounts } from '../sessions/network-service-restart.js'
+import type { CookieMirrorStatus } from '../route/cookie-mirror/mirror-status.js'
 import type { MirrorStatus } from '../route/proxy-mirror/mirror-status.js'
 import { newest } from './crash-records.js'
 import type { CrashKind, CrashRecord } from './crash-records.js'
@@ -128,6 +129,8 @@ export interface DiagnosticsFacts {
     readonly networkService: RestartCounts
     /** Whether the system's proxy settings are copied into the sessions, and if not why: four fixed words, never an address, a URL or an exception. */
     readonly systemProxy: MirrorStatus
+    /** Whether the tunnel profiles' cookies are kept in step with normal browsing, and how many cookies that wrote, removed and failed to write: counts and one word, never a cookie or a site. */
+    readonly signIns: CookieMirrorStatus
     readonly extensions: readonly ExtensionReading[]
     readonly appSockets: readonly AppSocketReading[]
     readonly settings: Readonly<Record<string, string | boolean | number>>

@@ -1,6 +1,6 @@
 # ADR-0108: An allowed web3 site runs where websites run, and its kept copy is served there through the verifier
 
-- **Status:** accepted; amended by [`ADR-0111`](ADR-0111-a-page-an-allowed-sites-own-service-worker-answers-keeps-the-sites-grants-because-no-other-worker-script-can-be-registered-there.md)
+- **Status:** accepted; amended by [`ADR-0112`](ADR-0112-a-page-an-allowed-sites-own-service-worker-answers-keeps-the-sites-grants-because-no-other-worker-script-can-be-registered-there.md)
   (a page the site's own service worker answers keeps its grants). Amends [`ADR-0007`](ADR-0007-cached-bundles-served-at-their-own-origin.md) (where a kept copy is
   served), [`ADR-0044`](ADR-0044-a-grant-no-longer-gives-an-origin-its-own-session.md) (which origins keep a partition),
   [`ADR-0075`](ADR-0075-a-published-app-is-let-in-when-allowed-and-each-file-is-checked-as-it-is-served.md) (where the

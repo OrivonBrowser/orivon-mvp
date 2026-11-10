@@ -99,6 +99,11 @@ describe('the tunnel switches of a tab showing a website', () => {
     expect(tabSite({ site: own })).toMatchObject({ blocked: own.blocked, notices: own.notices, swarm: true, proxy, unreadable: true, defaultKind: 'socks5' })
   })
 
+  it('keeps saying the sign-ins are shared with normal browsing, and says nothing when they are apart', () => {
+    expect(tabSite({ site: site({ signInsShared: true }) }).signInsShared).toBe(true)
+    expect(tabSite({ site: site() })).not.toHaveProperty('signInsShared')
+  })
+
   it('light the tunnel every website takes while the settings cannot be read', () => {
     expect(tabSite({ ownProfile: 'nym', site: site({ unreadable: true }), unreadableKind: 'nym' })).toMatchObject({ via: 'nym', following: true, unreadable: true })
     expect(tabSite({ choice: 'direct', ownProfile: 'socks5', site: site({ unreadable: true }), unreadableKind: 'socks5' })).toMatchObject({ via: 'socks5', tabChoice: 'direct' })

@@ -41,6 +41,7 @@ import { sourceOf } from './proxy-mirror/settings-source.js'
 import { guardOfSession, namesVerifierHost, rootDotBypassRules, routedBypassRules, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
+import { mergeOf } from './cookie-mirror/session-ready.js'
 import { kindOfProfile, profilePartition, profilePartitionFor } from './site-partition.js'
 import { tabChoiceOfContents, tabKindShowing } from './tab-tunnel.js'
 import type { SiteSession } from './site-sessions.js'
@@ -269,7 +270,10 @@ export const routeSubsystem: Subsystem = {
         watch()
         return watch
       },
-      fit: (target, profile) => { announceWebsiteSession(target as Session, kindOfProfile(profile)) }
+      fit: (target, profile, partition) => {
+        announceWebsiteSession(target as Session, kindOfProfile(profile), partition)
+        return mergeOf(target)
+      }
     })
     // The verifier host reads whether a proxy applies once, when it starts, and fetches through the shared front when the whole browser is on the tunnel: it stops at once, with the local nodes, and starts again with the new setting when something asks for it, once the sessions follow.
     routes.hub.onChange((origin) => {

@@ -13,6 +13,7 @@ import { createSiteInfoController } from '../site-info-controller.js'
 import type { ProxySetup, SiteTrustSources } from '../site-info-controller.js'
 import type { ExtensionsApi } from '../../extensions/extensions-subsystem.js'
 import type { InstalledExtension } from '../../extensions/registry.js'
+import { setCookieMirrorStatusSource } from '../../route/cookie-mirror/mirror-status.js'
 
 const OTHER = 'https://not-a-real-origin.invalid'
 
@@ -557,6 +558,19 @@ describe('createSiteInfoController -- the tunnel of a website or an installed ap
   it('asks for no notice about the tunnel the site is on already', async () => {
     const info = await controllerWith(routesFor({ via: 'nym', own: true, notices: { nym: 'nym', socks5: 'socks5' } })).siteInfoFor(SITE)
     expect(info.tunnel?.notices).toEqual({ socks5: 'socks5' })
+  })
+
+  it('says the sign-ins are shared with normal browsing while the cookie mirror runs, and says nothing while they are apart', async () => {
+    const status = (state: 'separate' | 'mirroring') => () => ({ state, sessions: 3, copied: 0, removed: 0, failed: 0, suppressed: 0 })
+    try {
+      expect((await controllerWith(routesFor()).siteInfoFor(SITE)).tunnel).not.toHaveProperty('signInsShared')
+      setCookieMirrorStatusSource(status('mirroring'))
+      expect((await controllerWith(routesFor()).siteInfoFor(SITE)).tunnel?.signInsShared).toBe(true)
+      setCookieMirrorStatusSource(status('separate'))
+      expect((await controllerWith(routesFor()).siteInfoFor(SITE)).tunnel).not.toHaveProperty('signInsShared')
+    } finally {
+      setCookieMirrorStatusSource(undefined)
+    }
   })
 
   it('says why a tunnel cannot be chosen: the proxy has no address, Nym is switched off, an app\'s files are not held here', async () => {

@@ -69,6 +69,7 @@ import { siteSettingsControllerFor } from '../site-settings/site-settings-runner
 import { createDeviceRows } from '../devices/hid-rows.js'
 import { forgetDevicesWhenGrantEnds } from '../devices/hid-grant-watch.js'
 import { forgetRoutesOfGoneApps } from '../route/forget-watch.js'
+import { forgetMirroredSites } from '../route/cookie-mirror/mirror-forget.js'
 import { profilePartitionsToClear } from '../route/site-partition.js'
 import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
 import { madeSiteSessions } from '../route/site-routes.js'
@@ -213,6 +214,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
       forgetNameSchemes,
       forgetNodeData,
       forgetEarnedLevels: () => { forgetKeptProvenance(); services.scoreProvider.forget() },
+      forgetMirroredSites,
       now: Date.now
     }),
     sites: sitesDomain(siteSettings, { isPrivate: services.isPrivate, devices: deviceRows, declinedApps: { list: () => declinedApps()?.list() ?? [], remove: (origin) => declinedApps()?.remove(origin) === true } }),
