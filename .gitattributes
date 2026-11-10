@@ -7,7 +7,6 @@
 # NEVER extend this to source files -- union-merging code produces something
 # syntactically valid and semantically wrong, which is strictly worse than a
 # conflict you can see.
-devlog/journal.md   merge=union
 CHANGELOG.md        merge=union
 
 # Derived, not authored. package.json is the source of truth; on a conflict,

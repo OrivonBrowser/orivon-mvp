@@ -88,7 +88,7 @@ Other pages cite these by number: a new rule goes at the end, and none is renumb
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
 | `npm run test:changed` | The unit tests your change can affect, against `origin/main` (`-- --base <ref>`; `-- --all` for everything). A bare `npm test` or `npx vitest run` is blocked: CI runs the whole suite on every PR |
-| `npm run check:<name>` | The nineteen guards in `docs/development/testing.md` section Guards; CI runs each |
+| `npm run check:<name>` | The eighteen guards in `docs/development/testing.md` section Guards; CI runs each |
 | `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; a bare `npm run test:e2e` is blocked |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `node scripts/ci/cross-os.mjs` | Orivon on Windows and macOS from this machine: GitHub's runners run the pushed branch from source (smoke, screenshots; `--packaged` for the packages) and it brings the evidence back. Run it in the background after touching the install, launch scripts, OS integration or a dependency (`scripts/ci/README.md` section Other systems). Never a local VM or Wine |
@@ -150,9 +150,11 @@ at the step named here. **Check this table at the start of every build step.**
 
 ## Devlog capture
 
-`devlog/journal.md` feeds the Sunday team devlog (compiled by `/devlog`). At the end of any
-session where something notable happened (a milestone, a decision taken or reversed, a direction
-change, a worry the owner kept returning to), append a one-line bullet to the current week's
-section: **Done / results** for outcomes, **In my head** for thinking. Skip routine sessions.
-**25 words at most per bullet**; a result too big for that is two bullets
-(`.claude/commands/devlog.md` rule C).
+The team devlog is internal and is compiled outside this repository; `devlog/` is gitignored.
+At the end of any session where something notable happened (a milestone, a decision taken or
+reversed, a direction change, a worry the owner kept returning to), append a one-line bullet to
+the current week's section of `devlog/journal.md` in the main checkout (the parent of
+`git rev-parse --path-format=absolute --git-common-dir`), never a worktree's: **Done / results**
+for outcomes, **In my head** for thinking. If the file is missing, start it with a
+`## Week of <that Monday>` heading and the sections Done / results, In my head and Non-repo.
+**25 words at most per bullet**; a result too big for that is two bullets.
