@@ -331,8 +331,12 @@ const CARRY_PAGE_CODE = String.raw`(function (nonce) {
     var kept = writing.get(name)
     if (kept !== undefined) kept.close()
     writing.delete(name)
-    try { await deleteDatabase(name) } catch (error) { /* the clearing of the session removes what stays */ }
-    return 'dropped'
+    try {
+      await deleteDatabase(name)
+      return JSON.stringify({ dropped: true })
+    } catch (error) {
+      return JSON.stringify({ dropped: false, reason: messageOf(error) })
+    }
   }
 
   function closeAll () {
