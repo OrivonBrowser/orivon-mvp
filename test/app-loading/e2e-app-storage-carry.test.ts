@@ -4,15 +4,21 @@
 // website would have left); the second launch carries the partition into the shared session in the background, replacing
 // what was there, and the app's first page finds every cookie, item and database of the partition, including a key that
 // cannot be exported and still signs. A cookie of another site in the partition is not carried. The record in the profile
-// says the origin was carried, and the partition keeps its data.
+// says the origin was carried, and the partition keeps its data. A second case runs the same carry with an extension whose
+// content script runs in every page, the hidden pages of the carry included: the carry still ends, because a page is known
+// by the nonce its document repeats and not by what else runs in it.
 //
 // Run with `npm run test:e2e`, or directly:
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-loading/e2e-app-storage-carry.test.ts
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterAll, expect, it } from 'vitest'
 import type { ElectronApplication } from 'playwright'
 import { partitionFor } from '../../src/broker/grants/origin-hash.js'
+import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
+import { resolveSlotKey } from '../../src/main/extensions/install-runner.js'
+import { serializeRegistry } from '../../src/main/extensions/registry.js'
+import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
 import { assertNoElectronSurvivors, DEFAULT_ACTION_TIMEOUT_MS, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
 import { findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 import { ADDRESS_BAR_STABLE_TIMEOUT_MS, APP_CLOSE_RACE_MS, clickAddressBarRetrying, closeElectronApp, runPhase, waitForAddressBarStable } from '../support/e2e-helpers.js'
@@ -153,7 +159,7 @@ const READ_PAGE = `(async () => {
 })()`
 
 /** Puts the earlier version's state in the partition `partition` of the app at `origin`, from a hidden page of that partition. */
-async function seedPartition (app: App, partition: string, origin: string): Promise<string> {
+async function seedPartition (app: App, partition: string, origin: string, script: string = SEED_PAGE): Promise<string> {
   return await app.evaluate(async ({ session, WebContentsView }, { partition: name, origin: at, script }) => {
     const old = session.fromPartition(name)
     const view = new WebContentsView({ webPreferences: { session: old, sandbox: true, contextIsolation: true, nodeIntegration: false, offscreen: true, backgroundThrottling: false } })
@@ -172,7 +178,7 @@ async function seedPartition (app: App, partition: string, origin: string): Prom
       // The view is held to the end: Electron destroys a view's page once the view itself is collected.
       void view
     }
-  }, { partition, origin, script: SEED_PAGE })
+  }, { partition, origin, script })
 }
 
 /** Runs `script` in the newest page at `url` and returns what it answers, or null when no page is there. */
@@ -195,6 +201,74 @@ async function sessionOf (app: App, url: string): Promise<'shared' | 'partition'
     return newest.session === session.defaultSession ? 'shared' as const : 'partition' as const
   }, url).catch(() => null)
 }
+
+const TRACE_SLOT = 'content-script-trace'
+const TRACE_MANIFEST = { manifest_version: 3, name: 'Orivon E2E Content Script Trace', version: '1.0.0', content_scripts: [{ matches: ['<all_urls>'], js: ['content.js'], run_at: 'document_idle' }] }
+
+/** What a wallet or a blocker does in a page it runs on: adds a script element (a page that counts its scripts sees one it did not write) and leaves the path of the page in the origin's local storage, so the case can tell which pages it reached. */
+const TRACE_CONTENT_SCRIPT = `const element = document.createElement('script')
+element.type = 'application/json'
+element.textContent = '{}'
+;(document.head ?? document.documentElement).appendChild(element)
+localStorage.setItem('content-script-ran@' + location.pathname, 'ran')
+`
+
+/** Puts a content-script extension in the profile the way `test/support/extensions-fixtures.ts` does for a fixture folder: the stripped manifest with the slot's key and a registry entry, so the real boot path loads it. */
+function seedTraceExtension (userDataDir: string): void {
+  const parsed = readExtensionManifest(TRACE_MANIFEST)
+  if (!parsed.ok) throw new Error(`the trace extension's manifest was refused: ${parsed.reason}`)
+  const { manifest, stripped } = loadableManifest({ ...TRACE_MANIFEST })
+  const key = resolveSlotKey(userDataDir, TRACE_SLOT)
+  manifest.key = key
+  const path = join(userDataDir, 'extensions', TRACE_SLOT, parsed.facts.version)
+  mkdirSync(path, { recursive: true })
+  writeFileSync(join(path, 'manifest.json'), JSON.stringify(manifest))
+  writeFileSync(join(path, 'content.js'), TRACE_CONTENT_SCRIPT)
+  const now = Date.now()
+  writeFileSync(join(userDataDir, 'extensions', 'registry.json'), serializeRegistry([{ id: generateId(key), name: parsed.facts.name, version: parsed.facts.version, enabled: true, installedAt: now, updatedAt: now, source: { kind: 'unpacked', from: path }, updater: { kind: 'none', reason: 'e2e fixture, seeded directly' }, path, stripped }]))
+}
+
+/** A small state for the case with an extension: an item, a script-set cookie and a database of three records. */
+const SMALL_SEED_PAGE = `(async () => {
+  localStorage.setItem('ext-local', 'ext-value')
+  document.cookie = 'ext-js=ext-js-value; path=/; max-age=86400; secure'
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('ext-db', 2)
+    request.onupgradeneeded = () => { request.result.createObjectStore('rows', { keyPath: 'id' }) }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction('rows', 'readwrite')
+    for (let id = 1; id <= 3; id++) tx.objectStore('rows').put({ id, text: 'row ' + id })
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+  db.close()
+  return 'seeded'
+})()`
+
+/** What the first page finds after the carry in the case with an extension, and which pages the content script left a trace of. */
+const SMALL_READ_PAGE = `(async () => {
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('ext-db')
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  const rows = await new Promise((resolve, reject) => {
+    const request = db.transaction('rows').objectStore('rows').getAll()
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error)
+  })
+  db.close()
+  return JSON.stringify({
+    local: localStorage.getItem('ext-local'),
+    cookie: document.cookie,
+    version: db.version,
+    rows: rows.map((row) => row.text),
+    traces: Object.keys(localStorage).filter((name) => name.startsWith('content-script-ran@')).sort()
+  })
+})()`
 
 async function waitListening (app: App): Promise<boolean> {
   return await waitFor(async () => await app.evaluate(() => { const seam = (globalThis as { __orivonDevEthFixtures?: { listening: boolean, start?: () => void } }).__orivonDevEthFixtures; seam?.start?.(); return seam?.listening === true }), 20_000)
@@ -286,6 +360,72 @@ it('[app:storage-follows-an-app-into-the-website-session] carries an allowed app
       const record = JSON.parse(readFileSync(recordPath, 'utf8')) as { origins: Record<string, { status: string, attempts: number, report: { cookies: { carried: number, skipped: number }, localStorage: { carried: number }, databases: { carried: number }, records: { carried: number, failed: number }, problems: string[] } }> }
       const row = record.origins[origin]
       check(`the profile records the origin as carried (${JSON.stringify(row)})`, row?.status === 'carried' && row.attempts === 1 && row.report.cookies.carried === 2 && row.report.cookies.skipped === 1 && row.report.localStorage.carried === 2 && row.report.databases.carried === 1 && row.report.records.carried === 455 && row.report.records.failed === 0 && row.report.problems.length === 0)
+    } finally {
+      if (first !== undefined) await closeElectronApp(first)
+      if (second !== undefined) await closeElectronApp(second)
+      await gateway.close()
+    }
+  })
+}, TEST_TIMEOUT_MS)
+
+it('[app:storage-follows-an-app-into-the-website-session] carries the storage with an extension\'s content script running in the hidden pages, which the nonce of the page still tells from any other', async () => {
+  await runPhase('app storage carried with a content script in the hidden pages', async (check) => {
+    const gateway = await startFixtureGateway({ allowed: await withDeclaredTree(files('Carried app with an extension', 'carried.app.extension')) })
+    const root = gateway.roots['allowed']!
+    const origin = `https://${root}.ipfs.orivon`
+    const partition = partitionFor(origin)
+    const env = { ORIVON_TEST_ETH_FIXTURES: '{}', ORIVON_TEST_IPFS_GATEWAYS: gateway.url, ORIVON_TEST_BACKGROUND_PIN_DELAY_MS: '500' }
+    const extensionsLoaded = async (app: App): Promise<boolean> => await waitFor(async () => (await app.evaluate(({ session }) => session.defaultSession.extensions.getAllExtensions().length)) === 1, 20_000)
+    let first: App | undefined
+    let second: App | undefined
+    let profile = ''
+    try {
+      first = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], sandbox: true, env, seedProfile: async (dir) => { seedTraceExtension(dir) } })
+      const one = first
+      await stubNativeDialogs(one)
+      check('the verifier host listens', await waitListening(one))
+      check('the extension is loaded', await extensionsLoaded(one))
+      await waitFor(() => one.windows().length >= 2)
+      const chrome = findChrome(one)
+      await waitForAddressBarStable(chrome)
+      const userData = await one.evaluate(({ app }) => app.getPath('userData'))
+      profile = profileDirOf(one) ?? userData
+
+      await clickAddressBarRetrying(chrome, `ipfs://${root}`)
+      await waitQuestion(one, 60_000)
+      await answerQuestion(one, 'Grant all')
+      let facts = null as PageFacts | null
+      await waitFor(async () => { facts = await pageAt(one, `${origin}/`); return facts?.ran === 'ran' && facts.hasProcess }, 60_000)
+      check(`the app is allowed and runs (${JSON.stringify(facts)})`, facts?.ran === 'ran' && facts.hasProcess && savedGrants(userData, origin).includes('fs'))
+      check('the app is pinned', await waitFor(() => existsSync(pinPath(userData, origin)), 60_000))
+      check('the earlier version\'s state is put in the partition', await seedPartition(one, partition, origin, SMALL_SEED_PAGE) === 'seeded')
+      await closeElectronApp(one, APP_CLOSE_RACE_MS, { keepProfile: true })
+      first = undefined
+
+      second = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], sandbox: true, env, reuseProfile: profile })
+      const two = second
+      await stubNativeDialogs(two)
+      check('the verifier host listens again', await waitListening(two))
+      check('the extension is loaded again', await extensionsLoaded(two))
+      await waitFor(() => two.windows().length >= 2)
+      const chromeTwo = findChrome(two)
+      await waitForAddressBarStable(chromeTwo)
+      const recordPath = join(profile, 'carried-app-storage.json')
+      // The row the carry leaves when it starts to write is `failed` and `unfinished`: the carry has ended once the row is neither.
+      const settled = await waitFor(() => { if (!existsSync(recordPath)) return false; const at = (JSON.parse(readFileSync(recordPath, 'utf8')) as { origins: Record<string, { unfinished?: boolean }> }).origins[origin]; return at !== undefined && at.unfinished !== true }, 60_000)
+      check('the carry ends in the background', settled)
+      const record = JSON.parse(readFileSync(recordPath, 'utf8')) as { origins: Record<string, { status: string, reason?: string, attempts: number, unfinished?: boolean, report: { cookies: { carried: number }, localStorage: { carried: number }, databases: { carried: number }, records: { carried: number }, problems: string[] } }> }
+      const row = record.origins[origin]
+      check(`the profile records the origin as carried, counted once, with no row left over from the start (${JSON.stringify(row)})`, row?.status === 'carried' && row.attempts === 1 && row.unfinished === undefined && row.report.cookies.carried === 1 && row.report.localStorage.carried === 1 && row.report.databases.carried === 1 && row.report.records.carried === 3 && row.report.problems.length === 0)
+
+      await clickAddressBarRetrying(chromeTwo, `ipfs://${root}`)
+      let again = null as PageFacts | null
+      await waitFor(async () => { again = await pageAt(two, `${origin}/`); return again?.ran === 'ran' && again.hasProcess }, 90_000)
+      check(`the app opens from its kept copy (${JSON.stringify(again)})`, again?.ran === 'ran' && again.hasProcess)
+      const read = await askPage(two, `${origin}/`, SMALL_READ_PAGE)
+      const found = read === null || read.startsWith('ERR:') ? null : JSON.parse(read) as { local: string | null, cookie: string, version: number, rows: string[], traces: string[] }
+      check(`the first page finds the item, the cookie and the database (${read === null ? 'no answer' : read.slice(0, 600)})`, found !== null && found.local === 'ext-value' && found.cookie.includes('ext-js=ext-js-value') && found.version === 2 && JSON.stringify(found.rows) === JSON.stringify(['row 1', 'row 2', 'row 3']))
+      check(`the extension\'s content script ran in a hidden page of the carry as well as in the app\'s own page (${JSON.stringify(found?.traces)})`, found !== null && found.traces.includes('content-script-ran@/') && found.traces.some((name) => name.startsWith('content-script-ran@/.well-known/orivon/storage-carry-')))
     } finally {
       if (first !== undefined) await closeElectronApp(first)
       if (second !== undefined) await closeElectronApp(second)
