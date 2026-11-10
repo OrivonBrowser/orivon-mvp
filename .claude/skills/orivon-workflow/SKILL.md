@@ -77,6 +77,8 @@ Skip routine sessions.
 
 - `gh pr create --title ... --body-file <file>`. `--body` bypasses the template silently;
   `--label` on create fails with a GraphQL "Projects (classic)" error.
+- Name the body file after the branch (`pr-body-<branch>.md`). The agents of one session share a scratchpad, so a
+  common name like `pr-body.md` lets one agent's body be PATCHed onto another agent's PR.
 - Edit a body: `gh api -X PATCH repos/OrivonBrowser/orivon-mvp/pulls/<n> -F body=@<file>`
   (`-F` reads the file; `-f` sends the literal string). `gh pr edit` fails the same way as
   `--label`.
