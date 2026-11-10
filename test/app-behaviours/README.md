@@ -39,8 +39,10 @@ area. The catalogue links them, and each carries `[app:<id>]` in the title of th
    app name and no copied app code.
 3. Put `[app:<id>]` in the title of the `it` that proves it, as a plain string (several ids may share a title).
    It carries no modifier, except `skipIf(!ORDINARY_BUILD)` for a spec that needs the build without the
-   developer-only hooks; that spec must then be listed in the `e2e-ordinary` job of `ci.yml`. A skipped,
-   narrowed or interpolated test proves nothing, so the guard refuses it.
+   developer-only hooks (that spec must then be listed in the `e2e-ordinary` job of `ci.yml`), and
+   `skipIf(process.platform !== 'linux')` for a behaviour that exists on one system only: its row says
+   ``Holds on `linux` only`` in the sentence, and CI's e2e job, which runs on Linux, still runs the proof.
+   A skipped, narrowed or interpolated test proves nothing, so the guard refuses it.
 4. Watch it fail: break the behaviour in the code, see the test go red, restore it. Say so in the pull request.
 5. Add the row, or `not covered: <reason>`; the reason is the debt.
 
