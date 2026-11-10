@@ -83,7 +83,7 @@ export function parseMacosSettings (output: string): SystemSettings {
   }
   const scriptUrl = (values.get('ProxyAutoConfigURLString') ?? '').trim()
   const discovering = on('ProxyAutoDiscoveryEnable')
-  if (on('ProxyAutoConfigEnable') && scriptUrl !== '' && !(discovering && scriptUrl.toLowerCase() === DISCOVERY_SCRIPT)) return { kind: 'script' }
+  if (on('ProxyAutoConfigEnable') && scriptUrl !== '' && !(discovering && scriptUrl.toLowerCase() === DISCOVERY_SCRIPT)) return { kind: 'script', url: scriptUrl }
   const rules: string[] = []
   for (const [scheme, prefix] of [['http', 'HTTP'], ['https', 'HTTPS'], ['socks', 'SOCKS']] as const) {
     const host = values.get(`${prefix}Proxy`)

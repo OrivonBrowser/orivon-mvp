@@ -120,8 +120,10 @@ describe('the kind of KDE\'s proxy settings', () => {
   })
 
   it('is a script for type 2 with an address, and detection for type 2 with none and for type 3', () => {
-    expect(parseKdeSettings([section('ProxyType=2', 'Proxy Config Script=file:///home/me/proxy.pac')])).toEqual({ kind: 'script' })
-    expect(parseKdeSettings([section('ProxyType=2', 'Proxy Config Script=/home/me/proxy.pac')])).toEqual({ kind: 'script' })
+    expect(parseKdeSettings([section('ProxyType=2', 'Proxy Config Script=file:///home/me/proxy.pac')])).toEqual({ kind: 'script', url: 'file:///home/me/proxy.pac' })
+    expect(parseKdeSettings([section('ProxyType=2', 'Proxy Config Script=/home/me/proxy.pac')])).toEqual({ kind: 'script', url: 'file:///home/me/proxy.pac' })
+    expect(parseKdeSettings([section('ProxyType=2', 'Proxy Config Script=http://127.0.0.1:8123/proxy.pac')])).toEqual({ kind: 'script', url: 'http://127.0.0.1:8123/proxy.pac' })
+    expect(parseKdeSettings(['[Proxy Settings]\nProxyType=2\nProxy Config Script=http://one.test/a.pac\n', '[Proxy Settings]\nProxy Config Script=http://two.test/b.pac\n'])).toEqual({ kind: 'script', url: 'http://two.test/b.pac' })
     expect(parseKdeSettings([section('ProxyType=2', 'Proxy Config Script=')])).toEqual({ kind: 'detect' })
     expect(parseKdeSettings([section('ProxyType=3', 'Proxy Config Script=http://127.0.0.1/proxy.pac')])).toEqual({ kind: 'detect' })
   })

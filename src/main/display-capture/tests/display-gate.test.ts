@@ -24,7 +24,9 @@ function fakeTickets (): DisplayGateDeps['tickets'] & { end: () => void, suspect
     open: vi.fn(() => { open.add(key); return 'nonce-1' }),
     void: vi.fn(() => { open.delete(key) }),
     arm: vi.fn(),
+    canaryRefused: vi.fn(),
     called: vi.fn((_key: string, _nonce: string, rejectedEarly: boolean) => { if (rejectedEarly) open.delete(key) }),
+    rejected: vi.fn(() => { open.delete(key) }),
     has: (k: string) => open.has(k),
     suspect: () => suspected.value,
     forgetTab: vi.fn(() => { suspected.value = false }),
@@ -261,11 +263,13 @@ describe('the display gate: a page that was refused', () => {
 })
 
 describe('the display gate: the preload\'s messages and the page going away', () => {
-  it('passes arm and called to the ticket under the tab\'s frame key', () => {
+  it('passes arm, the canary report and called to the ticket under the tab\'s frame key', () => {
     const { gate, deps, contents } = setup()
     gate.arm(contents, 'n')
+    gate.canary(contents, 'n')
     gate.called(contents, 'n', true)
     expect(deps.tickets.arm).toHaveBeenCalledWith('1:10:2', 'n')
+    expect(deps.tickets.canaryRefused).toHaveBeenCalledWith('1:10:2', 'n')
     expect(deps.tickets.called).toHaveBeenCalledWith('1:10:2', 'n', true)
   })
 
@@ -323,6 +327,14 @@ describe('the display gate: the preload\'s messages and the page going away', ()
       const { gate, deps, contents } = setup()
       gate.failed(contents, 'n', 'NotAllowedError')
       expect(deps.endUnexpectedCapture).not.toHaveBeenCalled()
+    })
+
+    it('tells the ticket the call was rejected, whichever name it carries, so a request behind it is not taken for its own', async () => {
+      const { gate, deps, contents } = setup()
+      await gate.pick(contents, REQUEST)
+      gate.failed(contents, 'nonce-1', 'AbortError')
+      expect(deps.tickets.rejected).toHaveBeenCalledWith('1:10:2', 'nonce-1')
+      expect(deps.tickets.has('1:10:2')).toBe(false)
     })
 
     it('lets go of a picked tab the page was to be shown', async () => {
