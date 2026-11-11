@@ -418,7 +418,11 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
 
   it('keeps the spell checker off in the sessions that ask the system for its proxy, which would fetch a dictionary from a fixed host', () => {
     expect(Object.keys(facts.on.spellCheckers).length).toBeGreaterThan(0)
-    for (const [partition, state] of Object.entries(facts.on.spellCheckers)) expect(state, partition).toEqual({ enabled: false, languages: [] })
+    for (const [partition, state] of Object.entries(facts.on.spellCheckers)) {
+      expect(state.enabled, partition).toBe(false)
+      // macOS checks spelling with the system's own checker, which fetches nothing and keeps its own list of languages.
+      if (!MACOS) expect(state.languages, partition).toEqual([])
+    }
   })
 
   it('shows the sheet that names the switch for a name nobody knows, and the other sheets for what else failed', () => {
