@@ -75,6 +75,15 @@ export function parseProxyAnswer (answer: string): ProxyAnswer {
   return entries.length === 0 ? { kind: 'refused' } : { kind: 'proxies', entries }
 }
 
+/**
+ * The answer to act on when the system was asked about two URLs of one connection: a proxy when either names one (the first to), and
+ * never `DIRECT` unless both say `DIRECT`, so a tunnel that may carry either scheme is not sent outside the proxy one scheme names.
+ */
+export function stricterAnswer (first: ProxyAnswer, second: ProxyAnswer): ProxyAnswer {
+  if (second.kind === 'proxies') return first.kind === 'proxies' ? first : second
+  return first.kind === 'direct' ? second : first
+}
+
 const TOR_PORTS: ReadonlySet<number> = new Set([9050, 9150])
 
 function onThisComputer (host: string): boolean {

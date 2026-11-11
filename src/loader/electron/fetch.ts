@@ -11,6 +11,7 @@ import { servedByVerifier } from '../fetch/verifier-origin.js'
 import { asOwnRead } from '../fetch/own-read.js'
 import { answerRouteChallenge } from '../../main/route/lookup-session.js'
 import { ownDirectSession, ownRequestsSettled, ownRouteFor, ownSiteSession } from '../../main/route/own-requests.js'
+import { relayLookup } from '../../main/route/name-relay/pinned-endpoint.js'
 import { namesVerifierHost, refuseWhenProxySees } from '../../main/route/verifier-name-guard.js'
 import { createRequestFetch } from './request-fetch.js'
 
@@ -65,12 +66,16 @@ export const electronFetch: Fetch = async (url, pinnedAddresses, signal, headers
   // Through the tunnel the far end resolves the name: a lookup here would show it to this computer's resolver, and its answer is not what gets dialled.
   if (ownRouteFor(new URL(url).origin) === 'tunnel' && classifyAddress(hostname) === 'unparseable') return await netFetch(url, signal, headers)
   if (classifyAddress(hostname) === 'unparseable') {
-    const resolved = await net.resolveHost(hostname)
-    if (resolved.endpoints.length === 0) {
+    // While the name relay runs it carries this request and looks the name up through the proxy: this computer's resolver is not asked, and the addresses judged are the ones the relay dials.
+    const relay = relayLookup()
+    const addresses = relay === undefined
+      ? (await net.resolveHost(hostname)).endpoints.map((endpoint) => endpoint.address)
+      : await relay(hostname, `${new URL(url).origin}/`)
+    if (addresses.length === 0) {
       throw new Error(`install origin's host resolved to no addresses immediately before fetching: ${hostname}`)
     }
-    for (const endpoint of resolved.endpoints) {
-      if (!isPublicUnicast(endpoint.address)) {
+    for (const address of addresses) {
+      if (!isPublicUnicast(address)) {
         throw new Error(`install origin's host no longer resolves to a public address immediately before fetching: ${hostname}`)
       }
     }

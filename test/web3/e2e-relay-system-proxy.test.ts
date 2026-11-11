@@ -5,7 +5,9 @@
 // a run, names come back to it. The proxy is a forward proxy on loopback that logs every `CONNECT` with its headers. A name the
 // DNS server does not know, one it cannot answer, one whose DNS host the proxy refuses and a proxy that asks for a sign-in each
 // show the sheet that names why. A .eth name opens with the proxy seeing nothing, a host the system's exceptions list goes
-// direct, and Chromium's net log shows no DNS transaction for a relayed name and no connection that leaves loopback. The report
+// direct, and Chromium's net log, over every visit with the setting on (the refusals, an embedded page and a site that offers an
+// app included), shows no DNS transaction for a relayed name and no connection that leaves loopback. A page open when the setting
+// is turned on is loaded again, and a peer connection in a relayed page gathers no host or server-reflexive candidate. The report
 // carries the state, the provider and the counts, and no address. The Linux case reads GNOME's settings; Windows' are written as
 // Internet Options writes them, and the macOS case changes the runner's own network settings, so it runs only on GitHub's runner
 // (`node scripts/ci/cross-os.mjs --systems windows,macos --specs test/web3/e2e-relay-system-proxy.test.ts`).
@@ -20,12 +22,14 @@ import { startFixtureGateway } from '../apps/ipfs-gateway/gateway.mjs'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { closeElectronApp } from '../support/e2e-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
+import { appManifest, grantApp, startAppServer } from '../app-behaviours/app-behaviour-support.js'
+import type { AppServer } from '../app-behaviours/app-behaviour-support.js'
 import { gnomeProxy, launchShellOn, macosProxy, report, resolved, startLoggingProxy, verifierNames, visitReporting, waitForAnswer, windowsManualProxy } from './system-proxy-support.js'
 import type { LoggingProxy, Running, Visit } from './system-proxy-support.js'
 import { readConnectedAddresses, readNetLog, startNetLog, stopNetLog } from './root-dot-support.js'
 import type { NetLogFacts } from './root-dot-support.js'
-import { NXDOMAIN, quiet, relayCertificate, reportedRelay, SERVFAIL, setRelaySwitch, startFakeDoh, startFakeSite } from './name-relay-support.js'
-import type { FakeDoh, FakeSite, RelayFact } from './name-relay-support.js'
+import { gatherCandidates, holdsKeptPeer, keepPeerConnection, NXDOMAIN, quiet, relayCertificate, reportedRelay, SERVFAIL, setRelaySwitch, startFakeDoh, startFakeSite, startFakeStun } from './name-relay-support.js'
+import type { FakeDoh, FakeSite, FakeStun, RelayFact } from './name-relay-support.js'
 
 const SITE = { 'index.html': '<!doctype html><meta charset="utf-8"><title>verified fixture</title><body>verified</body>' }
 const LINUX = process.platform === 'linux'
@@ -47,6 +51,9 @@ const DOH_HOST = 'dns.relay.test'
 const ICON_HOST = 'icons.relay.test'
 /** The icon host's address is one a public site could have: the check a caller makes before it reads refuses the documentation address the other names get. */
 const ICON_ADDRESS = '93.184.216.34'
+/** The host a page shown in an embedded frame comes from, and the one that offers an app: both are looked up by the shell before it reads them, and answer an address a public site could have. */
+const EMBED_HOST = 'embed.relay.test'
+const APP_HOST = 'app.relay.test'
 /** A host the system's exceptions list, which the resolver rule maps to this computer so a direct connection has somewhere to go. */
 const EXCEPTED = 'printer.lan.test'
 const EXCEPTIONS = ['localhost', '127.0.0.0/8', '::1', '*.lan.test']
@@ -118,6 +125,16 @@ async function waitForRelay (app: ElectronApplication, systemPort: number): Prom
   return last
 }
 
+/** What each of the sessions Orivon makes for its own questions says of its spell checker: it would fetch a dictionary from a fixed host over whatever road the session has. */
+const spellCheckers = async (app: ElectronApplication): Promise<Record<string, { enabled: boolean, languages: string[] }>> =>
+  await app.evaluate(({ session }) => Object.fromEntries(['orivon-system-proxy', 'orivon-system-mirror'].map((partition) => {
+    const one = session.fromPartition(partition)
+    return [partition, { enabled: one.isSpellCheckerEnabled(), languages: one.getSpellCheckerLanguages() }]
+  })))
+
+/** An ICE candidate that carries an address of this computer, or one the network saw it as. */
+const showsAddress = (candidate: string): boolean => /\btyp (?:host|srflx|prflx)\b/.test(candidate)
+
 /** The WebRTC policy of every tab showing a page of `NAME`. */
 const rtcPolicies = async (app: ElectronApplication): Promise<string[]> =>
   await app.evaluate(({ webContents }, name) => webContents.getAllWebContents().filter((contents) => contents.getURL().includes(name)).map((contents) => contents.getWebRTCIPHandlingPolicy()), NAME)
@@ -128,11 +145,20 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
   let tlsSite: FakeSite
   let plainSite: FakeSite
   let directSite: FakeSite
+  let stun: FakeStun
+  let embedApp: AppServer
   let settings: ProxySettings
   let running: Running
   let facts: {
-    off: { visit: Visit, seen: string[], dohAsked: number }
+    off: { visit: Visit, seen: string[], dohAsked: number, candidates: string[] }
     on: {
+      /** Whether the tab that was open before the switch was turned on was loaded again (the peer connection it held is gone), and what a new peer connection gathered in it. */
+      reloaded: boolean
+      relayedCandidates: string[]
+      stunHeard: number
+      embed: { outcome: string, seen: string[] }
+      appOffered: { visit: Visit, manifestAsked: boolean, seen: string[] }
+      spellCheckers: Awaited<ReturnType<typeof spellCheckers>>
       relayAnswer: string
       https: Visit
       iconRead: boolean
@@ -159,9 +185,11 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
   beforeAll(async () => {
     proxy = await startLoggingProxy()
     doh = await startFakeDoh(tls)
-    tlsSite = await startFakeSite('relayed site', tls, ICON_HOST)
+    tlsSite = await startFakeSite('relayed site', tls, ICON_HOST, APP_HOST)
     plainSite = await startFakeSite('plain relayed site')
     directSite = await startFakeSite('direct host')
+    stun = await startFakeStun()
+    embedApp = await startAppServer()
     // Behind this proxy a connection to the site's name and one to its address both reach the site, and the DNS host reaches the fake server.
     proxy.tunnelTo(NAME, tlsSite.port)
     proxy.tunnelTo(BACK, tlsSite.port)
@@ -169,6 +197,8 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     proxy.tunnelTo(`${ADDRESS}:80`, plainSite.port)
     proxy.tunnelTo(`${ICON_ADDRESS}:443`, tlsSite.port)
     proxy.tunnelTo(DOH_HOST, doh.port)
+    doh.answer(EMBED_HOST, { address: ICON_ADDRESS })
+    doh.answer(APP_HOST, { address: ICON_ADDRESS })
     for (const known of [NAME, 'unreach.relay.test', 'signin.relay.test']) doh.answer(known, { address: ADDRESS })
     doh.answer(ICON_HOST, { address: ICON_ADDRESS })
     doh.answer('missing.relay.test', { rcode: NXDOMAIN })
@@ -180,14 +210,23 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     await waitForAnswer(app, `https://${NAME}/`, new RegExp(`^PROXY 127\\.0\\.0\\.1:${String(proxy.port)}$`), 60_000)
 
     const offVisit = await visit(app, chrome, `https://${NAME}/off`, 'relayed site /off')
-    const off = { visit: offVisit, seen: asked(proxy.seen), dohAsked: doh.asked.length }
+    // A page open before the switch is turned on, with a peer connection of its own: the page gathers this computer's addresses with no setting on, which shows the probe can see them.
+    const offCandidates = await gatherCandidates(app, `${NAME}/off`, stun.port)
+    await keepPeerConnection(app, `${NAME}/off`)
+    const off = { visit: offVisit, seen: asked(proxy.seen), dohAsked: doh.asked.length, candidates: offCandidates }
 
-    await setRelaySwitch(app, chrome, true)
-    const relayAnswer = await waitForRelay(app, proxy.port)
+    // The window opens before the setting is turned on: the page that is loaded again then is a relayed page too.
     const mark = proxy.seen.length
     const connectMark = proxy.connects.length
     const netLogPath = join(scratch, 'relay-net.json')
     await startNetLog(app, netLogPath)
+    await setRelaySwitch(app, chrome, true)
+    const relayAnswer = await waitForRelay(app, proxy.port)
+    // The page is loaded again once the relay is on, so the peer connection it had is gone.
+    const reloaded = await waitFor(async () => (await holdsKeptPeer(app, `${NAME}/off`)) === false, 30_000)
+    const stunBefore = stun.requests.length
+    const relayedCandidates = await gatherCandidates(app, `${NAME}/off`, stun.port)
+    const stunHeard = stun.requests.length - stunBefore
     const https = await visit(app, chrome, `https://${NAME}/on`, 'relayed site /on')
     const rtc = await rtcPolicies(app)
     const iconRead = await waitFor(() => tlsSite.hosts.includes(ICON_HOST), 20_000)
@@ -197,8 +236,42 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     const eth = await visit(app, chrome, 'https://fixture.eth/', 'verified fixture')
     const ethSeen = asked(proxy.seen.slice(beforeEth))
     const excepted = await visit(app, chrome, `http://${EXCEPTED}:${String(directSite.port)}/direct`, 'direct host /direct')
-    await stopNetLog(app)
+
+    // An app shows a site from any host in a frame: the check that the host is no address on this computer's network is the relay's lookup, and the frame is loaded by the relay.
+    await grantApp(app, embedApp.origin, appManifest('relay-embed', { web: { embed: { origins: ['*'] } } }), [{ capability: 'web.embed', patterns: ['*'] }])
+    await visit(app, chrome, `${embedApp.origin}/`, 'app')
+    const beforeEmbed = proxy.seen.length
+    const embedOutcome = await app.evaluate(async ({ webContents }, args) => {
+      const contents = webContents.getAllWebContents().find((one) => !one.isDestroyed() && one.getURL() === args.page)
+      if (contents === undefined) return 'no app tab'
+      return await contents.executeJavaScript(`new Promise((resolve) => {
+        const frame = document.createElement('webview')
+        frame.addEventListener('did-finish-load', () => { resolve('finished') })
+        frame.addEventListener('did-fail-load', (event) => { resolve('failed ' + event.errorCode) })
+        setTimeout(() => { resolve('timeout') }, 25000)
+        frame.src = ${JSON.stringify(args.url)}
+        frame.style.width = '400px'
+        frame.style.height = '300px'
+        document.body.appendChild(frame)
+      })`) as string
+    }, { page: `${embedApp.origin}/`, url: `https://${EMBED_HOST}/` })
+    await quiet(() => proxy.seen.length)
+    const embed = { outcome: embedOutcome, seen: asked(proxy.seen.slice(beforeEmbed)) }
+
+    // A site that offers an app is read for its manifest by the loader, which checks the host first and again before the read.
+    const beforeApp = proxy.seen.length
+    const appVisit = await visit(app, chrome, `https://${APP_HOST}/`, 'relayed site /')
+    const manifestAsked = await waitFor(() => tlsSite.requests.includes(`${APP_HOST}/.well-known/orivon.json`), 30_000)
+    await quiet(() => proxy.seen.length)
+    const appOffered = { visit: appVisit, manifestAsked, seen: asked(proxy.seen.slice(beforeApp)) }
+
     const on = {
+      reloaded,
+      relayedCandidates,
+      stunHeard,
+      embed,
+      appOffered,
+      spellCheckers: await spellCheckers(app),
       relayAnswer,
       https,
       iconRead,
@@ -214,8 +287,8 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
       ethSessions: await resolved(app, 'https://fixture.eth/'),
       rtc,
       dohAsked: [...doh.asked],
-      addresses: await readConnectedAddresses(netLogPath),
-      lookups: await readNetLog(netLogPath, 'relay.test')
+      addresses: [] as string[],
+      lookups: { requests: 0, lookups: [], tunnelled: [], proxies: [] } as NetLogFacts
     }
 
     const missing = await visit(app, chrome, 'https://missing.relay.test/', 'never')
@@ -229,6 +302,10 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     doh.dropConnections()
     const signIn = await visit(app, chrome, 'https://signin.relay.test/', 'never')
     proxy.askForSignIn(false)
+    // The net log covers every visit above, the refusals too: none of their names was looked up on this computer.
+    await stopNetLog(app)
+    on.addresses = await readConnectedAddresses(netLogPath)
+    on.lookups = await readNetLog(netLogPath, 'relay.test')
     const reportedOn = await reportedRelay(app, chrome, (fact) => fact.state === 'relaying' && Object.values(fact.refused).reduce((sum, count) => sum + count, 0) >= 4)
 
     const afterMark = proxy.seen.length
@@ -249,6 +326,8 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     await tlsSite.close()
     await plainSite.close()
     await directSite.close()
+    await stun.close()
+    await embedApp.close()
     settings.restore()
   }, CLEANUP_TIMEOUT_MS)
 
@@ -289,6 +368,7 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
   it('carries plain http as a tunnel to port 80 with the site\'s name inside it', () => {
     expect(facts.on.plain.result, JSON.stringify(facts.on.plain)).toBe('page')
     expect(facts.on.connects.map((connect) => connect.target)).toContain(`${ADDRESS}:80`)
+    for (const connect of facts.on.connects.filter((one) => one.target === `${ADDRESS}:80`)) expect(connect.headers, connect.target).toEqual({ host: `${ADDRESS}:80` })
     expect(facts.on.plainHosts).toContain(NAME)
     expect(facts.on.seen.filter((line) => line.startsWith('GET ') || line.includes(`http://${NAME}`))).toEqual([])
   })
@@ -299,6 +379,17 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     for (const address of facts.on.addresses) expect(address, 'a connection that left this computer').toMatch(/^(127\.0\.0\.1|\[::1\]):\d+$/)
     const transactions = facts.on.lookups.lookups.filter((line) => /HOST_RESOLVER_(MANAGER_JOB|DNS_TASK|SYSTEM_TASK|MANAGER_.*ATTEMPT|.*PROC)|DNS_TRANSACTION/.test(line) && !line.includes('MANAGER_REQUEST'))
     expect(transactions).toEqual([])
+  })
+
+  it('looks up the host of an embedded frame and of a site that offers an app through the relay as well, and asks this computer for neither name', () => {
+    expect(facts.on.embed.outcome, JSON.stringify(facts.on.embed)).toBe('finished')
+    expect(facts.on.dohAsked).toContain(`${EMBED_HOST} A`)
+    expect(facts.on.embed.seen.filter((line) => line.includes(EMBED_HOST))).toEqual([])
+    expect(facts.on.tlsHosts).toContain(EMBED_HOST)
+    expect(facts.on.appOffered.manifestAsked, JSON.stringify(facts.on.appOffered)).toBe(true)
+    expect(facts.on.dohAsked).toContain(`${APP_HOST} A`)
+    expect(facts.on.appOffered.seen.filter((line) => line.includes(APP_HOST))).toEqual([])
+    expect(facts.on.tlsHosts).toContain(APP_HOST)
   })
 
   it('opens a .eth name with the proxy seeing nothing, and sends a host the system\'s exceptions list direct', () => {
@@ -316,6 +407,18 @@ for (const computer of COMPUTERS) describe.skipIf(!computer.applies)(`a computer
     for (const policy of facts.on.rtc) expect(policy).toBe('disable_non_proxied_udp')
     expect(facts.after.rtc.length).toBeGreaterThan(0)
     for (const policy of facts.after.rtc) expect(policy).toBe('default')
+  })
+
+  it('loads a page that was open when the setting went on again, and a peer connection there gathers no address of this computer and reaches no STUN server', () => {
+    expect(facts.off.candidates.filter(showsAddress).length, `with the setting off the probe sees this computer: ${JSON.stringify(facts.off.candidates)}`).toBeGreaterThan(0)
+    expect(facts.on.reloaded, 'the page was loaded again').toBe(true)
+    expect(facts.on.relayedCandidates.filter(showsAddress)).toEqual([])
+    expect(facts.on.stunHeard, 'datagrams a STUN server on this computer received').toBe(0)
+  })
+
+  it('keeps the spell checker off in the sessions that ask the system for its proxy, which would fetch a dictionary from a fixed host', () => {
+    expect(Object.keys(facts.on.spellCheckers).length).toBeGreaterThan(0)
+    for (const [partition, state] of Object.entries(facts.on.spellCheckers)) expect(state, partition).toEqual({ enabled: false, languages: [] })
   })
 
   it('shows the sheet that names the switch for a name nobody knows, and the other sheets for what else failed', () => {

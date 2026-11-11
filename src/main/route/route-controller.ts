@@ -107,6 +107,8 @@ export interface RouteController {
   startShared: () => void
   /** The name relay started or stopped: the pages of the sessions that follow the system take the WebRTC policy that keeps UDP off this computer's address while the relay's config is theirs, and lose it when it is not. */
   relayChanged: () => void
+  /** The relay started: the http(s) pages of the sessions it holds are loaded again, so a peer connection or a worker made before it started does not keep this computer's address. */
+  reloadRelayed: () => void
   /** Resolves when the switches heard so far have been applied. */
   settled: () => Promise<void>
   /** Resolves when the shared identity's changes have been applied: what Orivon's own requests wait for, not one app's switch. */
@@ -474,6 +476,9 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       unpoint(session)
     },
     relayChanged: relayPages.sync,
+    reloadRelayed: () => {
+      for (const contents of deps.allContents()) if (!contents.isDestroyed() && onRelay(contents.session) && /^https?:/.test(contents.getURL())) contents.reload()
+    },
     sharedSettled: async () => {
       await hub.settled()
       let seen: Promise<void> | undefined

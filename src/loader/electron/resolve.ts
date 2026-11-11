@@ -20,9 +20,16 @@
 
 import type { FarEndResolver } from '../fetch/install-origin.js'
 import { ownRouteFor } from '../../main/route/own-requests.js'
+import { relayLookup } from '../../main/route/name-relay/pinned-endpoint.js'
 
-/** Through the tunnel the far end resolves a name, so the install guard resolves none here (`atFarEnd`). */
+/**
+ * Through the tunnel the far end resolves a name, so the install guard resolves none here (`atFarEnd`). While the name relay runs
+ * the fetch that follows is carried by the relay, which looks the name up through the proxy: the guard asks that lookup, never
+ * this computer's resolver, and judges the addresses the relay dials.
+ */
 export const electronResolveHost: FarEndResolver = Object.assign(async (host: string): Promise<string[]> => {
+  const relay = relayLookup()
+  if (relay !== undefined) return [...await relay(host, `https://${host}/`)]
   // Dynamically imported: outside a real Electron process (i.e. under
   // vitest), `electron`'s entry point is a path STRING, and a top-level
   // import would silently bind `undefined` rather than throw -- same

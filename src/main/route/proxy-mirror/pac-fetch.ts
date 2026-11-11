@@ -1,11 +1,13 @@
 // Fetches the text of the proxy script the system names, as Chromium fetches one: direct, with no cookies or credentials,
 // nothing cached, `http:` and `https:` only, a megabyte and thirty seconds at most, decoded by the charset the answer names
 // (a byte-order mark, else Latin-1, when it names none). Tied to Electron through the session it makes for the purpose, which is
-// in memory, on `{ mode: 'direct' }` and marked as one that sets a proxy of its own. A failure says why in one word and never
+// in memory, on `{ mode: 'direct' }`, with no spell checker, and marked as one that sets a proxy of its own. A failure says why in one word and never
 // carries the address or the text.
 
 import type { Session } from 'electron'
 import { markOwnProxy } from '../own-proxy.js'
+import { quietSession } from '../name-relay/quiet-session.js'
+import type { QuietableSession } from '../name-relay/quiet-session.js'
 import { within } from '../within.js'
 
 /** The most bytes Chromium reads of a script; one byte more fails the fetch. */
@@ -22,7 +24,7 @@ export class PacFetchFailed extends Error {
 }
 
 /** What a fetch needs of a session. */
-export type PacFetchSession = Pick<Session, 'fetch' | 'setProxy'>
+export type PacFetchSession = Pick<Session, 'fetch' | 'setProxy'> & QuietableSession
 
 const BYTE_ORDER_MARKS: ReadonlyArray<readonly [readonly number[], string]> = [[[0xfe, 0xff], 'utf-16be'], [[0xff, 0xfe], 'utf-16le'], [[0xef, 0xbb, 0xbf], 'utf-8']]
 const LATIN1 = new Set(['iso-8859-1', 'iso8859-1', 'latin1', 'l1', 'us-ascii', 'ascii'])
@@ -93,7 +95,8 @@ async function bodyOf (response: Response): Promise<Buffer> {
 export function createPacFetch (makeSession: () => PacFetchSession): (url: string) => Promise<string> {
   let ready: Promise<PacFetchSession> | undefined
   const direct = async (): Promise<PacFetchSession> => {
-    const made = makeSession()
+    // Direct is the one road it has: the spell checker would fetch a dictionary from a fixed host over it, a connection from this computer that nothing asked for.
+    const made = quietSession(makeSession())
     markOwnProxy(made)
     await made.setProxy({ mode: 'direct' })
     return made

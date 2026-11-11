@@ -1,9 +1,10 @@
 // When the name relay runs, and what turning it on and off does, in the order that keeps this computer's address from showing:
-// the listener first, then Chromium's resolver held at this computer's DNS (so none of its probes goes to a DNS provider), then
-// the sessions that follow the system set to the relay, then their pages confined, then the callers that check addresses pointed at
-// the relay's lookup. Off is the reverse, and the listener stops
-// accepting last, so a tunnel in flight finishes. A listener that stops by itself is started again on another port, and until
-// then the sessions are pointed at the dead end, never back at the proxy's own lookup. Electron-free over the calls it is handed.
+// the listener first, then Chromium's resolver held at this computer's DNS (so none of its probes goes to a DNS provider), then the
+// pages of the sessions that follow the system confined (a peer connection reads the policy when it is made), then the sessions set
+// to the relay, then the callers that check addresses pointed at the relay's lookup and the pages loaded again, so no peer
+// connection made before survives. Off is the reverse, and the listener stops accepting last, so a tunnel in flight finishes.
+// A listener that cannot start, or stops by itself, leaves the sessions on the dead end and is started again on another port: they
+// are never pointed back at the proxy's own lookup. Electron-free over the calls it is handed.
 
 import type { SystemProxyConfig } from '../system-follow.js'
 import type { RouteChallengeSource } from '../lookup-session.js'
@@ -77,6 +78,8 @@ export interface RelaySwitchDeps {
   readonly sessionsChanged: () => Promise<boolean>
   /** The pages of the sessions that follow the system take, or lose, the WebRTC confinement `link.config()` implies. */
   readonly confine: () => void
+  /** The http(s) pages of the sessions the relay holds are loaded again: a peer connection or a worker made before it started would otherwise keep the address it was made with. */
+  readonly reloadPages: () => void
   /** The callers in main that check an address before they read (a tab's icon, a CCIP-Read gateway) use the relay's lookup and its pinned endpoint while this is `true`, and their own lookup and road when it is `false`. */
   readonly callers: (on: boolean) => void
   /** Forgets every answer the lookups hold and closes their sessions' connections. */
@@ -207,16 +210,16 @@ export function createRelaySwitch (deps: RelaySwitchDeps): RelaySwitch {
 
   async function turnOn (): Promise<void> {
     if (active || disposed) return
-    if (!await startListening()) {
-      // Nothing is pointed at a listener that is not there: the sessions stay as they were, and it is tried again.
-      later(evaluate)
-      return
-    }
+    // A listener that cannot start does not leave the sessions where they were: that would be the proxy's own lookup. They are pointed at the dead end, the state reads `down`, and the listener is tried again.
+    const listening = await startListening()
     deps.holdResolver(true)
     active = true
-    await apply()
+    // Before the sessions take the relay's config, so a peer connection made from now on is already confined.
     deps.confine()
+    await apply()
     deps.callers(true)
+    deps.reloadPages()
+    if (!listening) later(restart)
     say()
   }
 

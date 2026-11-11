@@ -40,11 +40,12 @@ function fakeRelay (state: { config: RouteProxyConfig | undefined }): NameRelayL
   }
 }
 
-interface FakeContents extends RouteContents { readonly policy: string[] }
+interface FakeContents extends RouteContents { readonly policy: string[], readonly reloads: () => number }
 
-const fakeContents = (session: RouteSession): FakeContents => {
+const fakeContents = (session: RouteSession, url = 'https://news.example/'): FakeContents => {
   const policy: string[] = []
-  return { session, policy, isDestroyed: () => false, getType: () => 'window', getURL: () => 'https://news.example/', reload: () => {}, setWebRTCIPHandlingPolicy: (value) => { policy.push(value) } }
+  let reloaded = 0
+  return { session, policy, reloads: () => reloaded, isDestroyed: () => false, getType: () => 'window', getURL: () => url, reload: () => { reloaded += 1 }, setWebRTCIPHandlingPolicy: (value) => { policy.push(value) } }
 }
 
 function setup (options: { relay?: boolean, routed?: boolean } = {}) {
@@ -74,8 +75,8 @@ function setup (options: { relay?: boolean, routed?: boolean } = {}) {
     systemConfig: () => mirror.config,
     ...(withRelay ? { relay: () => relay } : {})
   })
-  const open = (session: RouteSession): FakeContents => {
-    const made = fakeContents(session)
+  const open = (session: RouteSession, url?: string): FakeContents => {
+    const made = fakeContents(session, url)
     contents.push(made)
     for (const listener of created) listener(made)
     return made
@@ -274,6 +275,39 @@ describe('the pages of the sessions on the relay', () => {
     active.config = undefined
     controller.relayChanged()
     expect(page.policy.at(-1)).toBe('default')
+  })
+
+  it('are loaded again when the relay starts, if they are http(s) pages of a session it holds, so a peer connection made before it keeps no address', async () => {
+    const { controller, active, open } = setup()
+    const made = fakeSession()
+    controller.adopt(made)
+    const web = open(made)
+    const plain = open(made, 'http://plain.example/')
+    const shell = open(made, 'orivon://settings/')
+
+    controller.reloadRelayed()
+    expect([web, plain, shell].map((page) => page.reloads()), 'nothing is loaded again while the relay has no config').toEqual([0, 0, 0])
+
+    active.config = RELAYED
+    controller.reloadRelayed()
+    expect([web, plain, shell].map((page) => page.reloads())).toEqual([1, 1, 0])
+  })
+
+  it('are not loaded again when their session is on a front, a proxy of its own or a temporary tunnel', async () => {
+    const { controller, active, own, open } = setup({ routed: true })
+    const onFront = fakeSession()
+    await controller.prepare(APP, onFront)
+    const web = fakeSession()
+    controller.adopt(web)
+    own.add(web)
+    const temporary = fakeSession()
+    controller.adopt(temporary)
+    await controller.prepareTemporary(temporary, { port: 4242, username: 'u', secret: 's' }, 'socks5')
+    const pages = [onFront, web, temporary].map((session) => open(session))
+
+    active.config = RELAYED
+    controller.reloadRelayed()
+    expect(pages.map((page) => page.reloads())).toEqual([0, 0, 0])
   })
 
   it('are never touched when no relay is handed over', async () => {

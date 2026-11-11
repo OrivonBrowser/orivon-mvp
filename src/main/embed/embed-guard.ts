@@ -84,9 +84,10 @@ function localListenerHeld (listenerHeld: (port: number) => boolean, port: numbe
  *
  * No cancellable Electron webRequest event carries the address a document
  * load actually connects to, so a `"*"`-admitted NAME is checked first,
- * through `resolve`: the guest session's own `Session.resolveHost`, which
- * ./embed-host.ts injects, sharing Chromium's host cache with the load that
- * follows.
+ * through `resolve`, which ./embed-host.ts injects: the guest session's own
+ * `Session.resolveHost`, sharing Chromium's host cache with the load that
+ * follows, or, while the name relay runs, the relay's lookup, whose answers
+ * the relay's listener dials.
  *
  * `embedAdmissionKind`'s pure hostname gate (`reachableByWildcard`) stays
  * the FIRST gate: a `localhost` name or a non-public address literal named
@@ -110,7 +111,7 @@ export async function guestRequestAllowed (
   url: string,
   resourceType: string,
   patterns: readonly Pattern[] | undefined,
-  resolve: (host: string) => Promise<readonly string[]>,
+  resolve: (host: string, url: string) => Promise<readonly string[]>,
   listenerHeld: (port: number) => boolean = () => false,
   routed = false
 ): Promise<boolean> {
@@ -125,7 +126,7 @@ export async function guestRequestAllowed (
   if (routed) return true
   let addresses: readonly string[]
   try {
-    addresses = await resolve(admission.hostname)
+    addresses = await resolve(admission.hostname, url)
   } catch {
     return false
   }

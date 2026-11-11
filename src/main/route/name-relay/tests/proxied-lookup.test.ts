@@ -282,6 +282,26 @@ describe('a network change', () => {
     expect(always.sent.filter((request) => request.question.type === 'A')).toHaveLength(2)
   })
 
+  it('makes the lookup forget every answer it kept, since they were found on the network that is gone', async () => {
+    const zone = { ...SITE, 'other.test': { a: ['192.0.2.9'] } }
+    let changed = false
+    const behave: Behaviour = (sent) => {
+      if (changed && sent.question.name === 'other.test') { changed = false; return new Error('net::ERR_NETWORK_CHANGED') }
+      return new Response(answerFor(zone, sent.init.body as Uint8Array), { status: 200 })
+    }
+    const { lookup, sent } = lookupWith(zone, {}, { behave })
+    await lookup('site.test', http)
+    const kept = sent.length
+    await lookup('site.test', http)
+    expect(sent, 'served from memory').toHaveLength(kept)
+
+    changed = true
+    await lookup('other.test', http)
+    const before = sent.length
+    await lookup('site.test', http)
+    expect(sent.length, 'asked again').toBeGreaterThan(before)
+  })
+
   it('does not try again after another failure', async () => {
     const { lookup, sent } = lookupWith(SITE, {}, { behave: () => new Error('net::ERR_TUNNEL_CONNECTION_FAILED') })
     await refusalWord(lookup('site.test', http))

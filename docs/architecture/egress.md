@@ -288,14 +288,22 @@ proxy, and asks the proxy to connect to the address ([T93](security-model.md), [
 - **Chromium's own resolver while it runs.** It is held at this computer's DNS and Orivon's Quad9 check stops, so none of
   Chromium's availability probes of a DNS-over-HTTPS server goes to a provider from this computer's address; the Secure DNS
   setting applies again when the relay stops. Pages in the sessions that follow the system get the WebRTC policy
-  `disable_non_proxied_udp`, as a routed app's pages do, and `default` again when it stops.
+  `disable_non_proxied_udp`, as a routed app's pages do, and `default` again when it stops. The policy is set before the sessions
+  are pointed at the relay, because a peer connection reads it when it is made, and the http(s) pages open at that moment are
+  loaded again, so no peer connection or worker made before keeps this computer's address (a page that was open before the
+  switch, or before a proxy came back, included).
 - **What it leaves.** A host the system sends outside the proxy (its exceptions, a script's `DIRECT`) is looked up on this
   computer, as without the switch. A proxy script's own lookups stay the system's. For about two seconds after a proxy is turned on
   the sessions still follow the system. A proxy that asks for a sign-in does not work: Orivon does not pass its own on. Names only
   the proxy can find do not open unless they are among the system's exceptions. A system proxy on a port an anonymity network
   uses is refused. Sites in a tunnel are not affected: they look names up at their far end.
-- **Callers in main that check an address** (a tab's icon, a CCIP-Read gateway's check) use the relay's lookup and a pinned
-  endpoint while it runs, so the address they cleared is the address connected to; otherwise they keep their own lookup and road.
+- **Callers in main that check an address** use the relay's lookup while it runs and never this computer's resolver, so a check
+  judges the very addresses the relay dials, and a name that answers this computer's resolver and the DNS provider differently
+  cannot get a document to a private address through the proxy. A tab's icon and a CCIP-Read gateway are read through a pinned
+  endpoint, so the address they cleared is the address connected to. The address check of an embedded page's document, an app
+  install's check and its re-check before each asset are made by Chromium after the lookup: the connection goes by name to the
+  relay's own listener (never to the proxy by name), which answers from the cache the check filled, so the two agree unless the
+  entry expires between them (A286's window). With the relay not running each keeps its own lookup and road.
 - **What the report holds.** `browser.nameRelay` is the state, the provider, whether Chromium's resolver is held and one count for
   each refusal word, and the log has a line per state change and at most one a minute per word: never a name, an address, a URL or a
   proxy entry.

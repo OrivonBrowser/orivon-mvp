@@ -57,11 +57,14 @@ boundary of Orivon today, written down so you meet it here rather than in use. N
   proxy" (Settings > Privacy and network, off by default).** The proxy then learns each site's name when a secure connection starts,
   and finds the address with its own DNS. With the setting on, Orivon looks the name up itself over HTTPS with your Secure DNS
   provider (Quad9 when Secure DNS is off or automatic), through the proxy, and asks the proxy to connect to the address; this computer's
-  own DNS is never asked for those names. What that costs: names only your proxy can find, such as a company's internal sites, do
+  own DNS is never asked for those names, whoever asks: a page, its icon, the address check of an embedded page, or the install of
+  an app and the files it fetches. The checks use the same lookup the connection uses, and the connection that follows is made by
+  name to Orivon's own listener and not to your proxy. What that costs: names only your proxy can find, such as a company's internal sites, do
   not open unless they are among your system's proxy exceptions; a proxy that asks you to sign in does not work; a proxy that is on a
   port an anonymity network uses is refused (do not use it with Tor); Chromium's own DNS is held at this computer's DNS while it
   runs, so Secure DNS stops covering the hosts the system sends outside the proxy; calls and other peer-to-peer connections in sites go
-  through the proxy and may not connect; sites the system sends outside the proxy, and a proxy script your system uses, are still
+  through the proxy and may not connect, and a page that is open when a proxy turns on is loaded again so that no call it began
+  before keeps your address; sites the system sends outside the proxy, and a proxy script your system uses, are still
   looked up on this computer; for about two seconds after a proxy is turned on the sessions still follow the system.
 - **The default secure DNS tells Quad9 the names you open.** Orivon looks site names up at Quad9
   over HTTPS, so the network you are on no longer sees them, and Quad9 does. When Quad9 cannot be

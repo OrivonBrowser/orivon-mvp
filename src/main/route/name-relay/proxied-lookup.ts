@@ -206,7 +206,7 @@ export function createProxiedLookup (options: ProxiedLookupOptions): ProxiedLook
     }
   }
 
-  /** The first request after a network change can fail once with `ERR_NETWORK_CHANGED`; a second answers. */
+  /** The first request after a network change can fail once with `ERR_NETWORK_CHANGED`; a second answers. The answers kept were found on the network that is gone, and the names a person visited could be timed from them, so they are forgotten. */
   async function send (session: LookupSession, url: string, body: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
     let failure: unknown
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -215,6 +215,7 @@ export function createProxiedLookup (options: ProxiedLookupOptions): ProxiedLook
       } catch (error) {
         failure = error
         if (errorCode(error) !== 'ERR_NETWORK_CHANGED') break
+        cache.clear()
       }
     }
     throw refusalOf(failure)

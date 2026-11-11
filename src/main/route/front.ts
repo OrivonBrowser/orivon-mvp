@@ -31,6 +31,8 @@ export interface FrontTarget {
   readonly port: number
   /** What a proxy script would be asked about: `https://host:port/` for a CONNECT (`http://host/` for port 80), the request's own address for plain http. */
   readonly url: string
+  /** Other URLs the system is asked about too, which may answer differently: a tunnel to a port other than 443 may carry `ws:` or `wss:`, so both schemes are asked, and the answer is the stricter of them. Left out for a request that has one URL. */
+  readonly alsoAsk?: readonly string[]
   /** Aborted when the client gives up before the stream is handed over. */
   readonly signal: AbortSignal
 }
@@ -100,10 +102,18 @@ function absoluteHttpTarget (text: string): { host: string, port: number, author
   return { host, port: url.port === '' ? 80 : Number(url.port), authority: url.host, path: `${url.pathname}${url.search}`, url: url.href }
 }
 
-/** What a script is asked about for a CONNECT to `host:port`: a tunnel to port 80 carries plain http or a web socket, any other secure traffic. Undefined for a host that is no URL's, which only a front with `open` refuses. */
-function connectUrl (host: string, port: number): string | undefined {
+/**
+ * What a script is asked about for a CONNECT to `host:port`, the URL it is mainly for first: a tunnel to port 443 carries `https:` or
+ * `wss:`; one to port 80 carries `ws:` (or `wss:`), and one to any other port a web socket of either scheme. A per-scheme proxy
+ * setting answers each scheme for itself, so every port but 443 is asked about under both. Undefined for a host that is no URL's,
+ * which only a front with `open` refuses.
+ */
+function connectUrls (host: string, port: number): readonly string[] | undefined {
+  const authority = host.includes(':') ? `[${host}]` : host
+  const about = (scheme: 'http' | 'https'): string => new URL(`${scheme}://${authority}:${String(port)}/`).href
   try {
-    return new URL(`${port === 80 ? 'http' : 'https'}://${host.includes(':') ? `[${host}]` : host}:${String(port)}/`).href
+    if (port === 443) return [about('https')]
+    return port === 80 ? [about('http'), about('https')] : [about('https'), about('http')]
   } catch {
     return undefined
   }
@@ -146,12 +156,13 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
   }
 
   /** The stream to the target through the app's route (or `open`), or the status line that says why there is none, and the reason when `open` gave one. A name a protocol serves, written with a root dot, is never carried: no bypass rule lists every count of dots, and the route's far end must not hear it. */
-  async function reach (host: string, port: number, url: string | undefined, signal: AbortSignal): Promise<{ socket: Socket } | { status: string, reason?: string }> {
+  async function reach (host: string, port: number, urls: readonly string[] | undefined, signal: AbortSignal): Promise<{ socket: Socket } | { status: string, reason?: string }> {
     if (host.endsWith('.') && BUILTIN_ADDRESSES.namesServedHost(host)) return options.open === undefined ? { status: '403 Forbidden' } : { status: '403 Forbidden', reason: ROUTED_NAME_NOT_CARRIED }
     if (options.open !== undefined) {
+      const [url, ...also] = urls ?? []
       if (url === undefined) return { status: '400 Bad Request' }
       try {
-        return { socket: await options.open({ host, port, url, signal }) }
+        return { socket: await options.open({ host, port, url, ...(also.length > 0 ? { alsoAsk: also } : {}), signal }) }
       } catch (error) {
         const refusal = error instanceof FrontRefusal ? error : new FrontRefusal(502, NOT_REACHED)
         return { status: `${String(refusal.status)} ${REFUSAL_STATUS[refusal.status]}`, reason: refusal.reason }
@@ -190,7 +201,7 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     // The server accepts half-open connections, so a client that hung up is first heard as 'end'.
     socket.once('close', onClose)
     socket.once('end', onClose)
-    reach(target.host, target.port, connectUrl(target.host, target.port), abandoned.signal).then((opened) => {
+    reach(target.host, target.port, connectUrls(target.host, target.port), abandoned.signal).then((opened) => {
       socket.off('close', onClose)
       socket.off('end', onClose)
       socket.off('data', keepEarly)
@@ -219,7 +230,7 @@ export async function startRouteFront (options: RouteFrontOptions): Promise<Rout
     }
     const abandoned = new AbortController()
     res.once('close', () => { abandoned.abort() })
-    const opened = await reach(target.host, target.port, target.url, abandoned.signal)
+    const opened = await reach(target.host, target.port, [target.url], abandoned.signal)
     if ('status' in opened) {
       const page = opened.reason === undefined ? NOT_CARRIED_PAGE : refusalPage(opened.reason)
       res.writeHead(Number.parseInt(opened.status, 10), { Connection: 'close', 'Content-Type': 'text/html; charset=utf-8', 'Content-Length': Buffer.byteLength(page) }).end(page)

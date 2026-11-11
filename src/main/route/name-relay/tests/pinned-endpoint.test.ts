@@ -316,7 +316,8 @@ describe('the relay\'s callers', () => {
     const credentials = first.credentials({ isProxy: true, host: '127.0.0.1', port: portOf(first) })
     expect((await tunnel(first, `${SITE}:${String(echo.port)}`, credentials?.password)).status).toBe(200)
     expect((await tunnel(first, `other.example:${String(echo.port)}`, credentials?.password)).status).toBe(403)
-    expect(asked).toEqual([`https://${SITE}:${String(echo.port)}/`])
+    // A tunnel to a port other than 443 may carry a web socket of either scheme, so the system is asked about both.
+    expect(asked).toEqual([`https://${SITE}:${String(echo.port)}/`, `http://${SITE}:${String(echo.port)}/`])
     expect(refused).toEqual(['unpinned'])
   })
 

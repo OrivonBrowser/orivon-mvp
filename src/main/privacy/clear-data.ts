@@ -48,6 +48,8 @@ export interface ClearDeps {
   readonly appOrigins?: () => readonly string[]
   /** The network each `.eth` name was last found on: a record of the names visited, forgotten with the cache and with all history. */
   readonly forgetNameSchemes: () => Promise<void>
+  /** The addresses the name relay's lookups kept, one cache for every relayed session: a name that answers at once is one asked for lately, so they go with any browsing data a person clears. */
+  readonly forgetNameLookups?: () => void
   /** What the IPFS node and the verifier host kept about the sites they served (blocks, Swarm chunks): deleted with the cache and with all history. */
   readonly forgetNodeData?: () => Promise<void>
   /** The Website level each site last earned, which stays while a site cannot be looked at again: forgotten with site data, the cache and all history. */
@@ -108,6 +110,7 @@ export async function clearBrowsingData (request: ClearRequest, deps: ClearDeps)
   }
   if (request.cache || request.history === 'all') await attempt('nameSchemes', async () => { await deps.forgetNameSchemes() })
   if (request.cache || request.history === 'all') await attempt('nodeData', async () => { await deps.forgetNodeData?.() })
+  if (request.siteData || request.cache || request.history !== 'none') await attempt('nameLookups', () => { deps.forgetNameLookups?.() })
   if (request.siteData || request.cache || request.history === 'all') await attempt('earnedLevels', () => { deps.forgetEarnedLevels?.() })
   if (request.history !== 'none') await attempt('tunnelSignIns', async () => { await deps.forgetMirroredSites?.() })
   if (request.zoomLevels) await attempt('zoomLevels', () => { deps.zoom.clear() })

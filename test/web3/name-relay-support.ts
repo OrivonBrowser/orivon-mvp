@@ -4,6 +4,7 @@
 import { createHash, X509Certificate } from 'node:crypto'
 import { createServer as createHttp } from 'node:http'
 import type { Server as HttpServer } from 'node:http'
+import { createSocket } from 'node:dgram'
 import { createServer as createTls } from 'node:https'
 import type { Server as TlsServer } from 'node:https'
 import type { AddressInfo, Socket } from 'node:net'
@@ -78,6 +79,8 @@ export interface FakeSite {
   readonly port: number
   /** The `Host` header of every request, in order. */
   readonly hosts: string[]
+  /** Every request as `host` and path, in order. */
+  readonly requests: string[]
   close: () => Promise<void>
 }
 
@@ -89,14 +92,19 @@ const ICON = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQV
 /**
  * A website that answers every request with a page titled `title` and the path asked for (so a visit shows which request it was), over TLS when given a certificate and over plain http when not.
  * With `iconHost`, the page at `/on` names an icon on that other host, and a request for `/icon.png` there is answered with an image.
+ * With `appHost`, the page at `/` of that host names a manifest (the hint an app's site gives), and the manifest is not there.
  */
-export async function startFakeSite (title: string, tls?: { key: string, cert: string }, iconHost?: string): Promise<FakeSite> {
+export async function startFakeSite (title: string, tls?: { key: string, cert: string }, iconHost?: string, appHost?: string): Promise<FakeSite> {
   const hosts: string[] = []
+  const requests: string[] = []
   const sockets = new Set<Socket>()
   const handler = (request: import('node:http').IncomingMessage, response: import('node:http').ServerResponse): void => {
     hosts.push(request.headers.host ?? '')
+    requests.push(`${request.headers.host ?? ''}${request.url ?? ''}`)
     if (iconHost !== undefined && request.headers.host === iconHost && request.url === '/icon.png') { response.writeHead(200, { 'content-type': 'image/png' }).end(ICON); return }
-    const head = iconHost !== undefined && request.url === '/on' ? `<link rel="icon" href="https://${iconHost}/icon.png">` : ''
+    if (appHost !== undefined && request.headers.host === appHost && request.url === '/.well-known/orivon.json') { response.writeHead(404, { 'content-type': 'text/plain' }).end('no manifest'); return }
+    const hint = appHost !== undefined && request.headers.host === appHost && request.url === '/' ? '<link rel="orivon-manifest" href="/.well-known/orivon.json">' : ''
+    const head = `${hint}${iconHost !== undefined && request.url === '/on' ? `<link rel="icon" href="https://${iconHost}/icon.png">` : ''}`
     response.writeHead(200, { 'content-type': 'text/html' }).end(pageOf(`${title} ${request.url ?? ''}`, head))
   }
   const server: HttpServer | TlsServer = tls === undefined ? createHttp(handler) : createTls(tls, handler)
@@ -105,11 +113,78 @@ export async function startFakeSite (title: string, tls?: { key: string, cert: s
   return {
     port: (server.address() as AddressInfo).port,
     hosts,
+    requests,
     close: async () => {
       for (const socket of sockets) socket.destroy()
       await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
     }
   }
+}
+
+export interface FakeStun {
+  readonly port: number
+  /** The address and port each datagram came from, in order. */
+  readonly requests: string[]
+  close: () => Promise<void>
+}
+
+/** A STUN server (RFC 8489) on loopback that answers every binding request with the address it came from, so a peer connection that reaches it gathers a server-reflexive candidate. */
+export async function startFakeStun (): Promise<FakeStun> {
+  const socket = createSocket('udp4')
+  const requests: string[] = []
+  socket.on('message', (message, remote) => {
+    requests.push(`${remote.address}:${String(remote.port)}`)
+    if (message.length < 20 || message.readUInt16BE(0) !== 0x0001) return
+    const answer = Buffer.alloc(32)
+    answer.writeUInt16BE(0x0101, 0)
+    answer.writeUInt16BE(12, 2)
+    message.copy(answer, 4, 4, 20)
+    answer.writeUInt16BE(0x0020, 20)
+    answer.writeUInt16BE(8, 22)
+    answer.writeUInt8(1, 25)
+    answer.writeUInt16BE(remote.port ^ 0x2112, 26)
+    const cookie = [0x21, 0x12, 0xa4, 0x42]
+    remote.address.split('.').forEach((part, index) => { answer.writeUInt8(Number(part) ^ (cookie[index] ?? 0), 28 + index) })
+    socket.send(answer, remote.port, remote.address)
+  })
+  socket.on('error', () => {})
+  await new Promise<void>((resolve) => { socket.bind(0, '127.0.0.1', resolve) })
+  return { port: socket.address().port, requests, close: async () => { await new Promise<void>((resolve) => { socket.close(() => { resolve() }) }) } }
+}
+
+/** The ICE candidates a peer connection gathers in the tab showing `fragment`, with `stunPort`'s server named, in the page's own world: one line each (`candidate:... typ host ...`). */
+export async function gatherCandidates (app: ElectronApplication, fragment: string, stunPort: number): Promise<string[]> {
+  return await app.evaluate(async ({ webContents }, args) => {
+    const contents = webContents.getAllWebContents().find((one) => !one.isDestroyed() && one.getURL().includes(args.fragment))
+    if (contents === undefined) throw new Error(`no tab shows ${args.fragment}`)
+    return await contents.executeJavaScript(`new Promise((resolve) => {
+      const found = []
+      const peer = new RTCPeerConnection({ iceServers: [{ urls: 'stun:127.0.0.1:${String(args.stunPort)}' }] })
+      const done = () => { peer.close(); resolve(found) }
+      peer.onicecandidate = (event) => { if (event.candidate) found.push(event.candidate.candidate); else done() }
+      setTimeout(done, 8000)
+      peer.createDataChannel('probe')
+      peer.createOffer().then((offer) => peer.setLocalDescription(offer))
+    })`) as string[]
+  }, { fragment, stunPort })
+}
+
+/** Starts a peer connection in the tab showing `fragment` and keeps it on the page's window, which a page that is loaded again does not have. */
+export async function keepPeerConnection (app: ElectronApplication, fragment: string): Promise<void> {
+  await app.evaluate(async ({ webContents }, target) => {
+    const contents = webContents.getAllWebContents().find((one) => !one.isDestroyed() && one.getURL().includes(target))
+    if (contents === undefined) throw new Error(`no tab shows ${target}`)
+    await contents.executeJavaScript('window.__keptPeer = new RTCPeerConnection(); true')
+  }, fragment)
+}
+
+/** Whether the tab showing `fragment` still holds the peer connection `keepPeerConnection` made: false once the page was loaded again, undefined while no tab shows it. */
+export async function holdsKeptPeer (app: ElectronApplication, fragment: string): Promise<boolean | undefined> {
+  return await app.evaluate(async ({ webContents }, target) => {
+    const contents = webContents.getAllWebContents().find((one) => !one.isDestroyed() && one.getURL().includes(target) && !one.isLoading())
+    if (contents === undefined) return undefined
+    return await contents.executeJavaScript('typeof window.__keptPeer !== "undefined"') as boolean
+  }, fragment)
 }
 
 /** Opens Settings, Privacy and network, and makes the switch's checkbox `on`. The row is the one the person sees, so a change here is the same as theirs. */

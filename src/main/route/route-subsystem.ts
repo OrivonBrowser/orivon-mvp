@@ -59,6 +59,8 @@ import { RouteStore } from './route-store.js'
 import { profileIsolationSecret } from './isolation-secret.js'
 import { startDeadEnd } from './dead-end.js'
 import { createProxiedLookup, providerFor } from './name-relay/proxied-lookup.js'
+import { quietSession } from './name-relay/quiet-session.js'
+import { setNameLookupForgetter } from './name-relay/lookup-forget.js'
 import { createRelayFailures } from './name-relay/relay-failures.js'
 import type { RefusalWord } from './name-relay/relay-failures.js'
 import { installRelayCallers } from './name-relay/pinned-endpoint.js'
@@ -112,6 +114,7 @@ export const routeSubsystem: Subsystem = {
     // The Secure DNS choice, which names the provider the relay's lookups ask: read now, followed once the settings are.
     let secureDns = readSettingBeforeReady(join(userData, 'settings.json'), 'privacy.secureDns')
     const relayLookups = createProxiedLookup({ makeSession: (partition) => session.fromPartition(partition), secureDns: () => secureDns })
+    setNameLookupForgetter(relayLookups.clear)
     const routes = createRouteService({
       store,
       isolationSecret,
@@ -187,7 +190,7 @@ export const routeSubsystem: Subsystem = {
     let systemSession: Session | undefined
     const systemProxySession = (): Session => {
       if (systemSession === undefined) {
-        const made = session.fromPartition('orivon-system-proxy')
+        const made = quietSession(session.fromPartition('orivon-system-proxy'))
         systemSession = made
         markOwnProxy(made)
         markFollowsSystem(made)
@@ -204,7 +207,7 @@ export const routeSubsystem: Subsystem = {
     let mirrorSet: Promise<void> = Promise.resolve()
     const systemMirrorSession = (): Session => {
       if (mirrorSession === undefined) {
-        const made = session.fromPartition('orivon-system-mirror')
+        const made = quietSession(session.fromPartition('orivon-system-mirror'))
         mirrorSession = made
         markOwnProxy(made)
         markFollowsSystem(made)
@@ -216,7 +219,7 @@ export const routeSubsystem: Subsystem = {
     let checkSession: Session | undefined
     const systemCheckSession = (): Session => {
       if (checkSession === undefined) {
-        const made = session.fromPartition('orivon-system-check')
+        const made = quietSession(session.fromPartition('orivon-system-check'))
         checkSession = made
         markOwnProxy(made)
         markFollowsSystem(made)
@@ -268,6 +271,7 @@ export const routeSubsystem: Subsystem = {
       holdResolver,
       sessionsChanged: async () => await routes.controller.systemChanged(),
       confine: () => { routes.controller.relayChanged() },
+      reloadPages: () => { routes.controller.reloadRelayed() },
       forgetLookups: async () => { await relayLookups.close() },
       mirrorConfig: () => proxyMirror?.config() ?? { mode: 'system' },
       mirrorStatus: () => proxyMirror?.status() ?? { source: 'none', mode: 'unknown', state: 'system', reason: 'starting' },
