@@ -303,7 +303,8 @@ proxy, and asks the proxy to connect to the address ([T93](security-model.md), [
   endpoint, so the address they cleared is the address connected to. The address check of an embedded page's document, an app
   install's check and its re-check before each asset are made by Chromium after the lookup: the connection goes by name to the
   relay's own listener (never to the proxy by name), which answers from the cache the check filled, so the two agree unless the
-  entry expires between them (A286's window). With the relay not running each keeps its own lookup and road.
+  entry expires between them (A286's window). They are pointed at the relay before the sessions are changed, which can take
+  seconds, so a check made meanwhile does not ask this computer's DNS. With the relay not running each keeps its own lookup and road.
 - **What the report holds.** `browser.nameRelay` is the state, the provider, whether Chromium's resolver is held and one count for
   each refusal word, and the log has a line per state change and at most one a minute per word: never a name, an address, a URL or a
   proxy entry.

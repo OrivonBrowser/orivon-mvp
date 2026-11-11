@@ -1,8 +1,9 @@
 // When the name relay runs, and what turning it on and off does, in the order that keeps this computer's address from showing:
 // the listener first, then Chromium's resolver held at this computer's DNS (so none of its probes goes to a DNS provider), then the
-// pages of the sessions that follow the system confined (a peer connection reads the policy when it is made), then the sessions set
-// to the relay, then the callers that check addresses pointed at the relay's lookup and the pages loaded again, so no peer
-// connection made before survives. Off is the reverse, and the listener stops accepting last, so a tunnel in flight finishes.
+// pages of the sessions that follow the system confined (a peer connection reads the policy when it is made), then the callers that
+// check addresses pointed at the relay's lookup (setting a session can take seconds, and a check made meanwhile must not ask this
+// computer's DNS), then the sessions set to the relay, then the pages loaded again, so no peer connection made before survives.
+// Off is the reverse, and the listener stops accepting last, so a tunnel in flight finishes.
 // A listener that cannot start, or stops by itself, leaves the sessions on the dead end and is started again on another port: they
 // are never pointed back at the proxy's own lookup. Electron-free over the calls it is handed.
 
@@ -216,8 +217,9 @@ export function createRelaySwitch (deps: RelaySwitchDeps): RelaySwitch {
     active = true
     // Before the sessions take the relay's config, so a peer connection made from now on is already confined.
     deps.confine()
-    await apply()
+    // While a session is still on the mirror's config the relay's lookup already goes through the proxy, so a check made now leaks nothing: pointed later, the checks of those seconds would ask this computer's DNS.
     deps.callers(true)
+    await apply()
     deps.reloadPages()
     if (!listening) later(restart)
     say()

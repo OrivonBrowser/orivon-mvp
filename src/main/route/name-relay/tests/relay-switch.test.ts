@@ -25,12 +25,14 @@ interface Rig {
   mirrorConfig: SystemProxyConfig
   sessionsOk: boolean
   listenFails: number
+  /** While set, the sessions are slow to change: `sessionsChanged` waits for it. */
+  holdSessions: Promise<void> | undefined
   readonly finish: Map<number, () => void>
 }
 
 function rig (over: Partial<RelaySwitchDeps> = {}): Rig {
   const state: Rig = {
-    events: [], listeners: [], seenConfig: [], lines: [], mirror: PLAIN, mirrorConfig: { mode: 'system' }, sessionsOk: true, listenFails: 0, finish: new Map(),
+    events: [], listeners: [], seenConfig: [], lines: [], mirror: PLAIN, mirrorConfig: { mode: 'system' }, sessionsOk: true, listenFails: 0, holdSessions: undefined, finish: new Map(),
     relay: undefined as never
   }
   const deps: RelaySwitchDeps = {
@@ -53,7 +55,7 @@ function rig (over: Partial<RelaySwitchDeps> = {}): Rig {
       return listener
     },
     holdResolver: (held) => { state.events.push(held ? 'hold' : 'release') },
-    sessionsChanged: async () => { state.events.push('sessions'); state.seenConfig.push(state.relay.link.config()); return state.sessionsOk },
+    sessionsChanged: async () => { state.events.push('sessions'); state.seenConfig.push(state.relay.link.config()); await state.holdSessions; return state.sessionsOk },
     confine: () => { state.events.push('confine') },
     reloadPages: () => { state.events.push('reload') },
     callers: (on) => { state.events.push(on ? 'callers on' : 'callers off') },
@@ -84,16 +86,31 @@ beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
 describe('turning the relay on', () => {
-  it('listens, holds Chromium\'s resolver, confines the pages, sets the sessions, then points the callers and loads the pages again, in that order', async () => {
+  it('listens, holds Chromium\'s resolver, confines the pages, points the callers, sets the sessions, then loads the pages again, in that order', async () => {
     const r = rig()
     await turnOn(r)
-    expect(r.events).toEqual(['listen', 'hold', 'confine', 'sessions', 'callers on', 'reload'])
+    expect(r.events).toEqual(['listen', 'hold', 'confine', 'callers on', 'sessions', 'reload'])
   })
 
   it('confines the pages before the sessions are set, so no peer connection made meanwhile reaches a peer from this computer', async () => {
     const r = rig()
     await turnOn(r)
     expect(r.events.indexOf('confine')).toBeLessThan(r.events.indexOf('sessions'))
+  })
+
+  it('points the callers that check addresses at the relay before the sessions have finished changing, so a check made while a session is slow never asks this computer', async () => {
+    const r = rig()
+    let release: () => void = () => {}
+    r.holdSessions = new Promise<void>((resolve) => { release = resolve })
+    r.mirror = COPIED
+    r.mirrorConfig = { mode: 'fixed_servers', proxyRules: 'http=proxy.test:3128', proxyBypassRules: 'printer.lan;*.eth;*.orv' }
+    r.relay.setEnabled(true)
+    r.relay.onPass(pass(COPIED, ['PROXY proxy.test:3128', 'PROXY proxy.test:3128']))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(r.events, 'the sessions are still being set').toEqual(['listen', 'hold', 'confine', 'callers on', 'sessions'])
+    release()
+    await r.relay.settled()
+    expect(r.events.slice(-2)).toEqual(['sessions', 'reload'])
   })
 
   it('loads the pages again once the sessions are set, on every start, a return from idle included', async () => {
@@ -146,7 +163,7 @@ describe('turning the relay on', () => {
     expect(r.relay.status().state).toBe('idle')
     r.relay.onPass(pass(PLAIN, ['PROXY a:1', 'DIRECT']))
     await r.relay.settled()
-    expect(r.events).toEqual(['listen', 'hold', 'confine', 'sessions', 'callers on', 'reload'])
+    expect(r.events).toEqual(['listen', 'hold', 'confine', 'callers on', 'sessions', 'reload'])
     expect(r.relay.status().state).toBe('relaying')
   })
 
@@ -155,7 +172,7 @@ describe('turning the relay on', () => {
     r.mirror = { source: 'environment', mode: 'unknown', state: 'system', reason: 'no-reader' }
     r.relay.setEnabled(true)
     await r.relay.settled()
-    expect(r.events).toEqual(['listen', 'hold', 'confine', 'sessions', 'callers on', 'reload'])
+    expect(r.events).toEqual(['listen', 'hold', 'confine', 'callers on', 'sessions', 'reload'])
   })
 
   it('never starts in a window held to Nym', async () => {
@@ -184,7 +201,7 @@ describe('turning the relay on', () => {
     r.relay.onPass(pass(COPIED))
     await r.relay.settled()
     // The proxy's own lookup is never a fallback: everything is held and pointed at nothing, and the callers use the relay's lookup.
-    expect(r.events).toEqual(['listen', 'hold', 'confine', 'sessions', 'callers on', 'reload'])
+    expect(r.events).toEqual(['listen', 'hold', 'confine', 'callers on', 'sessions', 'reload'])
     expect(r.seenConfig).toEqual([{ mode: 'fixed_servers', proxyRules: 'http://127.0.0.1:9', proxyBypassRules: '*.eth;*.orv' }])
     expect(r.relay.status().state).toBe('down')
     expect(r.relay.link.credentials({ isProxy: true, host: '127.0.0.1', port: 4001 })).toBeUndefined()
