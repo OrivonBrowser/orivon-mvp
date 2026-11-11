@@ -22,7 +22,7 @@ A session that follows the system takes the copy through the route controller's 
 | `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, fetches the script the settings name when it is due, checks a copy before applying it, sets the sessions again until each has taken it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, fetch, carry or check (a copy already applied outlasts a failed read or a check with no answer); after each pass it tells its listeners (`onPass`) the status and Chromium's base answers | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
 | `mirror-status.ts` | What `orivon://report` and the log say about the mirror: four fixed words | Durable: pure |
 
-**What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), and
+**What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), [`../name-relay/quiet-session.ts`](../name-relay/quiet-session.ts) (the spell checker taken off the session that fetches a script), and
 [`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process` and `node:path`, and `read-kde-files.ts` `node:fs/promises`.
 
 **What it must never import.** An Electron value (a type is fine): `../route-subsystem.ts` supplies the sessions. Nothing here calls `setProxy` on a

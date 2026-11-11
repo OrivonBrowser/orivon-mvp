@@ -203,4 +203,21 @@ describe('the route service', () => {
     const route = routes.hub.routeFor(APP)
     await expect(route?.provider.connect('service.example', 443, new AbortController().signal)).rejects.toThrow(/not in this build/)
   })
+
+  it('hands the settings to the name relay once they are followed, and not before', () => {
+    const followRelay = vi.fn()
+    const routes = createRouteService({
+      store: new RouteStore(null),
+      savedProxy: '',
+      savedKind: 'socks5',
+      nym: FAKE_NYM,
+      followRelay,
+      electron: { broker: () => undefined, sessionFor: () => ({ setProxy: async () => {}, closeAllConnections: async () => {} }), embedPartition: (origin) => `embed:${origin}`, allContents: () => [], onContentsCreated: () => {}, onLogin: () => {} }
+    })
+    expect(followRelay).not.toHaveBeenCalled()
+    const settings = settingsWith('')
+    routes.followSettings(settings)
+    expect(followRelay).toHaveBeenCalledExactlyOnceWith(settings)
+  })
+
 })

@@ -12,7 +12,7 @@ is followed by `https-fallback.ts` (the per-tab record), `https-fallback-runner.
 `https-state.ts` (this run's exemptions), and ends in the sheet `https-warning-overlay.ts`
 ([`../../renderer/overlay/https-warning/`](../../renderer/overlay/https-warning/)). `secure-dns.ts` maps the
 Secure DNS choice to the resolver's options, `secure-dns-fallback.ts` keeps the default choice (Quad9 first, this computer's DNS when Quad9 cannot be reached) by running it in secure mode and checking that Quad9 answers, `chromium-resolver.ts` hands the broker's direct dials and `orivon.net.lookup` the answers of that same resolver (`net.resolveHost`), and `storage-access.ts` answers the two storage-access permissions
-from the cookie choice. `install-privacy-net.ts` is the installer `../shell/shell-installers.ts` runs at start.
+from the cookie choice. `resolver-hold.ts` is the hold the name relay puts on Chromium's own resolver while it runs (this computer's DNS, and no Quad9 check, whatever the Secure DNS setting says, so no availability probe of a DNS provider leaves from this computer's address), which `install-privacy-net.ts`, the installer `../shell/shell-installers.ts` runs at start, applies and releases.
 
 Showing what sites keep: `cookie-list.ts` is the pure side (which cookies belong to a site, a cookie's view without
 its value, the key a page names it by), `cookie-runner.ts` reads and removes them through a session's cookie jar,

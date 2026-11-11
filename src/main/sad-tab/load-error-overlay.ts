@@ -5,6 +5,8 @@ import { slotClosed } from '../overlays/tab-slots.js'
 import { ADDRESS_LIMIT } from './sad-tab-text.js'
 import { isErrorName, isLoadRefusal, loadErrorText } from './load-error-text.js'
 import type { LoadRefusal } from '../route/load-refusals.js'
+import type { RefusalWord } from '../route/name-relay/relay-failures.js'
+import { currentNameRelayStatus, isRefusalWord, providerName } from '../route/name-relay/relay-status.js'
 import { LOAD_ERROR_OVERLAY } from './load-error-watch.js'
 
 export interface LoadErrorView {
@@ -15,11 +17,11 @@ export interface LoadErrorView {
   readonly name: string
 }
 
-function asPayload (payload: unknown): { code: number, name: string, refusal: LoadRefusal | undefined } | undefined {
+function asPayload (payload: unknown): { code: number, name: string, refusal: LoadRefusal | undefined, relay: RefusalWord | undefined } | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined
-  const { code, name, refusal } = payload as { code?: unknown, name?: unknown, refusal?: unknown }
+  const { code, name, refusal, relay } = payload as { code?: unknown, name?: unknown, refusal?: unknown, relay?: unknown }
   if (typeof code !== 'number' || !Number.isInteger(code) || code >= 0 || (name !== '' && !isErrorName(name))) return undefined
-  return { code, name, refusal: isLoadRefusal(refusal) ? refusal : undefined }
+  return { code, name, refusal: isLoadRefusal(refusal) ? refusal : undefined, relay: isRefusalWord(relay) ? relay : undefined }
 }
 
 export const loadErrorOverlay: OverlayDef = {
@@ -42,7 +44,7 @@ export const loadErrorOverlay: OverlayDef = {
         tabId = asked === undefined ? null : state.activeTabId
         if (asked === undefined) return undefined
         const address = state.tabs.find((tab) => tab.id === tabId)?.displayUrl ?? ''
-        return { ...loadErrorText(asked.code, asked.refusal), address: address.slice(0, ADDRESS_LIMIT), name: asked.name }
+        return { ...loadErrorText(asked.code, asked.refusal, asked.relay === undefined ? undefined : { word: asked.relay, provider: providerName(currentNameRelayStatus().provider) }), address: address.slice(0, ADDRESS_LIMIT), name: asked.name }
       },
       request: (command) => {
         if (typeof command !== 'object' || command === null || (command as { type?: unknown }).type !== 'retry' || Object.keys(command).length !== 1) return undefined

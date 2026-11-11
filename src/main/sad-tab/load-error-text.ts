@@ -2,6 +2,8 @@
 // other text on it is the tab's own address and the error's short name, which is checked to be one.
 
 import type { LoadRefusal } from '../route/load-refusals.js'
+import { refusalSentence } from '../route/name-relay/relay-failures.js'
+import type { RefusalWord } from '../route/name-relay/relay-failures.js'
 import { PLAIN_NAME_REFUSED, PROXY_NOT_KNOWN, PROXY_REFUSAL_ADVICE, PROXY_WOULD_SEE_NAME } from '../route/verifier-name-guard.js'
 
 export interface LoadErrorText {
@@ -59,8 +61,15 @@ export function isLoadRefusal (value: unknown): value is LoadRefusal {
 
 const BY_REFUSAL: Readonly<Record<LoadRefusal, LoadErrorText>> = { onion: ONION_NEEDS_TOR, 'would-see': NAME_NOT_OPENED, unsure: NAME_NOT_KNOWN, plain: NAME_NOT_PLAIN }
 
-/** `refusal`: why Orivon cancelled the load before anything was sent, when it did; the sheet then says that instead of naming an extension. */
-export function loadErrorText (code: number, refusal?: LoadRefusal): LoadErrorText {
+/** Why the name relay did not carry a connection, and the provider its lookups ask, in words. */
+export interface RelaySheet {
+  readonly word: RefusalWord
+  readonly provider: string
+}
+
+/** `refusal`: why Orivon cancelled the load before anything was sent, when it did; the sheet then says that instead of naming an extension. `relay`: why the name relay did not carry the connection, which the sheet says in place of the tunnel's words. */
+export function loadErrorText (code: number, refusal?: LoadRefusal, relay?: RelaySheet): LoadErrorText {
+  if (relay !== undefined) return { title: UNREACHABLE, body: refusalSentence(relay.word, relay.provider) }
   if (refusal !== undefined) return BY_REFUSAL[refusal]
   return BY_CODE.get(code) ?? DEFAULT_TEXT
 }

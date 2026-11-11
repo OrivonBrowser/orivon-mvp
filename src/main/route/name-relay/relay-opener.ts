@@ -10,7 +10,7 @@ import { BUILTIN_ADDRESSES } from '../../../protocols/builtin.js'
 import { ROUTED_NAME_NOT_CARRIED } from '../front.js'
 import type { FrontTarget } from '../front.js'
 import { keepResolverOrder, MAX_ADDRESSES, orderForProxy } from './addresses.js'
-import { onAnonymityPort, parseProxyAnswer } from './proxy-answer.js'
+import { onAnonymityPort, parseProxyAnswer, stricterAnswer } from './proxy-answer.js'
 import type { ProxyAnswer } from './proxy-answer.js'
 import { LookupRefusal } from './proxied-lookup.js'
 import type { LookupAnswer, NameLookup, ProxyEntry } from './proxied-lookup.js'
@@ -171,6 +171,11 @@ export function createRelayOpener (deps: RelayOpenerDeps): (target: FrontTarget)
     let answer: ProxyAnswer
     try {
       answer = parseProxyAnswer(await deps.systemAnswer(target.url))
+      // The other URLs the connection may be for are asked only while no proxy has been named: a proxy is taken whenever one URL names it.
+      for (const url of target.alsoAsk ?? []) {
+        if (answer.kind === 'proxies') break
+        answer = stricterAnswer(answer, parseProxyAnswer(await deps.systemAnswer(url)))
+      }
     } catch {
       throw new RelayRefusal('unsure')
     }

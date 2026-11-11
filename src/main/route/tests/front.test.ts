@@ -315,6 +315,38 @@ describe('closing', () => {
   })
 })
 
+describe('draining', () => {
+  it('stops accepting and lets a tunnel in flight finish, then resolves when it has', async () => {
+    const target = await echoServer()
+    const f = await front(providerFor({ 'echo.test:443': target }))
+    const { socket } = await connectThrough(f, 'echo.test:443', basic(f))
+    let drained = false
+    const draining = f.drain().then(() => { drained = true })
+
+    await expect(new Promise<void>((resolve, reject) => {
+      const probe = netConnect({ host: '127.0.0.1', port: f.port })
+      probe.once('connect', () => { probe.destroy(); resolve() })
+      probe.once('error', reject)
+    })).rejects.toMatchObject({ code: 'ECONNREFUSED' })
+    const echoed = new Promise<string>((resolve) => { socket.once('data', (chunk: Buffer) => { resolve(chunk.toString()) }) })
+    socket.write('still here')
+    expect(await echoed).toBe('still here')
+    expect(drained).toBe(false)
+
+    socket.destroy()
+    await draining
+    expect(drained).toBe(true)
+  })
+
+  it('calls onClosed once, when the last connection has ended', async () => {
+    const onClosed = vi.fn()
+    const started = await startRouteFront({ provider: () => undefined, onClosed })
+    cleanups.push(async () => { await started.close() })
+    await started.drain()
+    expect(onClosed).toHaveBeenCalledTimes(1)
+  })
+})
+
 /** A stream to a local server, handed over paused as a route's is. */
 async function pausedTo (port: number): Promise<Socket> {
   return await new Promise((resolve, reject) => {
@@ -354,6 +386,18 @@ describe('a front given `open`', () => {
     expect(urls).toEqual(['https://example.com/', 'http://example.com/', 'https://[::1]/', 'https://example.com:8443/'])
   })
 
+  it('has the system asked about both schemes for a tunnel to any port but 443, which may carry a web socket of either', async () => {
+    const asked = new Map<string, readonly string[] | undefined>()
+    const f = await frontOpening(async ({ host, port, alsoAsk }) => { asked.set(`${host}:${String(port)}`, alsoAsk); throw new Error('stop') })
+    for (const target of ['example.com:443', 'example.com:80', 'example.com:8080', '[::1]:8080']) await connectThrough(f, target, basic(f))
+    expect([...asked]).toEqual([
+      ['example.com:443', undefined],
+      ['example.com:80', ['https://example.com:80/']],
+      ['example.com:8080', ['http://example.com:8080/']],
+      ['::1:8080', ['http://[::1]:8080/']]
+    ])
+  })
+
   it('refuses a CONNECT to a host that is no URL\'s, without calling open', async () => {
     let called = false
     const f = await frontOpening(async () => { called = true; throw new Error('unused') })
@@ -364,14 +408,16 @@ describe('a front given `open`', () => {
   it('forwards plain http through it as a request in origin form to the stream it returns, and gives it the request\'s own address', async () => {
     const seen: Seen[] = []
     const targets: string[] = []
+    const alsoAsked: Array<readonly string[] | undefined> = []
     const web = await webServer(seen)
-    const f = await frontOpening(async ({ url }) => { targets.push(url); return await pausedTo(web) })
+    const f = await frontOpening(async ({ url, alsoAsk }) => { targets.push(url); alsoAsked.push(alsoAsk); return await pausedTo(web) })
 
     const response = await getThrough(f, 'http://web.test/path?q=1', { 'proxy-authorization': basic(f) })
 
     expect(response.status).toBe(200)
     expect(response.body).toBe('hello from the target')
     expect(targets).toEqual(['http://web.test/path?q=1'])
+    expect(alsoAsked, 'a plain request has one address to ask about').toEqual([undefined])
     expect(seen[0]).toMatchObject({ method: 'GET', url: '/path?q=1' })
     expect(seen[0]?.headers.host).toBe('web.test')
   })

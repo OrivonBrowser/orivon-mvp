@@ -4,13 +4,12 @@
 
 import type { Session, WebContents } from 'electron'
 import type { Broker } from '../../broker/broker-contracts.js'
-import { originHash } from '../../broker/grants/origin-hash.js'
 import { SHARED_ORIGIN, type RouteChangeCause, type RouteHub } from './route-hub.js'
 import { trackProxySet } from './proxy-answers.js'
 import type { TunnelKind } from './route-state.js'
-import { profilePartitionFor } from './site-partition.js'
-import { ensureSiteSession } from './site-routes.js'
 import { pinnedCredentials } from './name-relay/pinned-endpoint.js'
+import { createFetchSessions } from './fetch-sessions.js'
+import { createRelayConfinement } from './relay-confinement.js'
 import type { NameRelayLink } from './name-relay/relay-link.js'
 import { createSystemFollow } from './system-follow.js'
 import { within } from './within.js'
@@ -106,6 +105,10 @@ export interface RouteController {
   mirrorSystem: (session: RouteSession) => Promise<void>
   /** Points the shared identity once at start: its sessions, and the requests made with no session. Nothing while the browser-wide setting is off. */
   startShared: () => void
+  /** The name relay started or stopped: the pages of the sessions that follow the system take the WebRTC policy that keeps UDP off this computer's address while the relay's config is theirs, and lose it when it is not. */
+  relayChanged: () => void
+  /** The relay started: the http(s) pages of the sessions it holds are loaded again, so a peer connection or a worker made before it started does not keep this computer's address. */
+  reloadRelayed: () => void
   /** Resolves when the switches heard so far have been applied. */
   settled: () => Promise<void>
   /** Resolves when the shared identity's changes have been applied: what Orivon's own requests wait for, not one app's switch. */
@@ -152,7 +155,6 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
   const unpoint = (session: RouteSession): void => { pointedAt.delete(session); pointedVia.delete(session) }
   /** Web contents given the policy here, which are the only ones restored. */
   const confined = new WeakSet<RouteContents>()
-  const fetchSessions = new Map<string, RouteSession>()
   /** The host rules a session reaches directly besides this machine. */
   const bypasses = new Map<RouteSession, string>()
   const isApp = deps.isApp ?? (() => true)
@@ -179,6 +181,16 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       .finally(() => { if (queues.get(origin) === next) queues.delete(origin) })
     queues.set(origin, next)
   }
+
+  /** Whether pages in `session` are held to the proxy because it follows the system, is not on a front or the dead end, and the name relay has the config it is set to. A session whose pages confine WebRTC themselves is not the controller's. */
+  const onRelay = (session: object): boolean => {
+    if (deps.relay?.()?.config() === undefined) return false
+    if (pointedAt.has(session as RouteSession) || temporarySessions.has(session) || deps.ownProxy?.(session as RouteSession) === true) return false
+    for (const [origin, sessions] of known) if (!hub.isRouted(origin) && sessions.get(session as RouteSession) === true) return true
+    return false
+  }
+  const fetchSessions = createFetchSessions<RouteSession>({ hub, isApp, sessionFor: deps.sessionFor, defaultSession: deps.defaultSession, prepare: async (origin, session) => { await prepare(origin, session, { webrtc: false }) } })
+  const relayPages = createRelayConfinement<RouteContents>({ allContents: () => deps.allContents(), onRelay, confinedByRoute: confined, policy: CONFINED })
 
   /** One change to a session at a time: two callers must not both see it unpointed and both point it. */
   const turns = new Map<RouteSession, Promise<void>>()
@@ -337,12 +349,15 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
     for (const contents of contentsIn(origin, true)) {
       if (routed) {
         confined.add(contents)
+        relayPages.routed(contents)
         contents.setWebRTCIPHandlingPolicy(CONFINED)
       } else if (confined.has(contents)) {
         confined.delete(contents)
         contents.setWebRTCIPHandlingPolicy('default')
       }
     }
+    // A session an app's route let go of follows the system again, on the relay's config while it has one.
+    relayPages.sync()
     // What was opened before the switch is on the old route (or none), whatever the proxy now says. The sessions are
     // already on the new one, so nothing new opens on the old while the broker's handles are closed.
     await Promise.allSettled(sessions.map(async ([session]) => { await within(session.closeAllConnections(), callMs) }))
@@ -370,6 +385,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       confined.add(contents)
       contents.setWebRTCIPHandlingPolicy(CONFINED)
     }
+    relayPages.created(contents)
     for (const [origin, sessions] of known) {
       if (sessions.get(contents.session as RouteSession) === true && hub.isRouted(origin)) {
         confined.add(contents)
@@ -433,28 +449,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
         await prepare(SHARED_ORIGIN, session)
       })
     },
-    fetchSessionFor: async (origin) => {
-      if (!hub.isRouted(origin)) return undefined
-      if (!isApp(origin)) {
-        // A website is looked up about through the session it runs in, which is already prepared with the identity it shares: the tunnel profile's, or the default session when the whole browser is on the tunnel.
-        const profile = hub.profileFor(origin)
-        if (profile !== undefined && profile !== 'direct') {
-          // Made ready as a tab's view would: held shut until it is pointed at its front, never left on the system's proxy. No view is coming, so the extensions are not woken.
-          const partition = profilePartitionFor(profile, origin)
-          ensureSiteSession(partition, false)
-          return deps.sessionFor(partition)
-        }
-        const shared = deps.defaultSession?.()
-        if (profile === undefined && shared !== undefined && hub.isRouted(SHARED_ORIGIN)) return shared
-      }
-      let session = fetchSessions.get(origin)
-      if (session === undefined) {
-        session = deps.sessionFor(`orivon-route-fetch-${originHash(origin)}`)
-        fetchSessions.set(origin, session)
-      }
-      await prepare(origin, session, { webrtc: false })
-      return session
-    },
+    fetchSessionFor: fetchSessions.forOrigin,
     forget: (origin) => {
       enqueue(origin, async () => {
         const sessions = sessionsOf(origin)
@@ -464,7 +459,7 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
           if (!pointedAt.has(session)) { sessions.delete(session); bypasses.delete(session); pointedVia.delete(session) }
         }
         if (sessions.size === 0) known.delete(origin)
-        fetchSessions.delete(origin)
+        fetchSessions.forget(origin)
       })
     },
     prepareTemporary: async (session, front, kind) => {
@@ -479,6 +474,10 @@ export function createRouteController (deps: RouteControllerDeps): RouteControll
       temporarySessions.delete(session)
       temporaryFronts.delete(front.port)
       unpoint(session)
+    },
+    relayChanged: relayPages.sync,
+    reloadRelayed: () => {
+      for (const contents of deps.allContents()) if (!contents.isDestroyed() && onRelay(contents.session) && /^https?:/.test(contents.getURL())) contents.reload()
     },
     sharedSettled: async () => {
       await hub.settled()

@@ -51,6 +51,7 @@ const dialogs = vi.hoisted(() => ({ watch: vi.fn() }))
 vi.mock('../../shell/page-dialogs.js', () => ({ watchPageDialogs: dialogs.watch }))
 
 const { installEmbedHost } = await import('../embed-host.js')
+const { installRelayCallers } = await import('../../route/name-relay/pinned-endpoint.js')
 const { EMBED_EVENT_CHANNEL } = await import('../../channels.js')
 const { embedPartitionFor } = await import('../embed-guard.js')
 const { NOTICES_PER_SECOND } = await import('../embed-events.js')
@@ -289,6 +290,57 @@ describe('configureEmbedSession -- onBeforeRequest resolves through the guest se
     await new Promise((resolve) => { setImmediate(resolve) })
 
     expect(callback).toHaveBeenCalledWith({ cancel: true })
+  })
+
+  describe('while the name relay runs', () => {
+    afterEach(() => { installRelayCallers(undefined) })
+
+    async function request (session: FakeSession, url: string): Promise<ReturnType<typeof vi.fn>> {
+      const onBeforeRequest = session.webRequest.onBeforeRequest.mock.calls[0]?.[0] as
+        (details: { url: string, resourceType: string }, callback: (r: { cancel: boolean }) => void) => void
+      const callback = vi.fn()
+      onBeforeRequest({ url, resourceType: 'mainFrame' }, callback)
+      await new Promise((resolve) => { setImmediate(resolve) })
+      return callback
+    }
+
+    it('judges the addresses the relay\'s lookup found, and never asks this computer\'s resolver for the name', async () => {
+      const lookup = vi.fn(async () => ['93.184.216.34'])
+      installRelayCallers({ lookup, systemAnswer: async () => 'PROXY 127.0.0.1:3128' })
+      const session = attachAndGetSession(ORIGIN_A)
+      session.resolveHost.mockImplementation(async () => ({ endpoints: [{ address: '10.0.0.5', family: 'ipv4' }] }))
+
+      expect(await request(session, 'https://good.example/page')).toHaveBeenCalledWith({ cancel: false })
+      expect(lookup).toHaveBeenCalledExactlyOnceWith('good.example', 'https://good.example/page')
+      expect(session.resolveHost).not.toHaveBeenCalled()
+    })
+
+    it('cancels a name the relay found at a private address, whatever this computer\'s resolver would say', async () => {
+      installRelayCallers({ lookup: async () => ['192.168.1.1'], systemAnswer: async () => 'PROXY 127.0.0.1:3128' })
+      const session = attachAndGetSession(ORIGIN_A)
+      session.resolveHost.mockImplementation(async () => ({ endpoints: [{ address: '93.184.216.34', family: 'ipv4' }] }))
+
+      expect(await request(session, 'https://rebind.example/')).toHaveBeenCalledWith({ cancel: true })
+      expect(session.resolveHost).not.toHaveBeenCalled()
+    })
+
+    it('cancels a name the relay could not look up', async () => {
+      installRelayCallers({ lookup: async () => { throw new Error('not-found') }, systemAnswer: async () => 'PROXY 127.0.0.1:3128' })
+      const session = attachAndGetSession(ORIGIN_A)
+
+      expect(await request(session, 'https://nowhere.example/')).toHaveBeenCalledWith({ cancel: true })
+      expect(session.resolveHost).not.toHaveBeenCalled()
+    })
+
+    it('goes back to the session\'s own resolver once the relay stops', async () => {
+      installRelayCallers({ lookup: async () => ['93.184.216.34'], systemAnswer: async () => 'DIRECT' })
+      installRelayCallers(undefined)
+      const session = attachAndGetSession(ORIGIN_A)
+      session.resolveHost.mockImplementation(async () => ({ endpoints: [{ address: '93.184.216.34', family: 'ipv4' }] }))
+
+      expect(await request(session, 'https://good.example/')).toHaveBeenCalledWith({ cancel: false })
+      expect(session.resolveHost).toHaveBeenCalledExactlyOnceWith('good.example')
+    })
   })
 
   describe('a name the verifier serves, behind a proxy the session would use', () => {

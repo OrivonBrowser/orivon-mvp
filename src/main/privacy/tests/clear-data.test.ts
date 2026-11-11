@@ -48,6 +48,27 @@ describe('clearing browsing data', () => {
     expect(forgetNameSchemes).toHaveBeenCalledTimes(2)
   })
 
+  it('forgets the addresses the name relay\'s lookups kept with any history, site data or cache that is cleared, and with nothing else', async () => {
+    const { deps } = setup()
+    const forgetNameLookups = vi.fn()
+    const withLookups = { ...deps, forgetNameLookups }
+    await clearBrowsingData({ ...NOTHING, zoomLevels: true, appData: true, siteSettings: true }, withLookups)
+    expect(forgetNameLookups).not.toHaveBeenCalled()
+    for (const request of [{ history: 'hour' }, { history: 'day' }, { history: 'week' }, { history: 'all' }, { siteData: true }, { cache: true }] as Array<Partial<ClearRequest>>) {
+      forgetNameLookups.mockClear()
+      await clearBrowsingData({ ...NOTHING, ...request }, withLookups)
+      expect(forgetNameLookups, JSON.stringify(request)).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('reports the name lookups when forgetting them fails, and still clears the rest', async () => {
+    const { deps, history } = setup()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const forgetNameLookups = vi.fn(() => { throw new Error('closed') })
+    expect(await clearBrowsingData({ ...NOTHING, history: 'all' }, { ...deps, forgetNameLookups })).toEqual({ ok: false, failed: ['nameLookups'] })
+    expect(history.clear).toHaveBeenCalledTimes(1)
+  })
+
   it('forgets the Website levels sites earned with site data, the cache and all history, and not with a part of history', async () => {
     const forgetEarnedLevels = vi.fn()
     const { deps } = setup()

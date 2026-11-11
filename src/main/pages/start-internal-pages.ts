@@ -70,6 +70,7 @@ import { createDeviceRows } from '../devices/hid-rows.js'
 import { forgetDevicesWhenGrantEnds } from '../devices/hid-grant-watch.js'
 import { forgetRoutesOfGoneApps } from '../route/forget-watch.js'
 import { forgetMirroredSites } from '../route/cookie-mirror/mirror-forget.js'
+import { forgetNameLookups } from '../route/name-relay/lookup-forget.js'
 import { profilePartitionsToClear } from '../route/site-partition.js'
 import { NYM_SWITCHED_OFF } from '../route/nym-subsystem.js'
 import { madeSiteSessions } from '../route/site-routes.js'
@@ -212,6 +213,7 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
         .filter((app) => isOriginServedFromCacheSync(app.origin))
         .map((app) => session.fromPartition(partitionFor(app.origin))),
       forgetNameSchemes,
+      forgetNameLookups,
       forgetNodeData,
       forgetEarnedLevels: () => { forgetKeptProvenance(); services.scoreProvider.forget() },
       forgetMirroredSites,

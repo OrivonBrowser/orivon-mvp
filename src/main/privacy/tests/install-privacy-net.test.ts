@@ -1,5 +1,5 @@
 import type { App } from 'electron'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ShellServices } from '../../shell/shell-services.js'
 
 const owner = { onBeforeRequest: vi.fn(), onBeforeSendHeaders: vi.fn(), onHeadersReceived: vi.fn() }
@@ -21,6 +21,8 @@ vi.mock('electron', () => ({ session: { defaultSession: { name: 'default', clear
 vi.mock('../../sessions/web-request-owner.js', () => ({ webRequestOwnerFor: vi.fn(() => owner) }))
 
 const { installPrivacyNet } = await import('../install-privacy-net.js')
+const { holdResolver } = await import('../resolver-hold.js')
+afterEach(() => { holdResolver(false) })
 const { webRequestOwnerFor } = await import('../../sessions/web-request-owner.js')
 const { siteAsks } = await import('../../sessions/site-asks.js')
 
@@ -159,4 +161,42 @@ describe('the privacy-net installer', () => {
     expect(configureHostResolver.mock.calls[2]?.[0]).toMatchObject({ secureDnsMode: 'secure', secureDnsServers: ['https://cloudflare-dns.com/dns-query'] })
     log.mockRestore()
   })
+  it('holds the resolver at this computer\'s DNS while the name relay is active, and applies the setting again when it stops', () => {
+    const { configureHostResolver } = rig({ 'privacy.secureDns': 'quad9' })
+    expect(configureHostResolver).toHaveBeenCalledTimes(1)
+    holdResolver(true)
+    expect(configureHostResolver).toHaveBeenCalledTimes(2)
+    expect(configureHostResolver.mock.calls[1]?.[0]).toMatchObject({ secureDnsMode: 'off' })
+    holdResolver(false)
+    expect(configureHostResolver).toHaveBeenCalledTimes(3)
+    expect(configureHostResolver.mock.calls[2]?.[0]).toMatchObject({ secureDnsMode: 'secure', secureDnsServers: ['https://dns.quad9.net/dns-query'] })
+  })
+
+  it('keeps a change of the setting from lifting the hold', () => {
+    const { configureHostResolver, current, change } = rig({ 'privacy.secureDns': 'quad9' })
+    holdResolver(true)
+    current['privacy.secureDns'] = 'cloudflare'
+    change('privacy.secureDns')
+    expect(configureHostResolver.mock.calls.at(-1)?.[0]).toMatchObject({ secureDnsMode: 'off' })
+    holdResolver(false)
+    expect(configureHostResolver.mock.calls.at(-1)?.[0]).toMatchObject({ secureDnsMode: 'secure', secureDnsServers: ['https://cloudflare-dns.com/dns-query'] })
+  })
+
+  it('puts the default choice\'s Quad9 check aside while held, and starts it again with the setting', async () => {
+    resolveHost.mockClear()
+    const { configureHostResolver } = rig({ 'privacy.secureDns': 'quad9Fallback' })
+    await vi.waitFor(() => { expect(resolveHost).toHaveBeenCalled() })
+    holdResolver(true)
+    expect(configureHostResolver.mock.calls.at(-1)?.[0]).toMatchObject({ secureDnsMode: 'off' })
+    holdResolver(false)
+    expect(configureHostResolver.mock.calls.at(-1)?.[0]).toMatchObject({ secureDnsMode: 'secure', secureDnsServers: ['https://dns.quad9.net/dns-query'] })
+  })
+
+  it('applies the hold at launch when it was taken before the installer ran', () => {
+    holdResolver(true)
+    const { configureHostResolver } = rig({ 'privacy.secureDns': 'off' })
+    expect(configureHostResolver).toHaveBeenCalledTimes(1)
+    expect(configureHostResolver.mock.calls[0]?.[0]).toMatchObject({ secureDnsMode: 'off' })
+  })
+
 })

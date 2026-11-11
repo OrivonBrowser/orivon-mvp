@@ -21,7 +21,7 @@ import { followsSystem, hasOwnProxy, markFollowsSystem, markOwnProxy } from './o
 import { migrateRouteKinds, moveNymProfileToProxy } from './kinds-migration.js'
 import { migrateLegacySites } from './legacy-sites.js'
 import { setOwnRequests } from './own-requests.js'
-import { setSystemProxyProbe } from './system-proxy.js'
+import { setSystemProxyProbe, systemProxyFor } from './system-proxy.js'
 import { createRequestFetch } from '../../loader/electron/request-fetch.js'
 import { prepareProfileSession, wakeProfileSession } from '../extensions/extensions-subsystem.js'
 import { servedOrigin } from './served-origin.js'
@@ -40,6 +40,7 @@ import { readGnomeSettings, readMacosSettings, readWindowsSettings } from './pro
 import { sourceOf } from './proxy-mirror/settings-source.js'
 import { askHolderOfCopy } from './system-code.js'
 import { guardOfSession, namesVerifierHost, rootDotBypassRules, routedBypassRules, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
+import { holdResolver } from '../privacy/resolver-hold.js'
 import { isOnionUrl } from '../../broker/route/onion.js'
 import { createSiteSessions } from './site-sessions.js'
 import { mergeOf } from './cookie-mirror/session-ready.js'
@@ -57,7 +58,18 @@ import { tunnelDefaultChanged } from '../verifier/verifier-subsystem.js'
 import { RouteStore } from './route-store.js'
 import { profileIsolationSecret } from './isolation-secret.js'
 import { startDeadEnd } from './dead-end.js'
+import { createProxiedLookup, providerFor } from './name-relay/proxied-lookup.js'
+import { quietSession } from './name-relay/quiet-session.js'
+import { setNameLookupForgetter } from './name-relay/lookup-forget.js'
+import { createRelayFailures } from './name-relay/relay-failures.js'
+import type { RefusalWord } from './name-relay/relay-failures.js'
+import { installRelayCallers } from './name-relay/pinned-endpoint.js'
+import { createRelayLookup } from './name-relay/relay-lookup.js'
+import { startRelayListener } from './name-relay/relay-listener.js'
 import type { NameRelayLink } from './name-relay/relay-link.js'
+import { createRefusalLog, setNameRelayStatusSource, setRelayReasonSource } from './name-relay/relay-status.js'
+import { createRelaySwitch } from './name-relay/relay-switch.js'
+import type { RelaySwitch } from './name-relay/relay-switch.js'
 import type { DeadEnd } from './dead-end.js'
 
 /** Where an onion guard runs among a session's `onBeforeRequest` handlers: after the main-frame guard (-2) and the hold on a session not yet pointed (-1). */
@@ -98,6 +110,11 @@ export const routeSubsystem: Subsystem = {
     let proxyMirror: ProxyMirror | undefined
     // The name relay while one runs; the controller sets the sessions that follow the system to its config and answers its listener's challenge.
     let nameRelay: NameRelayLink | undefined
+    let relaySwitch: RelaySwitch | undefined
+    // The Secure DNS choice, which names the provider the relay's lookups ask: read now, followed once the settings are.
+    let secureDns = readSettingBeforeReady(join(userData, 'settings.json'), 'privacy.secureDns')
+    const relayLookups = createProxiedLookup({ makeSession: (partition) => session.fromPartition(partition), secureDns: () => secureDns })
+    setNameLookupForgetter(relayLookups.clear)
     const routes = createRouteService({
       store,
       isolationSecret,
@@ -108,6 +125,14 @@ export const routeSubsystem: Subsystem = {
       nym: createNym(readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.privacy'), heldToNym || readSettingBeforeReady(join(userData, 'settings.json'), 'network.nym.enabled')),
       // Asked only when the list of tunnel settings cannot be read; the broker exists by then.
       installed: () => [...new Set([...(ctx.broker?.app.registeredOriginsSync() ?? []), ...(ctx.broker?.app.persistedAppsSync().map((installed) => installed.origin) ?? [])])],
+      followRelay: (settings) => {
+        secureDns = settings.get('privacy.secureDns')
+        relaySwitch?.setEnabled(settings.get('privacy.resolveBehindProxy'))
+        settings.onChange((change) => {
+          if (change.key === 'privacy.resolveBehindProxy') relaySwitch?.setEnabled(settings.get('privacy.resolveBehindProxy'))
+          else if (change.key === 'privacy.secureDns') { secureDns = settings.get('privacy.secureDns'); relayLookups.clear() }
+        })
+      },
       switchWorld: {
         isPinned: isOriginPinnedSync,
         isPersistable: isPersistableOrigin,
@@ -165,7 +190,7 @@ export const routeSubsystem: Subsystem = {
     let systemSession: Session | undefined
     const systemProxySession = (): Session => {
       if (systemSession === undefined) {
-        const made = session.fromPartition('orivon-system-proxy')
+        const made = quietSession(session.fromPartition('orivon-system-proxy'))
         systemSession = made
         markOwnProxy(made)
         markFollowsSystem(made)
@@ -182,7 +207,7 @@ export const routeSubsystem: Subsystem = {
     let mirrorSet: Promise<void> = Promise.resolve()
     const systemMirrorSession = (): Session => {
       if (mirrorSession === undefined) {
-        const made = session.fromPartition('orivon-system-mirror')
+        const made = quietSession(session.fromPartition('orivon-system-mirror'))
         mirrorSession = made
         markOwnProxy(made)
         markFollowsSystem(made)
@@ -194,7 +219,7 @@ export const routeSubsystem: Subsystem = {
     let checkSession: Session | undefined
     const systemCheckSession = (): Session => {
       if (checkSession === undefined) {
-        const made = session.fromPartition('orivon-system-check')
+        const made = quietSession(session.fromPartition('orivon-system-check'))
         checkSession = made
         markOwnProxy(made)
         markFollowsSystem(made)
@@ -214,6 +239,54 @@ export const routeSubsystem: Subsystem = {
       apply: async () => await routes.controller.systemChanged()
     })
     setMirrorStatusSource(proxyMirror.status)
+    const relayFailures = createRelayFailures()
+    const refusalLog = createRefusalLog()
+    const relayDirect = async (host: string): Promise<string[]> => (await systemMirrorSession().resolveHost(host)).endpoints.map((endpoint) => endpoint.address)
+    // A refusal is logged as a word, at most one line a minute for each; the listener counts its own, a pinned endpoint's are counted here.
+    const logRefusal = (word: RefusalWord): void => {
+      const line = refusalLog(word)
+      if (line !== undefined) console.info(line)
+    }
+    const relay = createRelaySwitch({
+      environment: process.env,
+      heldToNym,
+      listen: async (onClosed) => await startRelayListener({
+        // The system's answer for the URL a connection is for: never put a name the verifier serves to a script of the system's, and failing on the states `settingsMayRunCode` names (`system-proxy.ts`).
+        systemAnswer: systemProxyFor,
+        lookup: relayLookups.lookup,
+        drop: relayLookups.drop,
+        lookupDirect: relayDirect,
+        failures: relayFailures,
+        onRefused: logRefusal
+      }, onClosed),
+      callers: (on) => {
+        installRelayCallers(on
+          ? {
+              lookup: createRelayLookup({ systemAnswer: systemProxyFor, lookup: relayLookups.lookup, lookupDirect: relayDirect }),
+              systemAnswer: systemProxyFor,
+              onRefused: (word) => { relayFailures.tally(word); logRefusal(word) }
+            }
+          : undefined)
+      },
+      holdResolver,
+      sessionsChanged: async () => await routes.controller.systemChanged(),
+      confine: () => { routes.controller.relayChanged() },
+      reloadPages: () => { routes.controller.reloadRelayed() },
+      forgetLookups: async () => { await relayLookups.close() },
+      mirrorConfig: () => proxyMirror?.config() ?? { mode: 'system' },
+      mirrorStatus: () => proxyMirror?.status() ?? { source: 'none', mode: 'unknown', state: 'system', reason: 'starting' },
+      routedBypass: () => routedBypassRules().join(';'),
+      deadEnd: deadEndRule,
+      provider: () => providerFor(secureDns),
+      refused: relayFailures.counts
+    })
+    relaySwitch = relay
+    nameRelay = relay.link
+    setNameRelayStatusSource(relay.status)
+    setRelayReasonSource(relayFailures.reasonFor)
+    // Before the first read, so the first pass already finds the relay waiting for it.
+    relay.setEnabled(readSettingBeforeReady(join(userData, 'settings.json'), 'privacy.resolveBehindProxy'))
+    proxyMirror.onPass((pass) => { relay.onPass(pass) })
     setDirectLookupSource(() => routes.everywhere() ? systemMirrorSession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createDirectFetch(net, systemMirrorSession(), answerChallengeOnly(() => nameRelay?.credentials))
@@ -357,10 +430,11 @@ export const routeSubsystem: Subsystem = {
     })
     publishRoutes(ctx, routes)
     // Registered before the first read is awaited: a quit during it must not leave a pass that goes on to set sessions.
-    app.once('will-quit', () => { proxyMirror?.stop() })
+    app.once('will-quit', () => { proxyMirror?.stop(); relay.dispose().catch((error: unknown) => { console.error('[route] the name relay did not stop cleanly:', error instanceof Error ? error.message : 'unexpected error') }) })
     // The first read of the system's settings comes before the sessions are waited for, so the first window finds them copied.
     await proxyMirror.start()
     // Whatever loads next (the person's extensions, the first window) finds the sessions already following the setting.
+    await relay.settled()
     await routes.controller.settled()
     // Its first set waits for the stop its adoption gave it, so it is awaited here as well.
     await mirrorSet

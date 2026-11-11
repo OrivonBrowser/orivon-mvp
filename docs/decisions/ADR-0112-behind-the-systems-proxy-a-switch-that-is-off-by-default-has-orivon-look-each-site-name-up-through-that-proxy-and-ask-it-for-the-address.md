@@ -1,6 +1,6 @@
 # ADR-0112: Behind the system's proxy, a switch that is off by default has Orivon look each site name up through that proxy and ask it for the address
 
-- **Status:** accepted. Built in steps (see Consequences): the first changes no behaviour.
+- **Status:** accepted. Built in steps (see Consequences): the switch, off by default, and the callers that check addresses are built.
 - **Date:** 2026-11-10
 - **Type:** architecture
 - **Decided by:** owner for the switch, its limits (a Settings switch, off by default; nothing of Orivon's running outside the browser; no sign-in of Orivon's own; no lookup outside the proxy) and the two protections below; AI recommendation for the mechanism

@@ -1,7 +1,7 @@
 // What T20's answer for a URL comes to: the proxies the relay may use in order, a first `DIRECT`, or a reason to refuse.
 
 import { describe, expect, it } from 'vitest'
-import { onAnonymityPort, parseProxyAnswer } from '../proxy-answer.js'
+import { onAnonymityPort, parseProxyAnswer, stricterAnswer } from '../proxy-answer.js'
 
 const http = (host: string, port: number): object => ({ scheme: 'http', host, port })
 
@@ -106,5 +106,29 @@ describe('a SOCKS proxy on this computer at a port Tor uses', () => {
     expect(onAnonymityPort(socks('socks5', '10.0.0.5', 9050))).toBe(false)
     expect(onAnonymityPort(socks('socks5', 'tor.example', 9050))).toBe(false)
     expect(onAnonymityPort({ scheme: 'http', host: '127.0.0.1', port: 9050 })).toBe(false)
+  })
+})
+
+describe('the answer for two URLs of one connection', () => {
+  const direct = parseProxyAnswer('DIRECT')
+  const proxies = parseProxyAnswer('PROXY a.example:3128')
+  const other = parseProxyAnswer('PROXY b.example:3128')
+  const junk = parseProxyAnswer('not an answer')
+  const refused = parseProxyAnswer('QUIC q.example:443')
+
+  it('is the proxy when either names one, the first\'s when both do', () => {
+    expect(stricterAnswer(direct, proxies)).toBe(proxies)
+    expect(stricterAnswer(proxies, direct)).toBe(proxies)
+    expect(stricterAnswer(junk, proxies)).toBe(proxies)
+    expect(stricterAnswer(refused, proxies)).toBe(proxies)
+    expect(stricterAnswer(proxies, other)).toBe(proxies)
+  })
+
+  it('is DIRECT only when both say DIRECT', () => {
+    expect(stricterAnswer(direct, direct)).toBe(direct)
+    expect(stricterAnswer(direct, junk)).toBe(junk)
+    expect(stricterAnswer(junk, direct)).toBe(junk)
+    expect(stricterAnswer(direct, refused)).toBe(refused)
+    expect(stricterAnswer(refused, direct)).toBe(refused)
   })
 })

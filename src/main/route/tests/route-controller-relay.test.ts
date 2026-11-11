@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { NameRelayLink } from '../name-relay/relay-link.js'
 import { createRouteController } from '../route-controller.js'
-import type { RouteLoginListener, RouteProxyConfig, RouteSession } from '../route-controller.js'
+import type { RouteContents, RouteLoginListener, RouteProxyConfig, RouteSession } from '../route-controller.js'
 import { createRouteHub } from '../route-hub.js'
 import type { RouteHub } from '../route-hub.js'
 import { RouteStore } from '../route-store.js'
@@ -40,8 +40,18 @@ function fakeRelay (state: { config: RouteProxyConfig | undefined }): NameRelayL
   }
 }
 
+interface FakeContents extends RouteContents { readonly policy: string[], readonly reloads: () => number }
+
+const fakeContents = (session: RouteSession, url = 'https://news.example/'): FakeContents => {
+  const policy: string[] = []
+  let reloaded = 0
+  return { session, policy, reloads: () => reloaded, isDestroyed: () => false, getType: () => 'window', getURL: () => url, reload: () => { reloaded += 1 }, setWebRTCIPHandlingPolicy: (value) => { policy.push(value) } }
+}
+
 function setup (options: { relay?: boolean, routed?: boolean } = {}) {
   const { relay: withRelay = true, routed = false } = options
+  const contents: FakeContents[] = []
+  const created: Array<(made: RouteContents) => void> = []
   const store = new RouteStore(null)
   if (routed) store.setEntry(APP, 'socks5')
   const hub = createRouteHub({ store, targetOf: () => ({ host: '127.0.0.1', port: 9050 }), defaultKind: () => 'socks5', everywhere: () => false, isApp: (origin) => origin === APP, providerFor: () => ({ connect: async () => { throw new Error('unused') } }) })
@@ -56,8 +66,8 @@ function setup (options: { relay?: boolean, routed?: boolean } = {}) {
     broker: () => ({ dropOrigin: async () => {} }),
     sessionFor: () => fakeSession(),
     embedPartition: (origin) => `embed:${origin}`,
-    allContents: () => [],
-    onContentsCreated: () => {},
+    allContents: () => contents,
+    onContentsCreated: (listener) => { created.push(listener) },
     onLogin: (listener) => { logins.push(listener) },
     sharedBypass: () => '*.eth',
     setAppProxy: async () => {},
@@ -65,7 +75,13 @@ function setup (options: { relay?: boolean, routed?: boolean } = {}) {
     systemConfig: () => mirror.config,
     ...(withRelay ? { relay: () => relay } : {})
   })
-  return { controller, hub, mirror, active, relay, logins, own }
+  const open = (session: RouteSession, url?: string): FakeContents => {
+    const made = fakeContents(session, url)
+    contents.push(made)
+    for (const listener of created) listener(made)
+    return made
+  }
+  return { controller, hub, store, mirror, active, relay, logins, own, contents, open }
 }
 
 describe('the config a session that follows the system is set to', () => {
@@ -178,5 +194,129 @@ describe('a proxy challenge from the relay\'s listener', () => {
     listener({ preventDefault: left }, { isProxy: true, host: 'proxy.example', port: 3128 }, answered)
     expect(left).not.toHaveBeenCalled()
     expect(answered).not.toHaveBeenCalled()
+  })
+})
+
+describe('the pages of the sessions on the relay', () => {
+  it('are held to the proxy while the relay has the config, and given the default back when it has none', async () => {
+    const { controller, active, open } = setup()
+    const made = fakeSession()
+    controller.adopt(made)
+    const page = open(made)
+    expect(page.policy).toEqual([])
+
+    active.config = RELAYED
+    controller.relayChanged()
+    expect(page.policy).toEqual(['disable_non_proxied_udp'])
+    controller.relayChanged()
+    expect(page.policy, 'given once').toEqual(['disable_non_proxied_udp'])
+
+    active.config = undefined
+    controller.relayChanged()
+    expect(page.policy).toEqual(['disable_non_proxied_udp', 'default'])
+    controller.relayChanged()
+    expect(page.policy, 'restored once').toEqual(['disable_non_proxied_udp', 'default'])
+  })
+
+  it('are held from the moment they open while the relay has the config', async () => {
+    const { controller, active, open } = setup()
+    const made = fakeSession()
+    controller.adopt(made)
+    active.config = RELAYED
+    expect(open(made).policy).toEqual(['disable_non_proxied_udp'])
+  })
+
+  it('are left alone when the session is on a front, the dead end, a temporary tunnel, a proxy of its own or confines WebRTC itself', async () => {
+    const { controller, hub, active, own, open } = setup({ routed: true })
+    const onFront = fakeSession()
+    await controller.prepare(APP, onFront)
+    const stopped = fakeSession()
+    await controller.prepare('https://two.example', stopped)
+    await controller.confineSite(stopped)
+    const temporary = fakeSession()
+    controller.adopt(temporary)
+    await controller.prepareTemporary(temporary, { port: 4242, username: 'u', secret: 's' }, 'socks5')
+    const web = fakeSession()
+    controller.adopt(web)
+    own.add(web)
+    const lookup = fakeSession()
+    await controller.prepare('https://three.example', lookup, { webrtc: false })
+    await flush()
+    await hub.front(APP)
+    const pages = [onFront, stopped, web, lookup].map((session) => open(session))
+
+    active.config = RELAYED
+    controller.relayChanged()
+
+    // The page of the app's own session has the route's confinement from when it opened, once.
+    expect(pages.map((page) => page.policy)).toEqual([['disable_non_proxied_udp'], [], [], []])
+  })
+
+  it('keep an app route\'s confinement while the route holds them, and are held by the relay again when the route lets go', async () => {
+    const { controller, store, active, open } = setup()
+    const made = fakeSession()
+    controller.adopt(made)
+    await controller.prepare(APP, made)
+    active.config = RELAYED
+    const page = open(made)
+    expect(page.policy).toEqual(['disable_non_proxied_udp'])
+
+    store.setEntry(APP, 'socks5')
+    await controller.settled()
+    active.config = undefined
+    controller.relayChanged()
+    expect(page.policy.at(-1), 'the route still confines it').toBe('disable_non_proxied_udp')
+
+    active.config = RELAYED
+    store.setEntry(APP, undefined)
+    await controller.settled()
+    expect(page.policy.at(-1), 'the relay confines it once the route has let go').toBe('disable_non_proxied_udp')
+
+    active.config = undefined
+    controller.relayChanged()
+    expect(page.policy.at(-1)).toBe('default')
+  })
+
+  it('are loaded again when the relay starts, if they are http(s) pages of a session it holds, so a peer connection made before it keeps no address', async () => {
+    const { controller, active, open } = setup()
+    const made = fakeSession()
+    controller.adopt(made)
+    const web = open(made)
+    const plain = open(made, 'http://plain.example/')
+    const shell = open(made, 'orivon://settings/')
+
+    controller.reloadRelayed()
+    expect([web, plain, shell].map((page) => page.reloads()), 'nothing is loaded again while the relay has no config').toEqual([0, 0, 0])
+
+    active.config = RELAYED
+    controller.reloadRelayed()
+    expect([web, plain, shell].map((page) => page.reloads())).toEqual([1, 1, 0])
+  })
+
+  it('are not loaded again when their session is on a front, a proxy of its own or a temporary tunnel', async () => {
+    const { controller, active, own, open } = setup({ routed: true })
+    const onFront = fakeSession()
+    await controller.prepare(APP, onFront)
+    const web = fakeSession()
+    controller.adopt(web)
+    own.add(web)
+    const temporary = fakeSession()
+    controller.adopt(temporary)
+    await controller.prepareTemporary(temporary, { port: 4242, username: 'u', secret: 's' }, 'socks5')
+    const pages = [onFront, web, temporary].map((session) => open(session))
+
+    active.config = RELAYED
+    controller.reloadRelayed()
+    expect(pages.map((page) => page.reloads())).toEqual([0, 0, 0])
+  })
+
+  it('are never touched when no relay is handed over', async () => {
+    const { controller, active, open } = setup({ relay: false })
+    const made = fakeSession()
+    controller.adopt(made)
+    const page = open(made)
+    active.config = RELAYED
+    controller.relayChanged()
+    expect(page.policy).toEqual([])
   })
 })

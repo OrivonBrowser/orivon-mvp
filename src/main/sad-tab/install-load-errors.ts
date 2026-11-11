@@ -3,8 +3,12 @@ import { requestSlot } from '../overlays/tab-slots.js'
 import { upgradeTracker } from '../privacy/https-fallback.js'
 import { partitionAfterFileBlock } from '../local-files/partition.js'
 import { loadRefusals } from '../route/load-refusals.js'
+import { relayReasonFor } from '../route/name-relay/relay-status.js'
 import type { ShellInstaller } from '../shell/shell-installers.js'
 import { forgetLoadErrors, watchLoadErrors, type LoadErrorDeps } from './load-error-watch.js'
+
+/** Chromium's code for a CONNECT that was answered with a failure, which is what the name relay's refusal of a secure connection comes to. */
+const TUNNEL_FAILED = -111
 
 export const installLoadErrors: ShellInstaller = {
   name: 'load-errors',
@@ -14,6 +18,7 @@ export const installLoadErrors: ShellInstaller = {
       ask: requestSlot,
       claimed: (id, url, code) => upgradeTracker.claims(id, url, code),
       refused: (id, url) => loadRefusals.claims(id, url),
+      relay: (url, code) => code === TUNNEL_FAILED ? relayReasonFor(url) : undefined,
       movesTab: (partition, url, code) => partitionAfterFileBlock(url, code, true, partition) !== undefined
     }
     services.tabLifecycle.subscribe({

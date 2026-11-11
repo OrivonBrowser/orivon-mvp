@@ -12,6 +12,7 @@ interface Fake {
   readonly calls: Array<{ url: string, init: RequestInit | undefined }>
   readonly proxies: unknown[]
   readonly order: string[]
+  readonly spelling: string[][]
 }
 
 /** A session that answers every fetch with what `answer` makes of the call. */
@@ -19,12 +20,15 @@ function fake (answer: (url: string, init: RequestInit | undefined) => Promise<R
   const calls: Fake['calls'] = []
   const proxies: unknown[] = []
   const order: string[] = []
+  const spelling: string[][] = []
   let made = 0
   const session = {
+    setSpellCheckerEnabled: (enabled: boolean) => { order.push(`spell checker ${enabled ? 'on' : 'off'}`) },
+    setSpellCheckerLanguages: (languages: string[]) => { spelling.push(languages) },
     setProxy: async (config: unknown) => { order.push('setProxy'); proxies.push(config); await setProxy() },
     fetch: async (url: string, init?: RequestInit) => { order.push('fetch'); calls.push({ url, init }); return await answer(url, init) }
   } as unknown as PacFetchSession
-  return { session, made: () => made, calls, proxies, order, ...{ bump: () => { made += 1 } } } as Fake
+  return { session, made: () => made, calls, proxies, order, spelling, ...{ bump: () => { made += 1 } } } as Fake
 }
 
 const fetcher = (state: Fake): ReturnType<typeof createPacFetch> => createPacFetch(() => state.session)
@@ -64,8 +68,15 @@ describe('the fetch of the system\'s proxy script', () => {
     await fetch(ADDRESS)
     await fetch(ADDRESS)
     expect(state.proxies).toEqual([{ mode: 'direct' }])
-    expect(state.order).toEqual(['setProxy', 'fetch', 'fetch'])
+    expect(state.order.filter((step) => !step.startsWith('spell'))).toEqual(['setProxy', 'fetch', 'fetch'])
     expect(hasOwnProxy(state.session)).toBe(true)
+  })
+
+  it('takes the spell checker off its session before the session makes a request, which Electron would otherwise spend on a dictionary fetched directly from a fixed host', async () => {
+    const state = fake(() => reply(SCRIPT))
+    await fetcher(state)(ADDRESS)
+    expect(state.order).toEqual(['spell checker off', 'setProxy', 'fetch'])
+    expect(state.spelling).toEqual([[]])
   })
 
   it('makes no session until a script is asked for, and one only', async () => {

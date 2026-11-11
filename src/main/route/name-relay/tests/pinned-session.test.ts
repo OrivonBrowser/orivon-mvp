@@ -16,7 +16,11 @@ async function endpoint (): Promise<PinnedEndpoint> {
   return made
 }
 
-const fakeSession = () => ({ setProxy: vi.fn<Session['setProxy']>(async () => {}) })
+const fakeSession = () => ({
+  setProxy: vi.fn<Session['setProxy']>(async () => {}),
+  setSpellCheckerEnabled: vi.fn<Session['setSpellCheckerEnabled']>(),
+  setSpellCheckerLanguages: vi.fn<Session['setSpellCheckerLanguages']>()
+})
 
 describe('the session a pinned endpoint is read through', () => {
   it('is made in memory, left alone by the shared identity, and set to the endpoint\'s config before it is handed back', async () => {
@@ -28,6 +32,17 @@ describe('the session a pinned endpoint is read through', () => {
     expect(PINNED_PARTITION.startsWith('persist:')).toBe(false)
     expect(hasOwnProxy(session)).toBe(true)
     expect(session.setProxy).toHaveBeenCalledExactlyOnceWith(pinned.config)
+  })
+
+  it('has no spell checker, which would fetch a dictionary through the endpoint and be refused as unpinned', async () => {
+    const session = fakeSession()
+    await sessionThrough(await endpoint(), () => session)
+    expect(session.setSpellCheckerEnabled).toHaveBeenCalledExactlyOnceWith(false)
+    expect(session.setSpellCheckerLanguages).toHaveBeenCalledExactlyOnceWith([])
+  })
+
+  it('is a partition of its own, which no page, tab or app session is made from', () => {
+    expect(PINNED_PARTITION).toBe('orivon-name-pinned')
   })
 
   it('is one per endpoint, however many callers ask at once', async () => {
@@ -50,7 +65,7 @@ describe('the session a pinned endpoint is read through', () => {
 
   it('is made again by the next caller when it could not be set', async () => {
     const pinned = await endpoint()
-    const broken = { setProxy: vi.fn<Session['setProxy']>(async () => { throw new Error('no proxy set') }) }
+    const broken = { ...fakeSession(), setProxy: vi.fn<Session['setProxy']>(async () => { throw new Error('no proxy set') }) }
     await expect(sessionThrough(pinned, () => broken)).rejects.toThrow('no proxy set')
     const good = fakeSession()
     expect(await sessionThrough(pinned, () => good)).toBe(good)

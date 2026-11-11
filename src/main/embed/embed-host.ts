@@ -19,6 +19,7 @@ import { requestPartition, withPartition, withRoute } from '../verifier/partitio
 import { holdWhileNetworkServiceRestarts } from '../sessions/network-service-hold.js'
 import { holdForVerifier } from '../verifier/verifier-access.js'
 import { refuseWhenProxySees } from '../route/verifier-name-guard.js'
+import { relayLookup } from '../route/name-relay/pinned-endpoint.js'
 import { EMBED_EVENT_CHANNEL } from '../channels.js'
 import type { EmbedDownload, EmbedPopup } from '../../contracts/index.js'
 import { embedPartitionFor, guestRequestAllowed, hardenGuest, showsLocalPageOn } from './embed-guard.js'
@@ -55,15 +56,23 @@ function embedderOrigin (embedder: WebContents): string | null {
 const embedSessionOrigins = new WeakMap<Session, string>()
 
 /**
- * `embedSession`'s own resolver, wrapped to `guestRequestAllowed`'s
- * `resolve` shape -- the whole point of A286's check. Resolving through
- * THIS SPECIFIC session, not `net.resolveHost`/`dns`, is what shares
+ * The resolver `guestRequestAllowed` asks, the whole point of A286's check:
+ * what the document's host resolves to, judged before the load. Resolving
+ * through THIS SPECIFIC session, not `net.resolveHost`/`dns`, is what shares
  * Chromium's host cache with the load `onBeforeRequest` is about to admit
  * or refuse: the same name, asked again moments later to actually connect,
  * answers from that same cache rather than re-querying DNS a second time.
+ *
+ * While the name relay runs, the guest's connection is made by the relay's
+ * listener, which looks the name up through the proxy and not on this
+ * computer: the check asks the relay's lookup (a lookup of this computer's
+ * own would show the name to its DNS) and judges the addresses the relay
+ * dials, answered from the same cache.
  */
-function resolveViaSession (embedSession: Session): (host: string) => Promise<readonly string[]> {
-  return async (host) => {
+function resolveViaSession (embedSession: Session): (host: string, url: string) => Promise<readonly string[]> {
+  return async (host, url) => {
+    const relay = relayLookup()
+    if (relay !== undefined) return await relay(host, url)
     const resolved = await embedSession.resolveHost(host)
     return resolved.endpoints.map((endpoint) => endpoint.address)
   }

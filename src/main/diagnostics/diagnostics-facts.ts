@@ -7,6 +7,7 @@ import type { SettingKey } from '../settings/schema.js'
 import type { RestartCounts } from '../sessions/network-service-restart.js'
 import type { CookieMirrorStatus } from '../route/cookie-mirror/mirror-status.js'
 import type { MirrorStatus } from '../route/proxy-mirror/mirror-status.js'
+import type { NameRelayStatus } from '../route/name-relay/relay-status.js'
 import { newest } from './crash-records.js'
 import type { CrashKind, CrashRecord } from './crash-records.js'
 import { gpuDevicesOf, gpuFeaturesOf } from './gpu-reading.js'
@@ -129,6 +130,8 @@ export interface DiagnosticsFacts {
     readonly networkService: RestartCounts
     /** Whether the system's proxy settings are copied into the sessions, and if not why: four fixed words, never an address, a URL or an exception. */
     readonly systemProxy: MirrorStatus
+    /** Whether Orivon looks site addresses up itself behind the system's proxy: one of five states, the provider, whether Chromium's resolver is held, and how many connections each refusal word stopped; never a name, an address or a proxy. */
+    readonly nameRelay: NameRelayStatus
     /** Whether the tunnel profiles' cookies are kept in step with normal browsing, and how many cookies that wrote, removed and failed to write: counts and one word, never a cookie or a site. */
     readonly signIns: CookieMirrorStatus
     readonly extensions: readonly ExtensionReading[]
@@ -162,7 +165,7 @@ export const RECENT_CRASHES = 10
 
 /** The settings a report states, as values only: a switch, one of a fixed list of choices or a number within fixed bounds, never an address, a path or text a person typed. `web3.*` joins whichever of its settings is a switch or a choice. */
 export const REPORTED_SETTINGS: readonly SettingKey[] = [
-  'appearance.theme', 'appearance.newTabBackground', 'appearance.newTabBrightness', 'privacy.cookies', 'privacy.globalPrivacyControl', 'privacy.doNotTrack', 'privacy.httpsOnly', 'privacy.secureDns',
+  'appearance.theme', 'appearance.newTabBackground', 'appearance.newTabBrightness', 'privacy.cookies', 'privacy.globalPrivacyControl', 'privacy.doNotTrack', 'privacy.httpsOnly', 'privacy.secureDns', 'privacy.resolveBehindProxy',
   'performance.memorySaver', 'performance.energySaver', 'graphics.webgpuOnX11', 'startup.mode', 'spellcheck.enabled', 'developer.tools', 'extensions.developerMode', 'updates.check',
   'network.route.kind', 'network.nym.enabled', 'network.tunnel.everywhere',
   ...(Object.keys(SETTINGS) as SettingKey[]).filter((key) => key.startsWith('web3.') && (SETTINGS[key].kind === 'bool' || SETTINGS[key].kind === 'enum'))

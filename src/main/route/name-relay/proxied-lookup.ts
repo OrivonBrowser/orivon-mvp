@@ -14,6 +14,8 @@ import type { AddressFamily } from './doh-message.js'
 import { createNameCache } from './name-cache.js'
 import type { CachedResult, Fetched, NameCache } from './name-cache.js'
 import { dohUrlOverride } from './name-relay-test-seam.js'
+import { quietSession } from './quiet-session.js'
+import type { QuietableSession } from './quiet-session.js'
 
 /** A proxy the system names, as the URL scheme a session's proxy rules give it (`SOCKS` is `socks4`). */
 export interface ProxyEntry {
@@ -54,7 +56,7 @@ export interface ProxiedLookup {
   readonly close: () => Promise<void>
 }
 
-export type LookupSession = Pick<Session, 'fetch' | 'resolveHost' | 'setProxy' | 'setUserAgent' | 'closeAllConnections'>
+export type LookupSession = Pick<Session, 'fetch' | 'resolveHost' | 'setProxy' | 'setUserAgent' | 'closeAllConnections'> & QuietableSession
 
 export interface ProxiedLookupOptions {
   /** An in-memory session by the name given. Called at most four times, ever. */
@@ -155,7 +157,7 @@ export function createProxiedLookup (options: ProxiedLookupOptions): ProxiedLook
       const number = takeNumber()
       let session = sessions.get(number)
       if (session === undefined) {
-        session = options.makeSession(`orivon-name-lookup-${String(number)}`)
+        session = quietSession(options.makeSession(`orivon-name-lookup-${String(number)}`))
         markOwnProxy(session)
         session.setUserAgent(USER_AGENT, ACCEPT_LANGUAGE)
         sessions.set(number, session)
@@ -204,7 +206,7 @@ export function createProxiedLookup (options: ProxiedLookupOptions): ProxiedLook
     }
   }
 
-  /** The first request after a network change can fail once with `ERR_NETWORK_CHANGED`; a second answers. */
+  /** The first request after a network change can fail once with `ERR_NETWORK_CHANGED`; a second answers. The answers kept were found on the network that is gone, and the names a person visited could be timed from them, so they are forgotten. */
   async function send (session: LookupSession, url: string, body: Uint8Array<ArrayBuffer>): Promise<Uint8Array> {
     let failure: unknown
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -213,6 +215,7 @@ export function createProxiedLookup (options: ProxiedLookupOptions): ProxiedLook
       } catch (error) {
         failure = error
         if (errorCode(error) !== 'ERR_NETWORK_CHANGED') break
+        cache.clear()
       }
     }
     throw refusalOf(failure)

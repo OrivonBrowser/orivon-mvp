@@ -75,6 +75,8 @@ const SPECS = {
   'privacy.httpsOnly': { kind: 'bool', default: false },
   // Quad9 with this computer's own DNS as the fallback is the default: names are looked up over HTTPS, and a network that blocks Quad9 (a captive portal, say) still works. Cloudflare and Quad9 alone have no fallback.
   'privacy.secureDns': { kind: 'enum', options: ['quad9Fallback', 'off', 'automatic', 'cloudflare', 'quad9'], default: 'quad9Fallback' },
+  // Behind a proxy the system sets, whether Orivon looks each site's address up itself, through that proxy with the Secure DNS provider, instead of the proxy looking it up (src/main/route/name-relay/). Off: the proxy looks names up, as it always has. Applied at once.
+  'privacy.resolveBehindProxy': { kind: 'bool', default: false },
   // Where a routed app's traffic leaves: Nym, built in, or the SOCKS5 address below. Settings files from before this choice existed keep their address as the choice (settings-file.ts).
   'network.route.kind': { kind: 'enum', options: ['nym', 'socks5'], default: 'nym', labels: { nym: 'Nym (built in)', socks5: 'Your own SOCKS5 address' } },
   // How much decoy traffic Nym's tunnels send. Balanced is the default: it costs a fraction of the processor time per open tunnel that strongest does (the host's README.md has the figures), and shows an observer of the connection roughly when the person is active (docs/architecture/security-model.md T85). Applied to tunnels started after a change.

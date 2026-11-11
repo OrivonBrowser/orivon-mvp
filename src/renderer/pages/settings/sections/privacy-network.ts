@@ -75,5 +75,13 @@ export const privacyNetworkRows: readonly Row[] = [
         { value: 'quad9', label: 'Quad9 only (9.9.9.9)' }
       ]
     }
+  },
+  {
+    id: 'resolve-behind-proxy',
+    label: 'Look up site addresses in Orivon, not in your proxy',
+    help: 'When this computer uses a proxy, Orivon looks up each site\'s address itself, through the proxy, with your Secure DNS provider (Quad9 when Secure DNS is off or automatic), and asks the proxy to connect to that address. Neither the lookups nor the connections leave this computer outside the proxy; the proxy still sees each site\'s name when a secure connection starts. Names only your proxy can find, such as a company\'s internal sites, do not open unless they are among your system\'s proxy exceptions, and a proxy that asks you to sign in does not work. Sites your system sends outside the proxy, and a proxy script your system uses, are still looked up on this computer. Calls and other peer-to-peer connections in sites go through the proxy too, and may not connect. Do not use it if your proxy is Tor or another anonymity network. Tunnels are not affected: they look names up at their far end. Applied at once.',
+    keywords: ['proxy', 'dns', 'lookup', 'resolve', 'address', 'doh', 'intranet', 'webrtc'],
+    group: GROUP,
+    control: { type: 'toggle', key: 'privacy.resolveBehindProxy' }
   }
 ]

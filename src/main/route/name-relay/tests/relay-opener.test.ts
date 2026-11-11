@@ -36,7 +36,7 @@ async function refusal (attempt: Promise<unknown>): Promise<RelayRefusal> {
 }
 
 function rig (options: {
-  answer: string | (() => Promise<string>)
+  answer: string | ((url: string) => Promise<string> | string)
   lookup?: (query: { host: string, via: ProxyEntry }) => Answers
   direct?: readonly string[] | Error
   maxOpen?: number
@@ -82,7 +82,7 @@ function rig (options: {
   const open = createRelayOpener({
     systemAnswer: async (url) => {
       asked.push(url)
-      return typeof options.answer === 'string' ? options.answer : await options.answer()
+      return typeof options.answer === 'string' ? options.answer : await options.answer(url)
     },
     lookup,
     drop: (host, via) => { drops.push({ host, via: viaText(via) }) },
@@ -371,6 +371,50 @@ describe('through SOCKS and HTTPS proxies', () => {
     const { open, lookups } = rig({ answer: `HTTPS localhost:${String(proxy.port)}`, lookup: () => ({ 4: [PUBLIC_A] }), roots: [certificate.certPem] })
     await echoes(keep(await open(targetOf(SITE))))
     expect(lookups[0]?.via).toBe(`https localhost:${String(proxy.port)}`)
+  })
+})
+
+describe('a tunnel that may carry a web socket of either scheme', () => {
+  const WS_PORT = 8080
+  const both = (host: string, port: number): FrontTarget => ({ host, port, url: `https://${host}:${String(port)}/`, alsoAsk: [`http://${host}:${String(port)}/`], signal: new AbortController().signal })
+
+  it('takes the proxy the system names for the other scheme when it answers DIRECT for the first, and is never sent from this computer', async () => {
+    const echo = await startEcho()
+    const proxy = await startConnectProxy({ targets: { [`${PUBLIC_A}:${String(WS_PORT)}`]: echo.port } })
+    const { open, asked, directLookups, lookups } = rig({ answer: (url) => url.startsWith('https:') ? 'DIRECT' : viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    await echoes(keep(await open(both(SITE, WS_PORT))))
+    expect(asked).toEqual([`https://${SITE}:${String(WS_PORT)}/`, `http://${SITE}:${String(WS_PORT)}/`])
+    expect(directLookups, 'nothing was looked up on this computer').toEqual([])
+    expect(lookups).toHaveLength(1)
+    expect(proxy.seen.map((seen) => seen.requestLine)).toEqual([`CONNECT ${PUBLIC_A}:${String(WS_PORT)} HTTP/1.1`])
+  })
+
+  it('goes direct only when the system answers DIRECT for both schemes', async () => {
+    const echo = await startEcho()
+    const { open, asked, directLookups } = rig({ answer: 'DIRECT', direct: ['127.0.0.1'] })
+    await echoes(keep(await open(both('localish.example', echo.port))))
+    expect(asked).toHaveLength(2)
+    expect(directLookups).toEqual(['localish.example'])
+  })
+
+  it('asks only once when the first scheme already names a proxy', async () => {
+    const echo = await startEcho()
+    const proxy = await startConnectProxy({ targets: { [`${PUBLIC_A}:${String(WS_PORT)}`]: echo.port } })
+    const { open, asked } = rig({ answer: viaHttp(proxy.port), lookup: () => ({ 4: [PUBLIC_A] }) })
+    await echoes(keep(await open(both(SITE, WS_PORT))))
+    expect(asked).toEqual([`https://${SITE}:${String(WS_PORT)}/`])
+  })
+
+  it('refuses, and looks nothing up, when one scheme says DIRECT and the system cannot say for the other', async () => {
+    const { open, directLookups, lookups } = rig({ answer: (url) => { if (url.startsWith('http:')) throw new Error('the script crashed'); return 'DIRECT' }, direct: [PUBLIC_A] })
+    expect((await refusal(open(both(SITE, WS_PORT)))).word).toBe('unsure')
+    expect({ directLookups, lookups }).toEqual({ directLookups: [], lookups: [] })
+  })
+
+  it('refuses, and looks nothing up, when one scheme says DIRECT and the other is an answer it cannot read', async () => {
+    const { open, directLookups } = rig({ answer: (url) => url.startsWith('http:') ? 'PAC-MAN 1.2.3.4:5' : 'DIRECT', direct: [PUBLIC_A] })
+    expect((await refusal(open(both(SITE, WS_PORT)))).word).toBe('unsure')
+    expect(directLookups).toEqual([])
   })
 })
 

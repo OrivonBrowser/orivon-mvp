@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { FrontRefusal } from '../../front.js'
-import { createRelayFailures, FAILURE_MEMORY_MS, MAX_REMEMBERED, RelayRefusal, refusalSentence } from '../relay-failures.js'
+import { createRelayFailures, FAILURE_MEMORY_MS, MAX_REMEMBERED, RelayRefusal, REFUSAL_WORDS, refusalSentence } from '../relay-failures.js'
 import type { RefusalWord } from '../relay-failures.js'
 
 const WORDS: readonly RefusalWord[] = ['not-found', 'no-answer', 'sign-in', 'refused', 'unreachable', 'inside', 'anonymity', 'unsure', 'unpinned']
@@ -82,5 +82,30 @@ describe('a refusal', () => {
     expect(refusalSentence('no-answer', 'Cloudflare')).toContain('Cloudflare')
     expect(refusalSentence('no-answer')).toContain('Secure DNS provider')
     for (const word of ['not-found', 'no-answer', 'sign-in', 'anonymity'] as const) expect(refusalSentence(word)).toContain('Look up site addresses in Orivon')
+  })
+})
+
+describe('what is counted of the failures', () => {
+  it('is how many connections each word stopped, a word never noted being zero', () => {
+    const failures = createRelayFailures(() => 0)
+    expect(failures.counts()).toEqual({ 'not-found': 0, 'no-answer': 0, 'sign-in': 0, refused: 0, unreachable: 0, inside: 0, anonymity: 0, unsure: 0, unpinned: 0 })
+    failures.note('a.example', 443, 'not-found')
+    failures.note('b.example', 443, 'not-found')
+    failures.note('a.example', 443, 'no-answer')
+    expect(failures.counts()).toMatchObject({ 'not-found': 2, 'no-answer': 1, unreachable: 0 })
+  })
+
+  it('goes on counting a host whose memory of the failure has lapsed, and holds no name', () => {
+    let now = 0
+    const failures = createRelayFailures(() => now)
+    failures.note('a.example', 443, 'unreachable')
+    now += FAILURE_MEMORY_MS
+    failures.note('a.example', 443, 'unreachable')
+    expect(failures.counts().unreachable).toBe(2)
+    expect(JSON.stringify(failures.counts())).not.toContain('example')
+  })
+
+  it('lists every word of the type, so a report has a count for each', () => {
+    expect([...REFUSAL_WORDS].sort()).toEqual([...WORDS].sort())
   })
 })

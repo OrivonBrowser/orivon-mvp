@@ -6,6 +6,7 @@ import type { WebContents } from 'electron'
 import { isCertError } from '../auth/cert-error-text.js'
 import type { requestSlot } from '../overlays/tab-slots.js'
 import type { LoadRefusal } from '../route/load-refusals.js'
+import type { RefusalWord } from '../route/name-relay/relay-failures.js'
 import type { ShellWindow } from '../shell/window-registry.js'
 import { isErrorName } from './load-error-text.js'
 
@@ -21,11 +22,14 @@ export interface LoadErrorDeps {
   readonly claimed?: (contentsId: number, url: string, code: number) => boolean
   /** Why Orivon cancelled this load before sending it (an onion address outside the person's own SOCKS5 tunnel, a name the verifier serves that the system's proxy would see), which the sheet then says; undefined for any other failure. */
   readonly refused?: (contentsId: number, url: string) => LoadRefusal | undefined
+  /** Why the name relay did not carry the secure connection this failed load was for, as one of its words, when it noted one: Chromium names such a failure a tunnel that did not connect, and the sheet says the switch is why. */
+  readonly relay?: (url: string, code: number) => RefusalWord | undefined
   /** The tab is about to move to another session and load this address there, so the failure is not the page's last word. Asked with the partition the tab is in now. */
   readonly movesTab?: (partition: string | undefined, url: string, code: number) => boolean
 }
 
 const refusalPayload = (refusal: LoadRefusal | undefined): { refusal?: LoadRefusal } => refusal === undefined ? {} : { refusal }
+const relayPayload = (relay: RefusalWord | undefined): { relay?: RefusalWord } => relay === undefined ? {} : { relay }
 
 /** Each watched web contents, with what takes its sheet away. */
 const watched = new WeakMap<WebContents, () => void>()
@@ -58,7 +62,7 @@ export function watchLoadErrors (contents: WebContents, deps: LoadErrorDeps): vo
       tabId: found.tabId,
       slot: 'center',
       overlay: LOAD_ERROR_OVERLAY,
-      payload: { code, name: isErrorName(name) ? name : '', ...refusalPayload(deps.refused?.(contents.id, url)) },
+      payload: { code, name: isErrorName(name) ? name : '', ...refusalPayload(deps.refused?.(contents.id, url)), ...relayPayload(deps.relay?.(url, code)) },
       closed: () => { pending = undefined }
     })
   })

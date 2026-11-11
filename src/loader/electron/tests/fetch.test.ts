@@ -18,6 +18,7 @@ vi.mock('electron', () => ({
 
 const { net, session } = await import('electron')
 const { setOwnRequests } = await import('../../../main/route/own-requests.js')
+const { installRelayCallers } = await import('../../../main/route/name-relay/pinned-endpoint.js')
 const { OWN_READ_HEADER } = await import('../../fetch/content-root.js')
 const { ownReadToken } = await import('../../fetch/own-read.js')
 const { MAX_REDIRECTS, electronFetch, fetchFromVerifier, netFetch, redirectRefusal } = await import('../fetch.js')
@@ -122,6 +123,40 @@ describe('electronFetch', () => {
 
     expect(resolveHostMock).toHaveBeenCalledExactlyOnceWith('cdn.example')
     expect(requestMock).toHaveBeenCalledOnce()
+  })
+
+  describe('while the name relay runs', () => {
+    afterEach(() => { installRelayCallers(undefined) })
+
+    it('re-checks the host against the relay\'s lookup, never this computer\'s resolver, and fetches once it is public', async () => {
+      const lookup = vi.fn(async () => ['93.184.216.34'])
+      installRelayCallers({ lookup, systemAnswer: async () => 'PROXY 127.0.0.1:3128' })
+      resolveHostMock.mockResolvedValue({ endpoints: [{ address: '10.0.0.5', family: 'ipv4' }] } as never)
+      requestMock.mockReturnValue(fakeRequest([]) as never)
+
+      await electronFetch('https://cdn.example/a.js', ['93.184.216.34'], new AbortController().signal)
+
+      expect(lookup).toHaveBeenCalledExactlyOnceWith('cdn.example', 'https://cdn.example/')
+      expect(resolveHostMock).not.toHaveBeenCalled()
+      expect(requestMock).toHaveBeenCalledOnce()
+    })
+
+    it('never fetches when the relay found a private address, whatever this computer\'s resolver would say', async () => {
+      installRelayCallers({ lookup: async () => ['10.0.0.5'], systemAnswer: async () => 'PROXY 127.0.0.1:3128' })
+      resolveHostMock.mockResolvedValue({ endpoints: [{ address: '93.184.216.34', family: 'ipv4' }] } as never)
+      await expect(electronFetch('https://rebind.example/a.js', ['93.184.216.34'], new AbortController().signal)).rejects.toThrow(/no longer resolves to a public address/)
+      expect(resolveHostMock).not.toHaveBeenCalled()
+      expect(requestMock).not.toHaveBeenCalled()
+    })
+
+    it('never fetches when the relay found no address or could not look up', async () => {
+      installRelayCallers({ lookup: async () => [], systemAnswer: async () => 'PROXY 127.0.0.1:3128' })
+      await expect(electronFetch('https://nowhere.example/a.js', [], new AbortController().signal)).rejects.toThrow(/resolved to no addresses/)
+      installRelayCallers({ lookup: async () => { throw new Error('not-found') }, systemAnswer: async () => 'PROXY 127.0.0.1:3128' })
+      await expect(electronFetch('https://nowhere.example/a.js', [], new AbortController().signal)).rejects.toThrow('not-found')
+      expect(resolveHostMock).not.toHaveBeenCalled()
+      expect(requestMock).not.toHaveBeenCalled()
+    })
   })
 
   it('does not look the host of a website with a tunnel of its own up here, with the whole browser off the tunnel', async () => {
