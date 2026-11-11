@@ -7,7 +7,7 @@ piped output into console lines and `host-fork.ts` forks every host that way; `c
 dropped after 30 days) and the run marker (`running.json`) that says whether the last run ended in an orderly quit;
 `dumps.ts` and `dump-files.ts` the native crash dumps Crashpad leaves; `diagnostics-service.ts` composes them for one
 run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `gpu-reading.ts` parses what Chromium reports about the graphics setup (the feature map, the device list and the names of a device) for every reader of it, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code; `orivon://gpu` shows its sentence; the block also carries the WebGPU question's default and how many sites are allowed and blocked for it, counts only, `siteAnswerCounts`), `report-payload.ts` builds the body and cuts
-every field to the length the server accepts, `report-text.ts` writes the Markdown for "Copy as text",
+every field to the length the server accepts, `address-redact.ts` cuts an address in a log line to its scheme and the kind of its site, `report-text.ts` writes the Markdown for "Copy as text",
 `report-channel.ts` posts and reads the status, `sent-reports.ts` keeps the list of what was sent, and
 `report-domain.ts` is what [`orivon://report`](../../renderer/pages/report/) may ask. `diagnostics-runner.ts` and
 `report-runner.ts` connect all of it to Electron. Everything is under `<userData>/diagnostics/`, so a private
@@ -21,7 +21,7 @@ is pure, or reads and writes plain files, and runs under plain vitest.
 **What it depends on.** `electron` (the runners); [`../pages/`](../pages/) (the internal-domain type, the page ids);
 [`../shell/`](../shell/) (the window registry and the shell scheme, types and one constant, and `tab-tunnel-facts.ts`'s counts of the tabs' tunnel choices, which reach `../route/` for the choice names); [`../settings/`](../settings/)
 (the setting names, to pick which ones a report states); [`../graphics/`](../graphics/) (`x11-vulkan-runner.ts`'s reading of what the WebGPU-on-X11 setting did in this run and its one answer to which Ozone platform Orivon draws through, which `report-runner.ts` hands to the report; `x11-vulkan.ts`'s rule for where the setting is offered and its reading type, which `webgpu-state.ts` and `diagnostics-facts.ts` use); [`../../telemetry/mode.ts`](../../telemetry/mode.ts) (where
-reports go, and the test-build override); [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (the write that lands whole or not at all); [`../registry.ts`](../registry.ts) (the `Subsystem` type); [`../sessions/network-service-restart.ts`](../sessions/network-service-restart.ts) (`isNetworkServiceEnd`, which tells the network service's end from another process's, since Orivon never ends that one itself, and `RestartCounts`, the shape of the restart counts a report states) and [`../sessions/network-service-hold.ts`](../sessions/network-service-hold.ts) (the process's one hold, whose counts `report-runner.ts` reads); [`../route/proxy-mirror/mirror-status.ts`](../route/proxy-mirror/mirror-status.ts) (whether the system's proxy settings are copied into the sessions, and why not, as fixed words); [`../../protocols/verifier-host/light-client/endpoint-mask.ts`](../../protocols/verifier-host/light-client/endpoint-mask.ts) (`MASK`, the one mask every shown address and every scrubbed secret goes through, which `secret-scrub.ts` imports and nothing else of the host).
+reports go, and the test-build override); [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (the write that lands whole or not at all); [`../registry.ts`](../registry.ts) (the `Subsystem` type); [`../sessions/network-service-restart.ts`](../sessions/network-service-restart.ts) (`isNetworkServiceEnd`, which tells the network service's end from another process's, since Orivon never ends that one itself, and `RestartCounts`, the shape of the restart counts a report states) and [`../sessions/network-service-hold.ts`](../sessions/network-service-hold.ts) (the process's one hold, whose counts `report-runner.ts` reads); [`../route/proxy-mirror/mirror-status.ts`](../route/proxy-mirror/mirror-status.ts) (whether the system's proxy settings are copied into the sessions, and why not, as fixed words); [`../../protocols/verifier-host/light-client/endpoint-mask.ts`](../../protocols/verifier-host/light-client/endpoint-mask.ts) (`MASK`, the one mask every shown address and every scrubbed secret goes through, which `secret-scrub.ts` and `address-redact.ts` import and nothing else of the host).
 
 **What it must never import.** [`../../renderer/`](../../renderer/), and anything that could reach the person's
 files, passwords or browsing: a report is built from the facts passed to it, never from a store read here.
@@ -44,7 +44,7 @@ written when its stream ends, not when the process exits: Electron ends the stre
 always read to its end: a host whose pipe nobody empties stops. A host's lines tell no more than main's: the light client's are
 cleaned in the host of the servers the person typed, the scrub covers any key main has noted, the home folder becomes `~` in a
 report, and the rest are counts, durations, sizes, the host names of Orivon's own gateways, or the text of an unexpected failure,
-which can name a page or a file, as the report says of any line (main's name origins and host names too). The Nym tunnel's host is
+which can name a site or a file, as the report says of any line (main's name origins and host names too). The Nym tunnel's host is
 the one that also runs code that prints what it likes, and is treated apart (below). A private session's log, with them, goes with
 its directory.
 
@@ -108,5 +108,20 @@ what shows in its place; `DiagnosticsService.log` and `record` apply it to a lin
 [`report-payload.ts`](report-payload.ts) applies it to every field before a field is cut, so a secret cut in two by a limit
 cannot survive half. Text of the person's that no one told it about, a secret under four characters and a page's own
 content are not covered.
+
+**An address in a log line is cut to its scheme and the kind of its site, in the report only.** Electron, Node and Orivon's own code print
+addresses through the console: a failed or refused load is `electron: Failed to load URL: <the page's whole address> with error: ERR_...`, which
+Node writes with `console.error`, and the loader, the first visit and the verifier name the origin of a site or an app. They reach the ring, and
+the log box is ticked when the form opens while the page address is not, so a line is not allowed to say which page the person was on.
+[`address-redact.ts`](address-redact.ts) turns every `scheme://` address in a log line into the scheme, a `••••` for the site's name with the last
+label of a domain name kept (`https://••••.org/••••`, `http://••••.onion/••••`, `ipfs://••••`, `file:///••••`) and `/••••` when anything follows the site:
+its credentials, port, path, query and fragment are gone, since each can name the page or hold a token. What stays is what a developer reads a
+line for: the error name, the scheme (which network failed), whether the site was a name on the web, an `.eth` or `.onion` name, or no domain
+at all (a content identifier, an address), and a loopback address whole with its port (which local service failed). The names of Orivon's own pages (`orivon://settings`)
+stay. `report-payload.ts` applies it to the log's lines beside the home directory, so `logs/current.log` on this computer keeps the whole address,
+and one pass over a line already cut changes nothing. The page address the person ticks, the description they wrote and the crash's message and
+stack are not cut: the first two are the person's own words, and a stack names Orivon's own files by address. A host name or a path that is not
+written as `scheme://` (a bare `vitalik.eth`, `/ipfs/<cid>/x`) is not found, and a private window's pages are cut the same way when the person
+ticks a log that starts unticked.
 
 **WebGPU is ruled out here, never ruled in.** Main cannot ask for an adapter, so [`webgpu-state.ts`](webgpu-state.ts) answers `available` only when a page reports that it got one (the About page does). With no page, a computer where Chromium shows no block reads `unknown`, in a report too. A reason is given only when the inputs show it: a missing device list is not "no graphics card", an unnamed Ozone platform is not an X11 session, and on Windows only Chromium's own status for WebGPU says pages are drawn on the processor, since compositing can fall back to it while WebGPU still works (a computer with only Microsoft's software renderer, WARP, reports `unavailable_software` and gives a page no adapter). When more than one reason holds, the one that holds on any session comes first (pages drawn in software), then the session or maker, then Chromium's own "off". The entry sits in the report's `gpu` group beside the features, and survives the shrink step that drops the features: it is the short form of them. On X11 the run's own reading of the WebGPU-on-X11 setting decides what is said: with the switches on, X11 is not blamed for every card and only a page that got no adapter says Vulkan found none (`x11-vulkan-no-adapter`); a revert Orivon recorded is the reason, before the processor check, because a bad run is what leaves pages drawn there (`x11-vulkan-reverted`). The report carries the setting's value at the start and the revert's time and word under `gpu.x11Vulkan`.
