@@ -9,6 +9,8 @@ import { loadSqliteEngine, sqliteEngine } from '../engine.js'
 import type { Sqlite3 } from '../engine.js'
 import { loadTestEngine } from './support/engine.js'
 
+// test:changed reads src/shim/sqlite/engine-types.ts
+
 const require = createRequire(import.meta.url)
 const typesSource = readFileSync(new URL('../engine-types.ts', import.meta.url), 'utf8')
 

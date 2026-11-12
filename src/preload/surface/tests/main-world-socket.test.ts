@@ -6,6 +6,8 @@ import { installOrivon } from '../main-world-socket.js'
 import type { FileStat } from '../../../contracts/handles.js'
 import { LIMITS, asPage, fakeBridge, fakeSocketBridgeResult, tick } from './main-world-socket.test-helpers.js'
 
+// test:changed reads src/preload/ src/contracts/
+
 /** P-F6 below can run a whole `npm run build` inline -- always on a fresh CI
  * runner, where `npm test` runs before `npm run build` -- and vitest's 5 s
  * default is shorter than a cold build of the whole app. */

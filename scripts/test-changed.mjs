@@ -3,9 +3,15 @@
 // The change is every file that differs from the merge base with --base (default origin/main),
 // committed or not, plus untracked files. A code file brings the tests that import it (vitest
 // related); any other file brings the tests that name it, since a test reads a fixture or a
-// document through the filesystem, not an import, and a code file inside a bundled tree brings the
-// test comparing that bundle (BUNDLED_FROM). A change to what every test runs under (the
-// dependencies, the lockfile, a tsconfig, the vitest config) runs everything, as does --all.
+// document through the filesystem, not an import. A test that reads source files from disk (an
+// import graph, a bundle, a walk over a folder) has no import edge to what it reads, so it says
+// where, on a line of its own at the start of a line:
+//
+//   // test:changed reads src/shim/ src/contracts/
+//
+// Each path is a folder (ending in /) or a file, repo-relative and separated by spaces, and the
+// line may repeat. A code file under one brings that test. A change to what every test runs under
+// (the dependencies, the lockfile, a tsconfig, the vitest config) runs everything, as does --all.
 //
 //   npm run test:changed [-- --base <ref>] [-- --all] [-- --dry]
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -16,30 +22,56 @@ import { fileURLToPath } from 'node:url'
 const FULL_RUN = [/^package(-lock)?\.json$/, /^tsconfig[^/]*\.json$/, /^vitest\.config\.[cm]?[jt]s$/]
 const CODE = /\.(?:[cm]?[jt]s|tsx|json)$/
 const UNIT_TESTS = ['src/**/*.test.ts', 'scripts/**/*.test.ts']
-/** Tests that bundle a source tree from disk and compare it with a committed artifact: no import
- * edge reaches them, so vitest related never selects them for a change inside that tree. */
-const BUNDLED_FROM = [
-  { under: ['src/shim/', 'src/contracts/'], test: 'src/shim/worker/tests/runtime-bundle.test.ts' },
-  { under: ['src/protocols/verifier-host/chunk-check-worker.ts'], test: 'src/protocols/verifier-host/tests/chunk-check-worker.test.ts' }
-]
+const DECLARATION = /^\/\/ test:changed reads (\S.*)$/
+
+/**
+ * @typedef {{ test: string, under: string[] }} Declaration
+ * A unit test and the paths whose code it reads from disk.
+ */
+
+/**
+ * The declarations in the lines `git grep` prints for the marker, each `<test file>:<line>`. A test
+ * that declares on several lines gets one entry; a line that is not a declaration is skipped.
+ * @param {readonly string[]} lines
+ * @returns {Declaration[]}
+ */
+export function parseDeclarations (lines) {
+  /** @type {Map<string, string[]>} */
+  const byTest = new Map()
+  for (const line of lines) {
+    const at = line.indexOf(':')
+    const paths = at === -1 ? undefined : DECLARATION.exec(line.slice(at + 1))?.[1]
+    if (paths === undefined) continue
+    const test = line.slice(0, at)
+    byTest.set(test, [...(byTest.get(test) ?? []), ...paths.trim().split(/\s+/)])
+  }
+  return [...byTest].map(([test, under]) => ({ test, under }))
+}
 
 /**
  * What to run for a set of changed paths, repo-relative. `named` returns the unit test files that
- * mention a path's file name. Pure apart from that callback.
+ * mention a path's file name, and `declared` the tests that say which paths they read, asked for
+ * once and only when some changed path is code. Pure apart from those callbacks.
  * @param {readonly string[]} changed
  * @param {(name: string) => string[]} named
+ * @param {() => Declaration[]} declared
  * @returns {{ mode: 'full', reason: string } | { mode: 'related', files: string[] } | { mode: 'none' }}
  */
-export function planTestRun (changed, named) {
+export function planTestRun (changed, named, declared) {
   const trigger = changed.find((path) => FULL_RUN.some((pattern) => pattern.test(path)))
   if (trigger !== undefined) return { mode: 'full', reason: `${trigger} changed` }
   const files = new Set()
+  /** @type {Declaration[] | undefined} */
+  let readers
   for (const path of changed) {
-    if (CODE.test(path)) files.add(path)
-    else for (const test of named(basename(path))) files.add(test)
-    if (!CODE.test(path)) continue
-    for (const bundle of BUNDLED_FROM) {
-      if (bundle.under.some((prefix) => path.startsWith(prefix))) files.add(bundle.test)
+    if (!CODE.test(path)) {
+      for (const test of named(basename(path))) files.add(test)
+      continue
+    }
+    files.add(path)
+    readers ??= declared()
+    for (const { test, under } of readers) {
+      if (under.some((prefix) => path.startsWith(prefix))) files.add(test)
     }
   }
   return files.size === 0 ? { mode: 'none' } : { mode: 'related', files: [...files].sort() }
@@ -75,6 +107,15 @@ function namedBy (name) {
   }
 }
 
+/** The declarations of every unit test, those of an untracked test included. */
+export function declaredReads () {
+  try {
+    return parseDeclarations(git('grep', '--untracked', '-I', '-E', '^// test:changed reads ', '--', ...UNIT_TESTS))
+  } catch {
+    return [] // git grep exits 1 when nothing matches.
+  }
+}
+
 function main (argv) {
   const at = argv.indexOf('--base')
   const base = at === -1 ? 'origin/main' : argv[at + 1]
@@ -82,7 +123,7 @@ function main (argv) {
     console.error('test:changed: --base needs a ref, such as origin/main or ORIG_HEAD.')
     return 2
   }
-  const plan = argv.includes('--all') ? { mode: 'full', reason: '--all' } : planTestRun(changedPaths(base), namedBy)
+  const plan = argv.includes('--all') ? { mode: 'full', reason: '--all' } : planTestRun(changedPaths(base), namedBy, declaredReads)
   if (plan.mode === 'none') {
     console.log(`test:changed: nothing a unit test covers differs from ${base}.`)
     return 0

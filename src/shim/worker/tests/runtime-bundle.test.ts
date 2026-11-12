@@ -9,6 +9,8 @@ import esbuild from 'esbuild'
 import { expect, it } from 'vitest'
 import { shimEsbuildPlugin } from '../../tests/support/shim-esbuild-plugin.js'
 
+// test:changed reads src/shim/ src/contracts/
+
 const ENTRY = fileURLToPath(new URL('../runtime.ts', import.meta.url))
 const GENERATED = fileURLToPath(new URL('../runtime.generated.json', import.meta.url))
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url))

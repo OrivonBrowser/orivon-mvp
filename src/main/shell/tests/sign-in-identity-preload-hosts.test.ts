@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { SIGN_IN_HOSTS } from '../sign-in-identity.js'
 
+// test:changed reads src/preload/sign-in-identity.ts
+
 describe('the preload copy of the sign-in hosts', () => {
   it('lists exactly the hosts the main process does', () => {
     const source = readFileSync(new URL('../../../preload/sign-in-identity.ts', import.meta.url), 'utf8')

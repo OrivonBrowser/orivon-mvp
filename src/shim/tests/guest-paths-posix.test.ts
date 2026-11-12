@@ -3,6 +3,8 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
+// test:changed reads src/shim/
+
 // The shim handles guest paths (the virtual root '/orivon/app', a WASI open-at
 // name). In an app's renderer a bare `path` is the POSIX polyfill, but the
 // local nodes run the shim in a Node utility process, where it is Node's own:

@@ -12,6 +12,8 @@ import {
   PARITY_MAP
 } from '../check-manifest-parity.mjs'
 
+// test:changed reads src/contracts/ src/loader/manifest/
+
 /** A scratch root holding the given files, each written at its root-relative path. */
 const fixture = (files: Record<string, string>): string => {
   const root = mkdtempSync(join(tmpdir(), 'orivon-manifest-parity-'))

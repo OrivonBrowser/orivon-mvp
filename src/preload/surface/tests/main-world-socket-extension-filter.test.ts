@@ -14,6 +14,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { installOrivon } from '../main-world-socket.js'
 import { LIMITS, fakeBridge, fakeSocketBridgeResult } from './main-world-socket.test-helpers.js'
 
+// test:changed reads src/preload/
+
 // ---------------------------------------------------------------------
 // A verbatim copy of installOrivon's own hasSource/callerIsRefused -- see
 // 'declares no drift from installOrivon's own copy' below, which extracts
