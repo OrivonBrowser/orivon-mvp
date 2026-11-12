@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
+// test:changed reads src/main/
+
 const MAIN = join(import.meta.dirname, '..', '..')
 
 function sources (dir: string): string[] {

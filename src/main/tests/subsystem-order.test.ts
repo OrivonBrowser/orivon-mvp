@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
+// test:changed reads src/main/subsystems.ts
+
 // The order of `subsystems.ts` is read from its text: importing the list would start every subsystem's module.
 const text = readFileSync(new URL('../subsystems.ts', import.meta.url), 'utf8')
 const listed = text.slice(text.indexOf('export const subsystems'))

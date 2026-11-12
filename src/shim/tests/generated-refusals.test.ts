@@ -17,6 +17,8 @@ import { describe, expect, it } from 'vitest'
 import { NODE_BUILTIN_EXPORTS } from '../node-builtin-exports.js'
 import { REFUSAL_TARGETS, type RefusalTarget } from './support/generated-refusal-targets.js'
 
+// test:changed reads src/shim/
+
 const SHIM_ROOT = fileURLToPath(new URL('../', import.meta.url))
 
 function toPosix (path: string): string {

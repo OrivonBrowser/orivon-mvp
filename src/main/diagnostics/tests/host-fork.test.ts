@@ -7,6 +7,8 @@ import { hostForker } from '../host-fork.js'
 import { HOST_LINES_PER_MINUTE, HOST_TAIL_ENTRIES } from '../host-output.js'
 import { LOG_RING_LINES } from '../log-ring.js'
 
+// test:changed reads src/main/
+
 class FakeUtility extends EventEmitter {
   readonly stdout = new EventEmitter()
   readonly stderr = new EventEmitter()

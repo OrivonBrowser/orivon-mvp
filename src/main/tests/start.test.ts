@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
+// test:changed reads src/main/start.ts
+
 const source = readFileSync(new URL('../start.ts', import.meta.url), 'utf8')
 
 describe('the process entry', () => {

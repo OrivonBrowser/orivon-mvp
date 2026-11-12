@@ -7,6 +7,8 @@ import { CHUNK_CHECK_WORKER_PLACEHOLDER, chunkCheckWorker } from '../../../../el
 import type { CheckAnswer } from '../chunk-check-pool.js'
 import { builtChunkCheckWorker } from './chunk-check-worker.test-helpers.js'
 
+// test:changed reads src/protocols/verifier-host/chunk-check-worker.ts
+
 const ENTRY = new URL('../entry.ts', import.meta.url).pathname
 
 // The first test pays for bundling the thread, viem and the hash library included.

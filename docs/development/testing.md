@@ -25,12 +25,25 @@ seconds, and a test would be paying rent to tell you something you already know.
 |---|---|
 | `npm run typecheck` | `tsc --noEmit`. Strict mode with `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`, so the compiler is doing a lot of the work a test suite would elsewhere. `tsconfig.json`'s `include` covers `test/**/*.ts`, so this also type-checks `test/capabilities/e2e-capability-boundary.test.ts`, and a type error there fails this always-on check even on a push that never runs the separate `e2e` job below |
 | `npm test` | Vitest. `environment: 'node'`, no DOM. Picks up `src/**/*.test.ts` and `scripts/**/*.test.ts` |
+| `npm run test:changed` | The unit tests a change can affect, against `origin/main` (`-- --base <ref>`; `-- --all` for the whole suite; `-- --dry` prints the plan). A code file brings the tests that import it, and any other file the tests that name it; a test that reads source files from disk declares where (below) |
 | `npm run smoke` | Builds and drives the real shell with real clicks. The only check that proves a window appears |
 | `npm run test:e2e` | Builds, then runs every spec under `test/` (the TCP and UDP boundary specs among them) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see section The end-to-end test below. CI runs it in shards: only the specs a change can reach on a pull request, everything on `main` and nightly (section CI). Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
 | `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; section Visual QA and failure evidence |
 
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
 `src/main/browsing/omnibox.ts`.
+
+A unit test that reads source files from disk (an import graph, a bundle, a walk over a folder) has no import to
+what it reads, so `test:changed` cannot follow one to it. It declares the paths it reads, on a line of its own at
+the start of the line, as a folder ending in `/` or a file, repo-relative and separated by spaces:
+
+```ts
+// test:changed reads src/shim/ src/contracts/
+```
+
+A code file under one of those paths brings that test. Name every folder the test reads, and a file it reaches
+by following imports out of its own folder; `scripts/tests/test-changed.test.ts` fails a declaration that names
+a path that does not exist.
 
 ### What `npm run smoke` is, and what it is not
 

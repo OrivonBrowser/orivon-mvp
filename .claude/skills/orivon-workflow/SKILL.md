@@ -105,8 +105,9 @@ thinking. At most 25 words. Skip routine sessions.
   `node scripts/ai/renumber-decisions.mjs` keeps main's rows, renumbers the branch's after them, rewrites the
   branch's own references to those ids, and prints the mapping. Then commit the merge. pr-watch's `--update`
   does this by itself when the log is the only conflict.
-- `npm run test:changed` follows imports. A test that bundles a source tree from disk and compares it with a
-  committed artifact is listed in `BUNDLED_FROM` (`scripts/test-changed.mjs`), or nothing local selects it.
+- `npm run test:changed` follows imports. A test that reads source files from disk (an import graph, a bundle, a
+  walk over a folder) says so with `// test:changed reads <folders or files>` (`docs/development/testing.md`), or
+  nothing local selects it.
 
 ## Context that rarely changes what you do
 
