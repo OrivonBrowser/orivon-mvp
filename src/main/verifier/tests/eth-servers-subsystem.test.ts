@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import shippedCheckpoint from '../mainnet-checkpoint.json'
 import { MAINNET_GENESIS_SECONDS, SECONDS_PER_SLOT } from '../checkpoint.js'
 import { effectiveEthServers } from '../eth-servers.js'
+import { loadSubsystemGraphOnce } from './subsystem-graph.test-helpers.js'
 
 // The harness is verifier-subsystem.test.ts's, cut to what a host start needs.
 const SHIPPED_AT_MS = (MAINNET_GENESIS_SECONDS + shippedCheckpoint.slot * SECONDS_PER_SLOT) * 1000
@@ -46,6 +47,8 @@ vi.mock('../../sessions/web-request-owner.js', () => ({
 
 vi.mock('../checkpoint-fetch-net.js', () => ({ beaconJson: async () => { throw new Error('unreachable') } }))
 vi.mock('../../dev/eth-resolver.js', () => ({ devEthNames: () => ({ names: [], rules: '', secureOrigins: '' }), isDevEthName: () => false }))
+
+await loadSubsystemGraphOnce()
 
 const forks = (): FakeProcess[] => electron.forks as FakeProcess[]
 type Started = { config?: { lightClient?: { executionRpcs?: string[] } } }

@@ -7,6 +7,7 @@ import { IDLE_STOP_MS, REFRESH_DELAY_MS, REFRESH_WHEN_OLDER_THAN_SECONDS } from 
 import shippedCheckpoint from '../mainnet-checkpoint.json'
 import { swarmChunkFile } from '../../../protocols/verifier-host/swarm-chunk-files.js'
 import { MAINNET_GENESIS_SECONDS, MAX_CHECKPOINT_AGE_SECONDS, SECONDS_PER_SLOT } from '../checkpoint.js'
+import { loadSubsystemGraphOnce } from './subsystem-graph.test-helpers.js'
 
 const SHIPPED_AT_MS = (MAINNET_GENESIS_SECONDS + shippedCheckpoint.slot * SECONDS_PER_SLOT) * 1000
 const DAY_MS = 24 * 60 * 60 * 1000
@@ -67,6 +68,8 @@ vi.mock('../../dev/eth-resolver.js', () => ({
   devEthNames: () => ({ names: devNames.names, rules: '', secureOrigins: '' }),
   isDevEthName: (host: string) => devNames.names.includes(host)
 }))
+
+await loadSubsystemGraphOnce()
 
 const forks = (): FakeProcess[] => electron.forks as FakeProcess[]
 
