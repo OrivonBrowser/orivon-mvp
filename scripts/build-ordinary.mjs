@@ -19,9 +19,9 @@
  * proving the exact command a real build runs.
  *
  * A build whose inputs have not changed since the last one is skipped
- * (scripts/build-reuse.mjs), and the key it is matched by names the build
- * kind and the flag, so an e2e build in out/ is never reused for this one;
- * ORIVON_FORCE_BUILD=1 builds anyway.
+ * (scripts/build-reuse.mjs). An e2e build in out/ is never reused for this
+ * one: it waits in .cache/build/e2e/, which check-dev-grant-absent.mjs never
+ * scans. ORIVON_FORCE_BUILD=1 builds anyway.
  */
 import { buildOrReuse } from './build-reuse.mjs'
 

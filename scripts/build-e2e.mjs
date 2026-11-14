@@ -16,7 +16,8 @@
  * without adding one.
  *
  * A build whose inputs have not changed since the last one is skipped
- * (scripts/build-reuse.mjs); ORIVON_FORCE_BUILD=1 builds anyway.
+ * (scripts/build-reuse.mjs), also when an ordinary build has used out/ since:
+ * this kind then waits in .cache/build/e2e/. ORIVON_FORCE_BUILD=1 builds anyway.
  */
 import { buildOrReuse } from './build-reuse.mjs'
 

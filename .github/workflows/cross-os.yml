@@ -151,6 +151,16 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' && env.SPECS != 'none' }}
         run: node scripts/build-e2e.mjs
 
+      # The e2e build moved the ordinary one out of out/ into the cache, and each build must move its kind back from there
+      # with this system's file times and renames, whatever the other kind did to out/ in between: both log "moved back".
+      - name: Build both kinds again, which moves each back from the cache
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && env.SPECS != 'none' }}
+        shell: bash
+        run: |
+          node scripts/build-ordinary.mjs | tee cross-os/alternate.log
+          node scripts/build-e2e.mjs | tee -a cross-os/alternate.log
+          test "$(grep -c 'Reusing out/ (moved back from' cross-os/alternate.log)" = 2
+
       - name: e2e specs
         if: ${{ !cancelled() && steps.install.outcome == 'success' && env.SPECS != 'none' }}
         run: node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts $SPECS

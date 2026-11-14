@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { dirname, posix } from 'node:path'
-import { BUILD_INPUTS } from '../build-key.mjs'
+import { BUILD_INPUTS, CONFIG, RELATIVE_SPECIFIER, configImports, isUnitTest } from '../build-key.mjs'
 import { trackedFiles } from '../cli.mjs'
 
 const root = process.cwd()
@@ -14,7 +14,10 @@ const RELATIVE = /(?:from\s+|import\s*\(\s*|import\s+|require\(\s*|new\s+URL\(\s
 /** The config's `resolve(root, 'dir/file')` calls, which may span lines. */
 const FROM_ROOT = /resolve\(\s*root,\s*'([^']+)'/g
 
-const covered = (path: string): boolean => BUILD_INPUTS.some((input) => path === input || path.startsWith(`${input}/`))
+/** The files the key derives from the configuration's imports, which BUILD_INPUTS need not name. */
+const derived = configImports(root)
+const covered = (path: string): boolean =>
+  BUILD_INPUTS.some((input) => path === input || path.startsWith(`${input}/`)) || (derived ?? []).includes(path)
 /** An import names `./x.js` for the `./x.ts` beside it, and a comment may say `./chunks/...`. */
 const reachable = (path: string): boolean => path.includes('...') || covered(path) || covered(path.replace(/\.js$/, '.ts'))
 
@@ -46,6 +49,13 @@ describe('BUILD_INPUTS', () => {
     expect(outside, 'add the path to BUILD_INPUTS in scripts/build-key.mjs').toEqual([])
   })
 
+  it('names no unit test, which the key leaves out, and no glob that could reach one', () => {
+    const reached = files.flatMap((file) => readsOf(file).filter((path) => isUnitTest(path)).map((path) => `${file} -> ${path}`))
+    expect(reached, 'a file of the build imports a unit test: take its folder out of the key\'s exclusion in scripts/build-key.mjs').toEqual([])
+    const globbing = files.filter((file) => readFileSync(file, 'utf8').includes('import.meta.glob'))
+    expect(globbing, 'a glob import could reach a unit test').toEqual([])
+  })
+
   it('holds only files git lists, never one it ignores', () => {
     const tracked = new Set(trackedFiles(root))
     const ignored = (path: string): boolean => {
@@ -64,9 +74,15 @@ describe('BUILD_INPUTS', () => {
     expect(hidden, 'the key never sees a file git ignores').toEqual([])
   })
 
-  it('holds the scripts the build configuration imports', () => {
-    const imported = [...readFileSync('electron.vite.config.ts', 'utf8').matchAll(/from '\.\/(scripts\/[^']+?)(?:\.js)?'/g)].map((match) => match[1] ?? '')
-    expect(imported.length).toBeGreaterThan(0)
-    for (const script of imported) expect(covered(`${script}.ts`), script).toBe(true)
+  it('derives every file the build configuration imports, and the scripts among them need no entry of BUILD_INPUTS', () => {
+    expect(derived, 'the configuration or a file it imports cannot be read, or an import names no file').not.toBeNull()
+    const imported = [...readFileSync(CONFIG, 'utf8').matchAll(RELATIVE_SPECIFIER)].map((match) => posix.normalize(match[1] ?? ''))
+    const scripts = imported.filter((path) => path.startsWith('scripts/'))
+    expect(scripts.length).toBeGreaterThan(0)
+    for (const path of imported) expect(reachable(path), path).toBe(true)
+    for (const script of scripts) {
+      expect(derived, script).toContain(script.replace(/\.js$/, '.ts'))
+      expect(BUILD_INPUTS, `${script}: found from the code, so not kept by hand`).not.toContain(script.replace(/\.js$/, '.ts'))
+    }
   })
 })
