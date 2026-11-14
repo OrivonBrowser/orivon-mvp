@@ -160,6 +160,7 @@ jobs:
           node scripts/build-ordinary.mjs | tee cross-os/alternate.log
           node scripts/build-e2e.mjs | tee -a cross-os/alternate.log
           test "$(grep -c 'Reusing out/ (moved back from' cross-os/alternate.log)" = 2
+          grep -q '"kind":"e2e"' out/.build-key
 
       - name: e2e specs
         if: ${{ !cancelled() && steps.install.outcome == 'success' && env.SPECS != 'none' }}

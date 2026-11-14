@@ -111,7 +111,11 @@ function parkOutput ({ root, kind, env, runtime, log }) {
   }
 }
 
-/** Moves the parked build of `kind` into out/ when it is the build of `key`, and says whether out/ now holds it. */
+/**
+ * Moves the parked build of `kind` into out/ when it is the build of `key`, and says whether out/ now holds it.
+ * What out/ holds by now is not a build worth keeping: parkOutput kept the other kind's, and the build of this kind
+ * would empty out/ anyway.
+ */
 function restoreOutput ({ root, kind, key }) {
   if (!isBuildOf(root, slotOf(kind), kind, key)) return false
   try {
@@ -145,12 +149,14 @@ export function buildOrReuse ({ root, kind, env, build, log = console.log, runti
     if (!forced && isBuildOf(root, OUTPUT_DIR, kind, key)) return reuse('')
     parkOutput({ root, kind, env, runtime, log })
     if (!forced && restoreOutput({ root, kind, key })) return reuse(` (moved back from ${slotOf(kind)}/)`)
-    // out/ is about to hold this kind, so an older build of it in the slot would be a second copy.
-    drop(root, slotOf(kind))
+  } else {
+    log('Building in full: no key can be trusted here (not a git checkout, a conflict open, an input git hides, or an import of electron.vite.config.ts that names no file).')
   }
   rmSync(join(root, KEY_FILE), { force: true })
   const status = run()
   if (status !== 0 || key === null) return status
+  // out/ holds this kind again, so an older build of it in the slot is a second copy. A failed build leaves it, for the inputs it had.
+  drop(root, slotOf(kind))
   if (buildKey(root, kind, env, runtime) !== key) {
     log('A build input changed while the build ran: out/ is not recorded as reusable.')
     return status

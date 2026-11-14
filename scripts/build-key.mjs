@@ -46,13 +46,16 @@ const CODE_FILE = /\.(?:ts|tsx|mts|mjs|js)$/
 /** A comment, or a string or template literal, which a comment marker inside it does not start. */
 const COMMENT_OR_STRING = /\/\*[^]*?\*\/|\/\/[^\n]*|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\[^]|[^`\\])*`/g
 
-/** `code` with its comments blanked: prose such as "would require('./chunks/...')" is no import. */
+/**
+ * `code` with its comments blanked: prose such as "would require('./chunks/...')" is no import. A regular
+ * expression literal holding `//` or `/*` defeats it, which the guard test in scripts/tests/build-key-inputs.test.ts reports.
+ */
 const withoutComments = (code) => code.replace(COMMENT_OR_STRING, (part) => (part.startsWith('/') ? ' ' : part))
 
 /** The files a relative specifier can name: an import says `./x.js` for the `./x.ts` or `./x.mjs` beside it. */
 const candidates = (path) => path.endsWith('.js')
   ? [path, path.replace(/\.js$/, '.ts'), path.replace(/\.js$/, '.mjs'), path.replace(/\.js$/, '.tsx')]
-  : [path, `${path}.ts`, `${path}.mjs`, `${path}.js`, `${path}/index.ts`]
+  : [path, `${path}.ts`, `${path}.mjs`, `${path}.js`, `${path}/index.ts`, `${path}/index.mjs`, `${path}/index.js`]
 
 /** The file, as a root-relative path, that `specifier` names from `from`, or null when none exists inside `root`. */
 function resolveImport (root, from, specifier) {

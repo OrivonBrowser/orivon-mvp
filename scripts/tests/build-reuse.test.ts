@@ -225,6 +225,23 @@ describe('buildOrReuse across the two build kinds', { timeout: 30_000 }, () => {
     expect(existsSync(slot(root, 'ordinary'))).toBe(false)
   })
 
+  it('keeps the parked build of its kind through a build that fails, for the inputs it was built from', () => {
+    const root = inputsRepo()
+    let failing = false
+    const { state, go, held } = fakeBuilds(root, () => (failing ? 1 : 0))
+    go('e2e')
+    go('ordinary')
+    write(root, 'src/main/index.ts', 'export const a = 2\n')
+    failing = true
+    expect(go('e2e')).toBe(1)
+    expect(existsSync(slot(root, 'e2e'))).toBe(true)
+    write(root, 'src/main/index.ts', 'export const a = 1\n')
+    failing = false
+    go('e2e')
+    expect(state.runs).toBe(3)
+    expect(held()).toBe('e2e build 1')
+  })
+
   it('never parks a build whose inputs changed', () => {
     const root = inputsRepo()
     const { state, go } = fakeBuilds(root)
@@ -345,5 +362,7 @@ describe('buildOrReuse across the two build kinds', { timeout: 30_000 }, () => {
     go('e2e')
     expect(state.runs).toBe(3)
     expect(existsSync(join(root, CACHE_DIR))).toBe(false)
+    expect(state.lines).toHaveLength(3)
+    expect(state.lines[0]).toMatch(/^Building in full: no key can be trusted here/)
   })
 })

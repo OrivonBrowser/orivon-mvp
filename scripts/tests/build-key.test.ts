@@ -229,6 +229,13 @@ describe('buildKey', { timeout: 30_000 }, () => {
       expect(e2e(root)).not.toBe(before)
     })
 
+    it('find a folder import by the index file in it', () => {
+      const root = withPlugins()
+      write(root, 'electron.vite.config.ts', "import './scripts/folder'\n")
+      write(root, 'scripts/folder/index.mjs', 'export {}\n')
+      expect(configImports(root)).toEqual(['scripts/folder/index.mjs'])
+    })
+
     it('ignore a path in a comment, and read an import after a string holding two slashes', () => {
       const root = withPlugins()
       write(root, 'electron.vite.config.ts', [
