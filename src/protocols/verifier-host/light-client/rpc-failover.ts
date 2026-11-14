@@ -25,7 +25,7 @@ export const NO_ANSWER = 'did not answer in time'
 /** Heard when an endpoint goes from being asked in order to being asked last: why, in words that follow "an execution server", and for how long. */
 export type CoolingNote = (endpoint: string, why: string, forMs: number) => void
 
-/** Why an outcome that sets an endpoint aside did so. `ok` and `miss` never do. */
+/** Why an outcome that sets an endpoint aside did so, unless the caller has words that say more. `ok` and `miss` never do. */
 const COOLING_WHY: Partial<Record<GatewayOutcome['kind'], string>> = {
   timeout: NO_ANSWER,
   unreachable: 'could not be reached',
@@ -95,11 +95,10 @@ export function problemOf (error: unknown): string {
 export function failoverRpc (endpoints: readonly string[], fetch: WebFetch, note: (endpoint: string, problem: string | undefined) => void = () => {}, timing: FailoverTiming = { hedgeAfterMs: RPC_HEDGE_MS, attemptTimeoutMs: RPC_ATTEMPT_TIMEOUT_MS }, cooled?: CoolingNote): WebFetch {
   const now = (): number => Date.now()
   const health = new Map(endpoints.map((endpoint) => [endpoint, new GatewayHealth(now)]))
-  const record = (endpoint: string, outcome: GatewayOutcome): void => {
+  const record = (endpoint: string, outcome: GatewayOutcome, why = COOLING_WHY[outcome.kind]): void => {
     const own = health.get(endpoint)!
     const wasCooling = own.cooling()
     own.note(outcome)
-    const why = COOLING_WHY[outcome.kind]
     if (!wasCooling && own.cooling() && why !== undefined) cooled?.(endpoint, why, own.readyAt() - now())
   }
 
@@ -158,7 +157,7 @@ export function failoverRpc (endpoints: readonly string[], fetch: WebFetch, note
         lastError = error
         const problem = problemOf(error)
         if (problem === NO_ANSWER) return noAnswer()
-        record(endpoint, { kind: 'unreachable' })
+        record(endpoint, { kind: 'unreachable' }, problem)
         note(endpoint, problem)
         return failed(problem)
       } finally {

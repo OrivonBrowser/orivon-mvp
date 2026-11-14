@@ -148,7 +148,7 @@ describe('startHeliosLightClient -- servers the person named', () => {
       const client = startHeliosLightClient({ ...OWN, executionRpcs: [B] }, fetch as never, () => {}, 'direct')
       await synced(client)
       await expect(globalThis.fetch(new Request(heliosNames().executionRpc, { method: 'POST', body: rpc }))).rejects.toThrow()
-      expect(logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes('execution server'))).toEqual(['[verifier] an execution server (b.rpc) could not be reached'])
+      expect(logged.mock.calls.map((call) => String(call[0])).filter((line) => line.includes('execution server'))).toEqual(['[verifier] an execution server (b.rpc) could not be reached (ECONNREFUSED)'])
     } finally {
       logged.mockRestore()
     }
