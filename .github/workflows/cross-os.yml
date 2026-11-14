@@ -114,6 +114,11 @@ jobs:
       - name: Build as npm start does
         run: node scripts/build-ordinary.mjs
 
+      # A second build of the same inputs must reuse the first with this system's git, line endings and file times.
+      - name: Build again, which reuses the first build
+        shell: bash
+        run: node scripts/build-ordinary.mjs | tee cross-os/rebuild.log && grep -q 'Reusing out/' cross-os/rebuild.log
+
       # The runner's 1024x768 screen carries the Dock, and AppKit keeps a window's height inside the screen minus the
       # menu bar and the Dock (a window may still be wider than the screen), so every window stops at 677 px, on a
       # screen no Mac sold. With the Dock hidden a window gets the screen's height less the menu bar. The screen's
