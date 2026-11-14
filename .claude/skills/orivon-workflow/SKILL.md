@@ -9,20 +9,25 @@ CLAUDE.md holds the rules every turn needs. This skill holds what a step needs.
 
 ## Tooling: what fires when
 
-Plugins are project-scoped (`.claude/settings.json`) and travel with the repository.
+Plugins are project-scoped (`.claude/settings.json`) and travel with the repository. Some fire automatically; the rest
+are invoked at the step named, so check this table at the start of every build step.
 
 | Tool | Fires | Use it for |
 |---|---|---|
-| `typescript-lsp` | Automatic on `.ts` edits | Type errors across main, preload and renderer. Trust it over your own reading of a type |
+| `typescript-lsp` | Automatic on `.ts` edits | Type errors across main, preload and renderer. Trust its diagnostics over your own reading of a type |
 | `security-guidance` | Automatic: edits, stop, every `git commit` and push | Path traversal (T1), local-network reach (T12), secrets. Address or acknowledge every finding |
-| hookify rules (`.claude/hookify.*.local.md`) | Automatic on edits and shell commands | Each rule body says what it blocks and what to do instead. New rule: `/hookify`; start a `file_path` pattern with `^(?:.*/)?`, and use only known operators (an unknown one kills the rule silently) |
-| `context7` (MCP) | **Manual, before code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session`, `safeStorage`. Electron 44 is newer than training data: check a signature live |
+| hookify rules (`.claude/hookify.*.local.md`) | Automatic on edits and shell commands | Each rule body says what it blocks and what to do instead. **Block:** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, an Electron launch that bypasses `scripts/run-headless.mjs` or could take focus, an X or GNOME server that could take over the owner's display (typed, or written into a script), in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`), tree-wide discards (`reset --hard`, `clean -f`, `stash drop`), and a whole unit or e2e suite run locally. **Warn:** hardcoded storage paths, features not built yet, file-header essays, comments that narrate the change instead of the code, live pages that narrate their own history (CLAUDE.md Rule 2), and a long CI runner put in the background with a shell `&`, whose end nobody hears of. When the owner corrects the same thing twice, add a rule with `/hookify`. Start its `file_path` pattern with `^(?:.*/)?` before the directory name, because a repo-root anchor never matches the absolute path an edit passes, and the rule dies silently. There is no `not_regex_match` operator, and an unknown operator kills the whole rule (A55) |
+| `superpowers` | Process, automatic via its session hook | `brainstorming` before new work, `writing-plans` for anything multi-step, `test-driven-development` for every broker or policy function, `systematic-debugging` on any failure, `verification-before-completion` before claiming done |
+| `context7` (MCP) | **Manual, before code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session` partitions, `safeStorage`; webtorrent 3.x internals. Electron 44 is newer than training data: check a signature live before trusting the remembered one |
 | `playwright` (MCP) | **Manual: the localhost fixture app** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |
-| `orivon-electron` skill | **Manual, before writing or debugging Electron code** | Renderer bundling, `app.windows()` over `app.firstWindow()`, `MessagePortMain` silent failures |
+| `orivon-electron` skill | **Manual, before writing or debugging Electron or webtorrent code** | The renderer-bundling alias recipe, `app.windows()` over `app.firstWindow()`, `MessagePortMain` silent failures, and checking `electron.d.ts` before trusting any claim about `BaseWindow` options. Written nowhere else |
 | `orivon-qa` skill | **Manual, after a UI, flow or boundary change, and before calling it done** | Which QA to run, how to read an e2e failure and a screenshot, the fix loop |
-| `orivon-comments` skill | **Manual, before writing a comment in `src/`** | Where rationale goes, and a header over budget |
-| `claude-security` | **Manual, before packaging (step 10)** | Whole-repository vulnerability scan. Expensive: milestones only |
+| `orivon-comments` skill | **Manual, before writing a comment in `src/`** | Where rationale goes when it is not a "you will break this line" comment, and how to handle a header over budget |
+| `orivon-porting` skill | **Manual, before porting, updating, republishing or fixing an app, or a change here that a port asked for** | Loads the porting skill kept in `../orivon-ports`, and says what this repository owes a port: a generic fix, a catalogue row and a spec |
+| `claude-security` | **Manual, before packaging (step 10)** | Whole-repository multi-agent vulnerability scan with verified findings. Expensive: milestones only |
 | `claude-md-management` | **Manual, `/revise-claude-md`** at the end of a session that changed an assumption in CLAUDE.md | Keeps CLAUDE.md true |
+| `adversarial-reviewer` (user skill) | **Manual, after each build step lands** | A multi-perspective hostile review; `docs/planning/audit-2026-08-25.md` is what one produces. Run it on the broker and the app loader at minimum |
+| `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path; how often a PR gets one is section Review shape |
 | `reader` agent (`.claude/agents/reader.md`) | **Manual: a search of three or more steps** | Finding and quoting code on Haiku: it returns file:line and the quoted lines. Reviews, audits and debugging stay on Sonnet or Opus |
 
 Two practices with no tool behind them:
@@ -68,11 +73,7 @@ Sonnet charge the same for that re-read. So:
 
 ## At the end of a notable session
 
-A milestone, a decision taken or reversed, a direction change, a worry the owner kept returning
-to: append one bullet to the current week of `devlog/journal.md` in the main checkout (the
-parent of `git rev-parse --path-format=absolute --git-common-dir`), never a worktree's;
-the file is local and gitignored. **Done / results** for outcomes, **In my head** for
-thinking. At most 25 words. Skip routine sessions.
+Append one bullet to `devlog/journal.md` as `CLAUDE.md` section Devlog capture says; skip routine sessions.
 
 ## Opening and editing a PR
 
@@ -95,7 +96,7 @@ thinking. At most 25 words. Skip routine sessions.
 - Wait and merge: `node scripts/ai/pr-watch.mjs <n> --update <worktree> --stop '<your area's spec path>'`, in the
   background with a two-hour limit (`timeout: 7200000`: the default 30 minutes ends it while `main` keeps moving), never
   behind a shell `&`; never hand-write the loop. A run a later run on the same commit replaced is not a failure, whatever its jobs ended as. It reruns failed e2e shards and unacquired runners at most twice, except a
-  spec matching `--stop`, and prints the failed specs, which the PR then names as flakes (Rule 12). Green but
+  spec matching `--stop`, and prints the failed specs, which the PR then names as flakes (CLAUDE.md Rule 11). Green but
   BEHIND, it merges `main` into the worktree's branch and pushes (six rounds at most); it merges when every check
   passed and the branch is CLEAN, and stops on any other failure, on a conflict and on a moved head. It merges with a
   merge commit, so every commit of the branch lands on `main`: when one must not (it carried something later removed),

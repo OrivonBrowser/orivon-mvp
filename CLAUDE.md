@@ -13,10 +13,10 @@ Status: `README.md`. What is next: `docs/roadmap.md`. What ships: `docs/features
 |---|---|
 | Proposing a design | `ARCHITECTURE.md` |
 | Choosing what to build | `docs/roadmap.md` (Now, Expected next, Later) |
-| Writing against the API | `src/contracts/`: the product surface in eleven files |
+| Writing against the API | `src/contracts/`: the product surface, as types |
 | Finding where to change something | `node scripts/ai/code-map.mjs <words>`: every directory and what it is for, read from the tree; `--depth N` limits it |
 | Editing in a directory | its `README.md`, the map: what is here, what it may depend on, what it must never import. `DESIGN.md` beside it holds the rationale: read it only when changing a decision there |
-| Writing code | `docs/development/code-guidelines.md` section Rules, nothing else |
+| Writing code | `docs/development/code-guidelines.md`: the rule list at its top and sections Rule 1 to Rule 8, nothing after them |
 | Adding a test or a `check:*` guard | `test/README.md` (where a spec goes), then `docs/development/testing.md` |
 | **Adding or changing a capability or an `orivon.*` member, porting an app, or fixing a bug an app reported** | `test/app-behaviours/README.md`: a catalogue row and an e2e spec are required; CI fails a capability kind with no catalogue line |
 | Changing UI, a flow, or broker, IPC, preload, natives, filesystem or network code | the `orivon-qa` skill |
@@ -69,7 +69,7 @@ Exempt: `CHANGELOG.md`, `docs/decisions/`, `docs/open-questions.md`, the readabi
 |---|---|
 | `npm run typecheck` | After any `.ts` change; it covers `test/` as well as `src/` |
 | `npm run test:changed` | The unit tests your change can affect, against `origin/main` (`-- --base <ref>`; `-- --all` for everything). A bare `npm test` or `npx vitest run` is blocked: CI runs the whole suite on every PR |
-| `npm run check:<name>` | The eighteen guards in `docs/development/testing.md` section Guards; CI runs each |
+| `npm run check:<name>` | The guards in `docs/development/testing.md` section Guards; CI runs each |
 | `node scripts/ci/select-e2e.mjs --base origin/main` | Prints the e2e areas and specs CI would run for your change (`--explain` says why). Run the named specs of them locally, never the whole suite; a bare `npm run test:e2e` is blocked |
 | `npm run smoke` | The real shell launches and works. Read its JSON failure list, not the exit code |
 | `node scripts/ci/cross-os.mjs` | Orivon on Windows and macOS from this machine: GitHub's runners run the pushed branch from source (smoke, screenshots; `--packaged` for the packages) and it brings the evidence back. Run it in the background after touching the install, launch scripts, OS integration or a dependency (`scripts/ci/README.md` section Other systems). Never a local VM or Wine |
@@ -82,7 +82,7 @@ Exempt: `CHANGELOG.md`, `docs/decisions/`, `docs/open-questions.md`, the readabi
 - **Never a bare `git pull`.** Clean tree: `git merge --ff-only origin/main` without asking  
 Never a merge commit, never `--force`  
 Dirty tree: report, do not act, name the files dirty locally and changed upstream, and stash only when told to.
-- **A session ships its own work, in as many PRs as its changes need.** Only the session that wrote a change can fix its failing checks in line with what it meant. So it opens the PR, fixes every red check (Rule 12), merges it when green (Rule 14), and then syncs local `main`.
+- **A session ships its own work, in as many PRs as its changes need.** Only the session that wrote a change can fix its failing checks in line with what it meant. So it opens the PR, fixes every red check (Rule 11), merges it when green (Rule 13), and then syncs local `main`.
 Exception: a change to `src/contracts/` or `src/shared/` goes alone and merges first.
 
 ## Local quirks
@@ -92,7 +92,7 @@ Nothing an agent does may appear on the owner's screen or play on their speakers
 - Launch Electron only through `smoke`, `test:e2e` or `node scripts/run-headless.mjs <command>`.
 - `ELECTRON_RUN_AS_NODE=1` is set in this shell; the `orivon-electron` skill says what it breaks.
 - No in-place branch switch or tree-wide discard: work in a worktree.
-- The machine is shared with the owner's editor and crashes under load: subagents may run in parallel, and every heavy command goes through `~/.claude/orivon-fleet/bin/heavy` (a hook refuses it otherwise), which starts each once its memory fits beside what runs, at idle CPU priority; `heavy-why` beside it says why one waits.
+- The machine is shared with the owner's editor and crashes under load: subagents may run in parallel, and every heavy command goes through `~/.claude/orivon-fleet/bin/heavy` (a hook routes it there itself, and refuses only a command it cannot rewrite), which starts each once its memory fits beside what runs, at idle CPU priority; `heavy-why` beside it says why one waits.
 - A path in angle brackets resolves in the gitignored `.claude/local-paths.md`; a machine-absolute path never goes into a tracked file.
 
 ## Conventions
@@ -100,27 +100,10 @@ Nothing an agent does may appear on the owner's screen or play on their speakers
 - Docs are Markdown, `kebab-case.md`, ASCII prose: write "section", never the section sign. Code is TypeScript only.
 - Ported third-party apps live in `../orivon-ports`, and nothing here may depend on that checkout; the apps this repository's own tests serve live under `test/apps/`.
 
-## Tooling: what fires when (`.claude/settings.json`)
+## Tooling: what fires when
 
-Plugins are project-scoped and travel with the repo.
-Some are automatic; the rest must be invoked at the step named here.
-**Check this table at the start of every build step.**
-
-| Tool | Fires | Use it for |
-|---|---|---|
-| `typescript-lsp` | Automatic on `.ts` edits | Type errors across main, preload and renderer. Trust its diagnostics over your own reading of a type |
-| `security-guidance` | Automatic: on edits, when you stop, and on every `git commit` | Path traversal (T1), local-network reach (T12), secrets. Address or explicitly acknowledge every finding |
-| `hookify` rules in `.claude/hookify.*.local.md` | Automatic on edits and shell commands | Sixteen rules. **Block (10):** native modules (in code and in `package.json`), insecure `webPreferences`, non-TypeScript sources, an Electron launch that bypasses `scripts/run-headless.mjs` or could take focus, an X or GNOME server that could take over the owner's display (typed, or written into a script), in-place branch switches (`git pull`/`checkout`/`switch`, `gh pr checkout`), tree-wide discards (`reset --hard`, `clean -f`, `stash drop`), and a whole unit or e2e suite run locally. **Warn (6):** hardcoded storage paths, features not built yet, file-header essays, comments that narrate the change instead of the code, live pages that narrate their own history (Rule 2), and a long CI runner put in the background with a shell `&`, whose end nobody hears of. When the owner corrects the same thing twice, add a rule with `/hookify`. Start its `file_path` pattern with `^(?:.*/)?` before the directory name, because a repo-root anchor never matches the absolute path an edit passes, and the rule dies silently. There is no `not_regex_match` operator, and an unknown operator kills the whole rule (A55) |
-| `superpowers` | Process, automatic via its session hook | `brainstorming` before new work, `writing-plans` for anything multi-step, `test-driven-development` for every broker or policy function, `systematic-debugging` on any failure, `verification-before-completion` before claiming done |
-| `context7` (MCP) | **Manual: before writing code against Electron or webtorrent APIs** | `protocol.handle`, `utilityProcess`, `MessagePortMain`, `WebContentsView`, `session` partitions, `safeStorage`; webtorrent 3.x internals. Training data is stale for this stack (Electron 44), so check a signature live before trusting the remembered one |
-| `playwright` (MCP) | **Manual: the localhost fixture app** | Driving a real web page. The Electron e2e uses the `_electron` library, not this |
-| `claude-security` | **Manual: before packaging (step 10)** | Whole-repo multi-agent vulnerability scan with verified findings. Expensive: run it at milestones, not continuously |
-| `claude-md-management` | **Manual: `/revise-claude-md` at the end of any session that changed an assumption in this file** | Keeps this file true as the code moves |
-| `orivon-electron` (project skill) | **Manual: before writing or debugging any Electron or webtorrent code** | The renderer-bundling alias recipe, the `app.windows()`-not-`app.firstWindow()` rule, `MessagePortMain`'s silent failures, and why to check `electron.d.ts` before trusting any claim about `BaseWindow` options. Exists nowhere else |
-| `orivon-comments` (project skill) | **Manual: before writing or editing a comment in `src/`** | Where rationale goes when it is not a "you will break this line" comment, and how to handle a header over budget |
-| `orivon-porting` (project skill) | **Manual: before porting, updating, republishing or fixing an app, or a change here that a port asked for** | Loads the porting skill kept in `../orivon-ports`, and says what this repository owes a port: a generic fix, a catalogue row and a spec |
-| `adversarial-reviewer` (user skill) | **Manual: after each build step lands** | A multi-perspective hostile review; `docs/planning/audit-2026-08-25.md` is what one produces. Run it on the broker and the app loader at minimum |
-| `/code-review`, `/security-review`, `/simplify` | Manual | Per-diff review before each commit on the critical path |
+Plugins are project-scoped (`.claude/settings.json`) and travel with the repo. Some tools fire automatically, the rest are invoked at the step they name: the full table is in the `orivon-workflow` skill, loaded at the start of every build step.
+Trust `typescript-lsp` diagnostics over your own reading of a type, and address or explicitly acknowledge every `security-guidance` finding.
 
 ## Devlog capture
 

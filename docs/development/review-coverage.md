@@ -31,7 +31,7 @@ itself.
 
 **Nothing before PR #163 is recorded here.** That is not a claim that earlier PRs went
 unreviewed: `docs/planning/audit-2026-08-25.md` records five independent audits that predate
-this document, and `CLAUDE.md`'s tooling table has required `adversarial-reviewer` and
+this document, and the tooling table (now in the `orivon-workflow` skill) has required `adversarial-reviewer` and
 `/claude-security` at named points since 2026-08-25. It is only that no one brought the record
 inside the repository before now, so the honest state of everything earlier is **unrecorded**,
 not **unreviewed**. Do not read an absence above this line as a finding.

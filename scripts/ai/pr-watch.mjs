@@ -2,7 +2,7 @@
 // Waits for a pull request's checks and merges it once every one passed and GitHub calls it CLEAN, so a session
 // does not hand-write a polling loop. A failed e2e shard, or a cross-OS or live-session job (a runner may never be
 // acquired), is rerun at most `--reruns` times, and the failed specs are printed so the PR can name them as flakes
-// (CLAUDE.md Rule 12); a failed spec matching `--stop` (your own area) is never rerun. Any other failure stops it, as
+// (CLAUDE.md Rule 11); a failed spec matching `--stop` (your own area) is never rerun. Any other failure stops it, as
 // does a moved head. Green but BEHIND, `--update <worktree>` merges `main` into the branch checked out there,
 // pushes and watches again (six rounds at most); without it, or on a conflict, it stops for the session that owns the
 // branch. BLOCKED is waited out: GitHub says it while required checks run, and for a moment after. Run it in the
