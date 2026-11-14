@@ -57,5 +57,5 @@ does work in Electron 44, if a reason to switch appears.
 
 **[`index.ts`](index.ts): do not add `ozone-platform: x11`.** The GPU process segfaults under
 XWayland and the window stops rendering. "No window appears" is
-[`shell/window.ts`](shell/window.ts)'s `showOnce` (`ready-to-show` is unreliable from the dev
-server); the `orivon-electron` skill has the rest.
+[`shell/window-frame.ts`](shell/window-frame.ts)'s `showOnce` (`ready-to-show` is unreliable from the dev
+server); the `orivon-electron` skill's `references/window-and-views.md` has the rest.

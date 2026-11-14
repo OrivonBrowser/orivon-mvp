@@ -273,8 +273,8 @@ cleanly to a `BaseWindow` holding several `WebContentsView`s, which is this shel
 and the e2e shards are green on GitHub-hosted `ubuntu-latest` runners. Match windows by URL through `app.windows()`, never
 `app.firstWindow()`: view-add order is not a contract (`scripts/smoke.mjs` has the pattern).
 
-The driver does fail to attach to one window, spike gate 3's, for a cause still unidentified
-([`open-questions.md`](../open-questions.md) C6). The app itself works there, confirmed by a
+The driver does fail to attach to one window, spike gate 3's, for a cause never identified
+(closed as not worth pursuing: [`resolved-questions.md`](../decisions/resolved-questions.md) C6). The app itself works there, confirmed by a
 direct launch without Playwright, and the failure is specific to that gate's video and
 service-worker setup, not to `BaseWindow` in general.
 
@@ -395,7 +395,7 @@ is judged right only on positive evidence that it shows what it should.
 **Limits.** A question is drawn in the question panel, an overlay page: a spec reads and presses its real
 buttons (`test/support/question-support.ts`) and records the native boxes opened, which must be none. Leave this
 page is still a native box, so the specs replace it. `capturePage()` fails without a GPU, so captures go through Playwright's own
-screenshot of each view (measured behaviour in the `orivon-electron` skill). An uncaught exception
+screenshot of each view (measured behaviour in the `orivon-electron` skill's `references/playwright-electron.md`). An uncaught exception
 in the main process raises a blocking error dialog, so no spec provokes one. Malformed calls to
 `window.orivon.*` are not covered yet.
 
