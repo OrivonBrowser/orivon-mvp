@@ -22,6 +22,9 @@ build/
 !build/
 !build/icon.png
 *.tsbuildinfo
+# Per-checkout caches: the type-check state (.cache/tsc/) and the build of the kind out/ does not hold
+# (.cache/build/<kind>/, scripts/build-reuse.mjs).
+.cache/
 
 # Vitest coverage output (`vitest run --coverage`, not currently a wired
 # script) -- regenerated on every run, never source. Found untracked in the

@@ -32,8 +32,9 @@ seconds, and a test would be paying rent to tell you something you already know.
 
 `npm run typecheck` is incremental: each checkout keeps its type-check state in `.cache/tsc/` (git ignores it), so a second
 run re-checks only what changed, and deleting the folder gives a cold run. The build behind `smoke`, `qa`, `test:e2e` and `build` is
-skipped when no input of it changed since `out/` was built, and a change under `test/` alone is no input
-([`scripts/README.md`](../../scripts/README.md) lists what is); `ORIVON_FORCE_BUILD=1` builds anyway.
+skipped when no input of it changed since `out/` was built, and a change under `test/` or to a unit test under `src/` alone is
+no input ([`scripts/README.md`](../../scripts/README.md) lists what is). The build of the kind `out/` does not hold waits in
+`.cache/build/<kind>/`, so alternating `test:e2e` and `smoke` or `build` reuses each one; `ORIVON_FORCE_BUILD=1` builds anyway.
 
 To run named unit files by hand on a shared machine, add `--maxWorkers=2` (`npx vitest run --maxWorkers=2 <file>`):
 each worker past two costs memory and gains nothing, and `test:changed` already passes it.
