@@ -306,12 +306,24 @@ describe('failoverRpc -- servers that failed are asked last', () => {
   it('sets a server aside for as long as it asked when it rate limits, briefly for server errors, and for a connection it could not make', async () => {
     const s = servers({ [A]: busy('5'), [B]: down, [C]: refused, [D]: okAnswer })
     expect(await result(await failoverRpc([A, B, C, D], s.fetch, s.note, HEDGED, s.onCooling)(A, request))).toBe('0x1')
-    expect(s.cooled.map(([endpoint, why]) => [endpoint, why])).toEqual([[A, 'was rate limited'], [B, 'answered with server errors'], [C, 'could not be reached']])
+    expect(s.cooled.map(([endpoint, why]) => [endpoint, why])).toEqual([[A, 'was rate limited'], [B, 'answered with server errors'], [C, 'could not be reached (ECONNREFUSED)']])
     const forMs = s.cooled.map(([, , ms]) => ms)
     expect(forMs[0]).toBeGreaterThan(4_900)
     expect(forMs[0]).toBeLessThanOrEqual(5_000)
     expect(forMs[1]).toBeLessThanOrEqual(500)
     expect(forMs[2]).toBeLessThanOrEqual(2_000)
+  })
+
+  it('says what the connection said when it sets a server aside for one it could not make, and only its code', async () => {
+    const failsWith = (error: Error) => async (): Promise<Response> => { throw error }
+    const reasonFor = async (error: Error): Promise<string | undefined> => {
+      const s = servers({ [A]: failsWith(error), [B]: okAnswer })
+      await failoverRpc([A, B], s.fetch, s.note, HEDGED, s.onCooling)(A, request)
+      return s.cooled.find(([endpoint]) => endpoint === A)?.[1]
+    }
+    expect(await reasonFor(Object.assign(new Error(`connect ECONNREFUSED ${A}/SECRET`), { code: 'ECONNREFUSED' }))).toBe('could not be reached (ECONNREFUSED)')
+    expect(await reasonFor(new Error('net::ERR_CONNECTION_RESET'))).toBe('could not be reached (ERR_CONNECTION_RESET)')
+    expect(await reasonFor(new Error(`something at ${A}/SECRET`))).toBe('could not be reached')
   })
 
   it('asks the servers that are not set aside first and the others after them, each in the order given', async () => {
