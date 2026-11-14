@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkFileSizes, readSafe, SOURCE_LIMIT, TEST_LIMIT } from '../check-size.mjs'
+import {
+  checkFileSizes, checkReadmeSizes, describeReadmeGrowth, readBaseArg, readSafe, README_LIMIT, SOURCE_LIMIT, TEST_LIMIT
+} from '../check-size.mjs'
 
 const fixture = (): string => mkdtempSync(join(tmpdir(), 'orivon-size-'))
 
@@ -274,6 +277,257 @@ describe('checkFileSizes', () => {
       const result = checkFileSizes(root)
       expect(result.offenders[0]?.file).not.toContain('\\')
       expect(result.offenders[0]?.file).toBe('src/broker/policy/thing.ts')
+    })
+  })
+})
+
+describe('the README cap', () => {
+  const git = (root: string, ...args: string[]): string =>
+    execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@example.com', '-c', 'commit.gpgsign=false', ...args], {
+      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
+    })
+
+  /** A file of exactly `bytes` ASCII bytes, in 80-byte lines. */
+  const sized = (bytes: number): string => 'x'.repeat(79).concat('\n').repeat(Math.ceil(bytes / 80)).slice(0, bytes)
+
+  const write = (root: string, relPath: string, text: string): void => {
+    const full = join(root, ...relPath.split('/'))
+    mkdirSync(join(full, '..'), { recursive: true })
+    writeFileSync(full, text)
+  }
+
+  /** A repo on `main` whose single commit holds `files`, then a `change` branch checked out from it. */
+  const repoWith = (files: Record<string, string>): string => {
+    const root = fixture()
+    git(root, 'init', '-q', '-b', 'main')
+    for (const [path, text] of Object.entries(files)) write(root, path, text)
+    git(root, 'add', '-A')
+    git(root, 'commit', '-q', '-m', 'base')
+    git(root, 'switch', '-q', '-c', 'change')
+    return root
+  }
+
+  const BIG = README_LIMIT * 4
+
+  it('caps a README at 12 KB', () => {
+    expect(README_LIMIT).toBe(12288)
+  })
+
+  describe('a README the change adds', () => {
+    it('passes at exactly 12 KB and fails one byte over, naming the file and its sizes', () => {
+      const root = repoWith({ 'src/a/x.ts': 'x\n' })
+      write(root, 'src/a/README.md', sized(README_LIMIT))
+      expect(checkReadmeSizes(root, 'main').ok).toBe(true)
+      write(root, 'src/a/README.md', sized(README_LIMIT + 1))
+      const result = checkReadmeSizes(root, 'main')
+      expect(result.ok).toBe(false)
+      expect(result.grown).toEqual([{ file: 'src/a/README.md', before: null, after: README_LIMIT + 1 }])
+    })
+  })
+
+  describe('a README the base already has', () => {
+    it('passes a README over 12 KB that the change leaves alone', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      expect(checkReadmeSizes(root, 'main')).toMatchObject({ ok: true, grown: [] })
+    })
+
+    it('fails a README over 12 KB that grows by one byte, uncommitted or committed', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      write(root, 'src/a/README.md', sized(BIG + 1))
+      const expected = [{ file: 'src/a/README.md', before: BIG, after: BIG + 1 }]
+      expect(checkReadmeSizes(root, 'main').grown).toEqual(expected)
+      git(root, 'commit', '-q', '-am', 'grow')
+      expect(checkReadmeSizes(root, 'main').grown).toEqual(expected)
+    })
+
+    it('passes a README over 12 KB that shrinks, and one that stays the same size', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      write(root, 'src/a/README.md', sized(BIG - 1))
+      expect(checkReadmeSizes(root, 'main').ok).toBe(true)
+    })
+
+    it('fails a README under 12 KB that grows past it', () => {
+      const root = repoWith({ 'src/a/README.md': sized(README_LIMIT - 10) })
+      write(root, 'src/a/README.md', sized(README_LIMIT + 1))
+      expect(checkReadmeSizes(root, 'main').grown).toEqual([
+        { file: 'src/a/README.md', before: README_LIMIT - 10, after: README_LIMIT + 1 }
+      ])
+    })
+
+    it('passes a README that grows but stays within 12 KB', () => {
+      const root = repoWith({ 'src/a/README.md': sized(100) })
+      write(root, 'src/a/README.md', sized(README_LIMIT))
+      expect(checkReadmeSizes(root, 'main').ok).toBe(true)
+    })
+
+    it('passes moving text from a README into a DESIGN.md of any size', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      write(root, 'src/a/README.md', sized(1000))
+      write(root, 'src/a/DESIGN.md', sized(BIG * 2))
+      expect(checkReadmeSizes(root, 'main')).toMatchObject({ ok: true, grown: [] })
+    })
+
+    it('does not count line-ending conversion as growth', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      write(root, 'src/a/README.md', sized(BIG).replaceAll('\n', '\r\n'))
+      expect(checkReadmeSizes(root, 'main').ok).toBe(true)
+    })
+  })
+
+  describe('the base is the change\'s own', () => {
+    it('ignores growth that landed on the base branch after this one branched off', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      git(root, 'switch', '-q', 'main')
+      write(root, 'src/a/README.md', sized(BIG * 2))
+      git(root, 'commit', '-q', '-am', 'grow on main')
+      git(root, 'switch', '-q', 'change')
+      expect(checkReadmeSizes(root, 'main').ok).toBe(true)
+    })
+
+    it('judges against any ref, so a long-lived branch is compared with its own parent', () => {
+      const root = repoWith({ 'src/a/README.md': sized(README_LIMIT - 10) })
+      write(root, 'src/a/README.md', sized(BIG))
+      git(root, 'commit', '-q', '-am', 'long-lived branch holds a large README')
+      git(root, 'switch', '-q', '-c', 'feature')
+      write(root, 'src/b/README.md', 'short\n')
+      expect(checkReadmeSizes(root, 'change').ok).toBe(true)
+      expect(checkReadmeSizes(root, 'main').ok).toBe(false)
+    })
+  })
+
+  describe('which READMEs count', () => {
+    it('checks src/README.md and every depth below src/, and nothing outside src/', () => {
+      const root = repoWith({ 'src/x.ts': 'x\n' })
+      write(root, 'src/README.md', sized(BIG))
+      write(root, 'src/a/b/c/README.md', sized(BIG))
+      write(root, 'docs/README.md', sized(BIG))
+      write(root, 'test/README.md', sized(BIG))
+      write(root, 'scripts/README.md', sized(BIG))
+      write(root, 'README.md', sized(BIG))
+      const files = checkReadmeSizes(root, 'main').grown.map((g: { file: string }) => g.file)
+      expect([...files].sort()).toEqual(['src/README.md', 'src/a/b/c/README.md'])
+    })
+
+    it('does not cap other files in src/, or a file only named like a README', () => {
+      const root = repoWith({ 'src/x.ts': 'x\n' })
+      write(root, 'src/a/DESIGN.md', sized(BIG))
+      write(root, 'src/a/README.txt', sized(BIG))
+      write(root, 'src/a/README.md.bak', sized(BIG))
+      expect(checkReadmeSizes(root, 'main').ok).toBe(true)
+    })
+
+    it('skips node_modules and dot-directories under src/', () => {
+      const root = repoWith({ 'src/x.ts': 'x\n' })
+      write(root, 'src/node_modules/pkg/README.md', sized(BIG))
+      write(root, 'src/.cache/README.md', sized(BIG))
+      expect(checkReadmeSizes(root, 'main').ok).toBe(true)
+    })
+  })
+
+  describe('no base', () => {
+    it('warns and passes, however large a README is, when no ref is given', () => {
+      const root = fixture()
+      write(root, 'src/a/README.md', sized(BIG))
+      const result = checkReadmeSizes(root, undefined)
+      expect(result.ok).toBe(true)
+      expect(result.grown).toEqual([])
+      expect(result.warning).toMatch(/not checked/)
+    })
+
+    it('fails a ref that was given but shares no history with HEAD, not passing it silently', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      const result = checkReadmeSizes(root, 'no-such-branch')
+      expect(result.ok).toBe(false)
+      expect(result.error).toMatch(/no merge base between HEAD and no-such-branch/)
+    })
+  })
+
+  describe('a README this guard cannot read', () => {
+    it('fails rather than counting it as small', () => {
+      const root = fixture()
+      write(root, 'src/a/README.md', 'x\n')
+      chmodSync(join(root, 'src/a/README.md'), 0o000)
+      try {
+        const result = checkReadmeSizes(root, undefined)
+        // Running as root reads it anyway: only an environment that enforces the mode can show the failure.
+        if (result.unreadable.length > 0) {
+          expect(result.ok).toBe(false)
+          expect(result.unreadable).toEqual([{ file: 'src/a/README.md', error: expect.any(String) }])
+        }
+      } finally {
+        chmodSync(join(root, 'src/a/README.md'), 0o644)
+      }
+    })
+  })
+
+  describe('the report', () => {
+    it('names the file, its size before and after, and sends rationale to DESIGN.md', () => {
+      const text = describeReadmeGrowth([
+        { file: 'src/a/README.md', before: 20000, after: 20100 },
+        { file: 'src/b/README.md', before: null, after: 13000 }
+      ])
+      expect(text).toContain('src/a/README.md  (was 20000 bytes, now 20100 bytes')
+      expect(text).toContain('src/b/README.md  (new file, now 13000 bytes')
+      expect(text).toContain('Put rationale in DESIGN.md beside the README')
+    })
+  })
+
+  describe('readBaseArg', () => {
+    it('reads --base, then CHECK_SIZE_BASE, then nothing', () => {
+      expect(readBaseArg(['--base', 'origin/main'], {})).toEqual({ base: 'origin/main' })
+      expect(readBaseArg([], { CHECK_SIZE_BASE: 'origin/dev' })).toEqual({ base: 'origin/dev' })
+      expect(readBaseArg(['--base', 'a'], { CHECK_SIZE_BASE: 'b' })).toEqual({ base: 'a' })
+      expect(readBaseArg([], {})).toEqual({})
+    })
+
+    it('treats an empty CHECK_SIZE_BASE as unset, which is what CI passes outside a pull request', () => {
+      expect(readBaseArg([], { CHECK_SIZE_BASE: '' })).toEqual({})
+    })
+
+    it('rejects --base with no ref', () => {
+      expect(readBaseArg(['--base'], {}).error).toMatch(/--base needs a ref/)
+      expect(readBaseArg(['--base', '--other'], {}).error).toMatch(/--base needs a ref/)
+    })
+  })
+
+  describe('the command', () => {
+    const script = join(process.cwd(), 'scripts', 'check-size.mjs')
+    const run = (root: string, args: string[], env: Record<string, string> = {}) =>
+      spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: 'utf8', env: { ...process.env, CHECK_SIZE_BASE: '', ...env } })
+
+    it('exits 1 and says to put rationale in DESIGN.md when a README grows', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      write(root, 'src/a/README.md', sized(BIG + 5))
+      const result = run(root, ['--base', 'main'])
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain(`src/a/README.md  (was ${String(BIG)} bytes, now ${String(BIG + 5)} bytes`)
+      expect(result.stderr).toContain('Put rationale in DESIGN.md beside the README')
+    })
+
+    it('takes the base from CHECK_SIZE_BASE', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      write(root, 'src/a/README.md', sized(BIG + 5))
+      expect(run(root, [], { CHECK_SIZE_BASE: 'main' }).status).toBe(1)
+    })
+
+    it('exits 0 with a warning when there is no base, and 0 when the README shrank', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      write(root, 'src/a/README.md', sized(BIG + 5))
+      const unjudged = run(root, [])
+      expect(unjudged.status).toBe(0)
+      expect(unjudged.stderr).toMatch(/README growth under src\/ was not checked/)
+      write(root, 'src/a/README.md', sized(100))
+      expect(run(root, ['--base', 'main']).status).toBe(0)
+    })
+
+    it('still fails an oversized source file and a README together', () => {
+      const root = repoWith({ 'src/a/README.md': sized(BIG) })
+      write(root, 'src/a/README.md', sized(BIG + 5))
+      writeLines(root, 'src/a/big.ts', SOURCE_LIMIT + 1)
+      const result = run(root, ['--base', 'main'])
+      expect(result.status).toBe(1)
+      expect(result.stderr).toContain('src/a/big.ts')
+      expect(result.stderr).toContain('src/a/README.md')
     })
   })
 })

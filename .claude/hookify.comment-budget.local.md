@@ -25,7 +25,7 @@ conditions:
 
 A comment that stops a maintainer breaking the line in front of it belongs in the source, next
 to that line. A comment explaining why the file has the shape it has is rationale: move it to
-`## Design notes` in the directory's `README.md` (`src/trust/README.md` is the worked example)
+`DESIGN.md` beside the directory's `README.md` (never into the README: `check:size` caps it at 12 KB)
 or to an ADR, and leave a one-line pointer. Arguing with a reviewer (naming a design you did not
 choose, pre-empting an objection) belongs in the PR body.
 

@@ -15,7 +15,7 @@ Status: `README.md`. What is next: `docs/roadmap.md`. What ships: `docs/features
 | Choosing what to build | `docs/roadmap.md` (Now, Expected next, Later) |
 | Writing against the API | `src/contracts/`: the product surface in eleven files |
 | Finding where to change something | `node scripts/ai/code-map.mjs <words>`: every directory and what it is for, read from the tree; `--depth N` limits it |
-| Editing in a directory | its `README.md`: what it may depend on and must never import |
+| Editing in a directory | its `README.md`, the map: what is here, what it may depend on, what it must never import. `DESIGN.md` beside it holds the rationale: read it only when changing a decision there |
 | Writing code | `docs/development/code-guidelines.md` section Rules, nothing else |
 | Adding a test or a `check:*` guard | `test/README.md` (where a spec goes), then `docs/development/testing.md` |
 | **Adding or changing a capability or an `orivon.*` member, porting an app, or fixing a bug an app reported** | `test/app-behaviours/README.md`: a catalogue row and an e2e spec are required; CI fails a capability kind with no catalogue line |
