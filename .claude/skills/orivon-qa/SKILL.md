@@ -17,7 +17,7 @@ window on the owner's screen, silent audio) is in `orivon-electron` and CLAUDE.m
 | `npm run qa` | the QA specs below, then `qa:report` | before calling a UI, flow or boundary change done |
 | `npm run qa:visual` | layout-audit proof, unit tests of the pixel tools, the shell-state specs | after any change to what the shell draws |
 | `npm run qa:report` | writes `qa-artifacts/latest/inspect.md` | to read states against expectations |
-| `npm run test:e2e` | every e2e spec, each leaving evidence on failure | CI runs the specs a change can reach on a PR and everything on `main`. Not locally: the development machine is shared and has crashed under load (`.claude/hookify.machine-load.local.md`) |
+| `npm run test:e2e` | every e2e spec, each leaving evidence on failure | CI runs the specs a change can reach on a PR and everything on `main`. Not locally: the development machine is shared and has crashed under load (`CLAUDE.md` section Local quirks) |
 | `npm run smoke` | the real shell once, JSON failure list | when `src/main/` changed |
 | `node scripts/ci/cross-os.mjs` | smoke and `e2e-qa-visual` from source on GitHub's Windows and macOS runners, evidence brought back | after a platform change (item 5 below) |
 
