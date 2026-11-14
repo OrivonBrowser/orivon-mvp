@@ -1,5 +1,6 @@
 /**
- * Fails the build if a source file exceeds 500 lines, or a test file 800.
+ * Fails the build if a source file exceeds 500 lines, or a test file 800, or a
+ * change makes a `src/**` `README.md` larger than 12 KB or grows one already over it.
  *
  * docs/development/code-guidelines.md Rule 2. A file at that length has almost
  * always stopped being one thing, and a smaller model can hold a 300-line file
@@ -15,6 +16,7 @@
  * `scripts/smoke.mjs` specifically. Everything else -- including the rest of
  * `scripts/` and the apps under `test/apps/` -- is source, at 500 lines.
  */
+import { execFileSync } from 'node:child_process'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { isInvokedDirectly, relativeToRoot } from './cli.mjs'
@@ -24,6 +26,13 @@ export const SOURCE_LIMIT = 500
 
 /** Test files split above this many lines. */
 export const TEST_LIMIT = 800
+
+/**
+ * A `src/**` README may not be larger than this many bytes (12 KB), and one
+ * already larger may not grow. The README is the map an agent reads before
+ * editing a directory; rationale lives in a `DESIGN.md` beside it.
+ */
+export const README_LIMIT = 12 * 1024
 
 /**
  * Extensions this guard treats as code. `.d.ts` is deliberately excluded --
@@ -86,23 +95,14 @@ function countLines (text) {
 }
 
 /**
- * @param {string} root Directory to check, typically the repo root.
- * @returns {{ ok: boolean, offenders: Array<{file: string, lines: number, limit: number}>,
- *   unreadable: Array<{file: string, error: string}> }}
- *   `file` is root-relative and forward-slashed. Both arrays sorted by path.
- *   `unreadable` lists files that exist but this guard genuinely could not
- *   open (permissions, ownership) -- their size is unknown, not zero, so
- *   they fail the check rather than passing it silently. A file that raced
- *   out of existence between being listed and being read is NOT one of
- *   these -- see readSafe below.
+ * Calls `onFile(fullPath, name)` for every regular file under `startDir`,
+ * never entering a skipped directory or following a symlink.
+ * @param {string} root The repo root, which `SKIPPED_ROOT_DIRECTORIES` is matched against.
+ * @param {string} startDir
+ * @param {(full: string, name: string) => void} onFile
  */
-export function checkFileSizes (root) {
-  const offenders = []
-  const unreadable = []
-  walk(root, root)
-  offenders.sort((a, b) => a.file.localeCompare(b.file))
-  unreadable.sort((a, b) => a.file.localeCompare(b.file))
-  return { ok: offenders.length === 0 && unreadable.length === 0, offenders, unreadable }
+function walkFiles (root, startDir, onFile) {
+  walk(startDir)
 
   function walk (dir) {
     let entries
@@ -139,22 +139,43 @@ export function checkFileSizes (root) {
         continue
       }
 
-      if (!entry.isFile()) continue
-      if (DECLARATION_FILE.test(entry.name) || !SOURCE_EXTENSION.test(entry.name)) continue
-
-      const file = relativeToRoot(root, full)
-      const read = readSafe(full)
-      if ('gone' in read) continue // vanished since readdirSync above: nothing to check, not a violation
-      if ('error' in read) {
-        unreadable.push({ file, error: read.error })
-        continue
-      }
-
-      const lines = countLines(read.text)
-      const limit = isTestFile(file) ? TEST_LIMIT : SOURCE_LIMIT
-      if (lines > limit) offenders.push({ file, lines, limit })
+      if (entry.isFile()) onFile(full, entry.name)
     }
   }
+}
+
+/**
+ * @param {string} root Directory to check, typically the repo root.
+ * @returns {{ ok: boolean, offenders: Array<{file: string, lines: number, limit: number}>,
+ *   unreadable: Array<{file: string, error: string}> }}
+ *   `file` is root-relative and forward-slashed. Both arrays sorted by path.
+ *   `unreadable` lists files that exist but this guard genuinely could not
+ *   open (permissions, ownership) -- their size is unknown, not zero, so
+ *   they fail the check rather than passing it silently. A file that raced
+ *   out of existence between being listed and being read is NOT one of
+ *   these -- see readSafe below.
+ */
+export function checkFileSizes (root) {
+  const offenders = []
+  const unreadable = []
+  walkFiles(root, root, (full, name) => {
+    if (DECLARATION_FILE.test(name) || !SOURCE_EXTENSION.test(name)) return
+
+    const file = relativeToRoot(root, full)
+    const read = readSafe(full)
+    if ('gone' in read) return // vanished since readdirSync above: nothing to check, not a violation
+    if ('error' in read) {
+      unreadable.push({ file, error: read.error })
+      return
+    }
+
+    const lines = countLines(read.text)
+    const limit = isTestFile(file) ? TEST_LIMIT : SOURCE_LIMIT
+    if (lines > limit) offenders.push({ file, lines, limit })
+  })
+  offenders.sort((a, b) => a.file.localeCompare(b.file))
+  unreadable.sort((a, b) => a.file.localeCompare(b.file))
+  return { ok: offenders.length === 0 && unreadable.length === 0, offenders, unreadable }
 }
 
 /**
@@ -189,10 +210,153 @@ export function readSafe (path) {
   }
 }
 
+/**
+ * Size in bytes as git stores the file: a working tree that checked a README
+ * out with CRLF line endings is not larger than its LF blob.
+ */
+function storedBytes (text) {
+  return Buffer.byteLength(text.replaceAll('\r\n', '\n'))
+}
+
+/**
+ * @param {string} root
+ * @returns {{ readmes: Array<{file: string, bytes: number}>, unreadable: Array<{file: string, error: string}> }}
+ *   Every `README.md` at or below `src/`, root-relative and forward-slashed.
+ */
+export function readmeSizes (root) {
+  const readmes = []
+  const unreadable = []
+  walkFiles(root, join(root, 'src'), (full, name) => {
+    if (name !== 'README.md') return
+    const file = relativeToRoot(root, full)
+    const read = readSafe(full)
+    if ('gone' in read) return
+    if ('error' in read) unreadable.push({ file, error: read.error })
+    else readmes.push({ file, bytes: storedBytes(read.text) })
+  })
+  readmes.sort((a, b) => a.file.localeCompare(b.file))
+  unreadable.sort((a, b) => a.file.localeCompare(b.file))
+  return { readmes, unreadable }
+}
+
+/**
+ * Sizes of `files` at `commit`, in order; `null` where one is not there.
+ * @param {string} root
+ * @param {string} commit
+ * @param {string[]} files
+ * @returns {Array<number | null>}
+ */
+function sizesAt (root, commit, files) {
+  if (files.length === 0) return []
+  const out = execFileSync('git', ['cat-file', '--batch-check'], {
+    cwd: root,
+    encoding: 'utf8',
+    input: files.map((file) => `${commit}:${file}\n`).join(''),
+    stdio: ['pipe', 'pipe', 'pipe']
+  })
+  return out.split('\n').slice(0, files.length).map((line) => {
+    const match = /^[0-9a-f]+ blob (\d+)$/.exec(line)
+    return match === null ? null : Number(match[1])
+  })
+}
+
+/**
+ * Judges READMEs against the change's own base: the merge base of HEAD and
+ * `base`, so a README already large on a long-lived branch fails only when
+ * this change grows it. A README over the limit fails when it is new, or
+ * larger than at the base; one at or under the limit never fails. The working
+ * tree is what is measured, so an edit not yet committed counts.
+ * @param {string} root
+ * @param {string | undefined} base A git ref. Without one nothing can be judged
+ *   as growth, so the result carries a `warning` and does not fail.
+ * @returns {{ ok: boolean, grown: Array<{file: string, before: number | null, after: number}>,
+ *   unreadable: Array<{file: string, error: string}>, warning?: string, error?: string }}
+ *   `before` is `null` for a README the base does not have. `error` is a
+ *   `base` that was given but names no merge base with HEAD: a comparison the
+ *   caller asked for and could not be made fails rather than passing.
+ */
+export function checkReadmeSizes (root, base) {
+  const { readmes, unreadable } = readmeSizes(root)
+  const unreadableFails = unreadable.length > 0
+  if (base === undefined) {
+    return {
+      ok: !unreadableFails,
+      grown: [],
+      unreadable,
+      warning: 'no base to compare against (pass --base <ref> or set CHECK_SIZE_BASE), so README growth under src/ was not checked'
+    }
+  }
+
+  let commit
+  try {
+    commit = execFileSync('git', ['merge-base', 'HEAD', base], {
+      cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']
+    }).trim()
+  } catch {
+    return {
+      ok: false,
+      grown: [],
+      unreadable,
+      error: `no merge base between HEAD and ${base}; fetch the base branch with full history`
+    }
+  }
+
+  const over = readmes.filter(({ bytes }) => bytes > README_LIMIT)
+  const before = sizesAt(root, commit, over.map(({ file }) => file))
+  const grown = []
+  over.forEach(({ file, bytes }, i) => {
+    const was = before[i] ?? null
+    if (was === null || bytes > was) grown.push({ file, before: was, after: bytes })
+  })
+  return { ok: grown.length === 0 && !unreadableFails, grown, unreadable }
+}
+
+/** The report for READMEs that grew past the cap, one line per file, then what to do. */
+export function describeReadmeGrowth (grown) {
+  const lines = grown.map(({ file, before, after }) => {
+    const was = before === null ? 'new file' : `was ${String(before)} bytes`
+    return `  ${file}  (${was}, now ${String(after)} bytes, cap ${String(README_LIMIT)})`
+  })
+  return [
+    '\nREADMEs over the 12 KB cap (docs/development/code-guidelines.md Rule 1):\n',
+    ...lines,
+    '\nPut rationale in DESIGN.md beside the README. The README is the map: what is here, what it may' +
+    '\ndepend on, what it must never import. One already over the cap may shrink, never grow.\n'
+  ].join('\n')
+}
+
+/**
+ * The base ref to judge README growth against: `--base <ref>`, else the
+ * `CHECK_SIZE_BASE` environment variable, else none.
+ * @param {string[]} argv Arguments after the script name.
+ * @param {Record<string, string | undefined>} env
+ * @returns {{ base?: string, error?: string }}
+ */
+export function readBaseArg (argv, env) {
+  const at = argv.indexOf('--base')
+  if (at !== -1) {
+    const ref = argv[at + 1]
+    if (ref === undefined || ref.startsWith('--')) return { error: '--base needs a ref, for example --base origin/main' }
+    return { base: ref }
+  }
+  const fromEnv = env.CHECK_SIZE_BASE?.trim()
+  return fromEnv === undefined || fromEnv === '' ? {} : { base: fromEnv }
+}
+
 if (isInvokedDirectly(import.meta.url)) {
-  const { ok, offenders, unreadable } = checkFileSizes(process.cwd())
+  const root = process.cwd()
+  const { base, error: baseError } = readBaseArg(process.argv.slice(2), process.env)
+  if (baseError !== undefined) {
+    console.error(baseError)
+    process.exit(1)
+  }
+
+  const { ok, offenders, unreadable } = checkFileSizes(root)
+  const readme = checkReadmeSizes(root, base)
+  const problems = []
 
   if (!ok) {
+    problems.push('line limit')
     if (offenders.length > 0) {
       console.error('\nFiles over the Rule 2 line limit (docs/development/code-guidelines.md):\n')
       for (const { file, lines, limit } of offenders) {
@@ -214,9 +378,22 @@ if (isInvokedDirectly(import.meta.url)) {
       console.error('\nA file that merely raced out of existence would not be listed here -- see' +
         ' readSafe in this script. Fix the permissions and try again.\n')
     }
-
-    process.exit(1)
   }
 
+  if (!readme.ok) {
+    problems.push('README cap')
+    if (readme.grown.length > 0) console.error(describeReadmeGrowth(readme.grown))
+    if (readme.error !== undefined) console.error(`\n${readme.error}\nTreating this as a failed scan, not a clean one.\n`)
+    if (readme.unreadable.length > 0) {
+      console.error('\nREADMEs this guard could not read, so their size is unknown:\n')
+      for (const { file, error } of readme.unreadable) console.error(`  ${file}  (${error})`)
+      console.error('')
+    }
+  }
+
+  if (problems.length > 0) process.exit(1)
+
   console.log('Every source and test file is within its Rule 2 line limit (500 / 800).')
+  if (readme.warning !== undefined) console.warn(`check:size: ${readme.warning}. CI checks it on every pull request.`)
+  else console.log(`No README under src/ grew past the ${String(README_LIMIT / 1024)} KB cap since ${String(base)}.`)
 }

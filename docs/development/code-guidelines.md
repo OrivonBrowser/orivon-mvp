@@ -5,7 +5,7 @@ by whom.
 
 Eight rules:
 
-1. **Comments earn their place**, and rationale goes in the README, not the file header.
+1. **Comments earn their place**, and rationale goes in a `DESIGN.md` beside the directory's README, not the file header.
 2. **No source file over 500 lines**, or 800 for tests.
 3. **One implementation per idea**: search before writing a helper.
 4. **One home per fact**: a fact lives in one page and is linked from the others.
@@ -58,11 +58,15 @@ out.setUint32(0, bytes.length, false)
 ### Test 2: is it a trap, or is it rationale?
 
 > **A comment that stops a maintainer breaking the line in front of them belongs in the source.
-> A comment that explains why the file has the shape it has belongs in the directory's
-> `README.md`, under `## Design notes`, or in an ADR.**
+> A comment that explains why the file has the shape it has belongs in a `DESIGN.md` beside
+> the directory's `README.md`, or in an ADR.**
 >
 > Ask: *would someone editing this line get it wrong without this comment?*
 > Yes, it stays. No, it is rationale, and it moves.
+
+The README stays the map (what is here, what it may depend on, what it must never import), and
+`DESIGN.md` is read only when changing a decision there. `npm run check:size` fails a `src/**/README.md`
+a change makes larger than 12 KB, or grows while already over it.
 
 Worked example: [`connection-log.ts`](../../src/trust/connection-log.ts), header 29 lines before
 this rule and 7 after. Its rationale lives in
@@ -121,7 +125,7 @@ lines: each states the constraint its step or option enforces, and its history s
 |---|---|---|
 | Explain why one line is the way it is | **Yes** | One or two lines, next to that line |
 | Keep a long trap explanation next to the code it protects | **Yes** | `derive.ts`'s surrogate-pair note is the example |
-| Explain why the *file* has the shape it has | **Not in the source** | `## Design notes` in the directory's `README.md` |
+| Explain why the *file* has the shape it has | **Not in the source** | `DESIGN.md` beside the directory's `README.md` |
 | Write a long doc comment on an exported declaration in `src/contracts/` | **Yes, always** | Exempt: those comments *are* the product's API documentation |
 | Write a long narrating comment inside a function body | **No, nowhere** | Not exempt anywhere, contracts included. Split the function |
 | Open a file with more than 25 lines of comment | **Only with a written reason** | `// orivon:comment-budget -- <why>` (below) |
@@ -159,6 +163,7 @@ source kept in its upstream shape, patched as its `UPSTREAM.md` lists).
 |---|---|
 | Source | **500** |
 | Test files (`*.test.ts`, anything under [`test/`](../../test/) except [`test/apps/`](../../test/apps/), and [`scripts/smoke.mjs`](../../scripts/smoke.mjs)) | **800** |
+| A `README.md` under [`src/`](../../src/), in bytes: one over it may not grow | **12 KB** |
 
 Everything else in `scripts/` is source and gets 500
 ([`parallel-work.md`](parallel-work.md) section Why `scripts/` is split). So are the apps under
@@ -271,7 +276,8 @@ and the others go stale while still reading as true.
   does, write it once, where a reader would look first.
 - **A directory README** says what the directory is for, what it may and must never import,
   whether it is tied to Electron, and the traps a reader would otherwise walk into. It links an
-  ADR rather than restating it, and does not walk through the files one by one.
+  ADR rather than restating it, and does not walk through the files one by one. The rationale
+  behind its shape goes in `DESIGN.md` beside it.
 - **A change is recorded once per audience**: the page it governs states the behaviour, the
   decision log says who decided it (owner decisions and reversals only), `CHANGELOG.md` gives it at most three lines, and the PR
   body carries the rest.
@@ -333,7 +339,7 @@ wondering why one exists.
 [`src/contracts/handles.ts`](../../src/contracts/handles.ts) is 75% comment and
 [`src/broker/policy/derive.ts`](../../src/broker/policy/derive.ts) 67%, and both are right, because
 nearly every line documents a trap. What goes wrong is a comment that restates the code (Test 1)
-or argues a decision that belongs in a README (Test 2).
+or argues a decision that belongs in a `DESIGN.md` (Test 2).
 
 **Why the destination test exists alongside the restatement test.** A file-header essay passes
 the restatement test: every line of one explains a decision, a trap or a non-obvious

@@ -85,7 +85,10 @@ jobs:
       - name: No source file opens with an essay
         run: npm run check:comments
 
-      - name: No source file over the 500/800-line limit
+      # On a pull request the same step fails a src/ README that grows past 12 KB, judged against the base branch.
+      - name: No source file over the 500/800-line limit, no README grown past its cap
+        env:
+          CHECK_SIZE_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: npm run check:size
 
       # Two branches opened together can both take main's next A-number.

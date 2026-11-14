@@ -1,6 +1,6 @@
 ---
 name: "orivon-comments"
-description: Use when writing or editing a comment anywhere in src/, when a file's header is growing past a few lines, when you are about to write a comment that cites a PR/branch/commit/finding-ID/date, when deciding whether new rationale belongs in the source or in a README, or when reviewing a diff for comment quality before a commit on the critical path. Captures the working method for applying code-guidelines Rule 1, so a comment pass does not have to re-derive it.
+description: Use when writing or editing a comment anywhere in src/, when a file's header is growing past a few lines, when you are about to write a comment that cites a PR/branch/commit/finding-ID/date, when deciding whether new rationale belongs in the source or in a DESIGN.md, or when reviewing a diff for comment quality before a commit on the critical path. Captures the working method for applying code-guidelines Rule 1, so a comment pass does not have to re-derive it.
 ---
 
 # Writing comments that earn their place
@@ -56,22 +56,24 @@ a document and which do not.
 | "this lane", "this task", "this PR" | Name the actual boundary or component instead (`policy/` may not import `loader/`, not "this task doesn't touch that file") |
 | A bare `d-NNNN` owner-decision id | The token, plus the decision spelled out in words next to it, so the comment reads without opening the decision log |
 
-## Rationale goes to the directory README, not the file header
+## Rationale goes to the directory's DESIGN.md, not the file header or the README
 
 `code-guidelines.md`'s Test 2 is the rule; the mechanical part is where it goes and in what
 shape:
 
-- Target: the directory's `README.md`, under a `## Design notes` heading. If the directory has
-  no such section yet, use the preamble every existing one shares (`src/trust/README.md` is the
-  worked example) — do not invent new wording per directory.
+- Target: `DESIGN.md` beside the directory's `README.md`; create it when the directory has none,
+  opening with a line that says it holds why the code has its shape and is read only when
+  changing a decision there. Never the README: it is the map, and `npm run check:size` fails a
+  `src/**/README.md` that a change makes larger than 12 KB or grows while over it. An existing
+  `## Design notes` section stays in its README, and a new entry goes to `DESIGN.md`.
 - One entry per topic, bold-led with the file/function it concerns:
   `**[\`file.ts\`](file.ts)'s \`thing\` does X, on purpose.** Why...` — a reader scanning the
   section should be able to tell what each entry is about from its first sentence alone.
 - Leave a one-line pointer in the source at the spot the rationale used to occupy: `see
-  README.md's Design notes for why`. Never leave the reader to guess that a README exists.
+  DESIGN.md for why`. Never leave the reader to guess that a DESIGN.md exists.
 - A caller-facing warning (what a function does *not* do, what a caller must additionally check)
-  belongs on that function's own doc comment, not the README — a maintainer calling it will read
-  the doc comment; they will not necessarily open the README first. Design notes are for *why the
+  belongs on that function's own doc comment, not DESIGN.md — a maintainer calling it will read
+  the doc comment; they will not necessarily open DESIGN.md first. Design notes are for *why the
   file has the shape it has*, not for a contract a caller needs at the call site.
 
 ## Duplicate paragraphs are a Rule 3 violation, not a style choice

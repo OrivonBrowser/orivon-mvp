@@ -4,6 +4,8 @@ Everything the Orivon shell is made of. Each subdirectory is one **stream**, a u
 person or agent session owns end to end
 ([`parallel-work.md`](../docs/development/parallel-work.md) section The ownership map). How a call
 travels through them, and which are tied to Electron: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
+Each directory's `README.md` is its map: what is here, what it may depend on, what it must never
+import. Why the code has its shape is in a `DESIGN.md` beside it, read only when changing a decision there.
 
 | Directory | What it is | Build step |
 |---|---|---|
