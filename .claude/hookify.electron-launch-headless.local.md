@@ -24,4 +24,4 @@ launch must be visible. Do not add `--watch` to `scripts/dev.mjs`: it relaunches
     env -u ELECTRON_RUN_AS_NODE node scripts/run-headless.mjs node <your-script>.mjs
 
 A run that leaves an Electron process behind is not finished. The survivor check, and why a bare
-`pgrep -f` misleads, are in `.claude/skills/orivon-electron/SKILL.md`.
+`pgrep -f` misleads, are in `.claude/skills/orivon-electron/references/headless-launch.md`.
