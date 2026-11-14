@@ -11,8 +11,8 @@ pattern: (?!.*scripts/run-headless\.mjs)(?:^|[;&|]\s*)(?:[A-Za-z_][A-Za-z0-9_]*=
 Any other launch can open a window on the owner's real screen and take focus. `xvfb-run` alone does
 not prevent it: Electron finds the inherited `WAYLAND_DISPLAY` and opens on the real compositor, and
 `scripts/run-headless.mjs` strips it. `ORIVON_WINDOW_NO_FOCUS=1` (the default in
-`test/support/launch-electron.mjs`) only stops focus theft, and the ambient `ELECTRON_RUN_AS_NODE=1`
-silently turns Electron into plain Node, so strip that too.
+`test/support/launch-electron.mjs`) only stops focus theft: a window still appears without the virtual
+display. The ambient `ELECTRON_RUN_AS_NODE=1` silently turns Electron into plain Node, so strip that too.
 
 `npm run dev`, `npm run start` and `electron-vite dev` are the owner's to start, never an agent's:
 to see a change in the running app, ask the owner to restart their dev server, and ask first if a
