@@ -4,7 +4,7 @@ How several people, or several agent sessions, work in this repository at the sa
 without corrupting each other's work.
 
 If you are working alone and sequentially, you need only section The merge protocol. The rest costs
-you nothing.
+you nothing. An agent reads section If you are an agent, which names the parts it needs.
 
 ---
 
@@ -317,7 +317,7 @@ semantically stale on its new base.
 
 ## If you are an agent
 
-Read this page before starting any build step. Then:
+This section is what you read before starting any build step; the rest of the page is reference, and the bullets name the parts you need. Then:
 
 - Work in a worktree on `stream/<name>`, with `node_modules`; base it on the branch you are
   stacked on, if any (rule 1 above).
