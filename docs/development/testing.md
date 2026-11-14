@@ -30,6 +30,11 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm run test:e2e` | Builds, then runs every spec under `test/` (the TCP and UDP boundary specs among them) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see section The end-to-end test below. CI runs it in shards: only the specs a change can reach on a pull request, everything on `main` and nightly (section CI). Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
 | `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; section Visual QA and failure evidence |
 
+`npm run typecheck` is incremental: each checkout keeps its type-check state in `.cache/tsc/` (git ignores it), so a second
+run re-checks only what changed, and deleting the folder gives a cold run. The build behind `smoke`, `qa`, `test:e2e` and `build` is
+skipped when no input of it changed since `out/` was built, and a change under `test/` alone is no input
+([`scripts/README.md`](../../scripts/README.md) lists what is); `ORIVON_FORCE_BUILD=1` builds anyway.
+
 To run named unit files by hand on a shared machine, add `--maxWorkers=2` (`npx vitest run --maxWorkers=2 <file>`):
 each worker past two costs memory and gains nothing, and `test:changed` already passes it.
 

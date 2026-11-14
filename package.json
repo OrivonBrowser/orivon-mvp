@@ -21,7 +21,7 @@
     "dev": "node scripts/dev.mjs",
     "build": "node scripts/build-ordinary.mjs",
     "start": "node scripts/install-electron.mjs --fuses && node scripts/launch-from-source.mjs refresh && node scripts/fetch-bundled-extensions.mjs && node scripts/fetch-local-nodes.mjs && node scripts/build-ordinary.mjs && electron-vite preview --skipBuild",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p vendor/tsconfig.json",
+    "typecheck": "tsc --noEmit --incremental --tsBuildInfoFile .cache/tsc/src.tsbuildinfo -p tsconfig.json && tsc --noEmit --incremental --tsBuildInfoFile .cache/tsc/vendor.tsbuildinfo -p vendor/tsconfig.json",
     "test": "vitest run",
     "check:natives": "node scripts/check-no-native-modules.mjs",
     "check:contracts": "node scripts/check-contracts-pure.mjs",

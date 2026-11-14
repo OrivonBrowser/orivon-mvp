@@ -17,15 +17,15 @@
  * check-dev-grant-absent.mjs runs this SAME script (rather than
  * reimplementing the stripping) for its own verification build, so it is
  * proving the exact command a real build runs.
+ *
+ * A build whose inputs have not changed since the last one is skipped
+ * (scripts/build-reuse.mjs), and the key it is matched by names the build
+ * kind and the flag, so an e2e build in out/ is never reused for this one;
+ * ORIVON_FORCE_BUILD=1 builds anyway.
  */
-import { spawnCommandSync } from './cli.mjs'
+import { buildOrReuse } from './build-reuse.mjs'
 
 const env = { ...process.env }
 delete env.ORIVON_ENABLE_DEV_GRANT
 
-const result = spawnCommandSync(
-  'npx',
-  ['electron-vite', 'build'],
-  { env }
-)
-process.exit(result.status ?? 1)
+process.exit(buildOrReuse({ root: process.cwd(), kind: 'ordinary', env }))
