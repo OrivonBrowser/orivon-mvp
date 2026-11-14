@@ -6,6 +6,8 @@ import { declaredReads, parseDeclarations, planTestRun } from '../test-changed.m
 // test:changed reads src/ scripts/
 
 const SELF = 'scripts/tests/test-changed.test.ts'
+/** Each reads all of src/, so every code change brings it. */
+const EVERY_CHANGE = [SELF, 'scripts/tests/build-key-inputs.test.ts']
 
 interface Declared { test: string, under: string[] }
 
@@ -88,10 +90,10 @@ describe('parseDeclarations', () => {
 
 describe('the declarations in this repository', () => {
   const declared = declaredReads()
-  /** The tests a change to one file brings besides this one, which every code change brings. */
+  /** The tests a change to one file brings besides those every code change brings. */
   const brought = (path: string): string[] => {
     const plan = planTestRun([path], nobody, () => declared)
-    return plan.mode === 'related' ? plan.files.filter((file) => file !== SELF && file !== path) : []
+    return plan.mode === 'related' ? plan.files.filter((file) => !EVERY_CHANGE.includes(file) && file !== path) : []
   }
 
   it('exist: a folder renamed away leaves no declaration that matches nothing', () => {

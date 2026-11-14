@@ -33,6 +33,9 @@ on:
       - scripts/install-electron.mjs
       - scripts/check-no-native-modules.mjs
       - scripts/build-ordinary.mjs
+      - scripts/build-e2e.mjs
+      - scripts/build-key.mjs
+      - scripts/build-reuse.mjs
       - scripts/run-headless.mjs
       - scripts/smoke.mjs
       - src/main/os/**
@@ -110,6 +113,11 @@ jobs:
 
       - name: Build as npm start does
         run: node scripts/build-ordinary.mjs
+
+      # A second build of the same inputs must reuse the first with this system's git, line endings and file times.
+      - name: Build again, which reuses the first build
+        shell: bash
+        run: node scripts/build-ordinary.mjs | tee cross-os/rebuild.log && grep -q 'Reusing out/' cross-os/rebuild.log
 
       # The runner's 1024x768 screen carries the Dock, and AppKit keeps a window's height inside the screen minus the
       # menu bar and the Dock (a window may still be wider than the screen), so every window stops at 677 px, on a

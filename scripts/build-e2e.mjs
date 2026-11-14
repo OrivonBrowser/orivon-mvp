@@ -14,12 +14,14 @@
  * has no dependency like cross-env to paper over that (Rule 8's sibling
  * constraint: zero runtime dependencies). A plain Node script is portable
  * without adding one.
+ *
+ * A build whose inputs have not changed since the last one is skipped
+ * (scripts/build-reuse.mjs); ORIVON_FORCE_BUILD=1 builds anyway.
  */
-import { spawnCommandSync } from './cli.mjs'
+import { buildOrReuse } from './build-reuse.mjs'
 
-const result = spawnCommandSync(
-  'npx',
-  ['electron-vite', 'build'],
-  { env: { ...process.env, ORIVON_ENABLE_DEV_GRANT: '1' } }
-)
-process.exit(result.status ?? 1)
+process.exit(buildOrReuse({
+  root: process.cwd(),
+  kind: 'e2e',
+  env: { ...process.env, ORIVON_ENABLE_DEV_GRANT: '1' }
+}))
