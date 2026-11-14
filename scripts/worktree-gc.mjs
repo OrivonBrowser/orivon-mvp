@@ -9,7 +9,8 @@
  * worktree (a listed worktree's branch counts as free), and `--remove`
  * deletes them with `git branch -D`, after this script's own ancestor check: `-d`
  * judges against HEAD and the upstream instead. A base, `main`, `master`, a branch
- * checked out anywhere and one with no commit of its own are never deleted.
+ * checked out anywhere and one with no commit of its own are never deleted: name a
+ * long-lived branch as a `--base` to keep it, whatever has been merged into it.
  *
  *   node scripts/worktree-gc.mjs                        # list the merged worktrees
  *   node scripts/worktree-gc.mjs --remove               # and remove them
@@ -18,7 +19,7 @@
  *   node scripts/worktree-gc.mjs --branches [--remove]  # the merged branches too
  */
 import { execFileSync } from 'node:child_process'
-import { resolve } from 'node:path'
+import { resolve, sep } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 
 export const BASE = 'origin/main'
@@ -53,11 +54,11 @@ export function parseArgs (argv) {
 /**
  * `git worktree list --porcelain` parsed into entries. The first is the main
  * worktree, which is never a candidate.
- * @returns {Array<{ path: string, head: string, branch?: string, detached: boolean, locked: boolean }>}
+ * @returns {Array<{ path: string, head: string, branch?: string, detached: boolean, locked: boolean, prunable: boolean }>}
  */
 export function parseWorktreeList (porcelain) {
   return porcelain.split('\n\n').map((block) => block.trim()).filter(Boolean).map((block) => {
-    const entry = { path: '', head: '', detached: false, locked: false }
+    const entry = { path: '', head: '', detached: false, locked: false, prunable: false }
     for (const line of block.split('\n')) {
       const [key, ...rest] = line.split(' ')
       const value = rest.join(' ')
@@ -66,9 +67,16 @@ export function parseWorktreeList (porcelain) {
       else if (key === 'branch') entry.branch = value.replace(/^refs\/heads\//, '')
       else if (key === 'detached') entry.detached = true
       else if (key === 'locked') entry.locked = true
+      else if (key === 'prunable') entry.prunable = true
     }
     return entry
   })
+}
+
+const isInside = (dir, root) => {
+  const here = resolve(dir)
+  const top = resolve(root)
+  return here === top || here.startsWith(top + sep)
 }
 
 /** Names that are a base, or the local branch a base tracks, and the default branches: never offered. */
@@ -93,8 +101,9 @@ export function classify ({ entries, bases, cwd, mergedInto, isDirty, isFresh })
     const keep = (reason) => kept.push({ ...entry, reason })
     const atBase = bases.find((base) => base.head === entry.head)
     if (entry.locked) keep('locked')
+    else if (entry.prunable) keep('directory is missing, `git worktree prune` clears it')
     else if (entry.detached || !entry.branch) keep('detached HEAD')
-    else if (resolve(cwd).startsWith(resolve(entry.path))) keep('current directory')
+    else if (isInside(cwd, entry.path)) keep('current directory')
     else if (baseBranches.has(entry.branch)) keep('a base')
     else if (atBase) keep(atBaseReason(atBase.ref))
     else {
@@ -153,7 +162,13 @@ const succeeds = (args, cwd) => {
 export function resolveBases (root, refs) {
   return refs.map((ref) => {
     let head
-    try { head = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], root).trim() } catch { throw new Error(`unknown base: ${ref}`) }
+    try {
+      head = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`], root).trim()
+    } catch (err) {
+      // Exit 1 is git saying the ref names no commit; anything else (no git, not a repository) says what it is.
+      if (err.status === 1) throw new Error(`unknown base: ${ref}`)
+      throw err
+    }
     if (succeeds(['show-ref', '--verify', '--quiet', `refs/heads/${ref}`], root)) return { ref, head, local: ref }
     if (succeeds(['show-ref', '--verify', '--quiet', `refs/remotes/${ref}`], root)) return { ref, head, local: ref.slice(ref.indexOf('/') + 1) }
     return { ref, head }
@@ -240,6 +255,6 @@ if (isInvokedDirectly(import.meta.url)) {
     found += ` and ${noun(merged.removable.length, 'branch', 'branches')}`
     count += merged.removable.length
   }
-  if (!remove && count > 0) console.log(`\n${found} merged; rerun with --remove to remove them.`)
+  if (!remove && count > 0) console.log(`\n${found} merged; add --remove to remove them.`)
   if (failed) process.exit(1)
 }

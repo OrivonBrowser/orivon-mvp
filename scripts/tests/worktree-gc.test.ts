@@ -25,16 +25,22 @@ const PORCELAIN = [
   'HEAD ddd',
   'branch refs/heads/stream/locked',
   'locked in use',
+  '',
+  'worktree /wt/gone',
+  'HEAD eee',
+  'branch refs/heads/stream/gone',
+  'prunable gitdir file points to non-existent location',
   ''
 ].join('\n')
 
 describe('parseWorktreeList', () => {
-  it('reads path, head, branch and the detached and locked flags', () => {
+  it('reads path, head, branch and the detached, locked and prunable flags', () => {
     expect(parseWorktreeList(PORCELAIN)).toEqual([
-      { path: '/repo', head: 'aaa', branch: 'main', detached: false, locked: false },
-      { path: '/wt/merged', head: 'bbb', branch: 'stream/merged', detached: false, locked: false },
-      { path: '/wt/detached', head: 'ccc', detached: true, locked: false },
-      { path: '/wt/locked', head: 'ddd', branch: 'stream/locked', detached: false, locked: true }
+      { path: '/repo', head: 'aaa', branch: 'main', detached: false, locked: false, prunable: false },
+      { path: '/wt/merged', head: 'bbb', branch: 'stream/merged', detached: false, locked: false, prunable: false },
+      { path: '/wt/detached', head: 'ccc', detached: true, locked: false, prunable: false },
+      { path: '/wt/locked', head: 'ddd', branch: 'stream/locked', detached: false, locked: true, prunable: false },
+      { path: '/wt/gone', head: 'eee', branch: 'stream/gone', detached: false, locked: false, prunable: true }
     ])
   })
 })
@@ -62,7 +68,7 @@ const STACK = { ref: 'feat/stack', head: 'stack-tip', local: 'feat/stack' }
 
 describe('classify', () => {
   const entry = (path: string, branch: string, head = 'old') =>
-    ({ path, head, branch, detached: false, locked: false })
+    ({ path, head, branch, detached: false, locked: false, prunable: false })
   const main = entry('/repo', 'main', 'tip')
 
   // `merged` lists the branches merged into origin/main; `into` maps a branch to another base it is merged into.
@@ -109,7 +115,7 @@ describe('classify', () => {
 
   it('keeps locked and detached worktrees without asking git about them', () => {
     const locked = { ...entry('/wt/l', 'l'), locked: true }
-    const detached = { path: '/wt/d', head: 'x', detached: true, locked: false }
+    const detached = { path: '/wt/d', head: 'x', detached: true, locked: false, prunable: false }
     const { removable, kept } = classify({
       entries: [main, locked, detached],
       bases: [MAIN],
@@ -120,6 +126,29 @@ describe('classify', () => {
     })
     expect(removable).toEqual([])
     expect(kept.map((e) => e.reason)).toEqual(['locked', 'detached HEAD'])
+  })
+
+  it('keeps a worktree whose directory is gone, without asking git about it', () => {
+    const gone = { ...entry('/wt/gone', 'gone'), prunable: true }
+    const { removable, kept } = classify({
+      entries: [main, gone],
+      bases: [MAIN],
+      cwd: '/elsewhere',
+      mergedInto: () => { throw new Error('not consulted') },
+      isDirty: () => { throw new Error('not consulted') },
+      isFresh: () => { throw new Error('not consulted') }
+    })
+    expect(removable).toEqual([])
+    expect(kept.map((e) => e.reason)).toEqual(['directory is missing, `git worktree prune` clears it'])
+  })
+
+  it('is in the current directory only when it contains it, never for a sibling sharing its name prefix', () => {
+    const { removable, kept } = run(
+      [entry('/wt/a-1', 'one'), entry('/wt/a-10', 'ten')],
+      { merged: ['one', 'ten'], cwd: '/wt/a-10/sub' }
+    )
+    expect(removable.map((e) => e.path)).toEqual(['/wt/a-1'])
+    expect(kept.map((e) => [e.path, e.reason])).toEqual([['/wt/a-10', 'current directory']])
   })
 
   it('removes a worktree whose branch is merged into any one base, saying which', () => {
@@ -313,11 +342,11 @@ describe('against a repository', () => {
       const before = branchesOf(work)
       const worktrees = run(work, '--base', 'origin/main', '--base', 'feat/stack')
       expect(worktrees.out).toMatch(/merged {2}\S*wt-a \[stream\/stacked-a\] \(into feat\/stack\)/)
-      expect(worktrees.out).toMatch(/1 worktree merged; rerun with --remove/)
+      expect(worktrees.out).toMatch(/1 worktree merged; add --remove/)
       const listed = run(work, '--base', 'origin/main', '--base', 'feat/stack', '--branches')
       expect(listed.out).toMatch(/merged {2}branch stream\/merged-main \(into origin\/main\)/)
       expect(listed.out).toMatch(/merged {2}branch stream\/stacked-a \(into feat\/stack\)/)
-      expect(listed.out).toMatch(/1 worktree and 2 branches merged; rerun with --remove/)
+      expect(listed.out).toMatch(/1 worktree and 2 branches merged; add --remove/)
       expect(branchesOf(work)).toEqual(before)
       expect(git(work, 'worktree', 'list').split('\n')).toHaveLength(3)
     })
@@ -331,6 +360,18 @@ describe('against a repository', () => {
       expect(out).toMatch(/deleted branch stream\/merged-main/)
       expect(branchesOf(work)).toEqual(['feat/stack', 'main', 'stream/at-base', 'stream/fresh', 'stream/open', 'stream/stacked-b'])
       expect(git(work, 'worktree', 'list').split('\n')).toHaveLength(2)
+    })
+
+    it('keeps a merged worktree whose directory was deleted by hand, and lists the rest', () => {
+      const work = buildRepository()
+      const root = join(work, '..')
+      git(work, 'branch', 'stream/gone', 'feat/stack')
+      git(work, 'worktree', 'add', '-q', join(root, 'wt-gone'), 'stream/gone')
+      rmSync(join(root, 'wt-gone'), { recursive: true, force: true })
+      const { code, out } = run(work, '--base', 'origin/main', '--base', 'feat/stack')
+      expect(code).toBe(0)
+      expect(out).toMatch(/keep {4}\S*wt-gone \[stream\/gone\]: directory is missing/)
+      expect(out).toMatch(/merged {2}\S*wt-a /)
     })
 
     it('rejects an unknown base before anything is listed', () => {
