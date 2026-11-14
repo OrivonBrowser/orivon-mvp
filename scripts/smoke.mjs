@@ -3,9 +3,9 @@
 // exercised against the actual built app via real clicks and typing, not
 // injected commands.
 //
-// Per open-questions.md C6 (narrowed 2026-08-26): app.firstWindow() is not
-// reliable here -- it depends on view-add order, an implementation detail,
-// not a contract. Windows are matched by URL via app.windows() instead.
+// app.firstWindow() is not reliable here -- it depends on view-add order, an
+// implementation detail, not a contract. Windows are matched by URL via
+// app.windows() instead (docs/decisions/resolved-questions.md C6).
 //
 // ---------------------------------------------------------------------------
 // THREE RULES THIS FILE IS HELD TO. Each was learned by getting it wrong.
@@ -355,12 +355,13 @@ async function main () {
     checkTab('forward button returned to fixture B', wantFwd, await waitForTab(chrome, wantFwd))
 
     // Resize check -- verifies chrome + tab bounds actually track a window
-    // resize (win.on('resize') -> layoutChrome() + tabs.layout() in
-    // window.ts), via each view's OWN rendered viewport rather than reaching
-    // into main-process internals.
+    // resize (its size events call layoutAll() in src/main/shell/window.ts),
+    // via each view's OWN rendered viewport rather than reaching into
+    // main-process internals.
     // 76, not 104: nothing is bookmarked yet and an empty bookmarks bar is
-    // no longer rendered (owner, 2026-09-15), so the chrome is two rows
-    // here. Both numbers live in src/main/window.ts and style.css too.
+    // not rendered, so the chrome is two rows here. Both numbers live in
+    // src/main/shell/window-layout.ts (CHROME_TOP_ROWS, CHROME_HEIGHT) and
+    // style.css too.
     const CHROME_HEIGHT = 76
     const targetWidth = 900
     const targetHeight = 700
