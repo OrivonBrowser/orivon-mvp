@@ -485,6 +485,9 @@ what each one enforces.
 `check:dev-grant-absent` · `check:advisories` · `check:native-dialogs` · `check:egress` ·
 `check:floating-promises` · `check:test-paths` · `check:impact-map` · `check:app-behaviours` · `check:contracts-surface` (the last two: section App behaviours)
 
+`check:size` also fails a `src/**/README.md` a change makes larger than 12 KB or grows while over it, against the base
+it is given (`--base <ref>`, or `CHECK_SIZE_BASE`; CI gives a pull request's base, and with none it warns): rationale goes in `DESIGN.md`.
+
 Every one is an exported pure function over a root directory, unit tested against temp fixtures
 (`scripts/tests/`, or `tests/` beside a guard that has its own folder under `scripts/`), with a CLI block
 guarded by `isInvokedDirectly` so the test can import it without running it. Follow that shape if you add
