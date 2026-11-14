@@ -75,7 +75,7 @@ before writing a line here; code cites its rules by number:
 5. Synchronous accessors are served from values captured at acquisition.
 6. The raw `MessagePortMain` never enters the main world.
 
-Also read [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/orivon-electron/SKILL.md).
+Also read [`.claude/skills/orivon-electron/SKILL.md`](../../.claude/skills/orivon-electron/SKILL.md), and its `references/webtorrent-and-node-deps.md` and `references/main-process-apis.md`.
 
 ## Design notes
 

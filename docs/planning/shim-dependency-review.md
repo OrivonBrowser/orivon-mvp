@@ -56,7 +56,7 @@ protocol`'s `mse.js` (protocol encryption, still shipped in the current `5.0.9`)
 `import crypto from 'crypto'` and uses it for Diffie-Hellman key exchange and SHA-1, confirmed
 directly in its source. `stream-browserify` is needed transitively, not directly:
 `crypto-browserify`'s `Hash` extends `cipher-base`, which extends `stream.Transform`. This
-matches [`orivon-electron`](../../.claude/skills/orivon-electron/SKILL.md)'s own spike findings
+matches [`orivon-electron`](../../.claude/skills/orivon-electron/references/renderer-bundling.md)'s own spike findings
 from 2026-08-25 exactly, on a materially newer webtorrent release: the same requirement
 survived the 3.x rewrite. **Presented to apps under the name `crypto`, this package is not
 distinguishable from Orivon's own identity cryptography by an app author reading `require`
@@ -107,7 +107,7 @@ decision, not extending this package.
   each builtin's replacement individually. Rejected: it pulls its own opaque dependency set for
   all of Node's builtins at once rather than the eight actually needed, is harder to audit
   package-by-package under Rule 6, and diverges from the precedent already proven in this repo:
-  [`orivon-electron`](../../.claude/skills/orivon-electron/SKILL.md)'s week-0 spike verified the
+  [`orivon-electron`](../../.claude/skills/orivon-electron/references/webtorrent-and-node-deps.md)'s week-0 spike verified the
   individual-polyfill approach end to end (a full encrypted BitTorrent handshake, DHT resolution)
   and this review's live registry check confirms the same packages still answer the same real
   calls today.

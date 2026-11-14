@@ -653,7 +653,7 @@ another's (`src/broker/handles/README.md`, "The in-flight cap queues briefly").
 ## What the shim must do
 
 The spike surfaced four failure modes that are easy to reintroduce if the lesson lives only
-in `.claude/skills/orivon-electron/SKILL.md`. Promoted here to binding requirements on
+in `.claude/skills/orivon-electron/references/` (`webtorrent-and-node-deps.md`, `main-process-apis.md`). Promoted here to binding requirements on
 `orivon-node-shim`:
 
 1. **Shim completeness is measured against a dependency's actual call graph, never against
