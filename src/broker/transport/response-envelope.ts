@@ -12,20 +12,28 @@
 //
 // Anything that is not a recognised OrivonError is a BUG, not a capability
 // decision, and its message is never forwarded: it may name a file path, a
-// stack frame, or another internal detail an app has no business seeing
-// (mirrors errors.ts's own 'internal' contract -- "always logged", never
-// described to the caller beyond that).
+// stack frame, or another internal detail an app has no business seeing.
+//
+// An 'internal' failure -- such a value, or an OrivonError coded 'internal' --
+// is also written to the console once as it crosses, with the error itself so
+// its stack reaches the diagnostics log: errors.ts's 'internal' contract is
+// "always logged". Every other code is an answer the app asked for (a missing
+// file is routine) and is not logged here.
 
 import { isOrivonErrorLike } from '../errors.js'
 import type { ResponseEnvelope } from '../../contracts/ipc.js'
 
+const BROKER_FAULT = '[broker] an internal error crossed to an app:'
+
 export function toFailureResponse (id: string, error: unknown): ResponseEnvelope<never> {
   if (isOrivonErrorLike(error)) {
+    if (error.code === 'internal') console.error(BROKER_FAULT, error)
     const base = { id, ok: false as const, code: error.code, message: error.message }
     if (error.code !== 'denied' && error.platformCode !== undefined) {
       return { ...base, platformCode: error.platformCode }
     }
     return base
   }
+  console.error(BROKER_FAULT, error)
   return { id, ok: false, code: 'internal', message: 'an internal error occurred' }
 }
