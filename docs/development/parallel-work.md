@@ -129,6 +129,12 @@ When the stream is merged and done:
 git worktree remove ../orivon-broker
 ```
 
+Or let the script find every finished one: `node scripts/worktree-gc.mjs` lists the worktrees whose branch is merged
+into `origin/main`, and `--remove` removes the clean ones. Work stacked on a long-lived branch counts as merged once
+that branch has it: name each such branch with `--base <ref>` (repeatable, alongside `--base origin/main`).
+`--branches` also lists the merged local branches that no worktree holds, and with `--remove` deletes them. Run
+`git fetch origin --prune` first, because a stale ref finds fewer.
+
 ### 2. Stay inside your owned paths
 
 See the table. This is the rule that makes the others unnecessary most of the time.
