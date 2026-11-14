@@ -30,6 +30,9 @@ seconds, and a test would be paying rent to tell you something you already know.
 | `npm run test:e2e` | Builds, then runs every spec under `test/` (the TCP and UDP boundary specs among them) via [`test/vitest.e2e.config.ts`](../../test/vitest.e2e.config.ts); see section The end-to-end test below. CI runs it in shards: only the specs a change can reach on a pull request, everything on `main` and nightly (section CI). Needs a display; on Linux with `xvfb-run` installed it uses a virtual one automatically (see [setup.md](setup.md) "The no-focus switch"), so a plain `npm run test:e2e` is safe with no wrapper, and on a platform with no virtual display it runs directly instead, without stealing your keyboard focus |
 | `npm run qa` · `qa:visual` · `qa:report` | The QA specs and the inspection sheet; section Visual QA and failure evidence |
 
+To run named unit files by hand on a shared machine, add `--maxWorkers=2` (`npx vitest run --maxWorkers=2 <file>`):
+each worker past two costs memory and gains nothing, and `test:changed` already passes it.
+
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
 `src/main/browsing/omnibox.ts`.
 
