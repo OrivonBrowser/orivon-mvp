@@ -35,6 +35,9 @@ run re-checks only what changed, and deleting the folder gives a cold run. The b
 skipped when no input of it changed since `out/` was built, and a change under `test/` alone is no input
 ([`scripts/README.md`](../../scripts/README.md) lists what is); `ORIVON_FORCE_BUILD=1` builds anyway.
 
+To run named unit files by hand on a shared machine, add `--maxWorkers=2` (`npx vitest run --maxWorkers=2 <file>`):
+each worker past two costs memory and gains nothing, and `test:changed` already passes it.
+
 Unit tests are **colocated** with what they test: `src/main/tests/omnibox.test.ts` sits beside
 `src/main/browsing/omnibox.ts`.
 

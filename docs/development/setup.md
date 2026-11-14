@@ -169,9 +169,9 @@ spans both halves goes half-applied: the 2026-09-15 collapsing bookmarks bar ren
 dead 28px band of chrome, because the renderer had hidden the row while main was still
 reserving space for it. That reads as a bug in the feature. Restart before believing it.
 
-Related: `.claude/hookify.window-focus.local.md` blocks an agent from starting any Electron
-process that is not wrapped in `scripts/run-headless.mjs`. Starting a dev server is the owner's
-action.
+Related: `.claude/hookify.electron-launch-headless.local.md` blocks an agent from starting any
+Electron process that is not wrapped in `scripts/run-headless.mjs`. Starting a dev server is the
+owner's action.
 
 **Not a substitute for `xvfb-run` in the fleet/unattended-run protocol**
 ([`unattended-run-protocol.md`](../../.claude/unattended-run-protocol.md)): that policy wraps every launch
