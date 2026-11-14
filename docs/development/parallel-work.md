@@ -281,7 +281,7 @@ loader, shim) takes the `ci:e2e-full` label, so the whole suite runs before it m
 5. **CI must be green**: `check`, and the e2e shards it selected. A shard that fails on a spec your change
    cannot reach is a flake: rerun that shard and say so in the PR.
 6. **Merge once green.** The author merges its own PR once `check` and the selected e2e shards
-   pass and there is no conflict ([`CLAUDE.md`](../../CLAUDE.md) Rules 12 and 14); the owner
+   pass and there is no conflict ([`CLAUDE.md`](../../CLAUDE.md) Rules 11 and 13); the owner
    decides only when the choice is critical. Branch protection is `strict`, so merging PR N+1
    always needs a fresh merge of `main` into its branch first, even when it touches none of PR
    N's files.
