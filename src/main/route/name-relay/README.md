@@ -25,7 +25,6 @@ proxy applies (`route-subsystem.ts` wires it), and the callers in main that chec
 | `relay-switch.ts` | When the relay runs (the activation table per mirror mode, the system's answer for ordinary addresses, the environment and a private window held to Nym) and what turning it on and off does, in the order that keeps this computer's address from showing: the listener, the resolver hold, the WebRTC confinement of the pages of the sessions that follow the system, the callers that check addresses, the sessions, the pages loaded again. A listener that cannot start, or stops by itself, is started again on a new port, and until then the sessions are pointed at the dead end and the state reads `down` | Durable: Electron-free over the calls it is handed |
 | `relay-lookup.ts` | The relay's lookup for a caller that checks an address first: the same steps, through the proxy entry the system names for the URL, as a relayed connection; every address comes back (IPv4 first), so the caller judges all of them; a routed or onion name refused, an IP literal as it is | Free of Electron, over the calls it is handed |
 | `relay-opener.ts` | `front.ts`'s `open`: reads the host from the target's URL (the name Chromium dials and the one the system is asked about, not the text on the request line), refuses a routed or onion name first, asks the system's answer, looks the name up through the proxy it will leave by (`proxied-lookup.ts`'s answer: IPv4 first, connecting before IPv6 has answered), goes through the proxies in order, has the lookup forget a name every address of which failed, reports each connection it made (the address and the road), and bounds the connections it carries | Free of Electron, over the system's answer and the lookups it is handed |
-| `utility-login.ts` | Answers a utility process's proxy challenge in main: the sign-in an Electron utility process forked with `respondToAuthRequestsFromMainProcess` raises is read by position, as it arrives with four arguments where the typings list three | Tied to Electron (a utility process's event) |
 | `name-relay-test-seam.ts` | In a test build only, the DNS-over-HTTPS address a suite names in place of the provider's | Durable: gated on the flag that compiles the developer grant |
 | `upstream.ts` | One connection to an address: through an HTTP or HTTPS proxy (`CONNECT <address>:<port>` with `Host: <address>:<port>`), SOCKS5 or SOCKS4 by address, or straight to it; says whether to try the next address, the next proxy or neither | Tied to the operating system's network (`node:net`, `node:tls`, `socks`), not to Electron |
 
@@ -73,11 +72,6 @@ the relay inactive each keeps the lookup and the road it has.
 **A connection is reported as an address and a road.** `onConnected` gives the host asked for, the port, the address connected to
 and the road (`PROXY`, `HTTPS`, `SOCKS5`, `SOCKS` or `DIRECT`), so a developer tool and `orivon://report` can say which way a read
 left; a log line or a report text holds counts and these fixed words, never a name, an address, a URL or a proxy entry.
-
-**A utility process that signs in to a proxy is answered in main.** A child forked with a session or partition and
-`respondToAuthRequestsFromMainProcess: true` raises `login` in main with four arguments at run time (the event, the request, the
-proxy's description and the callback) where the typings list three, so the listener reads by position from the second and calls
-the callback it finds last.
 
 **The connection upstream carries no header but the one a proxy needs.** Chromium's request and its headers (`User-Agent`, cookies and
 the rest) travel inside the tunnel, to the site, which is where they belong; the proxy is sent `CONNECT <address>:<port>` and

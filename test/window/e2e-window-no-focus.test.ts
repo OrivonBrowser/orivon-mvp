@@ -1,5 +1,5 @@
-// Owner request: a build/test launch must not steal OS keyboard focus while
-// the owner is typing elsewhere on the same machine. src/main/window.ts's
+// A build/test launch must not steal OS keyboard focus while someone is
+// typing elsewhere on the same machine. src/main/shell/window-frame.ts's
 // showOnce() picks win.showInactive() over win.show() when
 // ORIVON_WINDOW_NO_FOCUS=1 -- launch-electron.mjs defaults that on for
 // every launch made through it, which is the actual fix here: a test run
@@ -12,8 +12,7 @@
 // isolation. It CANNOT prove real OS focus behaviour: under a virtual
 // display there is no window manager to take focus FROM, so
 // win.isFocused() would read the same regardless of which branch ran.
-// That half is not machine-checkable here, by design -- see this repo's PR
-// for what was and was not verified.
+// That half is not machine-checkable here, by design.
 import { afterAll, expect, it } from 'vitest'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { delay, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
@@ -24,7 +23,7 @@ afterAll(async () => {
 
 const NO_FOCUS_MARKER = '[window] ORIVON_WINDOW_NO_FOCUS=1 -- showInactive()'
 
-/** showOnce's hard fallback (src/main/window.ts) fires 1000ms after launch
+/** showOnce's hard fallback (src/main/shell/window-frame.ts) fires 1000ms after launch
  * if 'ready-to-show' has not already -- long enough that the negative case
  * below waits past it before reading mainOutput() once. */
 const SHOW_FALLBACK_MS = 1_000

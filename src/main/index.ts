@@ -59,9 +59,9 @@ import { decideDefaultProfile } from './default-profile/profile-start.js'
 import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
 import { attachX11Vulkan, startX11Vulkan, x11VulkanStartAborted, x11VulkanWindowPainted, x11VulkanWindowShown } from './graphics/x11-vulkan-runner.js'
 
-// Do not add `ozone-platform: x11` here without solving its GPU crash on
-// this machine first -- the window-visibility bug it was chasing is really
-// window.ts's `showOnce` (README.md, Design notes).
+// Do not add `ozone-platform: x11` here: the GPU process crashes under
+// XWayland. A window that never appears is `shell/window-frame.ts`'s
+// `showOnce` (README.md, Design notes).
 
 // Before any subsystem or hook exists (startup/fetch-stack.ts says why).
 loadFetchStack()
