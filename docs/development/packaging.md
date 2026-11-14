@@ -937,7 +937,7 @@ person sees without it, and what adding it takes.
 Current electron-builder documentation describes **v27**, which exists only as alpha
 prereleases; `npm install --save-dev electron-builder` installs **26.15.3**. The two generations
 differ in ways that matter for this exact config, so write it from neither the v27 docs nor
-memory ([`CLAUDE.md`](../../CLAUDE.md)'s tooling table: training data is stale here):
+memory (the `orivon-workflow` skill's tooling table: training data is stale here):
 
 - **`asar` and native-module options are flat, top-level keys in 26.x**, not nested under a
   `nativeModules:` object as in v27. The 26.x schema rejects the nested form outright (see the

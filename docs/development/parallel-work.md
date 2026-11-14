@@ -4,7 +4,7 @@ How several people, or several agent sessions, work in this repository at the sa
 without corrupting each other's work.
 
 If you are working alone and sequentially, you need only section The merge protocol. The rest costs
-you nothing.
+you nothing. An agent reads section If you are an agent, which names the parts it needs.
 
 ---
 
@@ -281,7 +281,7 @@ loader, shim) takes the `ci:e2e-full` label, so the whole suite runs before it m
 5. **CI must be green**: `check`, and the e2e shards it selected. A shard that fails on a spec your change
    cannot reach is a flake: rerun that shard and say so in the PR.
 6. **Merge once green.** The author merges its own PR once `check` and the selected e2e shards
-   pass and there is no conflict ([`CLAUDE.md`](../../CLAUDE.md) Rules 12 and 14); the owner
+   pass and there is no conflict ([`CLAUDE.md`](../../CLAUDE.md) Rules 11 and 13); the owner
    decides only when the choice is critical. Branch protection is `strict`, so merging PR N+1
    always needs a fresh merge of `main` into its branch first, even when it touches none of PR
    N's files.
@@ -317,7 +317,7 @@ semantically stale on its new base.
 
 ## If you are an agent
 
-Read this page before starting any build step. Then:
+This section is what you read before starting any build step; the rest of the page is reference, and the bullets name the parts you need. Then:
 
 - Work in a worktree on `stream/<name>`, with `node_modules`; base it on the branch you are
   stacked on, if any (rule 1 above).
