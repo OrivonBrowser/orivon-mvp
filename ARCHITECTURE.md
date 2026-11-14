@@ -59,34 +59,24 @@ avoids the TOCTOU race where a check and its use disagree.
 
 ## Where things live
 
-The third column answers one question: if the engine beneath Orivon changed, would this code
-have to be rewritten? It is a measure of where care is worth spending.
+The question to ask of any code is: if the engine beneath Orivon changed, would it have to be
+rewritten? It is a measure of where care is worth spending.
 
-| Directory | What | Tied to Electron? |
-|---|---|---|
-| [`src/contracts/`](src/contracts/) | The `orivon.*` interface, types only | **No. This is the asset.** It imports nothing, by enforced rule |
-| [`src/broker/policy/`](src/broker/policy/) | Pure decision functions: capability matching, path confinement, origin derivation | **No.** No Electron, no I/O, portable anywhere |
-| [`src/broker/`](src/broker/) | Grants, prompts, session partitions, handle tables | Partly: the decisions are portable, the OS plumbing relies on Electron |
-| [`src/main/`](src/main/) | Window, tabs, consent dialogs, permissions, app install, subsystem registry | **Entirely** |
-| [`src/preload/`](src/preload/) | The privilege boundary | **Entirely.** "preload" is an Electron concept |
-| [`src/loader/`](src/loader/) | Manifest discovery, fetch, cache, hash-pinning, the site's published hash tree, the update decision | Partly: the update decision is pure policy; fetching and serving the cache are Electron-specific machinery |
-| [`src/shim/`](src/shim/) | Node's `net`/`dgram`/`fs` over `orivon.*` | **Entirely.** A compatibility layer over `orivon.*` |
-| [`src/renderer/`](src/renderer/) | Browser chrome UI | **Entirely** |
-| [`src/protocols/`](src/protocols/) | The one function every protocol registers through, the address rule (`ipfs://<cid>` shown, `https://<cid>.ipfs.orivon` served), and the registry that orders providers | **No.** Pure data and decisions |
-| [`src/protocols/resolution/`](src/protocols/resolution/) | The name-resolver and data-gatherer interfaces | **No.** Pure types and decisions |
-| [`src/protocols/ens/`](src/protocols/ens/) | ENS: proving a `.eth` name's contenthash, over any EIP-1193 provider | **No** |
-| [`src/protocols/ipfs/`](src/protocols/ipfs/) | IPFS: `ipfs://` and `ipns://` addresses, and loading content from Orivon's own node or trustless gateways, every block hashed against its CID | **No** |
-| [`src/protocols/verifier-host/`](src/protocols/verifier-host/) | The utility process that runs every protocol's providers, including the light client, and serves their pages on loopback | **Entirely**: an Electron utility process, reaching the network through Electron's `net` (one narrow, gated exception: `dns-fallback.ts`'s direct connection to a gateway a resolver appears to be lying about) |
-| [`src/protocols/nym-tunnel/`](src/protocols/nym-tunnel/) | The utility process that runs Nym's mixnet client (WebAssembly, pinned by hash) and offers it to the tunnel for apps as a SOCKS5 server on loopback, one tunnel per app, its only network being `https` and `wss` to public addresses | **Entirely**: an Electron utility process |
-| [`src/protocols/local-node/`](src/protocols/local-node/) | The utility process that runs a node of Orivon's own (WebAssembly) behind a network and a directory it is handed, and serves its API on loopback; one entry runs any kind of node | **Entirely**: an Electron utility process (its WASI host, `src/shim/wasi-p2/`, is durable) |
-| [`src/protocols/swarm-node/`](src/protocols/swarm-node/) | Orivon's own Swarm light node, as a kind of local node: its arguments and config, and the peers that make it ready | **No** |
-| [`src/protocols/ipfs-node/`](src/protocols/ipfs-node/) | Orivon's own IPFS node, as a kind of local node: its arguments, the routing choice, and its health-check readiness | **No** |
-| [`test/apps/`](test/apps/) | The apps this repository's own test suite serves: the e2e fixture and an Orivon-native demo. Ported third-party apps live in `orivon-ports` | **No.** They touch only `orivon.*`, exactly like a third-party app |
-| [`vendor/`](vendor/) | Third-party source kept in its upstream shape, each with an `UPSTREAM.md` listing Orivon's patches: electron-browser-shell's Chrome-extension libraries (`ADR-0043`) and Firefox's `declarativeNetRequest` matcher (`ADR-0051`). `nym-smolmix/` holds no source, only the patch and build notes for Nym's WebAssembly mixnet client, which is built outside the app and published as `resources/nym-tunnel/` | The extension libraries **entirely**; the matcher **no**, it is plain JavaScript; the Nym module **no**, it is WebAssembly |
-| [`spike/`](spike/) | Week-0 evidence. **Historical, not live code** | n/a |
+To find the directory a change belongs in, run `node scripts/ai/code-map.mjs <words>`
+(`--depth N` limits it): every directory under `src/`, `test/`, `scripts/` and `vendor/` with what
+it is for, read from the tree, so the list is never out of date. Every directory carries a
+`README.md` saying what it depends on, what it must never import and where it touches Electron.
+Those are the actual boundaries.
 
-Every directory carries a `README.md` saying what it depends on and what it must never import.
-Those are the actual boundaries; this table is the summary.
+Two places anchor the rest. [`src/contracts/`](src/contracts/) is **not tied to Electron: it is the
+asset**, types only, and it imports nothing, by enforced rule. [`src/broker/policy/`](src/broker/policy/)
+is pure decision functions (capability matching, path confinement, origin derivation) with no
+Electron and no I/O, portable anywhere. [`src/main/`](src/main/), [`src/preload/`](src/preload/)
+("preload" is an Electron concept) and [`src/renderer/`](src/renderer/) are tied to Electron
+**entirely**. The rest sits between: the decisions in a directory are portable, and the files that
+import Electron are the plumbing around them.
+
+[`spike/`](spike/) is week-0 evidence, historical and not live code.
 
 ## How a URL becomes an app
 
