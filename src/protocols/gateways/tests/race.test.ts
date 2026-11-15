@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { racePass } from '../race.js'
+import { Outrun, racePass } from '../race.js'
 import type { AttemptOutcome } from '../race.js'
 
 beforeEach(() => { vi.useFakeTimers() })
@@ -59,6 +59,37 @@ describe('racePass', () => {
       await vi.advanceTimersByTimeAsync(100)
       expect(await result).toEqual({ kind: 'verified', value: 2 })
       expect(vi.getTimerCount()).toBe(0)
+    })
+
+    it('counts a source silent before the first answer as outrun', async () => {
+      const { run, signals } = sources({ b: 100 }, { b: 3 })
+      const result = racePass(['a', 'b'], run, 50, never, settle)
+      await vi.advanceTimersByTimeAsync(150 + settle.graceMs)
+      expect(await result).toEqual({ kind: 'verified', value: 3 })
+      expect(signals.get('a')?.reason).toBeInstanceOf(Outrun)
+    })
+
+    it('cuts off, never outruns, a source asked once an answer was in hand, even beside one that then answered', async () => {
+      const { run, signals } = sources({ a: 0, c: 100 }, { a: 1, c: 3 })
+      const result = racePass(['a', 'b', 'c'], run, 60_000, never, settle)
+      await vi.advanceTimersByTimeAsync(settle.graceMs)
+      expect(await result).toEqual({ kind: 'verified', value: 3 })
+      expect(signals.get('b')?.aborted).toBe(true)
+      expect(signals.get('b')?.reason).not.toBeInstanceOf(Outrun)
+    })
+
+    it('weighs an answer queued in the same turn as the one before it, before it ends the pass', async () => {
+      const release = new Map<string, () => void>()
+      const values: Record<string, number> = { a: 1, b: 9 }
+      const run = async (candidate: string): Promise<AttemptOutcome<number>> => {
+        await new Promise<void>((resolve) => { release.set(candidate, resolve) })
+        return { kind: 'verified', value: values[candidate]! }
+      }
+      const result = racePass(['a', 'b'], run, 10, never, settle)
+      await vi.advanceTimersByTimeAsync(10)
+      release.get('a')!()
+      release.get('b')!()
+      expect(await result).toEqual({ kind: 'verified', value: 9 })
     })
 
     it('still ends with the caller\'s own reason when the caller leaves during the grace', async () => {

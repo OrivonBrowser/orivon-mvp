@@ -9,8 +9,8 @@ import { ResolutionError } from '../resolution/records.js'
 /** Concurrent attempts for one answer: the first, plus at most one hedge. */
 export const MAX_ATTEMPTS_IN_FLIGHT = 2
 
-/** Why an attempt that started before the winner was cancelled: it had the
- * head start and still had not answered. askGateway (gateways.ts) counts
+/** Why an attempt that started before the answer that ended the race came in
+ * was cancelled: it had the head start and still had not answered. askGateway (gateways.ts) counts
  * one that had not even sent its headers as a timeout. */
 export class Outrun extends Error {
   override readonly name = 'Outrun'
@@ -37,6 +37,11 @@ class AttemptQueue<T> {
   push (value: T): void {
     this.results.push(value)
     this.notify?.()
+  }
+
+  /** Outcomes pushed and not yet taken. */
+  get size (): number {
+    return this.results.length
   }
 
   /** Waits for at least one result, or rejects with `signal.reason` once it
@@ -104,7 +109,8 @@ export async function racePass<T> (
   if (candidates.length === 0) return { kind: 'exhausted', lied: false, retryable: false, reasons: [] }
   // One controller per attempt, in start order, so each loser can be told whether it was outrun.
   const attempts: AbortController[] = []
-  let winner: number | undefined
+  // Attempts below this index were running before the answer that ended the race came in: outrun, if still silent.
+  let outrunBelow: number | undefined
   let grace: ReturnType<typeof abortAfter> | undefined
   try {
     const queue = new AttemptQueue<{ readonly index: number, readonly outcome: AttemptOutcome<T> }>()
@@ -122,10 +128,12 @@ export async function racePass<T> (
     const handle = ({ index, outcome }: { readonly index: number, readonly outcome: AttemptOutcome<T> }): PassResult<T> | undefined => {
       if (outcome.kind === 'verified' && settle !== undefined) {
         if (best === undefined || settle.prefers(outcome.value, best.value)) best = { index, value: outcome.value }
+        // A source asked only once an answer was in hand is cut off by the grace, not outrun: it had no head start.
+        outrunBelow ??= nextIndex
         grace ??= abortAfter(settle.graceMs)
         return undefined
       }
-      if (outcome.kind === 'verified') winner = index
+      if (outcome.kind === 'verified') outrunBelow = index
       if (outcome.kind === 'verified' || outcome.kind === 'fatal') return outcome
       if (outcome.kind === 'lied') lied = true
       else {
@@ -163,7 +171,6 @@ export async function racePass<T> (
     /** The settled answer, once the grace is over or no source is left that could add to it. */
     const settled = (): PassResult<T> | undefined => {
       if (best === undefined || (!graceOver() && (inFlight > 0 || nextIndex < candidates.length))) return undefined
-      winner = best.index
       return { kind: 'verified', value: best.value }
     }
 
@@ -199,7 +206,8 @@ export async function racePass<T> (
         const result = handle(outcome)
         if (result !== undefined) return result
       }
-      if (inFlight === 0 && nextIndex >= candidates.length) return settled() ?? { kind: 'exhausted', lied, retryable: retryable || (failures > 0 && timeouts === failures), reasons }
+      // With a settle, an outcome pushed in the same turn as the one just handled may still be queued, and may be the higher.
+      if (inFlight === 0 && nextIndex >= candidates.length && (settle === undefined || queue.size === 0)) return settled() ?? { kind: 'exhausted', lied, retryable: retryable || (failures > 0 && timeouts === failures), reasons }
       // Once an answer is in hand, every source that may hold a newer one is asked as soon as a slot is free.
       if (best === undefined) start()
       else while (inFlight < MAX_ATTEMPTS_IN_FLIGHT && nextIndex < candidates.length) start()
@@ -209,6 +217,6 @@ export async function racePass<T> (
     // Every attempt still running lost the race (or the pass ended without
     // one): freeing its slot and its gateway's health record from further
     // waiting matters more than its answer, which nothing needs any more.
-    for (const [index, own] of attempts.entries()) own.abort(winner !== undefined && index < winner ? new Outrun('another source answered first') : undefined)
+    for (const [index, own] of attempts.entries()) own.abort(outrunBelow !== undefined && index < outrunBelow ? new Outrun('another source answered first') : undefined)
   }
 }
