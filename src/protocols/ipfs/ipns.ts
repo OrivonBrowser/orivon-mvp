@@ -1,6 +1,7 @@
 // An IPNS record from a gateway, used only once its signature, its key and
-// its validity have been checked, and never when older than a record this
-// install has already seen for the same key.
+// its validity have been checked, never when older than a record this
+// install has already seen for the same key, and the highest sequence of
+// those that arrive within a short grace of the first.
 
 import { multihashToIPNSRoutingKey, unmarshalIPNSRecord } from 'ipns'
 import { ipnsValidator } from 'ipns/validator'
@@ -21,6 +22,12 @@ import type { AttemptOutcome, PassResult } from '../gateways/race.js'
 const MAX_RECORD_BYTES = 10 * 1024
 /** Longest a lookup waits for a cooling gateway, well inside a mount's own deadline. */
 const MAX_COOLDOWN_WAIT_MS = 5_000
+
+/** How long a lookup stays open for a newer record once one has verified, on a direct connection (a slower route
+ * stretches it, as it does the hedge delay). A source behind a cache can answer first with an old record that is still
+ * validly signed, and a profile that has seen none has no sequence to refuse it by. Blocks need no such wait: a
+ * block is its own hash, so every verified copy is the same. */
+export const IPNS_SETTLE_GRACE_MS = 1_500
 
 /** A record whose signature failed was forged or corrupted on the way; one that merely expired was not. */
 const FORGED = new Set(['SignatureVerificationError', 'InvalidEmbeddedPublicKeyError'])
@@ -99,7 +106,8 @@ async function gatewaysToAsk (pool: GatewayPool, timeoutMs: number, signal: Abor
   return after.length > 0 ? after : pool.usable()
 }
 
-/** Throws a ResolutionError: `unverifiable` once a source has lied or every
+/** Returns the highest sequence among the records verified within `IPNS_SETTLE_GRACE_MS` of the first (sooner once
+ * no source is left to ask). Throws a ResolutionError: `unverifiable` once a source has lied or every
  * record offered is older than one seen before, otherwise `unavailable`. */
 export async function resolveIpnsKey (
   key: string, fetch: Fetch, sources: IpnsSources, sequences: SequenceStore,
@@ -141,9 +149,10 @@ export async function resolveIpnsKey (
 
   // Raced like a block, so a gateway that hangs costs the hedge delay, not its whole timeout.
   const gateways = await gatewaysToAsk(sources.pool, recordTimeoutMs, signal)
+  const settle = { graceMs: Math.min(sources.pool.route.wait(IPNS_SETTLE_GRACE_MS), recordTimeoutMs), prefers: (candidate: VerifiedIpnsRecord, current: VerifiedIpnsRecord) => candidate.sequence > current.sequence }
   let result: PassResult<VerifiedIpnsRecord>
   try {
-    result = await racePass([...gateways, ...sources.nameServices], attempt, sources.pool.route.wait(limits.hedgeDelayMs), signal)
+    result = await racePass([...gateways, ...sources.nameServices], attempt, sources.pool.route.wait(limits.hedgeDelayMs), signal, settle)
   } catch (error) {
     // racePass rejects only for the caller's own signal.
     throw new ResolutionError('unavailable', `IPNS name ${key}: ${error instanceof Error ? error.message : String(error)}`)
