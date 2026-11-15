@@ -1,15 +1,16 @@
 // One race across sources for one answer, shared by block fetches, IPNS
 // lookups and the light client's execution-server requests: the first source
 // is asked, a second hedges it after a delay, the first verified answer wins
-// and the rest are cancelled.
+// and the rest are cancelled. An answer that has a version (an IPNS record)
+// asks for `Settle`, which keeps the race open a little after the first one.
 
 import { ResolutionError } from '../resolution/records.js'
 
 /** Concurrent attempts for one answer: the first, plus at most one hedge. */
 export const MAX_ATTEMPTS_IN_FLIGHT = 2
 
-/** Why an attempt that started before the winner was cancelled: it had the
- * head start and still had not answered. askGateway (gateways.ts) counts
+/** Why an attempt that started before the answer that ended the race came in
+ * was cancelled: it had the head start and still had not answered. askGateway (gateways.ts) counts
  * one that had not even sent its headers as a timeout. */
 export class Outrun extends Error {
   override readonly name = 'Outrun'
@@ -36,6 +37,11 @@ class AttemptQueue<T> {
   push (value: T): void {
     this.results.push(value)
     this.notify?.()
+  }
+
+  /** Outcomes pushed and not yet taken. */
+  get size (): number {
+    return this.results.length
   }
 
   /** Waits for at least one result, or rejects with `signal.reason` once it
@@ -66,6 +72,14 @@ export type PassResult<T> =
   | { readonly kind: 'fatal', readonly error: ResolutionError }
   | { readonly kind: 'exhausted', readonly lied: boolean, readonly retryable: boolean, readonly reasons: readonly string[] }
 
+/** For an answer that has versions, where the first verified one may be an old one: the pass stays open `graceMs`
+ * after the first verified answer (or until nothing is left to ask) and returns the one `prefers` ranks highest. */
+export interface Settle<T> {
+  readonly graceMs: number
+  /** Whether `candidate` should replace `current`; false for a tie, so the earlier answer stays. */
+  readonly prefers: (candidate: T, current: T) => boolean
+}
+
 /** `AbortSignal.timeout(ms)` fires on its own; this fires only if told to,
  * so a hedge that already got its answer never leaves a live timer behind
  * waiting to fire into an abandoned pass. */
@@ -80,19 +94,24 @@ function abortAfter (ms: number): { readonly signal: AbortSignal, readonly cance
  * (fixed, or asked of the candidate started last) --
  * first verified answer wins and every other attempt is abandoned. Returns
  * once nothing is left to try: verified, fatal, or every attempt in the
- * pass has failed or lied.
+ * pass has failed or lied. With `settle`, the first verified answer starts a
+ * grace instead of ending the pass: both attempts are kept busy until it
+ * passes, and the preferred of the verified answers received is returned.
  */
 export async function racePass<T> (
   candidates: readonly string[],
   run: (candidate: string, signal: AbortSignal) => Promise<AttemptOutcome<T>>,
   hedgeDelayMs: number | ((leader: string) => number),
-  callerSignal: AbortSignal
+  callerSignal: AbortSignal,
+  settle?: Settle<T>
 ): Promise<PassResult<T>> {
   // With nothing to start, nothing would ever answer the wait below.
   if (candidates.length === 0) return { kind: 'exhausted', lied: false, retryable: false, reasons: [] }
   // One controller per attempt, in start order, so each loser can be told whether it was outrun.
   const attempts: AbortController[] = []
-  let winner: number | undefined
+  // Attempts below this index were running before the answer that ended the race came in: outrun, if still silent.
+  let outrunBelow: number | undefined
+  let grace: ReturnType<typeof abortAfter> | undefined
   try {
     const queue = new AttemptQueue<{ readonly index: number, readonly outcome: AttemptOutcome<T> }>()
     let inFlight = 0
@@ -101,12 +120,20 @@ export async function racePass<T> (
     let retryable = false
     let failures = 0
     let timeouts = 0
+    let best: { readonly index: number, readonly value: T } | undefined
     const reasons: string[] = []
 
     // Applies one outcome, returning the pass's final result if this one
     // ends it (verified or fatal), or undefined to keep racing.
     const handle = ({ index, outcome }: { readonly index: number, readonly outcome: AttemptOutcome<T> }): PassResult<T> | undefined => {
-      if (outcome.kind === 'verified') winner = index
+      if (outcome.kind === 'verified' && settle !== undefined) {
+        if (best === undefined || settle.prefers(outcome.value, best.value)) best = { index, value: outcome.value }
+        // A source asked only once an answer was in hand is cut off by the grace, not outrun: it had no head start.
+        outrunBelow ??= nextIndex
+        grace ??= abortAfter(settle.graceMs)
+        return undefined
+      }
+      if (outcome.kind === 'verified') outrunBelow = index
       if (outcome.kind === 'verified' || outcome.kind === 'fatal') return outcome
       if (outcome.kind === 'lied') lied = true
       else {
@@ -138,35 +165,58 @@ export async function racePass<T> (
       ).finally(() => { inFlight-- })
     }
 
+    // Closures, so that TypeScript does not narrow what `handle` assigns to its value at declaration.
+    const graceOver = (): boolean => grace?.signal.aborted === true
+    const waiting = (): AbortSignal => grace === undefined ? callerSignal : AbortSignal.any([callerSignal, grace.signal])
+    /** The settled answer, once the grace is over or no source is left that could add to it. */
+    const settled = (): PassResult<T> | undefined => {
+      if (best === undefined || (!graceOver() && (inFlight > 0 || nextIndex < candidates.length))) return undefined
+      return { kind: 'verified', value: best.value }
+    }
+
     start()
     for (;;) {
       // A caller that left is answered with its own reason, never with the
       // reasons its cancelled attempts reported on the way out.
       if (callerSignal.aborted) throw callerSignal.reason
+      if (graceOver()) return settled()!
+      const waitSignal = waiting()
       const canHedge = inFlight < MAX_ATTEMPTS_IN_FLIGHT && nextIndex < candidates.length
       if (canHedge) {
         const hedge = abortAfter(typeof hedgeDelayMs === 'number' ? hedgeDelayMs : hedgeDelayMs(candidates[nextIndex - 1]!))
         try {
-          const result = handle(await queue.next(AbortSignal.any([callerSignal, hedge.signal])))
+          const result = handle(await queue.next(AbortSignal.any([waitSignal, hedge.signal])))
           if (result !== undefined) return result
         } catch {
           if (callerSignal.aborted) throw callerSignal.reason
+          if (graceOver()) return settled()!
           start() // the hedge delay elapsed with nothing yet -- start the next candidate too
           continue
         } finally {
           hedge.cancel()
         }
       } else {
-        const result = handle(await queue.next(callerSignal))
+        let outcome: Awaited<ReturnType<typeof queue.next>>
+        try {
+          outcome = await queue.next(waitSignal)
+        } catch (error) {
+          if (!callerSignal.aborted && graceOver()) return settled()!
+          throw error
+        }
+        const result = handle(outcome)
         if (result !== undefined) return result
       }
-      if (inFlight === 0 && nextIndex >= candidates.length) return { kind: 'exhausted', lied, retryable: retryable || (failures > 0 && timeouts === failures), reasons }
-      if (inFlight < MAX_ATTEMPTS_IN_FLIGHT) start()
+      // With a settle, an outcome pushed in the same turn as the one just handled may still be queued, and may be the higher.
+      if (inFlight === 0 && nextIndex >= candidates.length && (settle === undefined || queue.size === 0)) return settled() ?? { kind: 'exhausted', lied, retryable: retryable || (failures > 0 && timeouts === failures), reasons }
+      // Once an answer is in hand, every source that may hold a newer one is asked as soon as a slot is free.
+      if (best === undefined) start()
+      else while (inFlight < MAX_ATTEMPTS_IN_FLIGHT && nextIndex < candidates.length) start()
     }
   } finally {
+    grace?.cancel()
     // Every attempt still running lost the race (or the pass ended without
     // one): freeing its slot and its gateway's health record from further
     // waiting matters more than its answer, which nothing needs any more.
-    for (const [index, own] of attempts.entries()) own.abort(winner !== undefined && index < winner ? new Outrun('another source answered first') : undefined)
+    for (const [index, own] of attempts.entries()) own.abort(outrunBelow !== undefined && index < outrunBelow ? new Outrun('another source answered first') : undefined)
   }
 }

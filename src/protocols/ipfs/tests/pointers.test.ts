@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { generateKeyPair } from '@libp2p/crypto/keys'
 import { createIPNSRecord, createIPNSRecordWithExpiration, marshalIPNSRecord } from 'ipns'
 import { CID } from 'multiformats/cid'
@@ -7,7 +7,8 @@ import { base58btc } from 'multiformats/bases/base58'
 import type { Refusal } from '../../resolution/providers.js'
 import { resolveDnslink } from '../dnslink.js'
 import { GatewayPool } from '../../gateways/gateways.js'
-import { memorySequenceStore, resolveIpnsKey } from '../ipns.js'
+import type { Fetch } from '../../gateways/gateways.js'
+import { IPNS_SETTLE_GRACE_MS, memorySequenceStore, resolveIpnsKey } from '../ipns.js'
 import { canonicalKey, parseContentPath } from '../names.js'
 import { followPointer } from '../pointers.js'
 import { buildDag, fakeGateways } from './dag.test-helpers.js'
@@ -219,6 +220,123 @@ describe('resolveIpnsKey', () => {
     const pool = new GatewayPool([A], 4)
     await expect(resolveIpnsKey(name, gw.fetch, { pool, nameServices: [] }, memorySequenceStore(), LIMITS, signal, () => {})).rejects.toMatchObject({ failure: 'unavailable' })
     expect(pool.usable()).toEqual([A])
+  })
+})
+
+describe('resolveIpnsKey: the highest sequence within a grace, not the first record', () => {
+  beforeEach(() => { vi.useFakeTimers() })
+  afterEach(() => { vi.useRealTimers() })
+
+  const C = 'https://c.gateway'
+
+  /** `fetch` with each gateway's answer held back by `delays[gateway]` ms, a held answer abandoned with its request. */
+  const delayed = (fetch: Fetch, delays: Readonly<Record<string, number>>): Fetch => async (url, init) => {
+    const ms = delays[new URL(url).origin] ?? 0
+    if (ms > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, ms)
+        init.signal.addEventListener('abort', () => { clearTimeout(timer); reject(init.signal.reason) }, { once: true })
+      })
+    }
+    return await fetch(url, init)
+  }
+
+  /** What `resolveIpnsKey` ended with, and when (ms after it started), once the test has let `ms` pass. */
+  function lookup (name: string, fetch: Fetch, gateways: readonly string[], sequences = memorySequenceStore(), limits: Parameters<typeof resolveIpnsKey>[4] = LIMITS) {
+    const outcome: { value?: Awaited<ReturnType<typeof resolveIpnsKey>>, error?: unknown, at?: number } = {}
+    const started = Date.now()
+    const promise = resolveIpnsKey(name, fetch, { pool: new GatewayPool(gateways, 4), nameServices: [] }, sequences, limits, signal, () => {}).then(
+      (value) => { outcome.value = value; outcome.at = Date.now() - started },
+      (error: unknown) => { outcome.error = error; outcome.at = Date.now() - started }
+    )
+    return { outcome, promise, sequences }
+  }
+
+  it('returns the newer record when it arrives within the grace of an older one', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, '/ipfs/bafkqaaa', 1n), [A])
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 3n), [B])
+    gw.hanging.add(C)
+    const run = lookup(name, delayed(gw.fetch, { [B]: 400 }), [A, B, C])
+    await vi.advanceTimersByTimeAsync(IPNS_SETTLE_GRACE_MS - 1)
+    expect(run.outcome.at).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
+    await run.promise
+    expect(run.outcome.value).toEqual({ key: name, sequence: 3n, value: `/ipfs/${dag.root.toString()}` })
+    expect(run.outcome.at).toBe(IPNS_SETTLE_GRACE_MS)
+    expect(run.sequences.highest(name)).toBe(3n)
+  })
+
+  it('returns a single answer once the grace has passed, with another source still silent', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n), [A])
+    gw.hanging.add(B)
+    const run = lookup(name, gw.fetch, [A, B])
+    await vi.advanceTimersByTimeAsync(IPNS_SETTLE_GRACE_MS - 1)
+    expect(run.outcome.at).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(1)
+    await run.promise
+    expect(run.outcome.value?.sequence).toBe(5n)
+    expect(run.outcome.at).toBe(IPNS_SETTLE_GRACE_MS)
+    expect(run.sequences.highest(name)).toBe(5n)
+  })
+
+  it('is not delayed by a newer record that arrives after the grace', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, '/ipfs/bafkqaaa', 1n), [A])
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 3n), [B])
+    const run = lookup(name, delayed(gw.fetch, { [B]: 3 * IPNS_SETTLE_GRACE_MS }), [A, B])
+    await vi.advanceTimersByTimeAsync(IPNS_SETTLE_GRACE_MS)
+    await run.promise
+    expect(run.outcome.value?.sequence).toBe(1n)
+    expect(run.outcome.at).toBe(IPNS_SETTLE_GRACE_MS)
+    await vi.advanceTimersByTimeAsync(3 * IPNS_SETTLE_GRACE_MS)
+    expect(run.sequences.highest(name)).toBe(1n)
+  })
+
+  it('answers at once when every source has answered, since nothing newer can still come', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, '/ipfs/bafkqaaa', 2n), [A])
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 4n), [B])
+    const run = lookup(name, delayed(gw.fetch, { [B]: 300 }), [A, B])
+    await vi.advanceTimersByTimeAsync(300)
+    await run.promise
+    expect(run.outcome.value?.sequence).toBe(4n)
+    expect(run.outcome.at).toBe(300)
+  })
+
+  it('never waits for a newer record longer than the record timeout', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n), [A])
+    gw.hanging.add(B)
+    const run = lookup(name, gw.fetch, [A, B], memorySequenceStore(), { ...LIMITS, recordTimeoutMs: 200 })
+    await vi.advanceTimersByTimeAsync(200)
+    await run.promise
+    expect(run.outcome.value?.sequence).toBe(5n)
+    expect(run.outcome.at).toBe(200)
+  })
+
+  it('still refuses a record older than one seen before, whichever source offers it first', async () => {
+    const { key, name } = await ipnsKey()
+    const gw = fakeGateways(new Map())
+    gw.ipns(name, await signed(key, '/ipfs/bafkqaaa', 3n), [A])
+    gw.ipns(name, await signed(key, `/ipfs/${dag.root.toString()}`, 5n), [B])
+    const sequences = memorySequenceStore()
+    sequences.record(name, 4n)
+    const onlyOld = lookup(name, gw.fetch, [A], sequences)
+    await vi.advanceTimersByTimeAsync(0)
+    await onlyOld.promise
+    expect(onlyOld.outcome.error).toMatchObject({ failure: 'unverifiable' })
+    const withNewer = lookup(name, delayed(gw.fetch, { [B]: 400 }), [A, B], sequences)
+    await vi.advanceTimersByTimeAsync(400)
+    await withNewer.promise
+    expect(withNewer.outcome.value?.sequence).toBe(5n)
+    expect(sequences.highest(name)).toBe(5n)
   })
 })
 
