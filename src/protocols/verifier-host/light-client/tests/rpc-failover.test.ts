@@ -369,6 +369,77 @@ describe('failoverRpc -- servers that failed are asked last', () => {
   })
 })
 
+describe('failoverRpc -- a second pass when the first got no usable answer', () => {
+  /** The pause between the passes is short here, so the tests do not wait on the real one. */
+  const AGAIN = { hedgeAfterMs: 20, attemptTimeoutMs: 5_000, againAfterMs: 10 }
+  const proofWindow4444 = async (): Promise<Response> => new Response(JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: 4444, message: 'distance to target block exceeds maximum proof window' } }))
+  const busy = async (): Promise<Response> => new Response('busy', { status: 429 })
+  const refused = async (): Promise<Response> => { throw Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }) }
+  const firstThen = (first: Answer, then: Answer): Answer => {
+    let calls = 0
+    return async (signal) => await (++calls === 1 ? first : then)(signal)
+  }
+  const okAnswer = async (): Promise<Response> => ok()
+
+  it('asks the servers once more when one answered an error and the others were rate limited or unreachable, and returns the good answer', async () => {
+    const s = servers({ [A]: firstThen(proofWindow4444, okAnswer), [B]: busy, [C]: refused })
+    const response = await failoverRpc([A, B, C], s.fetch, s.note, AGAIN)(A, request)
+    expect(await result(response)).toBe('0x1')
+    expect(s.asked).toEqual([A, B, C, A])
+  })
+
+  it('asks a server that was set aside in the first pass after the others in the second', async () => {
+    const s = servers({ [A]: firstThen(busy, okAnswer), [B]: firstThen(proofWindow4444, okAnswer), [C]: refused })
+    const response = await failoverRpc([A, B, C], s.fetch, s.note, AGAIN)(A, request)
+    expect(await result(response)).toBe('0x1')
+    expect(s.asked).toEqual([A, B, C, B])
+  })
+
+  it('asks the servers once more after a rate limit or a server error alone', async () => {
+    const s = servers({ [A]: firstThen(busy, okAnswer), [B]: async () => new Response('down', { status: 503 }) })
+    expect(await result(await failoverRpc([A, B], s.fetch, s.note, AGAIN)(A, request))).toBe('0x1')
+    expect(s.asked).toEqual([A, B, A])
+  })
+
+  it('does not ask again when every server was unreachable', async () => {
+    const s = servers({ [A]: refused, [B]: refused, [C]: refused })
+    await expect(failoverRpc([A, B, C], s.fetch, s.note, AGAIN)(A, request)).rejects.toThrow(/ECONNREFUSED/)
+    expect(s.asked).toEqual([A, B, C])
+  })
+
+  it('does not ask again when every server refused by its status, which a second ask would not change', async () => {
+    const s = servers({ [A]: async () => new Response('no', { status: 403 }), [B]: async () => new Response('gone', { status: 404 }) })
+    expect((await failoverRpc([A, B], s.fetch, s.note, AGAIN)(A, request)).status).toBe(404)
+    expect(s.asked).toEqual([A, B])
+  })
+
+  it('asks twice and no more when every server keeps answering an error, then returns the last answer as one pass would', async () => {
+    const s = servers({ [A]: proofWindow4444, [B]: proofWindow4444 })
+    const response = await failoverRpc([A, B], s.fetch, s.note, AGAIN)(A, request)
+    expect(await response.json()).toMatchObject({ error: { code: 4444 } })
+    expect(s.asked).toEqual([A, B, A, B])
+  })
+
+  it('returns the answer of the first pass when the second pass reaches no server', async () => {
+    const s = servers({ [A]: firstThen(proofWindow4444, refused), [B]: firstThen(proofWindow4444, refused) })
+    const response = await failoverRpc([A, B], s.fetch, s.note, AGAIN)(A, request)
+    expect(await response.json()).toMatchObject({ error: { code: 4444 } })
+    expect(s.asked).toEqual([A, B, A, B])
+  })
+
+  it('stops with the caller when its signal fires during the pause, and asks nothing more', async () => {
+    const s = servers({ [A]: proofWindow4444, [B]: proofWindow4444 })
+    const cancel = new AbortController()
+    const outcome = failoverRpc([A, B], s.fetch, s.note, { ...AGAIN, againAfterMs: 10_000 })(A, { ...request, signal: cancel.signal }).then(() => undefined, (thrown: unknown) => thrown)
+    await vi.waitFor(() => { expect(s.asked).toEqual([A, B]) })
+    await tick()
+    cancel.abort(new Error('cancelled by the light client'))
+    expect((await outcome as Error).message).toBe('cancelled by the light client')
+    await tick()
+    expect(s.asked).toEqual([A, B])
+  })
+})
+
 describe('problemOf', () => {
   it('reads a code or a name from an error, and nothing else of it', () => {
     expect(problemOf(Object.assign(new Error('x https://k.example/SECRET'), { code: 'ECONNRESET' }))).toBe('could not be reached (ECONNRESET)')

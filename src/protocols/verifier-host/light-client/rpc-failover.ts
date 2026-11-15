@@ -1,22 +1,26 @@
 // Helios takes one execution RPC; this gives it several. A JSON-RPC request
 // that fails, or answers with an error, is sent to the next endpoint; one that
 // is slow is hedged by the next, and one that hangs is given up on when
-// another is left to ask. An endpoint that failed is asked after the others
-// until its cooldown ends. Which endpoint answers changes nothing about trust:
+// another is left to ask. When every endpoint has failed, and one of them with
+// an answer it may give differently a moment later, the endpoints are asked
+// once more. An endpoint that failed is asked after the others until its
+// cooldown ends. Which endpoint answers changes nothing about trust:
 // the light client checks every answer against its proofs, and never sends
 // eth_call, so an error is never an execution revert worth keeping.
 
 import { GatewayHealth, retryAfterMs } from '../../gateways/gateway-health.js'
 import type { GatewayOutcome } from '../../gateways/gateway-health.js'
 import { Outrun, racePass } from '../../gateways/race.js'
-import type { AttemptOutcome } from '../../gateways/race.js'
-import { unlessAborted } from '../../resolution/timing.js'
+import type { AttemptOutcome, PassResult } from '../../gateways/race.js'
+import { sleepOrAbort, unlessAborted } from '../../resolution/timing.js'
 import type { WebFetch } from '../egress.js'
-import { RPC_ATTEMPT_TIMEOUT_MS, RPC_HEDGE_MS } from '../pace.js'
+import { RPC_AGAIN_MS, RPC_ATTEMPT_TIMEOUT_MS, RPC_HEDGE_MS } from '../pace.js'
 
 export interface FailoverTiming {
   readonly hedgeAfterMs: number
   readonly attemptTimeoutMs: number
+  /** The pause before the second pass; `RPC_AGAIN_MS` when absent. */
+  readonly againAfterMs?: number
 }
 
 /** What `note` hears of an endpoint that was asked and did not answer within the time given. */
@@ -63,6 +67,11 @@ function badAnswer (response: Response): GatewayOutcome {
   return response.status >= 500 ? { kind: 'server-error' } : { kind: 'miss' }
 }
 
+/** Whether a server may answer differently when asked again at once: a rate limit, an outage, or an error inside an answer it did send (a load-balanced server answers from another backend). A refusal by status is the same each time. */
+function mayAnswerDifferently (response: Response, outcome: GatewayOutcome): boolean {
+  return outcome.kind === 'rate-limited' || outcome.kind === 'server-error' || (outcome.kind === 'miss' && response.ok)
+}
+
 /** What a failed connection says about itself that is safe to show: its code, never its message, which may quote the address. */
 export function problemOf (error: unknown): string {
   const named = error as { code?: unknown, name?: unknown, message?: unknown } | null
@@ -80,7 +89,13 @@ export function problemOf (error: unknown): string {
  * asked only when another is still to be asked in its place; the last ones
  * asked are waited on, bounded by the caller's signal. When every one fails,
  * the last answer to arrive is returned, so the light client reports that
- * error rather than a made-up one.
+ * error rather than a made-up one. A pass that ends so, with at least one
+ * endpoint failing in a way it may not repeat (a JSON-RPC error answer, a
+ * rate limit, a server error), is followed by one more pass over the
+ * endpoints, in the order then current, after `RPC_AGAIN_MS`; a pass in which
+ * every endpoint was unreachable or silent is not, since asking again would
+ * only wait twice. The caller's signal bounds the pause and the second pass as
+ * it bounds the first.
  *
  * Each endpoint keeps a `GatewayHealth` for as long as this fetch lives, and
  * a request asks the endpoints that are not cooling first, in the order
@@ -104,8 +119,9 @@ export function failoverRpc (endpoints: readonly string[], fetch: WebFetch, note
 
   return async (url, init) => {
     const callerSignal = init?.signal ?? new AbortController().signal
-    const order = [...endpoints.filter((endpoint) => !health.get(endpoint)!.cooling()), ...endpoints.filter((endpoint) => health.get(endpoint)!.cooling())]
+    let order: string[] = []
     let started = 0
+    let mayDiffer = false
     let last: Response | undefined
     let lastError: unknown
     const failed = (reason: string): AttemptOutcome<Response> => ({ kind: 'failed', retryable: false, reason })
@@ -145,7 +161,9 @@ export function failoverRpc (endpoints: readonly string[], fetch: WebFetch, note
         Object.defineProperty(answer, 'url', { value: url })
         last = answer
         const problem = answerProblem(response, text)
-        record(endpoint, problem === undefined ? { kind: 'ok', latencyMs: now() - askedAt } : badAnswer(response))
+        const outcome: GatewayOutcome = problem === undefined ? { kind: 'ok', latencyMs: now() - askedAt } : badAnswer(response)
+        record(endpoint, outcome)
+        mayDiffer = mayDiffer || mayAnswerDifferently(response, outcome)
         note(endpoint, problem)
         return problem === undefined ? { kind: 'verified', value: answer } : failed(problem)
       } catch (error) {
@@ -165,7 +183,20 @@ export function failoverRpc (endpoints: readonly string[], fetch: WebFetch, note
       }
     }
 
-    const result = await racePass(order, attempt, timing.hedgeAfterMs, callerSignal)
+    const pass = async (): Promise<PassResult<Response>> => {
+      order = [...endpoints.filter((endpoint) => !health.get(endpoint)!.cooling()), ...endpoints.filter((endpoint) => health.get(endpoint)!.cooling())]
+      started = 0
+      return await racePass(order, attempt, timing.hedgeAfterMs, callerSignal)
+    }
+
+    let result = await pass()
+    // The one condition under which a request is sent a second time: a request that must never be sent twice is ruled out here.
+    const again = result.kind === 'exhausted' && mayDiffer && !callerSignal.aborted
+    if (again) {
+      await sleepOrAbort(timing.againAfterMs ?? RPC_AGAIN_MS, callerSignal)
+      callerSignal.throwIfAborted()
+      result = await pass()
+    }
     if (result.kind === 'verified') return result.value
     if (result.kind === 'fatal') throw result.error
     if (last !== undefined) return last

@@ -36,6 +36,8 @@ const MOUNT_TIMEOUT_MS = 45_000
 export const RPC_HEDGE_MS = 1_000
 /** How long one execution server is waited on, headers and body, before it is given up on in favour of one not yet asked. */
 export const RPC_ATTEMPT_TIMEOUT_MS = 10_000
+/** How long the endpoints are left alone between a pass that found no usable answer and the one more pass that follows it: a load-balanced server may answer the same request from another backend, and a rate limit has a moment to ease. The same on every route, since it waits for no network. */
+export const RPC_AGAIN_MS = 300
 
 /**
  * The light client's first sync fetches about two megabytes from the beacon API, which a mixnet carries at some 15 to 20
