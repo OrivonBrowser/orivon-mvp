@@ -363,6 +363,53 @@ WantedBy=timers.target
 It runs as root because it restarts the Kubo service. The state file records each check and the last
 ten restarts.
 
+#### Keeping the names alive
+
+Every `<name>.orivonstack.eth` name points at an IPNS key of the node's Kubo, and opens only while that key's
+record is valid and some peer holds it. Two things end that. Kubo's own republisher publishes the keys one
+after another, with no deadline, so one lookup that never ends (measured on Kubo 0.43.1: 47 hours) leaves
+every other key unrenewed until its record runs out. And `ipfs name publish` signs for 48 hours unless told
+otherwise, whatever `Ipns.RecordLifetime` says: that setting only drives Kubo's own republisher, so
+[`scripts/pin-releases.sh`](../../scripts/pin-releases.sh), which moves `latest-release`, makes 48 hour
+records. A DHT keeps a record for about 36 to 48 hours only, so a record valid for years must still be put
+again regularly.
+
+[`scripts/ipns-republish.sh`](../../scripts/ipns-republish.sh) `run` does that without Kubo's republisher.
+For every key of the node except `SKIP_KEYS` (comma-separated, default `self`) it reads the record the node
+holds. With fewer than `RENEW_DAYS` (30) days left it signs the record anew for the same value, to last
+`LIFETIME` (`87672h`: 3653 days, ten calendar years whatever the leap days). Otherwise it puts the record on
+the network exactly as signed, which changes no value and so cannot race another publisher. Each key gets
+`TIMEOUT` seconds (300) and up to `PARALLEL` (8) run at once, so a lookup that never ends costs that key one
+run and no other key anything. It waits while the release pinner (`PINNER_UNIT`) runs, up to `PINNER_WAIT`
+seconds (3600), so a record is never signed anew while `latest-release` moves. `DRY_RUN=1` says what each
+key would get and changes nothing. Exit 0 when every key was handled, 1 when one failed, 2 on a usage or
+configuration error. Set `Ipns.RecordLifetime` to `87672h` (`ipfs config Ipns.RecordLifetime 87672h`) as
+well, so that Kubo's own republisher, when it runs, signs the same lifetime.
+
+```ini
+# orivon-ipns-republish.service
+[Service]
+Type=oneshot
+User=<the user that runs the release pinner>
+Environment=IPFS_API=/ip4/127.0.0.1/tcp/5001
+ExecStart=/path/to/ipns-republish.sh run
+
+# orivon-ipns-republish.timer
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=4h
+
+[Install]
+WantedBy=timers.target
+```
+
+`journalctl -u orivon-ipns-republish` shows one line per key: `[ipns-republish] <name> <id>: re-announced`,
+`re-signed until <date>` or `failed: <reason>`. A key the node holds no valid record for (never published, or
+expired) fails with the command that publishes it again by hand: `ipfs name publish --key=<name>
+--lifetime=87672h /ipfs/<its CID>`. A signing that times out leaves the new record stored on the node, and
+the next run puts it on the network. A key a tool such as `pin-releases.sh` has just signed for 48 hours is
+signed anew by the next run.
+
 #### The status page
 
 [`scripts/ipfs-status.sh`](../../scripts/ipfs-status.sh) answers "is everything served?" on one page. It

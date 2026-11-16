@@ -357,11 +357,11 @@ collect_site () {
     0) flag error "The IPNS record of $key is not on the network: nobody can find the page by its ipns:// address until it is published again" ;;
     '') [ -n "$target" ] && flag warn "Could not check the IPNS record of $key on the network (the routing server did not answer)" ;;
   esac
-  if [ "$matches" = false ]; then flag warn "The network still serves an older IPNS record for $key than the node holds; the node republishes it on its own"; fi
+  if [ "$matches" = false ]; then flag warn "The network still serves an older IPNS record for $key than the node holds; ipns-republish.sh puts the node's record on the network again"; fi
   if [ -n "$REC_EXPIRES" ]; then
     expires_left=$(( $(epoch "$REC_EXPIRES") - $(date -u +%s) ))
     if [ "$expires_left" -lt 0 ]; then flag error "The IPNS record of $key has expired: publish it again"
-    elif [ "$expires_left" -lt 43200 ]; then flag warn "The IPNS record of $key expires in under 12 hours; the node renews it when it republishes"; fi
+    elif [ "$expires_left" -lt 43200 ]; then flag warn "The IPNS record of $key expires in under 12 hours; ipns-republish.sh renews it, so check that its timer runs"; fi
   fi
 
   for name in $(names_for "$key"); do
