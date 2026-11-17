@@ -372,13 +372,18 @@ every other key unrenewed until its record runs out. And `ipfs name publish` sig
 otherwise, whatever `Ipns.RecordLifetime` says: that setting only drives Kubo's own republisher, so
 [`scripts/pin-releases.sh`](../../scripts/pin-releases.sh), which moves `latest-release`, makes 48 hour
 records. A DHT keeps a record for about 36 to 48 hours only, so a record valid for years must still be put
-again regularly.
+again regularly. And the node's DHT client can wait for ever on one peer: on Kubo 0.43.1 a write to a peer
+that had stopped reading never returned, and every later lookup that reached that peer waited behind it, so
+the keys whose lookups pass that peer could not be put into the DHT through the node at all.
 
 [`scripts/ipns-republish.sh`](../../scripts/ipns-republish.sh) `run` does that without Kubo's republisher.
 For every key of the node except `SKIP_KEYS` (comma-separated, default `self`) it reads the record the node
 holds. With fewer than `RENEW_DAYS` (30) days left it signs the record anew for the same value, to last
 `LIFETIME` (`87672h`: 3653 days, ten calendar years whatever the leap days). Otherwise it puts the record on
-the network exactly as signed, which changes no value and so cannot race another publisher. Each key gets
+the network exactly as signed, which changes no value and so cannot race another publisher. Every record goes
+out by two routes: over HTTP, PUT to each delegated routing endpoint of `DELEGATED_PUT` (comma-separated,
+default `https://delegated-ipfs.dev`, where Kubo also publishes; empty for none), which puts it into the DHT
+from its own nodes, and into the DHT through the node. A key is handled once one route took its record. Each key gets
 `TIMEOUT` seconds (300) and up to `PARALLEL` (8) run at once, so a lookup that never ends costs that key one
 run and no other key anything. It waits while the release pinner (`PINNER_UNIT`) runs, up to `PINNER_WAIT`
 seconds (3600), so a record is never signed anew while `latest-release` moves. `DRY_RUN=1` says what each
@@ -403,12 +408,14 @@ OnUnitActiveSec=4h
 WantedBy=timers.target
 ```
 
-`journalctl -u orivon-ipns-republish` shows one line per key: `[ipns-republish] <name> <id>: re-announced`,
-`re-signed until <date>` or `failed: <reason>`. A key the node holds no valid record for (never published, or
-expired) fails with the command that publishes it again by hand: `ipfs name publish --key=<name>
---lifetime=87672h /ipfs/<its CID>`. A signing that times out leaves the new record stored on the node, and
-the next run puts it on the network. A key a tool such as `pin-releases.sh` has just signed for 48 hours is
-signed anew by the next run.
+`journalctl -u orivon-ipns-republish` shows one line per key: `[ipns-republish] <name> <id>: re-announced
+through <routes>`, `re-signed until <date>, announced through <routes>`, or `failed: <reason>`. A handled
+key that one route failed for ends in `; failed: <route>: <reason>`: a `DHT: no answer in 300s` on every run
+means the node's DHT client is stuck, and only delegated routing carries those keys until Kubo restarts. A
+key the node holds no valid record for (never published, or expired) fails with the command that publishes
+it again by hand: `ipfs name publish --key=<name> --lifetime=87672h /ipfs/<its CID>`. A signing that times
+out has still stored the new record on the node, which then goes out over HTTP. A key a tool such as
+`pin-releases.sh` has just signed for 48 hours is signed anew by the next run.
 
 #### The status page
 
