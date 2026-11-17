@@ -8,10 +8,13 @@
 #
 # Kubo's own republisher publishes the keys one after another under a context with no deadline, so one lookup that
 # never ends (seen on Kubo 0.43.1) stops every key, and the 48 hours `ipfs name publish` signs for by default then
-# run out. Here each key has a timeout of its own and several run at once. A DHT keeps a record for 36 to 48 hours
-# only, so even a record valid for years is put again on every run.
+# run out. Here each key has a timeout of its own and several run at once. The node's DHT client can also wait for
+# ever on one peer (on Kubo 0.43.1, a write to a peer that stopped reading), and every lookup that reaches that peer
+# then never ends, so each record also goes over HTTP to delegated routing, which puts it into the DHT from its own
+# nodes. A DHT keeps a record for 36 to 48 hours only, so even a record valid for years is put again on every run.
 #
-# Needs bash 4.3 or later, jq, timeout (coreutils), GNU date and Kubo's `ipfs`. Settings come from the environment, below.
+# Needs bash 4.3 or later, jq, timeout (coreutils), GNU date, curl (unless DELEGATED_PUT is empty) and Kubo's `ipfs`.
+# Settings come from the environment, below.
 set -euo pipefail
 
 IPFS_API=${IPFS_API:-/ip4/127.0.0.1/tcp/5001}
@@ -20,6 +23,7 @@ LIFETIME=${LIFETIME:-87672h}              # 3653 days: ten calendar years whatev
 RENEW_DAYS=${RENEW_DAYS:-30}              # a record with fewer days left is signed anew
 TIMEOUT=${TIMEOUT:-300}                   # seconds for each key
 PARALLEL=${PARALLEL:-8}                   # keys handled at once
+DELEGATED_PUT=${DELEGATED_PUT-https://delegated-ipfs.dev}  # routing endpoints each record is PUT to, by commas; empty for none
 PINNER_UNIT=${PINNER_UNIT:-orivon-release-pinner.service}
 PINNER_WAIT=${PINNER_WAIT:-3600}          # seconds to wait for the pinner before giving up
 DRY_RUN=${DRY_RUN:-0}
@@ -64,23 +68,50 @@ read_record () {
   UNTIL=$(date -u -d "@$UNTIL_EPOCH" +%F)
 }
 
-# One key, one line. Runs in the background, so it never exits the script; its status says whether the key was handled.
+# PUTs the record in <file> to every DELEGATED_PUT endpoint. Adds each endpoint that took it to ROUTES, and each other
+# one, with why, to MISSED.
+put_delegated () {
+  local id=$1 file=$2 url err
+  for url in ${ENDPOINTS[@]+"${ENDPOINTS[@]}"}; do
+    url=${url%/}
+    if err=$(curl -fsS -o /dev/null --max-time "$TIMEOUT" -X PUT -H 'Content-Type: application/vnd.ipfs.ipns-record' \
+        --data-binary "@$file" "$url/routing/v1/ipns/$id" 2>&1); then
+      ROUTES+=" ${url#*://}"
+    else
+      MISSED+="; ${url#*://}: ${err:-curl failed}"
+    fi
+  done
+}
+
+# One key, one line. Runs in the background, so it never exits the script; its status says whether the key was handled:
+# a key is handled once one route, HTTP or the node's DHT, took its record.
 republish_key () {
-  local name=$1 id=$2 file="$WORK/$2" tag="$1 $2"
+  local name=$1 id=$2 file="$WORK/$2" tag="$1 $2" did doing before
   if ! read_record "$id" "$file"; then
     log "$tag: failed: the node holds no valid record for it (expired, or never published); publish it by hand with ipfs name publish --key=$name --lifetime=$LIFETIME /ipfs/<its CID>"
     return 1
   fi
+  ROUTES='' MISSED=''
   if [ $(( UNTIL_EPOCH - $(date -u +%s) )) -ge $(( RENEW_DAYS * 86400 )) ]; then
     # Put exactly as signed: no new value, so it cannot race another publisher of this key.
     if [ "$DRY_RUN" = 1 ]; then log "$tag: DRY RUN: would re-announce its record, valid until $UNTIL"; return 0; fi
-    if ipfs_try routing put "/ipns/$id" "$file"; then log "$tag: re-announced"; else log "$tag: failed: re-announcing: $WHY"; return 1; fi
+    put_delegated "$id" "$file"
+    if ipfs_try routing put "/ipns/$id" "$file"; then ROUTES+=" DHT"; else MISSED+="; DHT: $WHY"; fi
+    did=re-announced doing=re-announcing
   else
     if [ "$DRY_RUN" = 1 ]; then log "$tag: DRY RUN: would re-sign $VALUE for $LIFETIME, its record ends $UNTIL"; return 0; fi
-    if ! ipfs_try name publish --key="$name" --lifetime="$LIFETIME" --resolve=false "$VALUE"; then log "$tag: failed: re-signing: $WHY"; return 1; fi
+    # `name publish` puts the new record into the DHT itself, and one that gives up on a lookup that never ends has
+    # still stored it, so the record is read back either way.
+    before=$UNTIL_EPOCH
+    if ipfs_try name publish --key="$name" --lifetime="$LIFETIME" --resolve=false "$VALUE"; then ROUTES+=" DHT"; else MISSED+="; DHT: $WHY"; fi
     if ! read_record "$id" "$file"; then log "$tag: failed: re-signed, but the node's record cannot be read back"; return 1; fi
-    log "$tag: re-signed until $UNTIL"
+    if [ -z "$ROUTES" ] && [ "$UNTIL_EPOCH" -le "$before" ]; then log "$tag: failed: re-signing: $WHY"; return 1; fi
+    put_delegated "$id" "$file"
+    did="re-signed until $UNTIL, announced" doing="announcing the record re-signed until $UNTIL"
   fi
+  if [ -z "$ROUTES" ]; then log "$tag: failed: $doing: ${MISSED#; }"; return 1; fi
+  ROUTES=${ROUTES# }
+  log "$tag: $did through ${ROUTES// /, }${MISSED:+; failed: ${MISSED#; }}"
 }
 
 run () {
@@ -90,7 +121,12 @@ run () {
   done
   [ "$PARALLEL" -ge 1 ] || { echo "PARALLEL must be at least 1" >&2; exit 2; }
   [[ $LIFETIME =~ ^([0-9]+(ns|us|ms|s|m|h))+$ ]] || { echo "LIFETIME must be a duration such as 87672h, not '$LIFETIME'" >&2; exit 2; }
-  for var in jq timeout; do command -v "$var" >/dev/null || { echo "$var is not installed" >&2; exit 2; }; done
+  ENDPOINTS=()
+  IFS=', ' read -r -a ENDPOINTS <<<"$DELEGATED_PUT"
+  for var in ${ENDPOINTS[@]+"${ENDPOINTS[@]}"}; do
+    [[ $var =~ ^https?://[^/]+ ]] || { echo "DELEGATED_PUT takes http(s) URLs separated by commas, not '$var'" >&2; exit 2; }
+  done
+  for var in jq timeout ${ENDPOINTS[0]:+curl}; do command -v "$var" >/dev/null || { echo "$var is not installed" >&2; exit 2; }; done
 
   if ! keys=$(timeout "$TIMEOUT" "${IPFS[@]}" key list -l --ipns-base=base36 2>/dev/null); then log "failed: could not list the keys of the node at $IPFS_API"; exit 1; fi
   if [ "$DRY_RUN" != 1 ]; then wait_for_pinner; fi
