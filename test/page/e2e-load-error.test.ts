@@ -15,6 +15,13 @@ let server: FixtureServer
 beforeAll(async () => {
   server = await startServer((req, res) => {
     if (req.url === '/gone') { html(res, '<!doctype html><title>Gone</title><h1>Not here</h1>', 404); return }
+    if (req.url === '/cut') {
+      // The connection ends before the body its Content-Length promises: the page has already shown what arrived.
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': '4096' })
+      res.write('<!doctype html><title>Cut short</title><p>the start of the page</p>')
+      setTimeout(() => { res.socket?.destroy() }, 300)
+      return
+    }
     html(res, '<!doctype html><title>Fine</title><p>fine</p>')
   })
 })
@@ -87,6 +94,20 @@ it('leaves no sheet on an HTTP error page, and takes it away when the tab goes s
     expect(await waitFor(async () => await sheetSays(app, 'ERR_NAME_NOT_RESOLVED'))).toBe(true)
     await visit(app, chrome, `${server.origin}/`)
     await delay(ABSENCE_SETTLE_MS)
+    expect(await sheetShown(app)).toBe(false)
+  } finally {
+    await closeElectron(app)
+  }
+}, QA_TEST_TIMEOUT_MS)
+
+it('leaves no sheet over a page that showed before its connection ended short of the body', async () => {
+  const { app, chrome } = await launchShell()
+  try {
+    const url = `${server.origin}/cut`
+    await clickAddressBarRetrying(chrome, url)
+    expect((await waitForTab(chrome, { address: url, title: 'Cut short' })).ok).toBe(true)
+    // The connection ends 300 ms after the page shows; the sheet would follow it at once.
+    await delay(300 + ABSENCE_SETTLE_MS)
     expect(await sheetShown(app)).toBe(false)
   } finally {
     await closeElectron(app)
