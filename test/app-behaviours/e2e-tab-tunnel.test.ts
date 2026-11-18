@@ -8,9 +8,9 @@
 // reaches the website outside it, and keeps the tunnel a website has of its own. There the direct page's own `/favicon.ico` is the
 // one request the decoy does not count, because main fetches it at a moment of its own and it is no leak; the icon of a website that
 // should be tunnelled counts like any other request. The last cases open a new tab with the plus button or the new-tab key from a tab that
-// carries a tunnel, from a tab with none, from a direct tab and from a tab that shows a website with a tunnel of its own, and read the
-// choice the new tab took: a tunnel is passed on, the absence of one never is, so a new tab beside a direct tab follows the browser and its
-// first address goes through the tunnel the whole browser is on.
+// carries a tunnel, from a tab that shows a website with a tunnel of its own, and from a direct tab, and read the choice the new tab took:
+// none, whatever the tab it came from carries or shows, so its tunnel button is plain and its first address goes where it would in a fresh
+// window (from the shared session, or through the tunnel the whole browser is on).
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/app-behaviours/e2e-tab-tunnel.test.ts
 import { writeFileSync } from 'node:fs'
@@ -24,7 +24,6 @@ import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import { assertNoElectronSurvivors, closeElectron } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying, pressCommand } from '../support/e2e-helpers.js'
-import { openTabWithNoChoice, tabChoiceOf } from '../support/tunnel-popup.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { activeTabInfo, delay, popoverShown, readTabDocument, tabIds, tabViews, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
 
@@ -109,6 +108,31 @@ const tabTitle = async (chrome: Page): Promise<string> => (await activeTabInfo(c
 async function giveChoice (app: ElectronApplication, tabId: string, choice: Choice): Promise<void> {
   const done = await app.evaluate((_electron, [id, value]) => (globalThis as unknown as { __orivonDevTabTunnel?: { set: (tab: string, choice: string | null) => boolean } }).__orivonDevTabTunnel?.set(id as string, value as string), [tabId, choice])
   expect(done, 'the test seam found the tab').toBe(true)
+}
+
+/** The tunnel choice the tab carries, read through the test seam: undefined for none. */
+async function tabChoiceOf (app: ElectronApplication, tabId: string): Promise<string | undefined> {
+  return await app.evaluate((_electron, id) => (globalThis as unknown as { __orivonDevTabTunnel?: { choiceOf: (tab: string) => string | undefined } }).__orivonDevTabTunnel?.choiceOf(id), tabId)
+}
+
+/** Whether the tab in front lives in the shared session of the browser, read from the page whose address is `url`. */
+async function inSharedSession (app: ElectronApplication, url: string): Promise<boolean | undefined> {
+  return await app.evaluate(({ webContents, session }, address) => webContents.getAllWebContents().find((wc) => wc.getURL() === address)?.session === session.defaultSession, url)
+}
+
+/** Opens a new tab with the plus button from the tab in front, and returns its id once it is in front. */
+async function plusButton (chrome: Page): Promise<string> {
+  const before = await tabIds(chrome)
+  const from = await activeId(chrome)
+  await chrome.click('#new-tab')
+  expect(await waitFor(async () => (await tabIds(chrome)).length === before.length + 1 && await activeId(chrome) !== from), 'the plus button opened a tab').toBe(true)
+  return await activeId(chrome)
+}
+
+/** Checks the tab in front has no tunnel choice and a plain tunnel button, and returns once the button has settled on it. */
+async function expectPlainTab (app: ElectronApplication, chrome: Page, tabId: string, what: string): Promise<void> {
+  expect(await tabChoiceOf(app, tabId), `${what} has no choice`).toBeUndefined()
+  expect(await waitFor(async () => await chrome.locator('#tunnel-btn').isVisible() && await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === null), `${what} has a plain tunnel button`).toBe(true)
 }
 
 /**
@@ -201,7 +225,7 @@ it('[app:tab-tunnel-first-request-leaves-through-the-tunnel] a typed address, a 
 
     // The control: a tab with no choice reaches the same website directly, so the decoy does answer when the tunnel is skipped.
     const decoyBefore = hosts.decoy.hits
-    await openTabWithNoChoice(app, chrome)
+    await chrome.click('#new-tab')
     await open(app, chrome, urlA(), 'direct')
     expect(hosts.decoy.hits - decoyBefore, 'a tab with no choice reaches the website directly').toBeGreaterThan(0)
   } finally {
@@ -327,7 +351,7 @@ it('[app:tab-tunnel-direct-tab-keeps-a-sites-own-tunnel] with the whole browser 
     // The control: a tab with no choice goes through the tunnel the whole browser is on, so A is no longer a host whose icon the decoy lets through.
     directIcons.delete(A)
     const control = asked(A)
-    await openTabWithNoChoice(app, chrome)
+    await chrome.click('#new-tab')
     await open(app, chrome, urlA(), 'tunnelled')
     expect(asked(A) - control, 'a tab with no choice follows the whole browser onto the tunnel').toBeGreaterThan(0)
   } finally {
@@ -336,43 +360,45 @@ it('[app:tab-tunnel-direct-tab-keeps-a-sites-own-tunnel] with the whole browser 
   }
 }, 4 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tab-tunnel-new-tab-keeps-the-tunnel] a new tab opened from a tab set to a tunnel with the plus button or Ctrl+T carries the tunnel: its button shows it and the first address typed there leaves through it, never direct', async () => {
+it('[app:tab-tunnel-new-tab-starts-with-no-choice] a new tab opened with the plus button or Ctrl+T from a tab set to a tunnel has no choice: its button is plain and the first address typed there reaches the website from the shared session, not through the tunnel', async () => {
   const { app, chrome } = await start()
   try {
-    const directBefore = hosts.decoy.hits
     const first = await activeId(chrome)
     await giveChoice(app, first, 'socks5')
-
-    // The plus button.
-    await chrome.click('#new-tab')
-    expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) !== first)).toBe(true)
-    const plus = await activeId(chrome)
-    expect(await tabChoiceOf(app, plus), 'the tab the plus button opened carries the tunnel').toBe('socks5')
-    expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'and its tunnel button shows it').toBe(true)
+    const directBefore = hosts.decoy.hits
     const asking = asked(A)
     await open(app, chrome, urlA(), 'tunnelled')
-    await viaTunnel(A, asking, directBefore, 'the first address typed in the tab the plus button opened')
-    expect(await app.evaluate(({ webContents, session }, url) => webContents.getAllWebContents().find((wc) => wc.getURL() === url)?.session === session.defaultSession, urlA()), 'the page lives in the tunnel\'s profile, not the shared session').toBe(false)
+    await viaTunnel(A, asking, directBefore, 'the tab set to a tunnel')
+    expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'the tab set to a tunnel shows it on its button').toBe(true)
 
-    // Ctrl+T, pressed in the page of the tab the plus button opened.
+    // The plus button.
+    const plus = await plusButton(chrome)
+    await expectPlainTab(app, chrome, plus, 'the tab the plus button opened')
+    let decoyBefore = hosts.decoy.hits
+    let tunnelledB = asked(B)
+    await open(app, chrome, urlB(), 'direct')
+    expect(hosts.decoy.hits - decoyBefore, 'the first address typed in the tab the plus button opened reaches the website directly').toBeGreaterThan(0)
+    expect(asked(B) - tunnelledB, 'and the tunnel was not asked for it').toBe(0)
+    expect(await inSharedSession(app, urlB()), 'the page lives in the shared session, not in the tunnel\'s profile').toBe(true)
+
+    // Ctrl+T, pressed in the page of the tab set to the tunnel once it is in front again.
+    await chrome.click(`.tab[data-id="${first}"]`)
+    expect(await waitFor(async () => await activeId(chrome) === first)).toBe(true)
     await pressCommand(app, urlA(), 'tab.new')
-    expect(await waitFor(async () => (await tabIds(chrome)).length === 3 && await activeId(chrome) !== plus)).toBe(true)
+    expect(await waitFor(async () => (await tabIds(chrome)).length === 3 && await activeId(chrome) !== first)).toBe(true)
     const keys = await activeId(chrome)
-    expect(await tabChoiceOf(app, keys), 'the tab Ctrl+T opened carries the tunnel').toBe('socks5')
-    const typed = asked(B)
-    await open(app, chrome, urlB(), 'tunnelled-b')
-    await viaTunnel(B, typed, directBefore, 'the first address typed in the tab Ctrl+T opened')
+    expect(keys, 'a tab that is not the one the plus button opened').not.toBe(plus)
+    await expectPlainTab(app, chrome, keys, 'the tab Ctrl+T opened')
+    const typed = `${urlB()}keys`
+    decoyBefore = hosts.decoy.hits
+    tunnelledB = asked(B)
+    await open(app, chrome, typed, 'direct')
+    expect(hosts.decoy.hits - decoyBefore, 'the first address typed in the tab Ctrl+T opened reaches the website directly').toBeGreaterThan(0)
+    expect(asked(B) - tunnelledB, 'and the tunnel was not asked for it').toBe(0)
+    expect(await inSharedSession(app, typed), 'the page lives in the shared session').toBe(true)
 
-    // A tab with no choice opens a tab with none, which reaches the website directly: the control that shows the decoy answers.
-    const plain = await openTabWithNoChoice(app, chrome)
-    expect(await tabChoiceOf(app, plain)).toBeUndefined()
-    await chrome.click('#new-tab')
-    expect(await waitFor(async () => (await tabIds(chrome)).length === 5 && await activeId(chrome) !== plain)).toBe(true)
-    const opened = await activeId(chrome)
-    expect(await tabChoiceOf(app, opened), 'a tab opened from a tab with no choice has none').toBeUndefined()
-    const decoyBefore = hosts.decoy.hits
-    await open(app, chrome, urlA(), 'direct')
-    expect(hosts.decoy.hits - decoyBefore, 'a tab with no choice reaches the website directly').toBeGreaterThan(0)
+    // The tab set to the tunnel keeps it: only the tabs opened from it start without.
+    expect(await tabChoiceOf(app, first), 'the tab the new tabs were opened from still carries its tunnel').toBe('socks5')
   } finally {
     await closeElectron(app)
   }
@@ -387,7 +413,7 @@ it('[app:tab-tunnel-new-tab-from-direct-tab-follows-the-browser] with the whole 
 
     await chrome.click('#new-tab')
     expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) !== first)).toBe(true)
-    expect(await tabChoiceOf(app, await activeId(chrome)), 'the new tab has no choice: direct is not passed on').toBeUndefined()
+    expect(await tabChoiceOf(app, await activeId(chrome)), 'the new tab has no choice, whatever the tab it was opened from carries').toBeUndefined()
     expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'and its tunnel button shows the browser\'s tunnel').toBe(true)
 
     const directBefore = hosts.decoy.hits
@@ -399,7 +425,7 @@ it('[app:tab-tunnel-new-tab-from-direct-tab-follows-the-browser] with the whole 
   }
 }, 3 * QA_TEST_TIMEOUT_MS)
 
-it('[app:tab-tunnel-new-tab-follows-the-tunnel-of-a-sites-entry] a new tab opened from a tab with no choice that shows a website with a tunnel of its own takes that tunnel, and a first address typed there leaves through it', async () => {
+it('[app:tab-tunnel-new-tab-starts-with-no-choice] a new tab opened from a tab that shows a website with a tunnel of its own, or from the same tab set to direct, has no choice either, and the first address typed there reaches the website from the shared session', async () => {
   const siteB = `http://${B}:${String(hosts.decoy.port)}`
   const routes = { version: 1, profiles: 1, kinds: 1, origins: [siteB], via: { [siteB]: 'socks5' }, off: [], apart: [], apartProxy: [siteB], apartDirect: [] }
   const { app, chrome } = await start({ routes })
@@ -410,25 +436,23 @@ it('[app:tab-tunnel-new-tab-follows-the-tunnel-of-a-sites-entry] a new tab opene
     await viaTunnel(B, before, directBefore, 'a website with a tunnel of its own')
     const shows = await activeId(chrome)
     expect(await tabChoiceOf(app, shows), 'the tab itself has no choice: the website has its own tunnel').toBeUndefined()
+    expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'and its tunnel button shows the website\'s tunnel').toBe(true)
 
-    await chrome.click('#new-tab')
-    expect(await waitFor(async () => (await tabIds(chrome)).length === 2 && await activeId(chrome) !== shows)).toBe(true)
-    expect(await tabChoiceOf(app, await activeId(chrome)), 'the new tab takes the website\'s tunnel').toBe('socks5')
-    expect(await waitFor(async () => await chrome.getAttribute('#tunnel-btn', 'data-tunnel') === 'on'), 'and its tunnel button shows it').toBe(true)
+    const fresh = await plusButton(chrome)
+    await expectPlainTab(app, chrome, fresh, 'the tab opened from the website\'s tab')
+    const decoyBefore = hosts.decoy.hits
+    const tunnelledA = asked(A)
+    await open(app, chrome, urlA(), 'direct')
+    expect(hosts.decoy.hits - decoyBefore, 'a website with no tunnel of its own, typed in the new tab, is reached directly').toBeGreaterThan(0)
+    expect(asked(A) - tunnelledA, 'and the tunnel was not asked for it').toBe(0)
+    expect(await inSharedSession(app, urlA()), 'the page lives in the shared session').toBe(true)
 
-    // Another website, with no tunnel of its own, typed in the new tab leaves through the tunnel the tab took.
-    const asking = asked(A)
-    await open(app, chrome, urlA(), 'tunnelled')
-    await viaTunnel(A, asking, directBefore, 'a website with no entry, in the new tab')
-
-    // The first tab turned to direct still shows the website's own tunnel: its button is lit, so a tab opened from it takes that tunnel, never direct.
+    // The first tab turned to direct still shows the website's own tunnel: a tab opened from it has no choice as well.
     await chrome.click(`.tab[data-id="${shows}"]`)
     expect(await waitFor(async () => await activeId(chrome) === shows)).toBe(true)
     await giveChoice(app, shows, 'direct')
-    const tabsBefore = await tabIds(chrome)
-    await chrome.click('#new-tab')
-    expect(await waitFor(async () => (await tabIds(chrome)).length === tabsBefore.length + 1 && await activeId(chrome) !== shows)).toBe(true)
-    expect(await tabChoiceOf(app, await activeId(chrome)), 'a tab opened from a direct tab on the website takes the website\'s tunnel').toBe('socks5')
+    const fromDirect = await plusButton(chrome)
+    await expectPlainTab(app, chrome, fromDirect, 'the tab opened from a direct tab on the website')
   } finally {
     await closeElectron(app)
   }
