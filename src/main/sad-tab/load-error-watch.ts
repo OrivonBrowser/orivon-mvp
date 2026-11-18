@@ -1,6 +1,6 @@
 // Watches one tab's web contents for a page that failed to load, and puts the sheet over the tab. Chromium shows a
 // failed load as an empty page under the address that failed, so without the sheet nothing says it failed. A page that
-// showed and then lost its connection keeps what arrived, as in Chromium, and gets no sheet. The sheet belongs to that
+// committed and then lost its connection keeps what arrived, if anything, as in Chromium, and gets no sheet. The sheet belongs to that
 // failure only: the tab's next navigation, or other web contents taking the tab's place, takes it, or its place in the
 // queue, away.
 import type { WebContents } from 'electron'
