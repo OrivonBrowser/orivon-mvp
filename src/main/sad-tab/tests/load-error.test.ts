@@ -88,8 +88,10 @@ describe('the load-error watcher', () => {
       }
     }
   }
+  /** A load that failed before its page showed: Electron emits both events, in this order, for the error page it commits. */
   const fail = (s: ReturnType<typeof setup>, code: number, url: string, main = true, name = 'ERR_NAME_NOT_RESOLVED'): void => {
     s.shown.url = url
+    s.contents.emit('did-fail-provisional-load', {}, code, name, url, main)
     s.contents.emit('did-fail-load', {}, code, name, url, main)
   }
 
@@ -99,6 +101,18 @@ describe('the load-error watcher', () => {
     fail(s, -105, 'http://unresolvable.invalid/')
     expect(s.asks).toHaveLength(1)
     expect(s.asks[0]).toMatchObject({ window: WINDOW, tabId: 't1', slot: 'center', overlay: 'load-error', payload: { code: -105, name: 'ERR_NAME_NOT_RESOLVED' } })
+  })
+
+  it('stays out for a page that showed and then lost its connection before the rest of it arrived', () => {
+    const s = setup()
+    watchLoadErrors(s.contents as unknown as WebContents, s.deps)
+    s.shown.url = 'http://cut.example/'
+    s.contents.emit('did-fail-load', {}, -354, '', 'http://cut.example/', true)
+    expect(s.asks).toHaveLength(0)
+    // A cancelled load leaves no mark that a later failure of the page it was replacing could be read as.
+    s.contents.emit('did-fail-provisional-load', {}, -3, 'ERR_ABORTED', 'http://cut.example/', true)
+    s.contents.emit('did-fail-load', {}, -354, '', 'http://cut.example/', true)
+    expect(s.asks).toHaveLength(0)
   })
 
   it('stays out for a frame, a cancelled load, a certificate failure, a failure another sheet explains, and a failure that left the earlier page showing', () => {

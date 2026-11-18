@@ -24,7 +24,7 @@ feature (`signals/crashed.ts`, `overlays/overlays.ts`, `shell-installers.ts`), n
 **Owner stream.** `shell`.
 
 **Electron dependence.** Tied to Electron only at the edge: the signal listens for `render-process-gone`,
-`unresponsive` and `responsive`, the load-error watcher for `did-start-navigation` and `did-fail-load`, and the
+`unresponsive` and `responsive`, the load-error watcher for `did-start-navigation`, `did-fail-provisional-load` and `did-fail-load`, and the
 card's Reload is `webContents.reload()`. The text table and the
 record reading need nothing of it.
 
