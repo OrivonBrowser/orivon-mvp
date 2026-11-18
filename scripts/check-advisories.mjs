@@ -20,7 +20,8 @@ const THRESHOLD = ['high', 'critical']
  * still fails the build. An entry goes once a fixed release ships.
  */
 export const ACCEPTED = new Map([
-  ['GHSA-ch52-4w7c-c8xp', 'http-cache-semantics is reached only through electron-builder\'s Electron download at packaging time, whose cache serves one user; no fixed release exists (decision-log d-0413)']
+  ['GHSA-ch52-4w7c-c8xp', 'http-cache-semantics is reached only through electron-builder\'s Electron download at packaging time, whose cache serves one user; no fixed release exists (decision-log d-0413)'],
+  ['GHSA-fc5q-39xc-vjpf', 'picomatch is a development dependency only (vite, vitest, tinyglobby, fdir), matching globs this repository writes, and never ships; no fixed release exists (decision-log d-0793)']
 ])
 
 /** The GHSA id at the end of an advisory URL, or undefined. */
