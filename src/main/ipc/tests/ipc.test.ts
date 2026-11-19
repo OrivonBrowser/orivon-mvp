@@ -128,13 +128,13 @@ describe('registerShellIpc -- siteSummaryFor', () => {
 })
 
 describe('registerShellIpc -- newTab', () => {
-  it('opens the new tab on the tunnel choice the tab in front gives it, and for the chrome view only', () => {
+  it('opens a new tab with no tunnel choice, for the chrome view only', () => {
     const createTab = vi.fn()
-    const tabs = { createTab, newTabTunnelChoice: vi.fn(() => 'nym') } as unknown as TabManager
+    const tabs = { createTab } as unknown as TabManager
     registerShellIpc(chromeWebContents, CHROME_URL, tabs, {} as BookmarkStore, fakeSiteInfo(), actions())
 
     dispatch({ type: 'newTab' })
-    expect(createTab).toHaveBeenCalledWith(undefined, true, undefined, 'nym')
+    expect(createTab).toHaveBeenCalledWith(undefined)
 
     createTab.mockClear()
     dispatch({ type: 'newTab' }, OTHER_FRAME)

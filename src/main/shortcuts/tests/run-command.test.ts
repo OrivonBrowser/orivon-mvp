@@ -36,7 +36,6 @@ function harness (tabs: Tab[], activeTabId: string | null, options: { kiosk?: bo
       hasRoom: () => true,
       liveWebContents: () => undefined,
       faviconFor: () => 'data:icon',
-      newTabTunnelChoice: (from?: string) => tabs.find((t) => t.id === (from ?? activeTabId))?.tunnelChoice,
       activeWebContents: () => ({ reloadIgnoringCache: calls['reloadIgnoringCache'], stop: calls['stop'], focus: vi.fn() }),
       ...calls
     },
@@ -98,13 +97,10 @@ describe('the tab-state commands', () => {
 })
 
 describe('the new tab command', () => {
-  it('opens the new-tab page on the tunnel choice the tab in front gives it', () => {
+  it('opens the new-tab page with no tunnel choice, whatever the tab in front carries', () => {
     const { target, calls, deps } = harness([tab('a', { tunnelChoice: 'nym' }), tab('b')], 'a')
     runCommand('tab.new', target, deps)
-    expect(calls['createTab']).toHaveBeenCalledWith(undefined, true, undefined, 'nym')
-    const plain = harness([tab('a', { tunnelChoice: 'nym' }), tab('b')], 'b')
-    runCommand('tab.new', plain.target, plain.deps)
-    expect(plain.calls['createTab']).toHaveBeenCalledWith(undefined, true, undefined, undefined)
+    expect(calls['createTab']).toHaveBeenCalledWith()
   })
 })
 

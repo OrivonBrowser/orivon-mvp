@@ -24,7 +24,6 @@ import { TabOpener } from './tab-open.js'
 import { KeyboardWaiters, watchFreshTab } from './new-tab-focus.js'
 import { TabPanes } from './tab-panes.js'
 import { setTabTunnelChoice } from './tab-tunnel-choice.js'
-import { newTabChoice } from './new-tab-tunnel.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
@@ -142,7 +141,7 @@ export class TabManager {
       activate: (id) => { this.activateTab(id) },
       focus: (id) => { this.liveWebContents(id)?.focus() },
       changed: () => { this.panes.sync(); this.changed() },
-      openTab: (from) => this.atCapacity() ? undefined : this.createTab(undefined, true, undefined, this.newTabTunnelChoice(from)),
+      openTab: () => this.atCapacity() ? undefined : this.createTab(),
       area: getTabBounds,
       isPinned: (id) => this.isPinned(id)
     })
@@ -219,9 +218,6 @@ export class TabManager {
 
   /** The tunnel choice of the tab in front, for what asks on its behalf before it navigates (the address bar's suggestions). */
   activeTunnelChoice (): TabTunnelChoice | undefined { return this.activeId === null ? undefined : this.tabs.get(this.activeId)?.tunnelChoice }
-
-  /** The tunnel choice a blank tab opened from the tab `from` (the one in front when absent) takes: pass it to `createTab` (new-tab-tunnel.ts). */
-  newTabTunnelChoice (from?: string): TabTunnelChoice | undefined { return newTabChoice(this, from ?? this.activeId, this.ctx.routes, this.shell?.services?.tunnel.isApp) }
 
   /** A local file in a new tab of the local-files session; undefined for anything `localFileKey` refuses. */
   openLocalFile (url: string, active = true): Promise<string | undefined> { return this.opener.openLocalFile(url, active) }
