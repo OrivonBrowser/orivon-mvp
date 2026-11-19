@@ -1,9 +1,9 @@
 # ADR-0101: A tab can carry a tunnel choice that holds for every website it opens
 
-- **Status:** accepted. Extends [`ADR-0084`](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md) (a website lives in a shared profile when it has an entry) and [`ADR-0089`](ADR-0089-each-website-and-app-picks-its-own-tunnel-and-an-installed-apps-tunnel-is-set-as-a-websites-is.md) (an entry is `off`, Nym or the proxy, and an origin's session follows it) with a second source for the profile: the tab the website is opened in. Both stand for every website opened in a tab with no choice. Amended by `d-0793`: a new-tab page starts with no choice, whatever the tab it is opened from carries or shows (it reverses `d-0780`, which gave it that tab's tunnel).
+- **Status:** accepted. Extends [`ADR-0084`](ADR-0084-the-tunnel-can-carry-the-whole-browser-and-a-website-with-an-entry-lives-in-one-of-two-shared-profiles.md) (a website lives in a shared profile when it has an entry) and [`ADR-0089`](ADR-0089-each-website-and-app-picks-its-own-tunnel-and-an-installed-apps-tunnel-is-set-as-a-websites-is.md) (an entry is `off`, Nym or the proxy, and an origin's session follows it) with a second source for the profile: the tab the website is opened in. Both stand for every website opened in a tab with no choice. Amended by `d-0794`: a new-tab page starts with no choice, whatever the tab it is opened from carries or shows (it reverses `d-0780`, which gave it that tab's tunnel).
 - **Date:** 2026-10-28
 - **Type:** architecture / security
-- **Decided by:** owner (a tunnel can be chosen for a tab before its first address is typed, and the choice lasts the whole tab); AI recommendation accepted by default for the precedence, the shared profile and the absence of a mark in the tab strip; owner (`d-0793`: a new tab starts with no choice, whatever the tab it is opened from carries; it reverses `d-0780`)
+- **Decided by:** owner (a tunnel can be chosen for a tab before its first address is typed, and the choice lasts the whole tab); AI recommendation accepted by default for the precedence, the shared profile and the absence of a mark in the tab strip; owner (`d-0794`: a new tab starts with no choice, whatever the tab it is opened from carries; it reverses `d-0780`)
 
 ## Decision
 
@@ -47,7 +47,7 @@ The owner's words: the tunnels button should be visible in the new tab too, so t
 - **A session for each tab.** Rejected: a profile has one front and one set of tunnel credentials (ADR-0089), so a session per tab would start a front per tab, and a person would sign in again in every tab. The tunnel's shared profile is the session a website with that entry already uses.
 - **Choose the tunnel for each request, inside one session.** Rejected for the reason ADR-0089 gives: Chromium sets a proxy per session.
 - **A direct tab that overrides every entry.** Rejected: a promise made for a website (it is to go through Nym) would be broken by opening it in a tab set to direct, and the person who made the promise would not be told. A tab is never less tunnelled than a promise made for a website.
-- **Give a new-tab page opened from a tab that tab's tunnel** (the tab's own, or the own entry of the website it shows). Built, then reversed by the owner (`d-0780`, `d-0793`): the list says "This tab", and a person who sets a tunnel there does not expect the next tab they start to carry it.
+- **Give a new-tab page opened from a tab that tab's tunnel** (the tab's own, or the own entry of the website it shows). Built, then reversed by the owner (`d-0780`, `d-0794`): the list says "This tab", and a person who sets a tunnel there does not expect the next tab they start to carry it.
 - **Ask the person, in a tunnel tab, to leave an installed app's own route.** Not built; see the provisional notes.
 
 ## Reasoning

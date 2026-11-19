@@ -11,7 +11,13 @@ function watched () {
   return {
     wc, changed,
     start: (over: Record<string, unknown> = {}) => contents.emit('did-start-navigation', { isMainFrame: true, isSameDocument: false, ...over }),
-    fail: (code = -105, isMainFrame = true) => contents.emit('did-fail-load', {}, code, 'ERR', 'https://down.example/', isMainFrame, 1, 1),
+    /** A load that failed before its page showed: Electron emits both events, in this order, for the error page it commits. */
+    fail: (code = -105, isMainFrame = true) => {
+      contents.emit('did-fail-provisional-load', {}, code, 'ERR', 'https://down.example/', isMainFrame, 1, 1)
+      if (code !== -3) contents.emit('did-fail-load', {}, code, 'ERR', 'https://down.example/', isMainFrame, 1, 1)
+    },
+    /** A page that showed and then lost its connection: `did-fail-load` alone. */
+    cut: () => contents.emit('did-fail-load', {}, -354, '', 'https://ok.example/', true, 1, 1),
     navigated: () => contents.emit('did-navigate', {}, 'https://ok.example/')
   }
 }
@@ -63,6 +69,15 @@ describe('loadFailed', () => {
     navigated()
     expect(loadFailed(wc)).toBe(false)
     expect(changed).toHaveBeenCalledTimes(2)
+  })
+
+  it('stays false for a page that showed and then lost its connection before the rest of it arrived', () => {
+    const { wc, start, navigated, cut, changed } = watched()
+    start()
+    navigated()
+    cut()
+    expect(loadFailed(wc)).toBe(false)
+    expect(changed).not.toHaveBeenCalled()
   })
 
   it('stays true when the next navigation fails as well', () => {

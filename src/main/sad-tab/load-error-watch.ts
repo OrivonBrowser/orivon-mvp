@@ -1,7 +1,8 @@
 // Watches one tab's web contents for a page that failed to load, and puts the sheet over the tab. Chromium shows a
-// failed load as an empty page under the address that failed, so without the sheet nothing says it failed. The sheet
-// belongs to that failure only: the tab's next navigation, or other web contents taking the tab's place, takes it, or
-// its place in the queue, away.
+// failed load as an empty page under the address that failed, so without the sheet nothing says it failed. A page that
+// committed and then lost its connection keeps what arrived, if anything, as in Chromium, and gets no sheet. The sheet belongs to that
+// failure only: the tab's next navigation, or other web contents taking the tab's place, takes it, or its place in the
+// queue, away.
 import type { WebContents } from 'electron'
 import { isCertError } from '../auth/cert-error-text.js'
 import type { requestSlot } from '../overlays/tab-slots.js'
@@ -47,12 +48,21 @@ export function watchLoadErrors (contents: WebContents, deps: LoadErrorDeps): vo
     pending = undefined
   }
   watched.set(contents, withdraw)
+  // Electron emits `did-fail-load` both for a load that failed before its page showed and for a page that showed and then
+  // lost its connection; only the first comes straight after `did-fail-provisional-load` for the same address.
+  let failedBeforeShowing: string | undefined
   contents.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) withdraw()
   })
+  contents.on('did-fail-provisional-load', (_event, code, _name, url, isMainFrame) => {
+    if (isMainFrame) failedBeforeShowing = code === ERR_ABORTED ? undefined : url
+  })
   contents.on('did-fail-load', (_event, code, name, url, isMainFrame) => {
+    if (!isMainFrame) return
+    const showedNothing = failedBeforeShowing === url
+    failedBeforeShowing = undefined
     // A failure that committed no error page (the page before it is still showing) reads another address.
-    if (!isMainFrame || code === ERR_ABORTED || isCertError(code) || contents.getURL() !== url) return
+    if (!showedNothing || code === ERR_ABORTED || isCertError(code) || contents.getURL() !== url) return
     const found = deps.findTab(contents)
     if (found === null || deps.claimed?.(contents.id, url, code) === true) return
     if (deps.movesTab?.(found.window.tabs.partitionOf(found.tabId), url, code) === true) return

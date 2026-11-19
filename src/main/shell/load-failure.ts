@@ -28,7 +28,9 @@ export function watchLoadFailure (contents: WebContents, changed: () => void): v
   contents.on('did-start-navigation', (details) => {
     if (details.isMainFrame && !details.isSameDocument) state.started += 1
   })
-  contents.on('did-fail-load', (_event, errorCode, _description, _url, isMainFrame) => {
+  // Not `did-fail-load`: Electron emits that for a page that showed and then lost its connection as well, which keeps
+  // the page, and the lock it was loaded under.
+  contents.on('did-fail-provisional-load', (_event, errorCode, _description, _url, isMainFrame) => {
     if (!isMainFrame || errorCode === ERR_ABORTED) return
     state.failedAt = state.started
     changed()
