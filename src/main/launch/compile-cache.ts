@@ -2,6 +2,7 @@
 // from scratch at every start, and a cache of its compiled form is read back instead. Compiled code only, no personal
 // data. `start.ts` calls this before it requires the bundle, so it loads only built-in modules, and `node:fs/promises`
 // not until the folder is trimmed, since a start has no use for it before.
+import { lstatSync, mkdirSync } from 'node:fs'
 import { constants, enableCompileCache, flushCompileCache } from 'node:module'
 import { join } from 'node:path'
 
@@ -40,24 +41,77 @@ export function runsFromChangingPath (appPath: string): boolean {
   return /\/\.mount_[^/]+\//.test(path) || path.includes('/AppTranslocation/')
 }
 
+/** What `lstat` says about the folder, and all the check below reads. */
+export interface FolderInfo {
+  readonly isDirectory: () => boolean
+  readonly isSymbolicLink: () => boolean
+  readonly uid: number
+  readonly mode: number
+}
+
+/** The part of the file system this uses, so a test can stand in for it. */
+export interface FolderApi {
+  /** Makes the folder, and its parents, for this user alone when it is new. */
+  readonly make: (directory: string) => void
+  /** Reads the folder itself: a link is reported as a link, never followed. */
+  readonly inspect: (directory: string) => FolderInfo
+}
+
+const nodeFolder: FolderApi = {
+  make: (directory) => { mkdirSync(directory, { recursive: true, mode: 0o700 }) },
+  inspect: (directory) => lstatSync(directory)
+}
+
+/**
+ * Why the folder may not be trusted with compiled code, or undefined when it may: V8 runs what an entry holds, so only a
+ * real folder of this user's own that no one else can write is used. This keeps another account of the computer out;
+ * a process running as this user is the one adversary the cache does not defend against (`security-model.md` T24).
+ */
+export function compileCacheFolderRefusal (info: FolderInfo, uid: number | undefined): string | undefined {
+  if (info.isSymbolicLink()) return 'the folder is a link'
+  if (!info.isDirectory()) return 'the folder is not a directory'
+  if (uid === undefined || info.uid !== uid) return 'the folder belongs to another user'
+  if ((info.mode & 0o022) !== 0) return 'the folder can be written by its group or by other users'
+  return undefined
+}
+
+/** What `startCompileCache` reads from the process, each replaceable by a test. */
+export interface CompileCacheDeps {
+  readonly api?: CompileCacheApi
+  readonly folder?: FolderApi
+  readonly warn?: (line: string) => void
+  readonly platform?: NodeJS.Platform
+  /** The user this process runs as; undefined where the OS has no such number. */
+  readonly uid?: number | undefined
+}
+
 /**
  * Turns the cache on and returns its folder, or undefined when it is off. Never throws and never stops a start: a cache
  * that cannot be opened is one line in the log and the bundle compiles as before. `NODE_DISABLE_COMPILE_CACHE=1` is
  * the person's choice and says nothing.
+ *
+ * On Linux and macOS the folder is made `0700` and checked first (`compileCacheFolderRefusal`). On Windows it sits under
+ * the user's own profile path, whose ACL already admits that user alone, so nothing is made or checked there.
  */
-export function startCompileCache (home: string, appPath: string, api: CompileCacheApi = nodeApi, warn: (line: string) => void = console.warn): string | undefined {
-  if (runsFromChangingPath(appPath)) {
-    warn('[orivon] compile cache not used: this program runs from a path that changes at every start')
-    return undefined
-  }
+export function startCompileCache (home: string, appPath: string, deps: CompileCacheDeps = {}): string | undefined {
+  const api = deps.api ?? nodeApi
+  const warn = deps.warn ?? console.warn
+  const refuse = (reason: string): undefined => { warn(`[orivon] compile cache not used: ${reason}`) }
+  if (runsFromChangingPath(appPath)) return refuse('this program runs from a path that changes at every start')
   const directory = compileCacheFolder(home)
   try {
+    if ((deps.platform ?? process.platform) !== 'win32') {
+      const folder = deps.folder ?? nodeFolder
+      folder.make(directory)
+      const refusal = compileCacheFolderRefusal(folder.inspect(directory), 'uid' in deps ? deps.uid : process.getuid?.())
+      if (refusal !== undefined) return refuse(refusal)
+    }
     const result = api.enable(directory)
     // Already on (NODE_COMPILE_CACHE in the environment): Node keeps writing to the folder it was given, and that is the one to trim.
     if (result.status === api.status.ENABLED || result.status === api.status.ALREADY_ENABLED) return result.directory ?? directory
-    if (result.status !== api.status.DISABLED) warn(`[orivon] compile cache not used: ${result.message ?? 'it could not be opened'}`)
+    if (result.status !== api.status.DISABLED) refuse(result.message ?? 'it could not be opened')
   } catch (error) {
-    warn(`[orivon] compile cache not used: ${error instanceof Error ? error.message : String(error)}`)
+    refuse(error instanceof Error ? error.message : String(error))
   }
   return undefined
 }

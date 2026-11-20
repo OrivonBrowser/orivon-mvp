@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
@@ -107,6 +107,8 @@ it('keeps the main bundle\'s compiled code in one folder of the shared data dire
   await closeElectron(app, { keepProfile: true })
   try {
     expect(filesIn(join(home, 'compiled-code-cache'))).toBeGreaterThan(0)
+    // Compiled code runs at the next start, so on Linux and macOS no group or other user may reach the folder.
+    if (process.platform !== 'win32') expect(statSync(join(home, 'compiled-code-cache')).mode & 0o077).toBe(0)
     expect(existsSync(join(home, 'profiles', PROFILE, 'compiled-code-cache'))).toBe(false)
   } finally {
     rmSync(home, { recursive: true, force: true })

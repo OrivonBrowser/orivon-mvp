@@ -9,7 +9,7 @@ right place and steps aside if that profile is already open; `profile-store.ts` 
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions, and
 `private-extensions.ts` gives a new one the extensions its opener allows in private windows, with a copy of their data;
 `partition-folders.ts` renames, before any session is made, each `Partitions/<kind>-<64 hex>` folder to the 32-digit name its session opens (ADR-0110), never copying or deleting;
-`compile-cache.ts` turns on Node's compile cache before `start.ts` loads the bundle, in a `compiled-code-cache/` folder of the data directory every profile shares, and trims it (`docs/development/packaging.md` section Compiled code cache);
+`compile-cache.ts` turns on Node's compile cache before `start.ts` loads the bundle, in a `compiled-code-cache/` folder of the data directory every profile shares (made `0700`, and used only while it is a real folder of the running user that no one else can write), and trims it (`docs/development/packaging.md` section Compiled code cache);
 `pid-liveness.ts` is the one check both it and `profile-store.ts` use to tell a marker's process from one
 the OS has since reused its pid for;
 `private-picture.ts` gives a new private session the new tab's picture of the profile that opened it, copied asynchronously because it can be 20 MB;

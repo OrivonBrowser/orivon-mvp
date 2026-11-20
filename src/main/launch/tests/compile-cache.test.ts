@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { COMPILE_CACHE_FOLDER, compileCacheFolder, runsFromChangingPath, settleCompileCacheLater, startCompileCache, trimCompileCache } from '../compile-cache.js'
-import type { CompileCacheApi } from '../compile-cache.js'
+import { COMPILE_CACHE_FOLDER, compileCacheFolder, compileCacheFolderRefusal, runsFromChangingPath, settleCompileCacheLater, startCompileCache, trimCompileCache } from '../compile-cache.js'
+import type { CompileCacheApi, FolderApi, FolderInfo } from '../compile-cache.js'
 
 const STATUS = { ENABLED: 1, ALREADY_ENABLED: 2, FAILED: 0, DISABLED: 3 }
 
@@ -50,51 +50,177 @@ describe('runsFromChangingPath', () => {
   })
 })
 
+const OWN_UID = 1000
+
+function folderInfo (overrides: Partial<{ kind: 'directory' | 'link' | 'file', uid: number, mode: number }> = {}): FolderInfo {
+  const { kind = 'directory', uid = OWN_UID, mode = 0o040700 } = overrides
+  return { isDirectory: () => kind === 'directory', isSymbolicLink: () => kind === 'link', uid, mode }
+}
+
+function fakeFolder (info: FolderInfo | Error): FolderApi & { readonly made: string[] } {
+  const folder = {
+    made: [] as string[],
+    make: (directory: string) => { folder.made.push(directory) },
+    inspect: () => {
+      if (info instanceof Error) throw info
+      return info
+    }
+  }
+  return folder
+}
+
+describe('compileCacheFolderRefusal', () => {
+  it('accepts a real folder of this user that only this user can write', () => {
+    expect(compileCacheFolderRefusal(folderInfo(), OWN_UID)).toBeUndefined()
+    expect(compileCacheFolderRefusal(folderInfo({ mode: 0o040755 }), OWN_UID)).toBeUndefined()
+  })
+
+  it('refuses a link, whatever it points at', () => {
+    expect(compileCacheFolderRefusal(folderInfo({ kind: 'link', mode: 0o120777 }), OWN_UID)).toBe('the folder is a link')
+  })
+
+  it('refuses something that is not a folder', () => {
+    expect(compileCacheFolderRefusal(folderInfo({ kind: 'file', mode: 0o100600 }), OWN_UID)).toBe('the folder is not a directory')
+  })
+
+  it('refuses a folder that belongs to another user, even when only its owner can write it', () => {
+    expect(compileCacheFolderRefusal(folderInfo({ uid: 0 }), OWN_UID)).toBe('the folder belongs to another user')
+  })
+
+  it('refuses when this process cannot say which user it is', () => {
+    expect(compileCacheFolderRefusal(folderInfo(), undefined)).toBe('the folder belongs to another user')
+  })
+
+  it.each([[0o040770, 'group'], [0o040720, 'group'], [0o040707, 'other'], [0o040702, 'other'], [0o040777, 'group and other']])('refuses a folder with mode %o, writable by %s', (mode) => {
+    expect(compileCacheFolderRefusal(folderInfo({ mode }), OWN_UID)).toBe('the folder can be written by its group or by other users')
+  })
+})
+
 describe('startCompileCache', () => {
+  const POSIX = { platform: 'linux' as const, uid: OWN_UID }
+  const PROGRAM = '/opt/Orivon/resources/app.asar'
+
   it.each([[STATUS.ENABLED], [STATUS.ALREADY_ENABLED]])('returns the folder it asked Node for when the status is %i', (status) => {
     const api = fakeApi({ status })
+    const folder = fakeFolder(folderInfo())
     const warn = vi.fn()
-    expect(startCompileCache('/data/orivon', '/opt/Orivon/resources/app.asar', api, warn)).toBe(join('/data/orivon', COMPILE_CACHE_FOLDER))
+    expect(startCompileCache('/data/orivon', PROGRAM, { api, folder, warn, ...POSIX })).toBe(join('/data/orivon', COMPILE_CACHE_FOLDER))
     expect(api.asked).toEqual([join('/data/orivon', COMPILE_CACHE_FOLDER)])
+    expect(folder.made).toEqual([join('/data/orivon', COMPILE_CACHE_FOLDER)])
     expect(warn).not.toHaveBeenCalled()
   })
 
   it('returns the folder Node says it writes to when the cache was on already, which is the one to trim', () => {
     const api = fakeApi({ status: STATUS.ALREADY_ENABLED, directory: '/elsewhere/cache' })
-    expect(startCompileCache('/data/orivon', '/opt/Orivon/resources/app.asar', api, vi.fn())).toBe('/elsewhere/cache')
+    expect(startCompileCache('/data/orivon', PROGRAM, { api, folder: fakeFolder(folderInfo()), warn: vi.fn(), ...POSIX })).toBe('/elsewhere/cache')
   })
 
   it('says why once and goes on without a cache when Node cannot open it', () => {
     const warn = vi.fn()
-    expect(startCompileCache('/data/orivon', '/opt/Orivon/resources/app.asar', fakeApi({ status: STATUS.FAILED, message: 'Cannot create cache directory: EACCES' }), warn)).toBeUndefined()
+    const api = fakeApi({ status: STATUS.FAILED, message: 'Cannot create cache directory: EACCES' })
+    expect(startCompileCache('/data/orivon', PROGRAM, { api, folder: fakeFolder(folderInfo()), warn, ...POSIX })).toBeUndefined()
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn).toHaveBeenCalledWith('[orivon] compile cache not used: Cannot create cache directory: EACCES')
   })
 
   it('names a failure that carries no message too', () => {
     const warn = vi.fn()
-    expect(startCompileCache('/data/orivon', '/opt/Orivon/resources/app.asar', fakeApi({ status: STATUS.FAILED }), warn)).toBeUndefined()
+    expect(startCompileCache('/data/orivon', PROGRAM, { api: fakeApi({ status: STATUS.FAILED }), folder: fakeFolder(folderInfo()), warn, ...POSIX })).toBeUndefined()
     expect(warn).toHaveBeenCalledWith('[orivon] compile cache not used: it could not be opened')
   })
 
   it('never lets a throw out: a start goes on', () => {
     const warn = vi.fn()
-    expect(startCompileCache('/data/orivon', '/opt/Orivon/resources/app.asar', fakeApi(new Error('boom')), warn)).toBeUndefined()
+    expect(startCompileCache('/data/orivon', PROGRAM, { api: fakeApi(new Error('boom')), folder: fakeFolder(folderInfo()), warn, ...POSIX })).toBeUndefined()
     expect(warn).toHaveBeenCalledWith('[orivon] compile cache not used: boom')
   })
 
   it('says nothing when the person switched it off with NODE_DISABLE_COMPILE_CACHE', () => {
     const warn = vi.fn()
-    expect(startCompileCache('/data/orivon', '/opt/Orivon/resources/app.asar', fakeApi({ status: STATUS.DISABLED }), warn)).toBeUndefined()
+    expect(startCompileCache('/data/orivon', PROGRAM, { api: fakeApi({ status: STATUS.DISABLED }), folder: fakeFolder(folderInfo()), warn, ...POSIX })).toBeUndefined()
     expect(warn).not.toHaveBeenCalled()
   })
 
   it('does not ask Node at all for a program that runs from a path that changes at every start', () => {
     const api = fakeApi({ status: STATUS.ENABLED })
     const warn = vi.fn()
-    expect(startCompileCache('/data/orivon', '/tmp/.mount_OrivonAb12Cd/resources/app.asar', api, warn)).toBeUndefined()
+    expect(startCompileCache('/data/orivon', '/tmp/.mount_OrivonAb12Cd/resources/app.asar', { api, folder: fakeFolder(folderInfo()), warn, ...POSIX })).toBeUndefined()
     expect(api.asked).toEqual([])
     expect(warn).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['a link', folderInfo({ kind: 'link', mode: 0o120777 }), 'the folder is a link'],
+    ['a folder of another user', folderInfo({ uid: 0 }), 'the folder belongs to another user'],
+    ['a folder its group can write', folderInfo({ mode: 0o040770 }), 'the folder can be written by its group or by other users']
+  ])('is not turned on for %s, and says why once', (_name, info, reason) => {
+    const api = fakeApi({ status: STATUS.ENABLED })
+    const warn = vi.fn()
+    expect(startCompileCache('/data/orivon', PROGRAM, { api, folder: fakeFolder(info), warn, ...POSIX })).toBeUndefined()
+    expect(api.asked).toEqual([])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn).toHaveBeenCalledWith(`[orivon] compile cache not used: ${reason}`)
+  })
+
+  it('is not turned on when the folder cannot be made or read, and says why', () => {
+    const api = fakeApi({ status: STATUS.ENABLED })
+    const warn = vi.fn()
+    expect(startCompileCache('/data/orivon', PROGRAM, { api, folder: fakeFolder(new Error('ENOENT: no such file or directory')), warn, ...POSIX })).toBeUndefined()
+    expect(api.asked).toEqual([])
+    expect(warn).toHaveBeenCalledWith('[orivon] compile cache not used: ENOENT: no such file or directory')
+  })
+
+  it('makes and checks nothing on Windows, where the folder sits under the user\'s own profile', () => {
+    const api = fakeApi({ status: STATUS.ENABLED })
+    const folder = fakeFolder(new Error('must not be read'))
+    expect(startCompileCache('C:\\Users\\person\\AppData\\Roaming\\Orivon', 'C:\\Program Files\\Orivon\\resources\\app.asar', { api, folder, warn: vi.fn(), platform: 'win32', uid: undefined })).toBe(join('C:\\Users\\person\\AppData\\Roaming\\Orivon', COMPILE_CACHE_FOLDER))
+    expect(folder.made).toEqual([])
+  })
+})
+
+describe.skipIf(process.platform === 'win32')('startCompileCache against the real file system', () => {
+  let home: string
+  beforeEach(() => { home = mkdtempSync(join(tmpdir(), 'orivon-compile-cache-home-')) })
+  afterEach(() => { rmSync(home, { recursive: true, force: true }) })
+
+  const run = (): { readonly result: string | undefined, readonly warn: ReturnType<typeof vi.fn>, readonly api: ReturnType<typeof fakeApi> } => {
+    const api = fakeApi({ status: STATUS.ENABLED })
+    const warn = vi.fn()
+    return { result: startCompileCache(home, '/opt/Orivon/resources/app.asar', { api, warn }), warn, api }
+  }
+
+  it('makes the folder for this user alone and turns the cache on', () => {
+    const { result, warn, api } = run()
+    const folder = join(home, COMPILE_CACHE_FOLDER)
+    expect(result).toBe(folder)
+    expect(statSync(folder).mode & 0o077).toBe(0)
+    expect(api.asked).toEqual([folder])
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('uses a folder it made at an earlier start', () => {
+    run()
+    expect(run().result).toBe(join(home, COMPILE_CACHE_FOLDER))
+  })
+
+  it('refuses a folder its group can write', () => {
+    const folder = join(home, COMPILE_CACHE_FOLDER)
+    mkdirSync(folder)
+    chmodSync(folder, 0o770)
+    const { result, warn, api } = run()
+    expect(result).toBeUndefined()
+    expect(api.asked).toEqual([])
+    expect(warn).toHaveBeenCalledWith('[orivon] compile cache not used: the folder can be written by its group or by other users')
+  })
+
+  it('refuses a link to a folder, which could be anyone\'s', () => {
+    const elsewhere = join(home, 'elsewhere')
+    mkdirSync(elsewhere, { mode: 0o700 })
+    symlinkSync(elsewhere, join(home, COMPILE_CACHE_FOLDER))
+    const { result, warn, api } = run()
+    expect(result).toBeUndefined()
+    expect(api.asked).toEqual([])
+    expect(warn).toHaveBeenCalledWith('[orivon] compile cache not used: the folder is a link')
   })
 })
 
