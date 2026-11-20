@@ -51,10 +51,18 @@ and a tripwire in `makeTabView` names a path that missed it.
 
 ## Consequences
 
-- An address typed, a bookmark clicked or a second launch's address during the gap waits, up to the time the tail takes
-  (about a second on a warm profile with no proxy; seconds on a new profile or behind a PAC script), and then opens in the
-  order it was asked. The window is responsive in the meantime except where the tail itself holds the main process: the
-  synchronous unpack of the bundled extension on a first start.
+- An address typed, a bookmark clicked or a second launch's address during the gap waits until the tail has ended, and
+  then opens in the order it was asked. The window is responsive in the meantime except where the tail itself holds the
+  main process: the synchronous unpack of the bundled extension on a first start.
+- What the person gains is the length of the tail, and no more: it is measured at 65 ms on a warm profile with no proxy
+  and 300 to 500 ms on a new profile (a Linux package on a loaded development machine, six launches each), against several
+  seconds where the system's proxy settings run a script or a disk scans the unpack. The window is shown about 180 ms
+  earlier on a first start and 90 ms earlier on the next, and the shell page 90 and 55 ms earlier.
+- The tail now starts when the window is shown, so the gate opens later than before by what showing takes: a hidden window
+  under a virtual display never reports its first paint, so the one-second fallback shows it, and there the gate opened
+  1.1 to 1.6 s later than it did and the bundled extension ran as much later. On a screen the window shows at its first
+  paint, and the first page then waits for the paint and the tail as it did before, in the other order: not measured on
+  a screen here.
 - A caller that needs the tab a deferred open creates waits for the gate first (`webContentReady()`), as the extension host
   does for `chrome.tabs.create`; `createTab` answers the active tab's id when it defers, which is the wrong tab for such a
   caller.
@@ -67,5 +75,6 @@ and a tripwire in `makeTabView` names a path that missed it.
 
 - **Cost to reverse:** cheap: `index.ts` runs the tail before `createShellWindow` again and opens the gate at once; every
   other change (the gate, the callers that wait) is correct in either order.
-- **What would make us revisit:** a marks record showing the gate opening later than a second on a warm profile with no proxy,
-  which would put the tail's cost back in front of the first page it was moved behind the window to hide.
+- **What would make us revisit:** a marks record from a screen (not a virtual display) showing the gate opening more than
+  about a second after the window was shown on a warm profile with no proxy, which would put the tail's cost back in front
+  of the first page it was moved behind the window to hide.

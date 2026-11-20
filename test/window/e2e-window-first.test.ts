@@ -20,7 +20,7 @@ const UBLOCK_ORIGIN_ID = 'fkgkibajhfbepljeaefdnfnegdcjomkh'
 const electronBinary = createRequire(import.meta.url)('electron') as string
 
 let server: FixtureServer
-/** Every path the fixture server was asked for, in order. */
+/** Every page the fixture server was asked for, in order (a tab's own request for an icon is not one). */
 let requests: string[] = []
 /** What the main process held when a path was asked for: the ids of the extensions loaded in the default session. */
 let extensionsWhenAsked: string[] | undefined
@@ -29,7 +29,7 @@ let askedApp: ElectronApplication | undefined
 beforeAll(async () => {
   server = await startServer((request, response) => {
     const path = request.url ?? '/'
-    requests.push(path)
+    if (path !== '/favicon.ico') requests.push(path)
     const app = askedApp
     const answer = (): void => { html(response, `<!doctype html><meta charset="utf-8"><title>page ${path.slice(1)}</title><p>${path}</p>`) }
     if (app === undefined || extensionsWhenAsked !== undefined) { answer(); return }
@@ -165,7 +165,9 @@ it('restores the last session only once web pages may load, with the window and 
 
     await untilGateOpens(app)
     expect(await waitFor(async () => (await titles(chrome)).join('|') === 'page a|page b')).toBe(true)
-    expect([...requests].sort()).toEqual(['/a', '/b'])
+    // The front tab loads at once; a tab behind it may wait until it is shown, so only what was asked is held to the session.
+    expect(await waitFor(() => requests.includes('/a'))).toBe(true)
+    expect(requests.every((path) => path === '/a' || path === '/b')).toBe(true)
     expect(await visibleWindows(app)).toEqual([true])
 
     // The tabs are the session now, and the line is printed once with the front tab loaded.
