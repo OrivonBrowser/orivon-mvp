@@ -63,6 +63,18 @@ describe('creating a shortcut on Linux', () => {
     expect([...h.files.values()][0]?.text).toContain('Exec="/home/ada/Apps/Orivon.AppImage" "https://example.com/a"')
   })
 
+  it('launches an unpacked AppImage through its AppRun, which decides about the sandbox at each start, not through the executable', async () => {
+    const h = host({ env: { XDG_DATA_HOME: '/d' }, taken: ['/opt/Orivon/AppRun'] })
+    await createShortcut(h, REQUEST)
+    expect([...h.files.values()][0]?.text).toContain('Exec="/opt/Orivon/AppRun" "https://example.com/a"')
+  })
+
+  it('launches the installed program when no AppRun is beside it, as a .deb has none', async () => {
+    const h = host({ env: { XDG_DATA_HOME: '/d' } })
+    await createShortcut(h, REQUEST)
+    expect([...h.files.values()][0]?.text).toContain('Exec="/opt/Orivon/orivon" "https://example.com/a"')
+  })
+
   it('launches the Electron binary with the app beside it when run from source', async () => {
     const h = host({ isPackaged: false, env: { XDG_DATA_HOME: '/d' } })
     await createShortcut(h, REQUEST)

@@ -261,7 +261,7 @@ irm https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/inst
 ```
 
 **Linux, one line.** Paste this into a terminal. It installs Orivon for your user, with no sudo (the newest
-release's AppImage, a menu entry and an icon), and opens it. Run it again to update.
+release's AppImage unpacked once so that it starts as fast as the `.deb`, a menu entry and an icon), and opens it. Run it again to update.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-linux.sh | bash

@@ -101,8 +101,8 @@ temporary directory. `tests/alias-table.test.ts` fails when the JSON is stale;
 each ship a Node entry point that requires the very builtin they implement; through this plugin
 that is the shim's `crypto` again, and the cycle leaves `createHash` undefined. esbuild applies a
 `browser` field only for `platform: 'browser'`, so the plugin applies it, for the files of the shim
-and of the packages this checkout's `dependencies` reach, and for those only: the port's own
-packages, and this checkout's devDependencies, resolve as a Node bundle does. Provisional: it
+and of the packages `orivon.shimPackages` in this checkout's `package.json` names and those reach, and for those only: the port's own
+packages, and this checkout's other packages, resolve as a Node bundle does. Provisional: it
 reimplements the part of esbuild's `browser` handling the shim's tree needs (a string that replaces
 `main`, whether `main` is written `lib/index.js` or `./lib`; `"./file": "./other"` and `"lib/file": "lib/other"`,
 with or without an extension; `"name": false`), and a nested `package.json` with no `name` (only a `type`)

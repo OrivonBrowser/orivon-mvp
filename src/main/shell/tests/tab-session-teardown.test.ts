@@ -1,6 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemContext } from '../../registry.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 // Session teardown (handle-contracts.md's own "Session teardown is not
 // revocation" section): the broker forgets what it knows about an origin --

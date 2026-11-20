@@ -1,6 +1,10 @@
 import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemContext } from '../../registry.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 // A window that is closing destroys itself first and its views' webContents
 // after. The tab manager must not ask that window for anything in between.

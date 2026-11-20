@@ -756,26 +756,46 @@ installs the newest published release through it.
 
 **Linux one-line install.** `scripts/install-linux.sh`, run as
 `curl -fsSL https://raw.githubusercontent.com/OrivonBrowser/orivon-mvp/main/scripts/install-linux.sh | bash`
-(or `bash -s <id>` with an app id), installs or updates the AppImage for the person alone, with no sudo, on
-x86_64. It reads the newest releases from GitHub's API the way the update check does: the highest version, pre-releases
+(or `bash -s <id>` with an app id), installs or updates Orivon for the person alone, with no sudo, on
+x86_64, from the release's AppImage unpacked once. It reads the newest releases from GitHub's API the way the update check does: the highest version, pre-releases
 counted, drafts and tags that are not versions (`pre-releases`) skipped, and a release whose AppImage is not
 attached yet passed over. It downloads that `Orivon-<version>-x86_64.AppImage`, compares its SHA-256 with the digest
 GitHub reports for the asset, and refuses a mismatch or a missing digest before it installs anything. Then it
-writes, under the home folder only: the AppImage as `~/.local/lib/orivon/Orivon.AppImage`; a launcher beside it,
-`orivon`; `~/.local/share/applications/orivon.desktop` (the packaged entry's name, categories and the
+unpacks the AppImage with its own `--appimage-extract` (no FUSE is involved) and writes, under the home folder only:
+the unpacked app as `~/.local/lib/orivon/app/`; a launcher beside it, `orivon`;
+`~/.local/share/applications/orivon.desktop` (the packaged entry's name, categories and the
 `x-scheme-handler/http` and `https` types, plus New Window and New Private Window, its `Exec` the launcher, so
 a desktop's default-browser choice lists Orivon and the entry works wherever the folder is); the icon in
-`~/.local/share/icons/hicolor/512x512/apps/`, unpacked from the AppImage (the repository's copy at the release's
-tag when that fails); and `~/.local/bin/orivon`, a link to the launcher, only when that folder is already on
-`PATH` and holds no other file of that name. The file is renamed into place, so a running Orivon keeps working
-and the next start is the new version; running the command again is the update.
+`~/.local/share/icons/hicolor/512x512/apps/`, from the unpacked app (the repository's copy at the release's
+tag when it has none); and `~/.local/bin/orivon`, a link to the launcher, only when that folder is already on
+`PATH` and holds no other file of that name. The AppImage itself is not kept: nothing reads it, and the download and the
+unpacking happen in a working folder inside `~/.local/lib/orivon/`, on the same filesystem as the install and not under
+`/tmp`, which is often memory and may refuse to run programs.
 
-The launcher decides at every start whether the AppImage can mount itself: `/dev/fuse` readable and writable,
-`fusermount`, and `libfuse.so.2` from `ldconfig -p` or the usual library folders must all be there. When one is
-missing (Ubuntu 22.10 and later without `libfuse2`, a container) it starts the AppImage with
-`--appimage-extract-and-run`, which unpacks it to a temporary folder first (slower to start, nothing to
-install); installing `libfuse2` later needs no new install. The launcher is not the registration of Orivon as the
-default browser that a package makes at a person's click (the runtime half in section Making "set as default browser" possible): the desktop entry only lets a desktop list it.
+**Why it is unpacked.** An AppImage, mounted or unpacked into a temporary folder, costs about two seconds on every
+start beyond what the `.deb` costs (the release workflow times all three on its runner, and `scripts/ci/README.md`
+section Timing a start says how to read it), and a click that takes seconds is what a person judges Orivon by. Unpacked once at install
+time, the program starts from disk as the deb's does, with no FUSE at all, so a computer without `libfuse2` (Ubuntu
+since 22.10) needs nothing installed either. The launcher starts the unpacked app's `AppRun`, not its `orivon` binary:
+electron-builder's `AppRun` sets the search paths the app's libraries need and adds `--no-sandbox` only where
+unprivileged user namespaces are unavailable (Ubuntu 24.04 restricts them), which the unpacked tree needs because its
+`chrome-sandbox` cannot be setuid root in a home folder. The unpacked app has no `APPIMAGE` in its environment: it is
+a packaged program in a folder, and what must know it came from an AppImage finds the `AppRun` beside its executable
+(`src/main/launch/unpacked-app-image.ts`: a site shortcut's entry names that file, and a problem report calls it the
+`appimage` channel).
+
+**Updating and converting.** The new tree is unpacked beside the install and swapped in by renames: the old `app/` is
+renamed aside, the new one renamed in, the old one removed, and the next start is the new version. A running Orivon
+reads what it had not yet opened (a locale, a library the GPU process loads again when it restarts) from the folder it
+started in, so the old tree is removed only when no process's `/proc/<pid>/exe` is under it: a rename keeps the inode,
+so the link follows the renamed folder. Otherwise it is renamed to `app.held.<pid>`, the installer says to restart
+Orivon, and the next install removes it once nothing runs from it. Nothing is changed when the unpacking fails, and a
+swap that was interrupted between its two renames is undone by the next run. An install of the earlier layout, which kept `Orivon.AppImage` and a launcher that
+mounted it, is converted by running the command again: its launcher is replaced, its desktop entry and `~/.local/bin`
+link keep working, and the AppImage is removed.
+
+The desktop entry only lets a desktop list Orivon as a browser. Making it the default is a person's click (the runtime half
+in section Making "set as default browser" possible), which registers that entry as it does for a package.
 
 An app id (2 to 24 lower-case letters and digits, refused otherwise) is passed to the launch the installer makes
 as `--orivon-flavour=<id>`; `--no-launch` (or `ORIVON_NO_OPEN=1`) installs without starting Orivon, which is what
@@ -784,9 +804,10 @@ releases from), `ORIVON_APPIMAGE` (a local AppImage, which skips the lookup, dow
 `ORIVON_GITHUB_TOKEN` (lifts the unauthenticated rate limit). Reading GitHub's answer needs `python3` or `jq`;
 the script reads either and refuses to guess without one. The digest check guards against a broken or swapped
 download in transit, not against someone who controls the GitHub repository. The unit tests
-(`scripts/tests/install-linux.test.ts`) run it in a scratch home against a stand-in `curl`; the release workflow
-installs the AppImage it just built through it and starts the launcher with the packaged smoke check, and on pull
-requests and manual runs also installs the newest published release.
+(`scripts/tests/install-linux.test.ts`) run it in a scratch home against a stand-in `curl` and a stand-in AppImage;
+the release workflow installs the AppImage it just built through it, checks the layout and starts the launcher with the
+packaged smoke check, times that launcher beside the plain AppImage, and on pull requests and manual runs also installs
+the newest published release.
 
 **Signing.** The release workflow's step "Package, sign and notarize" signs and notarizes the macOS
 apps from five repository secrets: `CSC_LINK` (the Developer ID Application certificate with its private
@@ -860,9 +881,10 @@ installer script lists them under `Capabilities\FileAssociations` and each exten
 never taking an extension over; neither is read back on a system yet (A397).
 
 The runtime half is application code in `src/main/os/`: an installed package registers, and only when a person
-clicks (Settings > Default browser, or the question the default profile asks). An AppImage never registers,
-because a registration naming it would point at a file that moves, and neither does a run from source on Windows or
-macOS, which would register the Electron binary. A Linux run from source registers its own entry,
+clicks (Settings > Default browser, or the question the default profile asks). A bare AppImage never registers,
+because a registration naming it would point at a file that moves; the one-line install's unpacked copy is an installed
+program in a stable folder with its own desktop entry, so it registers like a package. A run from source on Windows or
+macOS does not register, because it would register the Electron binary. A Linux run from source registers its own entry,
 `orivon-source.desktop`, once `scripts/launch-from-source.mjs install` has written it. On Linux the same click also
 runs `xdg-mime default` with that entry for `text/html`, `application/xhtml+xml` and `application/pdf`
 (`LINUX_DOCUMENT_TYPES` in `default-browser.ts`).
@@ -907,7 +929,8 @@ install starting around 22.04/22.10, and classic (type 2) AppImages need it to m
 at launch, and without it the AppImage fails to start, often with a terse `dlopen(): error
 loading libfuse.so.2` rather than an obviously-actionable message. Fix on the user's end:
 `sudo apt install libfuse2` (or `libfuse2t64` on very recent Debian/Ubuntu, which renamed the
-package during the 64-bit time_t transition).
+package during the 64-bit time_t transition). The one-line install (section Windows and macOS) unpacks the AppImage once
+and never mounts it, so it needs no `libfuse2`.
 > **This may not apply to every version.** electron-builder's own AppImage docs state that from
 > electron-builder 27 the default AppImage runtime is a static, FUSE3-compatible build that does
 > not require host-level FUSE at all, specifically for distros like Ubuntu 24.04+ that this exact
@@ -927,7 +950,10 @@ reduction in the process-isolation guarantee, not a cosmetic flag, and worth sur
 who hits it rather than quietly baking it into a launcher script. **This is a second, concrete
 reason `deb` is the artefact that should carry any daily-driver usage**: an installed `.deb`
 places `chrome-sandbox` on a normal read-write filesystem where `dpkg` can and does set its
-permissions correctly at install time, so the sandbox works as intended without extra flags.
+permissions correctly at install time, so the sandbox works as intended without extra flags. The one-line install's
+unpacked tree is in the same position (a home folder cannot hold a setuid-root helper): its launcher starts electron-builder's
+`AppRun`, which gives Chromium the namespace sandbox where unprivileged user namespaces work and adds `--no-sandbox` only
+where they do not.
 
 **The oldest Linux it runs on is Electron's, not the build machine's.** A binary compiled
 against a newer glibc fails to launch on an older system (`version 'GLIBC_2.xx' not found`).
@@ -946,12 +972,44 @@ commands.
 `electron-builder.yml`'s `files:` key is an **allowlist** of the app's own sources: `out/**/*`
 and `package.json`. An allowlist cannot pick up `spike/`, `test/`, `scripts/`, `devlog/`,
 `.claude/`, `docs/` or root-level markdown the way a blocklist subtracted from `**/*` would have
-to remember to keep excluding. The production tree of `package.json`'s `dependencies` (the ENS
-resolver's, the IPFS/IPNS reader's and the renderer shims' packages) is still copied into
-`app.asar`'s own `node_modules/`, since electron-vite leaves some of them to be required at run
-time. webtorrent and every app-side library are not shell dependencies: they are app assets
-fetched into `userData` (`ADR-0005`). `build/icon.png` is copied beside `app.asar` as
-`resources/icon.png`, for the window icon.
+to remember to keep excluding. webtorrent and every app-side library are not shell dependencies:
+they are app assets fetched into `userData` (`ADR-0005`). `build/icon.png` is copied beside
+`app.asar` as `resources/icon.png`, for the window icon.
+
+### Bundled dependencies
+
+`package.json` lists no `dependencies`: electron-vite bundles every library the main process, its utility
+hosts, the preloads and the pages use into `out/` (`electron.vite.config.ts`: `externalizeDeps: false` for the main
+build, which leaves only `electron` and the Node builtins external), so `app.asar` carries `out/` and `package.json`
+and no `node_modules/`. A package a build needs is a `devDependency`, which electron-builder never copies, and
+`scripts/tests/bundled-dependencies.test.ts` fails when a `dependencies` entry returns. A `devDependency` can therefore
+ship: it does when a build bundles it. The process reads a handful of files at start, where a tree of packages
+would have it resolve several hundred modules from disk.
+
+A library that reads its own files by path at run time (a `.wasm` beside its code) cannot be bundled that way: it is
+embedded as text or bytes by the bundler (`@a16z/helios` and `undici` embed their WebAssembly, and the reader's two
+library files come in as `?raw` imports), or copied into `out/` by the build. A builtin a library asks for lazily
+stays a `require` call where it asks (`build.commonjsOptions.ignore` in the main build holds `node:sqlite`, which
+undici loads only when its SQLite cache store is made), so a host does not load it at start. The shim's own package
+list, which `src/shim/bundler/esbuild-plugin.ts` starts from, is `orivon.shimPackages` in `package.json`.
+
+### Licence notices
+
+A bundled package's folder is not in the package, so its licence text travels in `resources/THIRD-PARTY-NOTICES.txt`.
+`scripts/licence-notices-plugin.ts` runs in the main, preload and renderer builds and in the two builds they start
+(the page buffer and the chunk check thread); each adds the npm packages and the `vendor/` folders it loaded to one
+set, and the renderer build, the last of the three, writes `out/THIRD-PARTY-NOTICES.txt` from it.
+`extraResources` copies that file beside `app.asar`, and `files` keeps it out of `app.asar` so it is not there twice.
+
+- **The shim's Worker runtime** is one prebuilt string (`src/shim/worker/runtime.generated.json`), so the plugin sees
+  one module for it. The file's `packages` field lists the package folders inside it, which the generator writes from
+  the bundler's metafile; the plugin adds them, and a folder that is not installed fails the build.
+- **A package with no licence file** takes the standard text of the SPDX licence its `package.json` declares
+  (`scripts/licence-texts.ts`: MIT, ISC, BSD-2-Clause, BSD-3-Clause), with its `author` as the copyright holder, or
+  the project its `repository` names when it has none. For `A OR B` it reproduces the first alternative that has a
+  text (the licensee picks one). A licence with no text there fails the build until its text is added.
+- **Provisional.** Whether shipping a generated notices file is the right answer is an owner question
+  (`docs/open-questions.md` A291); the file is the recommended option there.
 
 ## Known gaps
 

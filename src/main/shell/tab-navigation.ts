@@ -7,6 +7,7 @@ import { isDevEthName } from '../dev/eth-resolver.js'
 import { aliasToInternal, viewSourceTarget } from '../pages/internal-aliases.js'
 import { parseInternalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
+import { deferUntilWebReady } from '../startup/web-ready.js'
 import { BLANK_URL } from './tab-factory.js'
 import { startNavigation } from './leave-page-prompt.js'
 import { repartitionForTarget, stepOutOfView } from './load-in-tab.js'
@@ -36,7 +37,8 @@ export function exitHtmlFullscreen (env: NavigationEnv, id: string): void {
 
 /** Where the omnibox and the dashboard's navigate command both land (ipc.ts, newtab-ipc.ts). Repartitions
  * via repartitionView() when the target's session, or its app-tab flag, differs (appTabFlagChanged).
- * BLANK_URL has no origin, so a rejected navigation never swaps: the tab keeps its preload. */
+ * BLANK_URL has no origin, so a rejected navigation never swaps: the tab keeps its preload. Before web pages
+ * may load, an address that is not one of the shell's own pages navigates when they may. */
 export function navigateTab (env: NavigationEnv, id: string, rawInput: string): void {
   const record = env.record(id)
   if (record === undefined || record.view.webContents.isDestroyed()) return
@@ -47,6 +49,7 @@ export function navigateTab (env: NavigationEnv, id: string, rawInput: string): 
     env.openInternal(internal.page, internal.path)
     return
   }
+  if (deferUntilWebReady(() => { navigateTab(env, id, rawInput) })) return
   // `view-source:` followed by anything but a web address is an ordinary search, as before.
   const source = viewSourceTarget(rawInput)
   if (source !== null && env.viewSource(source)) return

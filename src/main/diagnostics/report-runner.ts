@@ -6,6 +6,7 @@ import { app, clipboard, net, screen } from 'electron'
 import type { WebContents } from 'electron'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { currentOzonePlatform, x11VulkanReading } from '../graphics/x11-vulkan-runner.js'
+import { unpackedAppRun } from '../launch/unpacked-app-image.js'
 import { ownFetch } from '../route/own-requests.js'
 import { startupRecord } from '../startup/startup-marks-runner.js'
 import { networkServiceRestart } from '../sessions/network-service-hold.js'
@@ -61,7 +62,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
   const broker = ctx.broker
   return {
     commit: BUILD_COMMIT,
-    channel: channelOf({ development: devModeEnabled() || (process.env['ELECTRON_RENDERER_URL'] ?? '') !== '', packaged: app.isPackaged, platform: process.platform, appImage: (process.env['APPIMAGE'] ?? '') !== '' }),
+    channel: channelOf({ development: devModeEnabled() || (process.env['ELECTRON_RENDERER_URL'] ?? '') !== '', packaged: app.isPackaged, platform: process.platform, appImage: (process.env['APPIMAGE'] ?? '') !== '' || unpackedAppRun(process.execPath) !== undefined }),
     versions: { electron: process.versions.electron, chromium: process.versions.chrome, node: process.versions.node, v8: process.versions.v8 },
     packaged: app.isPackaged,
     uptimeSec: process.uptime(),

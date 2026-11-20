@@ -76,9 +76,12 @@ The screen's visible frame is in `cross-os/screen.txt` of the evidence.
 `--packaged` also times how long each package takes to show the browser. After its smoke, each leg runs
 [`scripts/first-start-probe.mjs`](../first-start-probe.mjs) with three launches per series on the package it
 installed: the deb on Linux, the installed program on Windows and the copy the one-line installer made on macOS
-(Apple silicon). The Linux leg also times the launcher the one-line install writes, which runs the AppImage: first as
-the runner has it, without libfuse2, so the AppImage is unpacked before every start
-(`linux-appimage-unpacked.json`), then with libfuse2 installed, mounted (`linux-appimage-mounted.json`). A first start
+(Apple silicon). The Linux leg also times what the one-line installer makes, through its launcher
+(`linux-oneline.json`: the AppImage unpacked once at install time and started from disk with no FUSE, which is what a person
+who pastes the install command runs), and for comparison the plain AppImage as it is without the install: unpacked at every
+start (`APPIMAGE_EXTRACT_AND_RUN`, which is what the runner does without libfuse2 and what Ubuntu since 22.10 does:
+`linux-appimage-extract-and-run.json`), then with libfuse2 installed, mounted (`linux-appimage-mounted.json`). Read the three
+beside the deb's `linux-current.json` from the same run: the install should cost what the deb does. A first start
 is a new profile, as a first click gets; a next start is three launches on one profile after one that is not counted.
 The leg uploads `start-probe/<system>-current.json` as the artifact
 `start-probe-<linux|win|mac>`, and `cross-os.mjs --packaged` downloads them to

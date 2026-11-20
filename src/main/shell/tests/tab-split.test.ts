@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemContext } from '../../registry.js'
 import { GAP } from '../split-model.js'
 import { HtmlFullscreen } from '../fullscreen.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 // A tab manager over fake views, with a content view that keeps the order its
 // children were added in: what matters in a split is which views are on screen,

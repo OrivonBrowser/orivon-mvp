@@ -1,6 +1,7 @@
 // Writing a site's shortcut where the desktop looks for one. The places come from the host, so a test points them at a
 // temporary directory and never at the person's real applications folder.
 import { isAbsolute, join } from 'node:path'
+import { unpackedAppRun } from '../launch/unpacked-app-image.js'
 import { desktopEntry, entryFileName, linkArguments, linkFileName } from './site-shortcut.js'
 
 export interface ShortcutHost {
@@ -31,10 +32,16 @@ export type ShortcutResult =
   | { readonly ok: true, readonly where: 'applications' | 'desktop' }
   | { readonly ok: false, readonly reason: 'unsupported' | 'failed' }
 
-/** What starts Orivon: an AppImage's own file, the installed program, or the Electron binary with the app beside it. */
+/**
+ * What starts Orivon: an AppImage's own file, the AppRun of an unpacked one, the installed program, or the Electron binary
+ * with the app beside it. An entry outlives this run and may not carry its `--no-sandbox`, so an unpacked AppImage is
+ * started through its AppRun, which decides at each start; the executable alone aborts where user namespaces are off.
+ */
 function launcher (host: ShortcutHost): { program: string, leading: string[] } {
   const appImage = host.env()['APPIMAGE'] ?? ''
   if (appImage !== '') return { program: appImage, leading: [] }
+  const appRun = host.isPackaged ? unpackedAppRun(host.execPath, host.exists) : undefined
+  if (appRun !== undefined) return { program: appRun, leading: [] }
   return host.isPackaged ? { program: host.execPath, leading: [] } : { program: host.execPath, leading: [host.appPath] }
 }
 

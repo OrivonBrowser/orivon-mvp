@@ -81,11 +81,16 @@ function git (...args) {
   return execFileSync('git', args, { encoding: 'utf8' }).split('\n').filter((line) => line !== '')
 }
 
-/** Whether package.json's dependencies differ from the merge base: a new script alone changes no test. */
+/** What of package.json a unit test can see: the module type, the dependencies and overrides, and the `orivon` block (the shim's package list). */
+export function dependencyFingerprint (text) {
+  const pkg = JSON.parse(text)
+  return JSON.stringify([pkg.type, pkg.dependencies, pkg.devDependencies, pkg.overrides, pkg.orivon])
+}
+
+/** Whether that differs from the merge base: a new script alone changes no test. */
 function dependenciesChanged (mergeBase) {
-  const pick = (text) => { const pkg = JSON.parse(text); return JSON.stringify([pkg.type, pkg.dependencies, pkg.devDependencies, pkg.overrides]) }
   try {
-    return pick(execFileSync('git', ['show', `${mergeBase}:package.json`], { encoding: 'utf8' })) !== pick(readFileSync('package.json', 'utf8'))
+    return dependencyFingerprint(execFileSync('git', ['show', `${mergeBase}:package.json`], { encoding: 'utf8' })) !== dependencyFingerprint(readFileSync('package.json', 'utf8'))
   } catch {
     return true
   }
