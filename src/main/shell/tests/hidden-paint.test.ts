@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { paintWhileHidden } from '../hidden-paint.js'
 import type { PaintTarget } from '../hidden-paint.js'
 
@@ -20,20 +20,18 @@ function fakeContents (options: { attach?: () => void, destroyed?: boolean } = {
   return { contents, calls, settle: () => { for (const resolve of pending.splice(0)) resolve() } }
 }
 
-const noSwitches = { hasSwitch: () => false }
-
 const flush = async (): Promise<void> => { await new Promise((resolve) => setImmediate(resolve)) }
 
 describe('paintWhileHidden', () => {
   it('attaches and turns focus emulation on, which is what makes the hidden page visible', () => {
     const { contents, calls } = fakeContents()
-    paintWhileHidden(contents, noSwitches)
+    paintWhileHidden(contents)
     expect(calls).toEqual(['attach 1.3', 'Emulation.setFocusEmulationEnabled {"enabled":true}'])
   })
 
   it('turns the emulation off and detaches once it is released, and not before the command is answered', async () => {
     const { contents, calls, settle } = fakeContents()
-    const release = paintWhileHidden(contents, noSwitches)
+    const release = paintWhileHidden(contents)
     settle()
     await flush()
     release()
@@ -45,7 +43,7 @@ describe('paintWhileHidden', () => {
 
   it('releases once however many times it is asked', async () => {
     const { contents, calls, settle } = fakeContents()
-    const release = paintWhileHidden(contents, noSwitches)
+    const release = paintWhileHidden(contents)
     release()
     release()
     settle()
@@ -59,16 +57,9 @@ describe('paintWhileHidden', () => {
   it('leaves a page whose debugger another client holds alone, and its release does nothing', () => {
     const attach = vi.fn(() => { throw new Error('Another debugger is already attached to the WebContents.') })
     const { contents, calls } = fakeContents({ attach })
-    const release = paintWhileHidden(contents, noSwitches)
+    const release = paintWhileHidden(contents)
     release()
     expect(attach).toHaveBeenCalledTimes(1)
-    expect(calls).toEqual([])
-  })
-
-  it.each(['remote-debugging-port', 'remote-debugging-pipe'])('leaves a browser started with --%s alone: its client emulates focus, and one flag has no owner to give it back to', (name) => {
-    const { contents, calls } = fakeContents()
-    const release = paintWhileHidden(contents, { hasSwitch: (asked) => asked === name })
-    release()
     expect(calls).toEqual([])
   })
 
@@ -76,7 +67,7 @@ describe('paintWhileHidden', () => {
     const state = { destroyed: false }
     const { contents, calls } = fakeContents()
     const gone = { ...contents, isDestroyed: () => state.destroyed } as PaintTarget
-    const release = paintWhileHidden(gone, noSwitches)
+    const release = paintWhileHidden(gone)
     state.destroyed = true
     release()
     expect(calls).toEqual(['attach 1.3', 'Emulation.setFocusEmulationEnabled {"enabled":true}'])
@@ -95,7 +86,7 @@ describe('paintWhileHidden', () => {
     const unhandled = vi.fn()
     process.on('unhandledRejection', unhandled)
     try {
-      paintWhileHidden(contents, noSwitches)()
+      paintWhileHidden(contents)()
       await flush()
       await flush()
       expect(unhandled).not.toHaveBeenCalled()
@@ -103,5 +94,39 @@ describe('paintWhileHidden', () => {
     } finally {
       process.off('unhandledRejection', unhandled)
     }
+  })
+})
+
+describe('the test seam that keeps a driven run from holding', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.resetModules()
+  })
+
+  async function load (testBuild: boolean): Promise<typeof import('../hidden-paint.js')> {
+    vi.resetModules()
+    if (testBuild) vi.stubGlobal('__ORIVON_DEV_GRANT_ENABLED__', true)
+    return await import('../hidden-paint.js')
+  }
+
+  it('leaves a test build that asks for it alone: nothing is attached and the release does nothing', async () => {
+    const { paintWhileHidden: hold } = await load(true)
+    const { contents, calls } = fakeContents()
+    hold(contents, { ORIVON_TEST_NO_PAINT_HOLD: '1' })()
+    expect(calls).toEqual([])
+  })
+
+  it('holds in a test build that does not ask', async () => {
+    const { paintWhileHidden: hold } = await load(true)
+    const { contents, calls } = fakeContents()
+    hold(contents, {})
+    expect(calls).toEqual(['attach 1.3', 'Emulation.setFocusEmulationEnabled {"enabled":true}'])
+  })
+
+  it('holds in an ordinary build whatever the environment says, so a package started by a driver starts as any other', async () => {
+    const { paintWhileHidden: hold } = await load(false)
+    const { contents, calls } = fakeContents()
+    hold(contents, { ORIVON_TEST_NO_PAINT_HOLD: '1' })
+    expect(calls).toEqual(['attach 1.3', 'Emulation.setFocusEmulationEnabled {"enabled":true}'])
   })
 })

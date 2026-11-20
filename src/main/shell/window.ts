@@ -310,7 +310,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   if (intro !== undefined) showIntro(win, tabs, intro, () => { services.commands.run('nav.focusAddress', entry) })
   runWindowHooks('opened', context, options)
 
-  showWhenReady(frame, { firstOfLaunch, maximized, inactive, onShown: shown, onPainted: painted, holdPaint: () => paintWhileHidden(chrome.webContents, app.commandLine) })
+  showWhenReady(frame, { firstOfLaunch, maximized, inactive, onShown: shown, onPainted: painted, holdPaint: () => paintWhileHidden(chrome.webContents) })
 
   return win
 }
