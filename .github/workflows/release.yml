@@ -256,30 +256,39 @@ jobs:
           sudo apt-get install -y --allow-downgrades "$deb"
           node scripts/run-headless.mjs node scripts/first-start-probe.mjs /opt/Orivon/orivon --runs 3 --label "baseline $BASELINE" --json start-probe/linux-baseline.json
 
-      # The one-line Linux install, on the AppImage just built, in a scratch home: no sudo, the files it promises, and the
-      # launcher starts it (on this runner without libfuse2 the launcher unpacks the AppImage first).
+      # The one-line Linux install, on the AppImage just built, in a scratch home: no sudo, the AppImage unpacked once into
+      # the install and no copy of it kept, the files it promises, and the launcher starts it. The runner has no libfuse2,
+      # as Ubuntu has not since 22.10: the install needs none.
       - name: Install with the one-line installer and launch it
         if: matrix.platform == 'linux'
         run: |
           install_home="$RUNNER_TEMP/install-home"
           mkdir -p "$install_home"
+          lib="$install_home/.local/lib/orivon"
           HOME="$install_home" ORIVON_APPIMAGE="$(ls release/*.AppImage)" bash scripts/install-linux.sh --no-launch
-          test -x "$install_home/.local/lib/orivon/Orivon.AppImage"
+          test -x "$lib/orivon"
+          test -x "$lib/app/AppRun"
+          test -x "$lib/app/orivon"
+          test ! -e "$lib/Orivon.AppImage"
+          test "$(ls -A "$lib" | sort | tr '\n' ' ')" = 'app orivon '
           test -f "$install_home/.local/share/icons/hicolor/512x512/apps/orivon.png"
           grep -q 'x-scheme-handler/https' "$install_home/.local/share/applications/orivon.desktop"
-          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$install_home/.local/lib/orivon/orivon"
+          node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$lib/orivon"
 
-      # The launcher the one-line install wrote, which is what a click runs on Linux: on this runner, without libfuse2
-      # (Ubuntu's default since 22.10), it unpacks the whole AppImage before every start; then with libfuse2, mounted.
-      - name: Time the start of the one-line install's AppImage, unpacked and mounted
+      # What a click runs on Linux through the one-line install: the launcher, which starts the unpacked app straight from
+      # disk, as the deb does. Then the plain AppImage for comparison, the cost the install removes: unpacked at every start,
+      # which is what one does on this runner (no libfuse2, as on Ubuntu since 22.10), then mounted once libfuse2 is installed.
+      - name: Time the start of the one-line install, and of the AppImage unpacked at each start and mounted
         if: matrix.platform == 'linux'
         continue-on-error: true
         run: |
           set -euo pipefail
           launcher="$RUNNER_TEMP/install-home/.local/lib/orivon/orivon"
-          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$launcher" --runs 3 --label 'AppImage without libfuse2' --json start-probe/linux-appimage-unpacked.json || echo '::warning::a launch of the unpacked AppImage failed; its table names it'
+          appimage="$(ls release/*.AppImage)"
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$launcher" --runs 3 --label 'one-line install' --json start-probe/linux-oneline.json
+          APPIMAGE_EXTRACT_AND_RUN=1 node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$appimage" --runs 3 --label 'AppImage unpacked at each start' --json start-probe/linux-appimage-extract-and-run.json || echo '::warning::a launch of the AppImage failed; its table names it'
           sudo apt-get install -y libfuse2t64
-          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$launcher" --runs 3 --label 'AppImage with libfuse2' --json start-probe/linux-appimage-mounted.json
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$appimage" --runs 3 --label 'AppImage mounted' --json start-probe/linux-appimage-mounted.json
 
       # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
       # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
@@ -291,7 +300,8 @@ jobs:
           install_home="$RUNNER_TEMP/install-home-release"
           mkdir -p "$install_home"
           HOME="$install_home" bash scripts/install-linux.sh --no-launch
-          test -x "$install_home/.local/lib/orivon/Orivon.AppImage"
+          test -x "$install_home/.local/lib/orivon/app/AppRun"
+          test -x "$install_home/.local/lib/orivon/orivon"
 
       - name: Install with the NSIS installer and launch it
         if: matrix.platform == 'win'
