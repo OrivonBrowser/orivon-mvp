@@ -11,12 +11,15 @@
  * A launch is timed from just before the spawn to the first poll (every 25 ms) that sees the shell page rendered, and
  * to the first that sees the bundled extension running. When the build prints its own one-line record,
  * `[orivon][startup] {json}`, the record is kept as printed and its numbers are summarized too; a build that prints none
- * is timed all the same. A launch that does not quit when asked within QUIT_WAIT_MS is killed, and the report says so:
- * the next launch on that profile then starts as after a crash, which is not the start a click gets. `--offline` keeps the launch off the network (smoke-packaged.mjs NETWORK_OFF_ENV), which is
- * steadier and not what a person's launch does. Prints a table; `--json` also writes every raw value.
+ * is timed all the same. The record is read from the app's output and from the profile's `diagnostics/logs/current.log`,
+ * where the line also lands with a time and a level in front: a packaged Windows app has no console to print to.
+ * A launch that does not quit when asked within QUIT_WAIT_MS is killed, and the report says so: the next launch on that
+ * profile then starts as after a crash, which is not the start a click gets. `--offline` keeps the launch off the network
+ * (smoke-packaged.mjs NETWORK_OFF_ENV), which is steadier and not what a person's launch does. Prints a table; `--json`
+ * also writes every raw value.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, openSync, readSync, closeSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, openSync, readFileSync, readSync, closeSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, platform, release, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
@@ -64,10 +67,13 @@ export function parseArgs (argv) {
   return out
 }
 
-/** The first `[orivon][startup] {json}` line of the app's output that holds a JSON object, parsed; undefined when there is none yet. */
+/**
+ * The first `[orivon][startup] {json}` line of the app's output or log file that holds a JSON object, parsed; undefined
+ * when there is none yet. A log file's line has `<ISO time> <LEVEL> ` in front.
+ */
 export function parseStartupRecord (output) {
   for (const line of output.split('\n')) {
-    const found = /^\[orivon\]\[startup\] (\{.*\})\s*$/.exec(line.replace(/\r$/, ''))
+    const found = /^(?:\d{4}-\d{2}-\d{2}T[\d:.]+Z [A-Z]+ )?\[orivon\]\[startup\] (\{.*\})\s*$/.exec(line.replace(/\r$/, ''))
     if (found === null) continue
     try {
       const record = JSON.parse(found[1])
@@ -187,10 +193,15 @@ export function appVersionOf (executable) {
   return undefined
 }
 
-/** Resolves with the app's own record once it has printed one, or undefined after `waitMs` or once the app has gone. */
-async function waitForRecord (child, output, waitMs) {
+/** The text of the profile's current log file, or an empty string while it has none. The app writes it within 250 ms of a line. */
+export function readProfileLog (profile) {
+  try { return readFileSync(join(profile, 'diagnostics', 'logs', 'current.log'), 'utf8') } catch { return '' }
+}
+
+/** Resolves with the app's own record once it has printed or logged one, or undefined after `waitMs` or once the app has gone. */
+async function waitForRecord (child, output, profile, waitMs) {
   for (const deadline = Date.now() + waitMs; ; await sleep(50)) {
-    const record = parseStartupRecord(output())
+    const record = parseStartupRecord(`${output()}\n${readProfileLog(profile)}`)
     if (record !== undefined) return record
     if (Date.now() >= deadline || child.exitCode !== null || child.signalCode !== null) return undefined
   }
@@ -208,7 +219,7 @@ async function launchOnce (executable, profile, { env, appArgs }) {
       waitForShell(child, output, deadline, POLL_MS).then(since),
       waitForBundledExtension(child, output, deadline, POLL_MS).then(since)
     ])
-    const record = await waitForRecord(child, output, RECORD_WAIT_MS)
+    const record = await waitForRecord(child, output, profile, RECORD_WAIT_MS)
     run = record === undefined ? { shellMs, extensionMs } : { shellMs, extensionMs, record }
   } catch (error) {
     run = { error: error.message, appOutput: output().split('\n').slice(-20).join('\n') }
