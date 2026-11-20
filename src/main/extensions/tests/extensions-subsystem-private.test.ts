@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// afterReady in a private runtime: the extensions of its own registry (the copy it was given) load, the
+// afterReady and afterWindow in a private runtime: the extensions of its own registry (the copy it was given) load, the
 // Web Store page's APIs are still served (so a store tab never reaches the native ones) with installs
 // refused, every install route refuses, and removing or turning off an extension is refused. The ordinary
 // runtime is the control.
@@ -43,6 +43,13 @@ function ctx (privateSession: boolean): any {
   return { privateSession, app: { getPath: () => profile } }
 }
 
+/** The two hooks in the order a start runs them: the registrations, then the tail that loads the extensions and starts the store. */
+async function start (privateSession: boolean): Promise<void> {
+  const runtime = ctx(privateSession)
+  await extensionsSubsystem.afterReady!(runtime)
+  await extensionsSubsystem.afterWindow!(runtime)
+}
+
 const REFUSED = { installed: false, reason: 'Extensions cannot be added in a private window. Add them in a normal window.' }
 
 beforeEach(() => {
@@ -57,9 +64,9 @@ beforeEach(() => {
 
 afterEach(() => { if (profile !== '/profile') rmSync(profile, { recursive: true, force: true }) })
 
-describe('extensionsSubsystem.afterReady', () => {
+describe('extensionsSubsystem', () => {
   it('in a private runtime loads its own registry, starts the store with installs refused and refuses every install route', async () => {
-    await extensionsSubsystem.afterReady!(ctx(true))
+    await start(true)
     expect(loadExtension).toHaveBeenCalledTimes(1)
     expect(startWebStore).toHaveBeenCalledTimes(1)
     expect((startWebStore.mock.calls[0] as any[])[0].privateSession).toBe(true)
@@ -70,7 +77,7 @@ describe('extensionsSubsystem.afterReady', () => {
   })
 
   it('refuses to remove or turn off an extension in a private runtime', async () => {
-    await extensionsSubsystem.afterReady!(ctx(true))
+    await start(true)
     await expect(published.uninstall('a'.repeat(32))).rejects.toThrow('changed in a normal window')
     await expect(published.setEnabled('a'.repeat(32), false)).rejects.toThrow('changed in a normal window')
   })
@@ -81,7 +88,7 @@ describe('extensionsSubsystem.afterReady', () => {
     const file = join(profile, 'extensions', 'prefs.json')
     const before = JSON.stringify({ version: 1, extensions: { x: { pinned: true, privateWindows: true } } })
     writeFileSync(file, before)
-    await extensionsSubsystem.afterReady!(ctx(true))
+    await start(true)
     expect(installApis).toHaveBeenCalledTimes(1)
     const prefs = installApis.mock.calls[0]![0].prefs
     expect(prefs.get('x').pinned).toBe(true)
@@ -92,7 +99,7 @@ describe('extensionsSubsystem.afterReady', () => {
   })
 
   it('in an ordinary runtime loads the enabled extensions and starts the Web Store', async () => {
-    await extensionsSubsystem.afterReady!(ctx(false))
+    await start(false)
     expect(loadExtension).toHaveBeenCalledTimes(1)
     expect(startWebStore).toHaveBeenCalledTimes(1)
     expect(installApis).toHaveBeenCalledTimes(1)
@@ -100,19 +107,19 @@ describe('extensionsSubsystem.afterReady', () => {
 
   it('seeds the bundled extensions into an ordinary profile that starts from the default profile, and into no other', async () => {
     startsNew = true
-    await extensionsSubsystem.afterReady!(ctx(false))
+    await start(false)
     expect(seedBundledExtensions).toHaveBeenCalledTimes(1)
     expect(seedBundledExtensions.mock.calls[0]).toEqual([expect.objectContaining({ userDataPath: '/profile' }), '/default-profile'])
 
     seedBundledExtensions.mockClear()
     startsNew = false
-    await extensionsSubsystem.afterReady!(ctx(false))
+    await start(false)
     expect(seedBundledExtensions).not.toHaveBeenCalled()
   })
 
   it('seeds nothing in a private runtime', async () => {
     startsNew = true
-    await extensionsSubsystem.afterReady!(ctx(true))
+    await start(true)
     expect(seedBundledExtensions).not.toHaveBeenCalled()
   })
 })

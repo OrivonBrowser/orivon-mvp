@@ -5,8 +5,9 @@
 // entry goes in the array, if your subsystem reads ctx.broker.
 //
 // ctx.broker AND ctx.loader ARE ORDER-DEPENDENT, the same way. runAfterReady
-// (registry.ts) runs this array in order; brokerIpcSubsystem is the only
-// entry that writes ctx.broker, loaderSubsystem the only one that writes
+// (registry.ts) runs this array in order, then runAfterWindow runs the
+// afterWindow hooks of the same array in the same order; brokerIpcSubsystem is
+// the only entry that writes ctx.broker, loaderSubsystem the only one that writes
 // ctx.loader. List your entry AFTER whichever one you need to read -- before
 // it, you get `undefined`, silently, with no merge conflict and no compile
 // error. Read the published value; never build your own Broker or Loader

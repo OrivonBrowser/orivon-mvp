@@ -22,7 +22,7 @@ import { internalSession } from './pages/internal-session.js'
 import { installHistory } from './history/install-history.js'
 import { installDownloads } from './downloads/install-downloads.js'
 import { installDownloadsPeek } from './downloads/auto-open.js'
-import { createSubsystemContext, criticalFailureMessage, publishOpenTabs, publishScoreVerdictFor, publishShowNotice, publishWebsiteScore, publishWindowForSender, runAfterReady, runBeforeQuit, runBeforeReady, type SubsystemFailure } from './registry.js'
+import { createSubsystemContext, criticalFailureMessage, publishOpenTabs, publishScoreVerdictFor, publishShowNotice, publishWebsiteScore, publishWindowForSender, runAfterReady, runAfterWindow, runBeforeQuit, runBeforeReady, type SubsystemFailure } from './registry.js'
 import { subsystems } from './subsystems.js'
 import { DebouncedWriter } from './storage/debounced-writer.js'
 import { devOnlySwitches } from './shell/dev-switches.js'
@@ -201,6 +201,9 @@ export function boot (runtime: Runtime): void {
     const afterReadyFailures = await runAfterReady(subsystems, ctx, noteStartupHook)
     markStartup('afterReadyDone')
     report(afterReadyFailures)
+    const afterWindowFailures = await runAfterWindow(subsystems, ctx, noteStartupHook)
+    markStartup('afterWindowDone')
+    report(afterWindowFailures)
 
     // A CRITICAL subsystem failing (today: only the broker) means the
     // capability layer is dark -- opening a normal-looking shell window in
@@ -208,7 +211,7 @@ export function boot (runtime: Runtime): void {
     // orivon.* call from every app would be silently unroutable, with only a
     // main-process console line as evidence. Fail loud instead of booting a
     // browser that only looks like it works (open-questions.md A51).
-    const fatal = criticalFailureMessage([...beforeReadyFailures, ...afterReadyFailures])
+    const fatal = criticalFailureMessage([...beforeReadyFailures, ...afterReadyFailures, ...afterWindowFailures])
     if (fatal !== null) {
       dialog.showErrorBox('Orivon failed to start', fatal)
       x11VulkanStartAborted()

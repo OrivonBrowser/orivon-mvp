@@ -1,10 +1,12 @@
-// Registers extensions on `afterReady`: constructs the electron-chrome-
-// extensions library (ADR-0043) on session.defaultSession, then loads every
-// enabled registry entry into it, then publishes install/uninstall/enable/
-// list to `ctx.extensions`. Listed after `verifierSubsystem` in
-// `../subsystems.ts` -- README.md's Design notes say why. The library must
-// exist BEFORE the first loadExtension() call, so its own 'extension-loaded'
-// listener sees every extension (extension-host.ts's own header).
+// Registers extensions. `afterReady` constructs the electron-chrome-
+// extensions library (ADR-0043) on session.defaultSession and publishes
+// install/uninstall/enable/list to `ctx.extensions`; `afterWindow` then loads
+// every enabled registry entry into it, seeds a new profile and starts the Web
+// Store. What `afterReady` published waits for that tail before it acts.
+// Listed after `verifierSubsystem` in `../subsystems.ts` -- README.md's Design
+// notes say why. The library must exist BEFORE the first loadExtension() call,
+// so its own 'extension-loaded' listener sees every extension
+// (extension-host.ts's own header).
 
 import { join } from 'node:path'
 import { session, webContents } from 'electron'
@@ -93,11 +95,21 @@ async function loadEnabledExtensions (userDataPath: string): Promise<void> {
   }
 }
 
-const refusingStore: StoreApi = {
-  installFromStore: async () => ({ installed: false, reason: PRIVATE_INSTALL_REASON }),
-  checkForUpdates: async () => {},
-  updateFromStore: async () => ({ installed: false, reason: PRIVATE_INSTALL_REASON })
+/** Said in place of an install from the store once the extensions could not be loaded or the store could not start. */
+const START_FAILED_REASON = 'Extensions could not be started. Restart Orivon and try again.'
+
+function refusingStoreWith (reason: string): StoreApi {
+  return {
+    installFromStore: async () => ({ installed: false, reason }),
+    checkForUpdates: async () => {},
+    updateFromStore: async () => ({ installed: false, reason })
+  }
 }
+
+const refusingStore = refusingStoreWith(PRIVATE_INSTALL_REASON)
+
+/** What `afterReady` leaves for `afterWindow`: loading the person's extensions, seeding a new profile and starting the Web Store. Set by `afterReady`, and undefined where that did not get this far. */
+let loadAndStart: (() => Promise<void>) | undefined
 
 let profileRequestHandlers: ((target: Session) => void) | undefined
 let profileAttacher: ProfileAttacher | undefined
@@ -186,36 +198,55 @@ export const extensionsSubsystem: Subsystem = {
     // Decided at boot, before any file of the profile was opened: an existing profile keeps what it has.
     const seeds = !ctx.privateSession && startsFromDefaultProfile()
 
-    // A private runtime loads the registry it was given, which holds only the extensions the person allowed in private
-    // windows; every install route refuses there, and the store page's hook still starts (below).
-    await loadEnabledExtensions(userDataPath)
-
     const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id, target) => { await clearChromeStorage(target ?? session.defaultSession, id) }, profileSessions: profileExtensionSessions, closeSidePanels }
-    if (seeds) {
-      markStartup('extensionsSeedStart')
-      await seedBundledExtensions(install, currentDefaultProfileDir())
-      markStartup('extensionsSeeded')
-    }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
-    // Started in every runtime: a store tab in a private window must never reach the native
-    // `chrome.webstorePrivate`. In a private one installs are denied inside it.
-    const started = await startWebStore(install, preloadPath)
-    const store = ctx.privateSession ? refusingStore : started
+
+    // Settles, and never rejects, with the store the API answers with once `afterWindow` has loaded the extensions and
+    // started the store. Every call that installs, changes or reloads an extension waits for it.
+    let settle: (store: StoreApi) => void = () => {}
+    const loaded = new Promise<StoreApi>((resolve) => { settle = resolve })
+    loadAndStart = async () => {
+      try {
+        // A private runtime loads the registry it was given, which holds only the extensions the person allowed in private
+        // windows; every install route refuses there, and the store page's hook still starts (below).
+        await loadEnabledExtensions(userDataPath)
+        if (seeds) {
+          markStartup('extensionsSeedStart')
+          await seedBundledExtensions(install, currentDefaultProfileDir())
+          markStartup('extensionsSeeded')
+        }
+        // Started in every runtime: a store tab in a private window must never reach the native
+        // `chrome.webstorePrivate`. In a private one installs are denied inside it.
+        const started = await startWebStore(install, preloadPath)
+        settle(ctx.privateSession ? refusingStore : started)
+      } catch (error) {
+        settle(refusingStoreWith(START_FAILED_REASON))
+        throw error
+      }
+    }
+    const store: StoreApi = {
+      installFromStore: async (id) => await (await loaded).installFromStore(id),
+      checkForUpdates: async () => { await (await loaded).checkForUpdates() },
+      updateFromStore: async (id) => await (await loaded).updateFromStore(id)
+    }
     installStoreTestHook(store)
     const extensionsApi: ExtensionsApi = {
-      installFromFolder: async (dir, where) => await installFromFolder(install, dir, where),
-      installFromFile: async (filePath, where) => await installFromFile(install, filePath, where),
-      uninstall: async (id) => { if (ctx.privateSession) throw new Error(PRIVATE_CHANGE_REASON); await uninstall(install, id) },
-      setEnabled: async (id, enabled) => { if (ctx.privateSession) throw new Error(PRIVATE_CHANGE_REASON); await setEnabled(install, id, enabled) },
+      installFromFolder: async (dir, where) => { await loaded; return await installFromFolder(install, dir, where) },
+      installFromFile: async (filePath, where) => { await loaded; return await installFromFile(install, filePath, where) },
+      uninstall: async (id) => { if (ctx.privateSession) throw new Error(PRIVATE_CHANGE_REASON); await loaded; await uninstall(install, id) },
+      setEnabled: async (id, enabled) => { if (ctx.privateSession) throw new Error(PRIVATE_CHANGE_REASON); await loaded; await setEnabled(install, id, enabled) },
       list: () => readRegistry(userDataPath),
       installFromStore: store.installFromStore,
       checkForUpdates: store.checkForUpdates,
       updateFromStore: store.updateFromStore,
       prefs,
       commandKeys,
-      applyManifest: manifests.applyManifest
+      applyManifest: async (id, mode) => { await loaded; return await manifests.applyManifest(id, mode) }
     }
     installExtensionsInstallTestHook(extensionsApi)
     publishExtensions(ctx, extensionsApi)
+  },
+  afterWindow: async () => {
+    await loadAndStart?.()
   }
 }

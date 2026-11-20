@@ -21,6 +21,7 @@ export const STARTUP_MARKS = [
   'extensionsSeedStart', // the bundled extensions are about to be installed into a new profile (a first start only)
   'extensionsSeeded', // they were installed
   'afterReadyDone', // every subsystem's afterReady hook ran
+  'afterWindowDone', // every subsystem's afterWindow hook ran
   'storesLoaded', // settings, bookmarks, session and the other shell stores were read
   'firstWindowStart', // the first window's options were chosen and createShellWindow is called
   'firstWindowCreated', // createShellWindow returned: the window, its chrome view and its first tab exist
@@ -32,7 +33,7 @@ export const STARTUP_MARKS = [
 
 export type StartupMark = typeof STARTUP_MARKS[number]
 
-export type HookPhase = 'beforeReady' | 'afterReady'
+export type HookPhase = 'beforeReady' | 'afterReady' | 'afterWindow'
 
 export interface HookTiming {
   readonly name: string
