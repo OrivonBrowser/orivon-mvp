@@ -941,12 +941,22 @@ commands.
 `electron-builder.yml`'s `files:` key is an **allowlist** of the app's own sources: `out/**/*`
 and `package.json`. An allowlist cannot pick up `spike/`, `test/`, `scripts/`, `devlog/`,
 `.claude/`, `docs/` or root-level markdown the way a blocklist subtracted from `**/*` would have
-to remember to keep excluding. The production tree of `package.json`'s `dependencies` (the ENS
-resolver's, the IPFS/IPNS reader's and the renderer shims' packages) is still copied into
-`app.asar`'s own `node_modules/`, since electron-vite leaves some of them to be required at run
-time. webtorrent and every app-side library are not shell dependencies: they are app assets
+to remember to keep excluding. `package.json` lists no `dependencies`: electron-vite bundles every library the main process, its utility
+hosts, the preloads and the pages use into `out/` (`electron.vite.config.ts`), so `app.asar` carries no
+`node_modules/`, and a package that a build needs is a `devDependency`, which electron-builder never copies.
+Bundling also means the process reads a handful of files at start instead of resolving several hundred modules
+from disk. `scripts/tests/bundled-dependencies.test.ts` fails when a `dependencies` entry returns. A library that
+reads its own files by path at run time (a `.wasm` beside its code) cannot be bundled that way: it is embedded
+as text or bytes by the bundler (the reader's two library files come in as `?raw` imports), or copied into
+`out/` by the build. webtorrent and every app-side library are not shell dependencies: they are app assets
 fetched into `userData` (`ADR-0005`). `build/icon.png` is copied beside `app.asar` as
 `resources/icon.png`, for the window icon.
+
+A bundled package no longer carries its own folder, and with it went the licence files that folder held.
+`scripts/licence-notices-plugin.ts` collects, from the modules the main, preload and renderer builds load, each npm
+package and vendored folder with the licence files at its top, and the renderer build (the last of the three)
+writes them to `out/THIRD-PARTY-NOTICES.txt`. `extraResources` copies that file to `resources/THIRD-PARTY-NOTICES.txt`
+beside the app, and `files` keeps it out of `app.asar` so it is not there twice.
 
 ## Known gaps
 

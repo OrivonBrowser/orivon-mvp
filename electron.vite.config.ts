@@ -7,6 +7,7 @@ import { build, normalizePath, type Plugin } from 'vite'
 import { aliasPattern, buildAliasEntries } from './src/shim/module-map.js'
 import { isShimSource } from './src/shim/is-shim-source.js'
 import { privacyNotice } from './scripts/privacy-notice-plugin.js'
+import { licenceNotices } from './scripts/licence-notices-plugin.js'
 import { buildCommit } from './scripts/build-commit.js'
 import { CHUNK_CHECK_WORKER_SOURCE, chunkCheckWorkerCode } from './scripts/chunk-check-worker-bundle.js'
 import { releaseNotes } from './src/main/info/release-notes.js'
@@ -220,7 +221,7 @@ function bundledReleaseNotes (): ReturnType<typeof releaseNotes> {
 
 export default defineConfig({
   main: {
-    plugins: [chunkCheckWorker()],
+    plugins: [chunkCheckWorker(), licenceNotices(root)],
     // Maps the virtual specifiers electron-chrome-extensions-lib.d.ts
     // declares to the real vendored files, for BUNDLING only -- tsc never
     // sees this file, so it resolves those specifiers through the .d.ts's
@@ -264,15 +265,13 @@ export default defineConfig({
           'nym-tunnel-host': resolve(root, 'src/protocols/nym-tunnel/entry.ts')
         }
       },
-      // Dependencies stay external, loaded from node_modules at run time,
-      // except these ESM-only packages: this CommonJS output cannot require()
-      // them, so they are bundled into whichever entry imports them instead.
-      // `pbf` (extensions/crx.ts, vendor/electron-chrome-web-store's CRX3
-      // reader) is `"type": "module"` -- measured: left external, a real
-      // build's `new Pbf(...)` throws "Pbf is not a constructor" at runtime,
-      // never caught by typecheck or a plain-vitest unit test, only a real
-      // Electron launch.
-      externalizeDeps: { exclude: ['multiformats', '@ipld/dag-pb', 'ipfs-unixfs', 'ipfs-unixfs-exporter', 'ipns', 'pbf'] }
+      // Every dependency is bundled into the entry that imports it, so a package carries no
+      // `node_modules` and the process reads one file per entry instead of resolving and
+      // evaluating hundreds of modules from disk at start. Only `electron` and the Node builtins stay
+      // external (electron-vite's own defaults). A package that read its own files by path at run
+      // time would need them copied beside the bundle: none does (`@a16z/helios` and `undici` embed
+      // their WebAssembly, and the reader library's two files come in as `?raw` text).
+      externalizeDeps: false
     }
   },
   preload: {
@@ -287,7 +286,7 @@ export default defineConfig({
     // decides a bare Node specifier is a builtin with nothing to bundle --
     // its own header has the full reasoning. Order after pageBufferPackage
     // is not load-bearing (different id, `enforce: 'post'` besides).
-    plugins: [pageBufferPackage(), shimNodeSpecifiers(), wrapSandboxedPreloadBody()],
+    plugins: [pageBufferPackage(), shimNodeSpecifiers(), wrapSandboxedPreloadBody(), licenceNotices(root)],
     // Mirrors main's own `define` above: src/preload/sign-in-identity.ts
     // reads this same compiled-in flag for its test-only host seam, so the
     // flag must reach the preload bundle for an ordinary build to fold that
@@ -339,7 +338,8 @@ export default defineConfig({
   },
   renderer: {
     root: rendererRoot,
-    plugins: [privacyNotice()],
+    // The renderer is the last of the three builds: its plugin writes the file the first two added their packages to.
+    plugins: [privacyNotice(), licenceNotices(root, 'out/THIRD-PARTY-NOTICES.txt')],
     server: { host: rendererHost, hmr: rendererHmr },
     build: {
       // The new-tab page runs beside websites, and the shell scheme serves it only the files this

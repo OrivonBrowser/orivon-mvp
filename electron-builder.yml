@@ -41,13 +41,18 @@ directories:
 # files") and it is the stronger guarantee of the two approaches.
 files:
   - out/**/*
+  - '!out/THIRD-PARTY-NOTICES.txt'
   - package.json
-# This list replaces electron-builder's default glob for SOURCE files only. The
-# production tree of package.json's "dependencies" (the ENS resolver's, the IPFS/IPNS
-# reader's and the renderer shims' packages) is still copied into app.asar's own
-# node_modules/: electron-vite bundles some of them into out/ and leaves the rest to be
-# required from there at run time. webtorrent and every app-side library are not shell
-# dependencies: they are app assets fetched into `userData` (ADR-0005).
+# This list replaces electron-builder's default glob for SOURCE files only. package.json lists no
+# "dependencies": electron-vite bundles every library the main process, the utility hosts, the
+# preloads and the pages use into out/ (electron.vite.config.ts), so electron-builder finds no
+# production tree to copy and app.asar carries no node_modules/. A package a build tool needs is a
+# devDependency, which electron-builder never copies; scripts/tests/bundled-dependencies.test.ts
+# fails when a "dependencies" entry returns. What a package's folder carried, its licence texts, travels
+# in out/THIRD-PARTY-NOTICES.txt (scripts/licence-notices-plugin.ts writes it, from the modules the
+# builds loaded), which `extraResources` below puts beside the app instead of inside app.asar.
+# webtorrent and every app-side library are not shell dependencies: they are app assets fetched
+# into `userData` (ADR-0005).
 
 asar: true
 # On by default in electron-builder; stated explicitly because it is a deliberate
@@ -135,6 +140,8 @@ protocols:
     - orivon
 
 extraResources:
+  - from: out/THIRD-PARTY-NOTICES.txt
+    to: THIRD-PARTY-NOTICES.txt
   - from: build/icon.png
     to: icon.png
 # The icon src/main/shell/window-frame.ts hands to BaseWindow, copied into every
