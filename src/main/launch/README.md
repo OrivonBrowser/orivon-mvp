@@ -9,6 +9,7 @@ right place and steps aside if that profile is already open; `profile-store.ts` 
 `private-session.ts` makes, marks, removes and sweeps the directories of private sessions, and
 `private-extensions.ts` gives a new one the extensions its opener allows in private windows, with a copy of their data;
 `partition-folders.ts` renames, before any session is made, each `Partitions/<kind>-<64 hex>` folder to the 32-digit name its session opens (ADR-0110), never copying or deleting;
+`compile-cache.ts` turns on Node's compile cache before `start.ts` loads the bundle, in a `compiled-code-cache/` folder of the data directory every profile shares, and trims it (`docs/development/packaging.md` section Compiled code cache);
 `pid-liveness.ts` is the one check both it and `profile-store.ts` use to tell a marker's process from one
 the OS has since reused its pid for;
 `private-picture.ts` gives a new private session the new tab's picture of the profile that opened it, copied asynchronously because it can be 20 MB;
@@ -17,7 +18,7 @@ the OS has since reused its pid for;
 this process's own profile, the list, changes to it, and "open"; `profiles-domain.ts` is what the Profiles,
 Private and Settings pages may ask of it.
 
-**What it depends on.** `node:fs`, `node:os`, `node:child_process`; [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts) (`partition-folders.ts` reads the kinds of session and the length of their names);
+**What it depends on.** `node:fs`, `node:module`, `node:os`, `node:child_process`; [`../../broker/grants/origin-hash.ts`](../../broker/grants/origin-hash.ts) (`partition-folders.ts` reads the kinds of session and the length of their names);
 [`../../broker/adapters/atomic-write.ts`](../../broker/adapters/atomic-write.ts) (`profile-store.ts`'s
 own writes); [`../../protocols/builtin.ts`](../../protocols/builtin.ts) (`orivon-link.ts` serves an `ipfs://` address as the address bar does); [`../browsing/local-file-input.ts`](../browsing/local-file-input.ts) (which text names a local file:
 `launch-request.ts` and `local-operand.ts`); [`../settings/settings-file.ts`](../settings/settings-file.ts) (the settings a private session held to a tunnel is written with: `private-session.ts` and `start-launch.ts`); [`../newtab/background-image.ts`](../newtab/background-image.ts) (the file name of the new tab's picture, which `private-picture.ts` copies into a private session);
@@ -31,6 +32,7 @@ directory: the launch has to run before one exists.
 
 **Electron dependence.** Everything but `start-launch.ts` is plain Node and would outlive a change of the
 engine beneath it; `start-launch.ts` calls Electron's `app.setPath` and single-instance lock and is tied to it.
+`compile-cache.ts` imports no Electron: it uses the V8 compile cache Node offers, and goes with any Node engine.
 
 ## Design notes
 

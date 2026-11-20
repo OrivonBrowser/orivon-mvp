@@ -97,6 +97,20 @@ it('keeps a profile\'s data in a directory of its own, apart from the default pr
   }
 }, TEST_TIMEOUT_MS)
 
+it('keeps the compiled code of the browser in one folder of the shared data directory, not in a profile\'s, and writes it when it quits', async () => {
+  let home = ''
+  const { app } = await launched([`--orivon-profile=${PROFILE}`], (dir) => { home = dir; seedProfile(dir) })
+  await closeElectron(app, { keepProfile: true })
+  try {
+    const cache = join(home, 'compiled-code-cache')
+    const entries = existsSync(cache) ? readdirSync(cache, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()) : []
+    expect(entries.length).toBeGreaterThan(0)
+    expect(existsSync(join(home, 'profiles', PROFILE, 'compiled-code-cache'))).toBe(false)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+}, TEST_TIMEOUT_MS)
+
 it('refuses to start for a launch it cannot understand, and creates nothing', async () => {
   const home = join(tmpdir(), `orivon-launch-refusal-${String(process.pid)}`)
   scratch.push(home)
