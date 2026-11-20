@@ -42,6 +42,11 @@ export function internalSession (): Session | undefined {
  * `orivon-shell` serves the shell's own renderer entries (shell-scheme.ts): `standard` so a page has an
  * origin and relative URLs, `secure` for `crypto.randomUUID`; `corsEnabled` and `bypassCSP` stay off.
  *
+ * `codeCache` on `orivon` and `orivon-shell`, the two schemes whose pages are the browser's own: V8 keeps the compiled
+ * form of their scripts. The shell's session is stored, so a later start does not compile them again; the internal
+ * session is in memory. It changes what is stored, never what a page may do; Electron honours it only with
+ * `standard`. `orivon-file` serves images and media, no script.
+ *
  * `crx` is the extensions library's own scheme (ADR-0043), for the
  * `<browser-action-list>` toolbar element's icon requests
  * (`vendor/electron-chrome-extensions/src/browser/api/browser-action.ts`'s
@@ -53,8 +58,8 @@ export function internalSession (): Session | undefined {
  * media element's `Range` requests, `corsEnabled` for an `<img crossorigin>`. */
 export function registerInternalScheme (): void {
   protocol.registerSchemesAsPrivileged([
-    { scheme: INTERNAL_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true } },
-    { scheme: SHELL_SCHEME, privileges: { standard: true, secure: true } },
+    { scheme: INTERNAL_SCHEME, privileges: { standard: true, secure: true, supportFetchAPI: true, codeCache: true } },
+    { scheme: SHELL_SCHEME, privileges: { standard: true, secure: true, codeCache: true } },
     { scheme: 'crx', privileges: { bypassCSP: true } },
     { scheme: APP_FILE_SCHEME, privileges: { standard: true, secure: true, stream: true, corsEnabled: true } }
   ])

@@ -1,12 +1,13 @@
 import { app } from 'electron'
 import { createRequire } from 'node:module'
+import { settleCompileCacheLater, startCompileCache } from './launch/compile-cache.js'
 import { startLaunch } from './launch/start-launch.js'
 import { markStartup } from './startup/startup-marks-runner.js'
 
 // The process entry. It reads nothing but the launch code, so a second start of a profile that is already open asks
 // for the single-instance lock and exits before the rest of the browser (index.ts, most of this build) is loaded:
 // loading it is about half of what such a start costs. Imports here stay within electron, node:module,
-// launch/start-launch.js and the start-up marks, which load nothing (tests/start.test.ts holds that).
+// launch/start-launch.js, launch/compile-cache.js and the start-up marks, which load nothing (tests/start.test.ts holds that).
 
 // The browser's crash recorder, handed over once index.js is loaded; an error before that has no record.
 let onFatal: ((kind: string, error: unknown) => void) | undefined
@@ -32,8 +33,11 @@ markStartup('entry')
 const runtime = startLaunch(app, process.argv)
 if (runtime !== null) {
   markStartup('launched')
+  // Only a start that goes on gets the cache: the one that handed over to a running profile above never compiles the bundle.
+  const compiledCache = startCompileCache(runtime.launch.home, app.getAppPath())
   // A require at this point, not an import at the top: the bundle's static imports would all be evaluated first.
   const browser = createRequire(import.meta.url)('./index.js') as typeof import('./index.js')
   onFatal = browser.recordFatal
   browser.boot(runtime)
+  if (compiledCache !== undefined) settleCompileCacheLater(compiledCache)
 }
