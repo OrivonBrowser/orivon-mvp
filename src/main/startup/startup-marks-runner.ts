@@ -21,7 +21,7 @@ function printLine (): void {
   console.log(startupLine(marks.record()))
 }
 
-/** Records a moment of this start (the first call for a name counts) and prints the line when the first window is shown and its first tab has loaded. */
+/** Records a moment of this start (the first call for a name counts) and prints the line once the first window is shown and its chrome page and first tab have loaded, whichever of the three comes last. */
 export function markStartup (name: StartupMark): void {
   marks.mark(name)
   if (marks.isComplete()) printLine()
@@ -36,7 +36,7 @@ export function describeStartup (facts: StartupFacts): void {
   marks.setFacts(facts)
 }
 
-/** Prints the line after the cap if the first tab has not loaded by then: a start that never completes is the one to measure. Never keeps the process alive. */
+/** Prints the line after the cap if the start is not complete by then: a start that never completes is the one to measure. Never keeps the process alive. */
 export function printStartupLineAtCap (): void {
   setTimeout(printLine, LINE_CAP_MS).unref()
 }
