@@ -76,16 +76,19 @@ The screen's visible frame is in `cross-os/screen.txt` of the evidence.
 `--packaged` also times how long each package takes to show the browser. After its smoke, each leg runs
 [`scripts/first-start-probe.mjs`](../first-start-probe.mjs) with three launches per series on the package it
 installed: the deb on Linux, the installed program on Windows and the copy the one-line installer made on macOS
-(Apple silicon). A first start is a new profile, as a first click gets; a next start is three launches on one profile
-after one that is not counted. The leg uploads `start-probe/<system>-current.json` as the artifact
+(Apple silicon). The Linux leg also times the launcher the one-line install writes, which runs the AppImage: first as
+the runner has it, without libfuse2, so the AppImage is unpacked before every start
+(`linux-appimage-unpacked.json`), then with libfuse2 installed, mounted (`linux-appimage-mounted.json`). A first start
+is a new profile, as a first click gets; a next start is three launches on one profile after one that is not counted.
+The leg uploads `start-probe/<system>-current.json` as the artifact
 `start-probe-<linux|win|mac>`, and `cross-os.mjs --packaged` downloads them to
 `qa-artifacts/cross-os/<run id>/start-probe/` and prints a table (median, minimum and maximum, in ms) per file. The
 steps cannot fail the job: a launch that fails is named in the table.
 
 With `--baseline <release tag>` the run also gets the input `baseline_release`: each leg downloads that release's package
 for its system with `fetch-release-package.mjs` (SHA-256 checked), puts it where it cannot touch the branch's
-(Linux installs its deb over the one just timed, Windows installs into a folder of its own, macOS copies the app out of
-the dmg) and times it the same way into `<system>-baseline.json`, so one run answers "faster or slower than that
+(Linux installs its deb over the one just timed; Windows installs into a folder of its own, which still uninstalls the
+branch's package, so its step runs last; macOS copies the app out of the dmg) and times it the same way into `<system>-baseline.json`, so one run answers "faster or slower than that
 release" on all three systems. The same program times any package by hand, an installed one or an unpacked build:
 
 ```bash
