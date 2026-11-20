@@ -6,6 +6,10 @@ vi.mock('../../local-files/file-fuse.js', () => ({ knownFileProtocolFuse: () => 
 
 import { setCrashLookups } from '../../diagnostics/crash-lookup.js'
 import { OFFER_SHOWN_MS, restoreOverlayFor } from '../restore-overlay.js'
+import { openWebContent } from '../web-ready.js'
+
+// Web pages may load: restore-overlay-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 const window = (url: string): SavedWindow => ({ bounds: { x: 10, y: 10, width: 800, height: 600 }, maximized: false, active: 0, tabs: [{ url, title: '', pinned: false }] })
 const display = { bounds: { x: 0, y: 0, width: 1920, height: 1080 } }

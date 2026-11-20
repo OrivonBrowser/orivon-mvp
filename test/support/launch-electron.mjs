@@ -372,8 +372,8 @@ export async function launchElectron ({
     )
   }
 
-  // src/main/index.ts opens the shell window only after every afterReady
-  // subsystem has run, so hooks such as __orivonDevGrant exist once it does.
+  // Hooks such as __orivonDevGrant exist once a window does: every afterReady subsystem has run by then. Whether web
+  // pages may load yet is another question, answered by the wait at the end of this function.
   await waitForShellWindow(app)
 
   // waitForShellWindow never throws (its own header) -- a plain sandboxed
@@ -415,7 +415,27 @@ export async function launchElectron ({
     await waitForChromeReady(view, CHROME_FRAMES_WAIT_MS)
   }
 
+  // A spec drives the page right after the launch returns, and an address opened while the gate is shut waits for it
+  // (src/main/startup/web-ready.ts), so the launch does not return before web pages may load.
+  await waitForWebReady(app)
+
   return app
+}
+
+/** How long launchElectron() waits for web pages to be allowed to load before returning anyway. */
+export const WEB_READY_WAIT_MS = 30_000
+
+/**
+ * Resolves once the app says web pages may load, when its main process is gone, or after `timeoutMs`, and never
+ * throws: a build with no test seam (an entry that is not the shell) has nothing to wait for and answers at once, and a
+ * launch that fails to start has nothing to wait on.
+ */
+async function waitForWebReady (app, timeoutMs = WEB_READY_WAIT_MS) {
+  const answer = app.evaluate(() => globalThis.__orivonDevStartup?.webReady).catch(() => undefined)
+  let timer
+  const expired = new Promise((resolve) => { timer = setTimeout(resolve, timeoutMs) })
+  await Promise.race([answer, expired])
+  clearTimeout(timer)
 }
 
 /** How long launchElectron() waits for the chrome view's frames to settle before returning anyway. */
