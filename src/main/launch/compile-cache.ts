@@ -16,7 +16,7 @@ export const COMPILE_CACHE_SETTLE_MS = 15_000
 
 /** The part of Node's API this uses, so a test can stand in for it. */
 export interface CompileCacheApi {
-  readonly enable: (directory: string) => { readonly status: number, readonly message?: string }
+  readonly enable: (directory: string) => { readonly status: number, readonly message?: string, readonly directory?: string }
   readonly flush: () => void
   readonly status: { readonly ENABLED: number, readonly ALREADY_ENABLED: number, readonly FAILED: number, readonly DISABLED: number }
 }
@@ -53,7 +53,8 @@ export function startCompileCache (home: string, appPath: string, api: CompileCa
   const directory = compileCacheFolder(home)
   try {
     const result = api.enable(directory)
-    if (result.status === api.status.ENABLED || result.status === api.status.ALREADY_ENABLED) return directory
+    // Already on (NODE_COMPILE_CACHE in the environment): Node keeps writing to the folder it was given, and that is the one to trim.
+    if (result.status === api.status.ENABLED || result.status === api.status.ALREADY_ENABLED) return result.directory ?? directory
     if (result.status !== api.status.DISABLED) warn(`[orivon] compile cache not used: ${result.message ?? 'it could not be opened'}`)
   } catch (error) {
     warn(`[orivon] compile cache not used: ${error instanceof Error ? error.message : String(error)}`)
@@ -62,8 +63,9 @@ export function startCompileCache (home: string, appPath: string, api: CompileCa
 }
 
 /**
- * Removes the oldest entries until the folder is at half its limit, when it is over it. The newest entries are the
- * running build's, so they stay. Never throws: a file another process removes first is not an error.
+ * Removes the oldest entries until the folder is at half its limit, when it is over it. A hit never rewrites an entry,
+ * so the running build's are not always the newest, and one that goes is made again at the next start. Never throws:
+ * a file another process removes first, or one Windows holds open, is skipped.
  */
 export async function trimCompileCache (directory: string, maxBytes: number = COMPILE_CACHE_MAX_BYTES): Promise<void> {
   try {
@@ -81,8 +83,10 @@ export async function trimCompileCache (directory: string, maxBytes: number = CO
     if (total <= maxBytes) return
     for (const entry of entries.sort((a, b) => a.modified - b.modified)) {
       if (total <= maxBytes / 2) return
-      await rm(entry.path, { force: true })
-      total -= entry.size
+      try {
+        await rm(entry.path, { force: true })
+        total -= entry.size
+      } catch { /* held open: the next one */ }
     }
   } catch { /* no folder, or one that cannot be read: nothing to trim */ }
 }
@@ -95,6 +99,7 @@ export async function trimCompileCache (directory: string, maxBytes: number = CO
 export function settleCompileCacheLater (directory: string, delayMs: number = COMPILE_CACHE_SETTLE_MS, api: CompileCacheApi = nodeApi): void {
   setTimeout(() => {
     try { api.flush() } catch { /* a cache miss is all it costs */ }
+    // orivon:floating-ok -- `trimCompileCache` catches everything it can throw
     void trimCompileCache(directory)
   }, delayMs).unref()
 }

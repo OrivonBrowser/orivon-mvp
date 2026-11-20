@@ -59,6 +59,11 @@ describe('startCompileCache', () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it('returns the folder Node says it writes to when the cache was on already, which is the one to trim', () => {
+    const api = fakeApi({ status: STATUS.ALREADY_ENABLED, directory: '/elsewhere/cache' })
+    expect(startCompileCache('/data/orivon', '/opt/Orivon/resources/app.asar', api, vi.fn())).toBe('/elsewhere/cache')
+  })
+
   it('says why once and goes on without a cache when Node cannot open it', () => {
     const warn = vi.fn()
     expect(startCompileCache('/data/orivon', '/opt/Orivon/resources/app.asar', fakeApi({ status: STATUS.FAILED, message: 'Cannot create cache directory: EACCES' }), warn)).toBeUndefined()

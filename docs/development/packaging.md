@@ -986,9 +986,9 @@ personal data, and deleting it costs one slower start.
   process run code of its choosing (`docs/architecture/security-model.md` T24).
 
 The shell scheme and the internal scheme are registered with `codeCache`, so V8 also keeps the compiled scripts of the
-browser's own pages: the shell's session is stored in the profile, the internal pages' session is in memory and keeps them
-for the run. The hosts the main process forks start when something asks for one, never at every start, so they have no
-cache of their own.
+browser's own pages: the shell's session is stored in the profile (`Partitions/orivon-shell/Code Cache`, and `Code Cache`
+for the new-tab page), and the internal pages' session is in memory, so what it keeps lasts the run at most. The hosts
+the main process forks start when something asks for one, never at every start, so they have no cache of their own.
 
 ### Licence notices
 

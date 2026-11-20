@@ -43,8 +43,9 @@ export function internalSession (): Session | undefined {
  * origin and relative URLs, `secure` for `crypto.randomUUID`; `corsEnabled` and `bypassCSP` stay off.
  *
  * `codeCache` on `orivon` and `orivon-shell`, the two schemes whose pages are the browser's own: V8 keeps the compiled
- * form of their scripts, so a later start does not compile them again. It changes what is stored, never what a page
- * may do; Electron honours it only with `standard`. `orivon-file` serves images and media, no script.
+ * form of their scripts. The shell's session is stored, so a later start does not compile them again; the internal
+ * session is in memory. It changes what is stored, never what a page may do; Electron honours it only with
+ * `standard`. `orivon-file` serves images and media, no script.
  *
  * `crx` is the extensions library's own scheme (ADR-0043), for the
  * `<browser-action-list>` toolbar element's icon requests

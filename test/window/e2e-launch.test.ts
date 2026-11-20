@@ -97,14 +97,16 @@ it('keeps a profile\'s data in a directory of its own, apart from the default pr
   }
 }, TEST_TIMEOUT_MS)
 
-it('keeps the compiled code of the browser in one folder of the shared data directory, not in a profile\'s, and writes it when it quits', async () => {
+const filesIn = (dir: string, only = /./): number => existsSync(dir) ? readdirSync(dir, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile() && only.test(entry.name)).length : 0
+
+it('keeps the main bundle\'s compiled code in one folder of the shared data directory, written when it quits, and the shell pages\' in their session', async () => {
   let home = ''
   const { app } = await launched([`--orivon-profile=${PROFILE}`], (dir) => { home = dir; seedProfile(dir) })
+  // Chromium writes an entry of its own code cache (named `<hash>_0`) once the shell's scripts have run.
+  expect(await waitFor(() => filesIn(join(home, 'profiles', PROFILE, 'Partitions', 'orivon-shell', 'Code Cache', 'js'), /_0$/) > 0, 20_000)).toBe(true)
   await closeElectron(app, { keepProfile: true })
   try {
-    const cache = join(home, 'compiled-code-cache')
-    const entries = existsSync(cache) ? readdirSync(cache, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()) : []
-    expect(entries.length).toBeGreaterThan(0)
+    expect(filesIn(join(home, 'compiled-code-cache'))).toBeGreaterThan(0)
     expect(existsSync(join(home, 'profiles', PROFILE, 'compiled-code-cache'))).toBe(false)
   } finally {
     rmSync(home, { recursive: true, force: true })
@@ -316,6 +318,9 @@ it('runs a private session in a directory of its own, with the settings it began
     scratch.push(dir)
     expect(dir.startsWith(join(tmpdir(), 'orivon-private-'))).toBe(true)
     expect(dir).not.toBe(home)
+    // The compiled code is the program's, not the session's: it is kept where the next start finds it, never in a directory deleted when this one ends.
+    expect(existsSync(join(home, 'compiled-code-cache'))).toBe(true)
+    expect(existsSync(join(dir, 'compiled-code-cache'))).toBe(false)
 
     // The settings came along; nothing else did.
     expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('dark')
