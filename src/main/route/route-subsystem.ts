@@ -82,6 +82,8 @@ const ONION_FILTER: WebRequestFilter = { urls: ['http://*.onion/*', 'https://*.o
 /** Sessions created before the controller exists, and after: each is adopted by the shared identity (`route-controller.ts`). */
 const created: object[] = []
 let adopt: ((created: Session) => void) | undefined
+/** What `afterReady` leaves for `afterWindow`: the first read of the system's settings and the wait for the sessions to follow it. Set by `afterReady`, and undefined where that did not get this far. */
+let settleSessions: (() => Promise<void>) | undefined
 
 export const routeSubsystem: Subsystem = {
   name: 'route',
@@ -227,7 +229,7 @@ export const routeSubsystem: Subsystem = {
       return checkSession
     }
     const source = sourceOf(process.platform, process.env)
-    proxyMirror = createProxyMirror({
+    const mirror = createProxyMirror({
       source,
       read: source === 'gnome' ? readGnomeSettings : source === 'kde' ? readKdeSettings : source === 'windows' ? readWindowsSettings : source === 'macos' ? readMacosSettings : environmentReader(process.env),
       held: heldToNym,
@@ -238,7 +240,8 @@ export const routeSubsystem: Subsystem = {
       check: { set: async (config) => { await systemCheckSession().setProxy(config) }, answer: async (url) => await systemCheckSession().resolveProxy(url) },
       apply: async () => await routes.controller.systemChanged()
     })
-    setMirrorStatusSource(proxyMirror.status)
+    proxyMirror = mirror
+    setMirrorStatusSource(mirror.status)
     const relayFailures = createRelayFailures()
     const refusalLog = createRefusalLog()
     const relayDirect = async (host: string): Promise<string[]> => (await systemMirrorSession().resolveHost(host)).endpoints.map((endpoint) => endpoint.address)
@@ -286,7 +289,7 @@ export const routeSubsystem: Subsystem = {
     setRelayReasonSource(relayFailures.reasonFor)
     // Before the first read, so the first pass already finds the relay waiting for it.
     relay.setEnabled(readSettingBeforeReady(join(userData, 'settings.json'), 'privacy.resolveBehindProxy'))
-    proxyMirror.onPass((pass) => { relay.onPass(pass) })
+    mirror.onPass((pass) => { relay.onPass(pass) })
     setDirectLookupSource(() => routes.everywhere() ? systemMirrorSession() : undefined)
     const tunnelFetch = createRequestFetch({ net, session: session.defaultSession, answer: answerRouteChallenge })
     const directFetch = createDirectFetch(net, systemMirrorSession(), answerChallengeOnly(() => nameRelay?.credentials))
@@ -429,17 +432,22 @@ export const routeSubsystem: Subsystem = {
       defaultKind: routes.defaultKind
     })
     publishRoutes(ctx, routes)
-    // Registered before the first read is awaited: a quit during it must not leave a pass that goes on to set sessions.
+    // Registered before the first read is awaited (`afterWindow`): a quit during it must not leave a pass that goes on to set sessions.
     app.once('will-quit', () => { proxyMirror?.stop(); relay.dispose().catch((error: unknown) => { console.error('[route] the name relay did not stop cleanly:', error instanceof Error ? error.message : 'unexpected error') }) })
-    // The first read of the system's settings comes before the sessions are waited for, so the first window finds them copied.
-    await proxyMirror.start()
-    // Whatever loads next (the person's extensions, the first window) finds the sessions already following the setting.
-    await relay.settled()
-    await routes.controller.settled()
-    // Its first set waits for the stop its adoption gave it, so it is awaited here as well.
-    await mirrorSet
     app.once('will-quit', () => {
       void Promise.all([routes.hub.dispose(), temporary.dispose(), deadEnd.close()]).catch((error: unknown) => { console.error('[route] stopping the fronts failed:', error) })
     })
+    settleSessions = async () => {
+      // The first read of the system's settings comes before the sessions are waited for, so the sessions the first page loads in find them copied.
+      await mirror.start()
+      // Whatever loads next (the person's extensions, the first page) finds the sessions already following the setting.
+      await relay.settled()
+      await routes.controller.settled()
+      // Its first set waits for the stop its adoption gave it, so it is awaited here as well.
+      await mirrorSet
+    }
+  },
+  afterWindow: async () => {
+    await settleSessions?.()
   }
 }

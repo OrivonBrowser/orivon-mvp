@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  createSubsystemContext, criticalFailureMessage, publishBroker, publishInstallApp, publishLoader, publishRequestGrant, runAfterReady, runBeforeQuit, runBeforeReady,
+  createSubsystemContext, criticalFailureMessage, publishBroker, publishInstallApp, publishLoader, publishRequestGrant, runAfterReady, runAfterWindow, runBeforeQuit, runBeforeReady,
   type Subsystem
 } from '../registry.js'
 import type { App } from 'electron'
@@ -77,6 +77,79 @@ describe('hook timing', () => {
     expect(timed).toEqual(['broken', 'late'])
     expect(failures.map(({ name }) => name)).toEqual(['broken'])
     expect(later.map(({ name }) => name)).toEqual(['late'])
+  })
+})
+
+describe('runAfterWindow', () => {
+  it('awaits each subsystem in list order, not concurrently', async () => {
+    const order: string[] = []
+    const slow: Subsystem = {
+      name: 'slow',
+      afterWindow: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        order.push('slow')
+      }
+    }
+    const fast: Subsystem = { name: 'fast', afterWindow: () => { order.push('fast') } }
+    await runAfterWindow([slow, fast], ctx)
+    expect(order).toEqual(['slow', 'fast'])
+  })
+
+  it('passes the context through and skips a subsystem that declares no afterWindow', async () => {
+    const seen = vi.fn()
+    const afterReady = vi.fn()
+    expect(await runAfterWindow([{ name: 'a', afterWindow: seen }, { name: 'passive' }, { name: 'ready-only', afterReady }], ctx)).toEqual([])
+    expect(seen).toHaveBeenCalledWith(ctx)
+    expect(afterReady).not.toHaveBeenCalled()
+  })
+
+  it('does not run a subsystem\'s afterWindow from runAfterReady', async () => {
+    const afterWindow = vi.fn()
+    await runAfterReady([{ name: 'a', afterWindow }], ctx)
+    expect(afterWindow).not.toHaveBeenCalled()
+  })
+
+  it('returns no failures for an empty list', async () => {
+    expect(await runAfterWindow([], ctx)).toEqual([])
+  })
+
+  it('reports a rejection or a synchronous throw as an afterWindow failure, non-critical by default, and still runs the later ones', async () => {
+    const boom = new Error('first read failed')
+    const sync = new Error('sync throw')
+    const after = vi.fn()
+    const failures = await runAfterWindow([
+      { name: 'rejecting', afterWindow: async () => { throw boom } },
+      { name: 'throwing', afterWindow: () => { throw sync } },
+      { name: 'later', afterWindow: after }
+    ], ctx)
+    expect(failures).toEqual([
+      { name: 'rejecting', phase: 'afterWindow', error: boom, critical: false },
+      { name: 'throwing', phase: 'afterWindow', error: sync, critical: false }
+    ])
+    expect(after).toHaveBeenCalledOnce()
+  })
+
+  it("carries a critical subsystem's own critical: true into the failure record", async () => {
+    const boom = new Error('first read failed')
+    const failures = await runAfterWindow([{ name: 'route', critical: true, afterWindow: async () => { throw boom } }], ctx)
+    expect(failures).toEqual([{ name: 'route', phase: 'afterWindow', error: boom, critical: true }])
+  })
+
+  it('tells how long each hook took, whether it returned or threw', async () => {
+    const timed: Array<[string, string, number]> = []
+    await runAfterWindow([
+      { name: 'slow', afterWindow: async () => { await new Promise((resolve) => setTimeout(resolve, 30)) } },
+      { name: 'broken', afterWindow: () => { throw new Error('x') } },
+      { name: 'passive' }
+    ], ctx, (name, phase, ms) => { timed.push([name, phase, ms]) })
+    expect(timed.map(([name, phase]) => `${phase}:${name}`)).toEqual(['afterWindow:slow', 'afterWindow:broken'])
+    expect(timed[0]?.[2]).toBeGreaterThanOrEqual(25)
+    expect(timed.every(([, , ms]) => Number.isFinite(ms) && ms >= 0)).toBe(true)
+  })
+
+  it('lets a critical afterWindow failure reach criticalFailureMessage with its phase', async () => {
+    const failures = await runAfterWindow([{ name: 'route', critical: true, afterWindow: async () => { throw new Error('mirror') } }], ctx)
+    expect(criticalFailureMessage(failures)).toContain('route (afterWindow)')
   })
 })
 

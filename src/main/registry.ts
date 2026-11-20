@@ -394,8 +394,10 @@ export interface Subsystem {
   readonly critical?: boolean
   /** Runs before app ready, for registrations Electron requires that early. */
   beforeReady?: () => void
-  /** Runs after app ready, before the shell window is created. */
+  /** Runs after app ready: the registrations the rest of the start reads, which must exist before the shell's services are built. */
   afterReady?: (ctx: SubsystemContext) => void | Promise<void>
+  /** Runs once every `afterReady` has finished: the slow tail of a start. What `afterReady` published must tolerate a caller that arrives before this has finished. */
+  afterWindow?: (ctx: SubsystemContext) => void | Promise<void>
   /**
    * Runs when the browser quits, inside `main/index.ts`'s bounded wait: it must tolerate being cut
    * off, and what it has not finished by then is lost, never retried.
@@ -405,14 +407,14 @@ export interface Subsystem {
 
 export interface SubsystemFailure {
   readonly name: string
-  readonly phase: 'beforeReady' | 'afterReady' | 'beforeQuit'
+  readonly phase: 'beforeReady' | 'afterReady' | 'afterWindow' | 'beforeQuit'
   readonly error: unknown
   /** Copied from the failing `Subsystem.critical` at the moment it threw. */
   readonly critical: boolean
 }
 
 /** Told how long each hook took, in milliseconds, whether it returned or threw. */
-export type HookTimed = (name: string, phase: 'beforeReady' | 'afterReady', ms: number) => void
+export type HookTimed = (name: string, phase: 'beforeReady' | 'afterReady' | 'afterWindow', ms: number) => void
 
 /**
  * Failures are collected and returned, never swallowed and never propagated.
@@ -440,29 +442,30 @@ export function runBeforeReady (list: Subsystem[], onTimed?: HookTimed): Subsyst
 
 /**
  * Sequential, not concurrent: a later subsystem may depend on an earlier one
- * having registered its IPC handlers or session partition.
- *
- * The try/catch covers a synchronous throw as well as a rejection, because
- * `afterReady` is typed to allow either.
+ * having registered its IPC handlers or session partition. The try/catch covers
+ * a synchronous throw as well as a rejection: the hooks may do either.
  */
-export async function runAfterReady (
-  list: Subsystem[],
-  ctx: SubsystemContext,
-  onTimed?: HookTimed
-): Promise<SubsystemFailure[]> {
+async function runSerial (phase: 'afterReady' | 'afterWindow', list: Subsystem[], ctx: SubsystemContext, onTimed?: HookTimed): Promise<SubsystemFailure[]> {
   const failures: SubsystemFailure[] = []
   for (const subsystem of list) {
-    if (subsystem.afterReady === undefined) continue
+    const hook = subsystem[phase]
+    if (hook === undefined) continue
     const started = performance.now()
     try {
-      await subsystem.afterReady(ctx)
+      await hook(ctx)
     } catch (error) {
-      failures.push({ name: subsystem.name, phase: 'afterReady', error, critical: subsystem.critical === true })
+      failures.push({ name: subsystem.name, phase, error, critical: subsystem.critical === true })
     }
-    onTimed?.(subsystem.name, 'afterReady', performance.now() - started)
+    onTimed?.(subsystem.name, phase, performance.now() - started)
   }
   return failures
 }
+
+/** Every subsystem's `afterReady`, in list order. */
+export const runAfterReady = async (list: Subsystem[], ctx: SubsystemContext, onTimed?: HookTimed): Promise<SubsystemFailure[]> => await runSerial('afterReady', list, ctx, onTimed)
+
+/** Every subsystem's `afterWindow`, in list order, once `runAfterReady` has finished. */
+export const runAfterWindow = async (list: Subsystem[], ctx: SubsystemContext, onTimed?: HookTimed): Promise<SubsystemFailure[]> => await runSerial('afterWindow', list, ctx, onTimed)
 
 /** All `beforeQuit` hooks at once: the quit waits for the slowest, so they must not queue behind each other. Never rejects. */
 export async function runBeforeQuit (list: Subsystem[]): Promise<SubsystemFailure[]> {
@@ -482,15 +485,12 @@ export async function runBeforeQuit (list: Subsystem[]): Promise<SubsystemFailur
  * A human-readable message naming every CRITICAL failure in `failures`, or
  * `null` if none of them were critical.
  *
- * Why this exists: a critical subsystem's throw was previously only
- * `console.error`'d by `runAfterReady`'s own failure collection -- the app
- * booted a completely normal-looking window with every `orivon.*` call
- * from every app silently unroutable
- * (open-questions.md A51). A subsystem marked `critical` failing is exactly
- * the case `runBeforeReady`'s doc above calls "must never be quiet", and
- * logging it is not loud enough: nobody reads a packaged app's main-process
- * console. `main/index.ts` calls this after each phase and, if it returns
- * non-null, fails startup instead of opening that window.
+ * Logging a critical subsystem's failure is not loud enough: nobody reads a
+ * packaged app's main-process console, and the app would boot a normal-looking
+ * window with every `orivon.*` call from every app silently unroutable
+ * (open-questions.md A51). `main/index.ts` calls this with the failures of the
+ * phases it has run and, if it returns non-null, fails startup instead of
+ * opening that window.
  */
 export function criticalFailureMessage (failures: SubsystemFailure[]): string | null {
   const critical = failures.filter((failure) => failure.critical)

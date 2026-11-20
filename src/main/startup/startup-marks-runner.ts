@@ -1,7 +1,7 @@
 // This process's one set of start-up marks (startup-marks.ts) on the real clock, and the line it prints.
 // Imports nothing from electron and does almost nothing when loaded, so start.ts may import it ahead of the lock.
 import { createStartupMarks, startupLine } from './startup-marks.js'
-import type { StartupFacts, StartupMark, StartupRecord } from './startup-marks.js'
+import type { HookPhase, StartupFacts, StartupMark, StartupRecord } from './startup-marks.js'
 
 /** The line waits this long for the first tab, then prints what exists. */
 const LINE_CAP_MS = 60_000
@@ -28,7 +28,7 @@ export function markStartup (name: StartupMark): void {
 }
 
 /** One subsystem hook's duration, for the record. */
-export function noteStartupHook (name: string, phase: 'beforeReady' | 'afterReady', ms: number): void {
+export function noteStartupHook (name: string, phase: HookPhase, ms: number): void {
   marks.hook({ name, phase, ms })
 }
 
