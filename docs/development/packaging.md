@@ -68,6 +68,11 @@ node scripts/run-headless.mjs node scripts/smoke-packaged.mjs release/linux-unpa
 It passes once the shell page has rendered from inside `app.asar`, and prints the app's output
 when it does not.
 
+To time how long a package takes to show the browser, `scripts/first-start-probe.mjs` launches it the same way and
+measures a first start and a next start; the release workflow runs it on each package, and
+[`scripts/ci/README.md`](../../scripts/ci/README.md) section Timing a start says how to read the numbers and to time
+a published release beside them.
+
 ## Releases
 
 [`.github/workflows/release.yml`](../../.github/workflows/release.yml) builds the packages.
@@ -98,7 +103,7 @@ when it does not.
    `gh release edit <tag> --draft`, then `gh release edit <tag> --tag <new tag> --target main --draft=false`
    (to keep the same tag name, delete the tag first: `git push origin :refs/tags/<tag>`).
 
-A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs` or the
+A pull request that changes `electron-builder.yml`, `build/`, `scripts/smoke-packaged.mjs`, the start probe or the
 workflow runs the same build and launch, and keeps the packages for seven days as workflow
 artifacts instead of attaching them (the Store package, 30 days, in every run). Actions > Release > Run workflow does the same on demand.
 
