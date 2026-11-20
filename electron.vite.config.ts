@@ -121,6 +121,7 @@ async function bufferPackageExpression (): Promise<string> {
   const result = await build({
     configFile: false,
     logLevel: 'warn',
+    plugins: [licenceNotices(root)],
     build: {
       write: false,
       minify: false,
@@ -265,13 +266,13 @@ export default defineConfig({
           'nym-tunnel-host': resolve(root, 'src/protocols/nym-tunnel/entry.ts')
         }
       },
-      // Every dependency is bundled into the entry that imports it, so a package carries no
-      // `node_modules` and the process reads one file per entry instead of resolving and
-      // evaluating hundreds of modules from disk at start. Only `electron` and the Node builtins stay
-      // external (electron-vite's own defaults). A package that read its own files by path at run
-      // time would need them copied beside the bundle: none does (`@a16z/helios` and `undici` embed
-      // their WebAssembly, and the reader library's two files come in as `?raw` text).
-      externalizeDeps: false
+      // Every dependency is bundled into the entry that imports it; only `electron` and the Node builtins stay
+      // external (docs/development/packaging.md section Bundled dependencies).
+      externalizeDeps: false,
+      // undici asks for `node:sqlite` only when its SQLite cache store is made: left a `require` call there, the
+      // Nym tunnel host and the local node host do not load SQLite at start. (Its `node:zlib` and
+      // `node:worker_threads` are loaded at start wherever they are required.)
+      commonjsOptions: { ignore: ['node:sqlite'] }
     }
   },
   preload: {

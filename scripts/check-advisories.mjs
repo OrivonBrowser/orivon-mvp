@@ -18,10 +18,15 @@ const THRESHOLD = ['high', 'critical']
  * Advisories at the gate that are let through, each with why it cannot reach
  * a person. One id each, never a package: another advisory in the same package
  * still fails the build. An entry goes once a fixed release ships.
+ *
+ * A reason may not say "a development dependency, so it never ships": every
+ * library is a devDependency, and the main, preload and renderer builds bundle
+ * the ones the app imports, with `orivon.shimPackages` for the shim's own, into
+ * the package. A package ships when `out/THIRD-PARTY-NOTICES.txt` lists it.
  */
 export const ACCEPTED = new Map([
   ['GHSA-ch52-4w7c-c8xp', 'http-cache-semantics is reached only through electron-builder\'s Electron download at packaging time, whose cache serves one user; no fixed release exists (decision-log d-0413)'],
-  ['GHSA-fc5q-39xc-vjpf', 'picomatch is a development dependency only (vite, vitest, tinyglobby, fdir), matching globs this repository writes, and never ships; no fixed release exists (decision-log d-0793)']
+  ['GHSA-fc5q-39xc-vjpf', 'picomatch is reached only through the build and test tools (vite, vitest, tinyglobby, fdir), matching globs this repository writes, and no build bundles it (it is not in out/THIRD-PARTY-NOTICES.txt); no fixed release exists (decision-log d-0793)']
 ])
 
 /** The GHSA id at the end of an advisory URL, or undefined. */

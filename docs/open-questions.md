@@ -921,17 +921,17 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 - **Who decides:** research first
 - **Blocks:** extensions build plan package 4's MV3 service-worker API surface
 
-### A291: The packaged app ships no licence text for Orivon's own code **[OWNER]**
+### A291: The packaged app carries no licence texts for its bundled code **[OWNER]**
 
-- **Question:** The package ships `THIRD-PARTY-NOTICES.txt` beside `app.asar`: the licence files of every npm package
-  and vendored folder the builds bundle (`scripts/licence-notices-plugin.ts`), beside Electron's own two licence files.
-  It ships no text of Orivon's own licence (AGPL-3.0-only). Does it?
-- **Why it matters:** `vendor/`'s GPL-3.0 code and the AGPL-3.0 licence of the program itself reach a person's machine with
-  the notices of what it bundles and not its own.
-- **Options:** the repository's `LICENSE` copied to `resources/` by `extraResources` (rec.); a line at the top of
-  `THIRD-PARTY-NOTICES.txt` that names it and where the source is.
+- **Question:** The packaged app (`out/**` plus `package.json`) bundles vendored and npm code
+  with no licence texts in it. Does the package ship any?
+- **Why it matters:** `vendor/`'s GPL-3.0, MIT and BSD-3-Clause code, and every npm dependency's
+  own licence, reach a person's machine with their texts only in a file beside the bundle, if at all.
+- **Options:** a generated third-party notices file shipped in the package (rec.; built provisionally:
+  `resources/THIRD-PARTY-NOTICES.txt`, `scripts/licence-notices-plugin.ts`); the licence texts shipped beside
+  each bundle instead.
 - **Who decides:** owner
-- **Blocks:** nothing
+- **Blocks:** the first public release
 
 ### A292: A middle click on the empty tab strip does nothing **[RESEARCH]**
 

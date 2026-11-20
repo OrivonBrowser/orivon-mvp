@@ -946,22 +946,44 @@ commands.
 `electron-builder.yml`'s `files:` key is an **allowlist** of the app's own sources: `out/**/*`
 and `package.json`. An allowlist cannot pick up `spike/`, `test/`, `scripts/`, `devlog/`,
 `.claude/`, `docs/` or root-level markdown the way a blocklist subtracted from `**/*` would have
-to remember to keep excluding. `package.json` lists no `dependencies`: electron-vite bundles every library the main process, its utility
-hosts, the preloads and the pages use into `out/` (`electron.vite.config.ts`), so `app.asar` carries no
-`node_modules/`, and a package that a build needs is a `devDependency`, which electron-builder never copies.
-Bundling also means the process reads a handful of files at start instead of resolving several hundred modules
-from disk. `scripts/tests/bundled-dependencies.test.ts` fails when a `dependencies` entry returns. A library that
-reads its own files by path at run time (a `.wasm` beside its code) cannot be bundled that way: it is embedded
-as text or bytes by the bundler (the reader's two library files come in as `?raw` imports), or copied into
-`out/` by the build. webtorrent and every app-side library are not shell dependencies: they are app assets
-fetched into `userData` (`ADR-0005`). `build/icon.png` is copied beside `app.asar` as
-`resources/icon.png`, for the window icon.
+to remember to keep excluding. webtorrent and every app-side library are not shell dependencies:
+they are app assets fetched into `userData` (`ADR-0005`). `build/icon.png` is copied beside
+`app.asar` as `resources/icon.png`, for the window icon.
 
-A bundled package no longer carries its own folder, and with it went the licence files that folder held.
-`scripts/licence-notices-plugin.ts` collects, from the modules the main, preload and renderer builds load, each npm
-package and vendored folder with the licence files at its top, and the renderer build (the last of the three)
-writes them to `out/THIRD-PARTY-NOTICES.txt`. `extraResources` copies that file to `resources/THIRD-PARTY-NOTICES.txt`
-beside the app, and `files` keeps it out of `app.asar` so it is not there twice.
+### Bundled dependencies
+
+`package.json` lists no `dependencies`: electron-vite bundles every library the main process, its utility
+hosts, the preloads and the pages use into `out/` (`electron.vite.config.ts`: `externalizeDeps: false` for the main
+build, which leaves only `electron` and the Node builtins external), so `app.asar` carries `out/` and `package.json`
+and no `node_modules/`. A package a build needs is a `devDependency`, which electron-builder never copies, and
+`scripts/tests/bundled-dependencies.test.ts` fails when a `dependencies` entry returns. A `devDependency` can therefore
+ship: it does when a build bundles it. The process reads a handful of files at start, where a tree of packages
+would have it resolve several hundred modules from disk.
+
+A library that reads its own files by path at run time (a `.wasm` beside its code) cannot be bundled that way: it is
+embedded as text or bytes by the bundler (`@a16z/helios` and `undici` embed their WebAssembly, and the reader's two
+library files come in as `?raw` imports), or copied into `out/` by the build. A builtin a library asks for lazily
+stays a `require` call where it asks (`build.commonjsOptions.ignore` in the main build holds `node:sqlite`, which
+undici loads only when its SQLite cache store is made), so a host does not load it at start. The shim's own package
+list, which `src/shim/bundler/esbuild-plugin.ts` starts from, is `orivon.shimPackages` in `package.json`.
+
+### Licence notices
+
+A bundled package's folder is not in the package, so its licence text travels in `resources/THIRD-PARTY-NOTICES.txt`.
+`scripts/licence-notices-plugin.ts` runs in the main, preload and renderer builds and in the two builds they start
+(the page buffer and the chunk check thread); each adds the npm packages and the `vendor/` folders it loaded to one
+set, and the renderer build, the last of the three, writes `out/THIRD-PARTY-NOTICES.txt` from it.
+`extraResources` copies that file beside `app.asar`, and `files` keeps it out of `app.asar` so it is not there twice.
+
+- **The shim's Worker runtime** is one prebuilt string (`src/shim/worker/runtime.generated.json`), so the plugin sees
+  one module for it. The file's `packages` field lists the package folders inside it, which the generator writes from
+  the bundler's metafile; the plugin adds them, and a folder that is not installed fails the build.
+- **A package with no licence file** takes the standard text of the SPDX licence its `package.json` declares
+  (`scripts/licence-texts.ts`: MIT, ISC, BSD-2-Clause, BSD-3-Clause), with its `author` as the copyright holder, or
+  the project its `repository` names when it has none. For `A OR B` it reproduces the first alternative that has a
+  text (the licensee picks one). A licence with no text there fails the build until its text is added.
+- **Provisional.** Whether shipping a generated notices file is the right answer is an owner question
+  (`docs/open-questions.md` A291); the file is the recommended option there.
 
 ## Known gaps
 
