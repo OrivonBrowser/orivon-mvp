@@ -20,18 +20,20 @@ function fakeContents (options: { attach?: () => void, destroyed?: boolean } = {
   return { contents, calls, settle: () => { for (const resolve of pending.splice(0)) resolve() } }
 }
 
+const noSwitches = { hasSwitch: () => false }
+
 const flush = async (): Promise<void> => { await new Promise((resolve) => setImmediate(resolve)) }
 
 describe('paintWhileHidden', () => {
   it('attaches and turns focus emulation on, which is what makes the hidden page visible', () => {
     const { contents, calls } = fakeContents()
-    paintWhileHidden(contents)
+    paintWhileHidden(contents, noSwitches)
     expect(calls).toEqual(['attach 1.3', 'Emulation.setFocusEmulationEnabled {"enabled":true}'])
   })
 
   it('turns the emulation off and detaches once it is released, and not before the command is answered', async () => {
     const { contents, calls, settle } = fakeContents()
-    const release = paintWhileHidden(contents)
+    const release = paintWhileHidden(contents, noSwitches)
     settle()
     await flush()
     release()
@@ -43,7 +45,7 @@ describe('paintWhileHidden', () => {
 
   it('releases once however many times it is asked', async () => {
     const { contents, calls, settle } = fakeContents()
-    const release = paintWhileHidden(contents)
+    const release = paintWhileHidden(contents, noSwitches)
     release()
     release()
     settle()
@@ -57,9 +59,16 @@ describe('paintWhileHidden', () => {
   it('leaves a page whose debugger another client holds alone, and its release does nothing', () => {
     const attach = vi.fn(() => { throw new Error('Another debugger is already attached to the WebContents.') })
     const { contents, calls } = fakeContents({ attach })
-    const release = paintWhileHidden(contents)
+    const release = paintWhileHidden(contents, noSwitches)
     release()
     expect(attach).toHaveBeenCalledTimes(1)
+    expect(calls).toEqual([])
+  })
+
+  it.each(['remote-debugging-port', 'remote-debugging-pipe'])('leaves a browser started with --%s alone: its client emulates focus, and one flag has no owner to give it back to', (name) => {
+    const { contents, calls } = fakeContents()
+    const release = paintWhileHidden(contents, { hasSwitch: (asked) => asked === name })
+    release()
     expect(calls).toEqual([])
   })
 
@@ -67,7 +76,7 @@ describe('paintWhileHidden', () => {
     const state = { destroyed: false }
     const { contents, calls } = fakeContents()
     const gone = { ...contents, isDestroyed: () => state.destroyed } as PaintTarget
-    const release = paintWhileHidden(gone)
+    const release = paintWhileHidden(gone, noSwitches)
     state.destroyed = true
     release()
     expect(calls).toEqual(['attach 1.3', 'Emulation.setFocusEmulationEnabled {"enabled":true}'])
@@ -86,7 +95,7 @@ describe('paintWhileHidden', () => {
     const unhandled = vi.fn()
     process.on('unhandledRejection', unhandled)
     try {
-      paintWhileHidden(contents)()
+      paintWhileHidden(contents, noSwitches)()
       await flush()
       await flush()
       expect(unhandled).not.toHaveBeenCalled()
