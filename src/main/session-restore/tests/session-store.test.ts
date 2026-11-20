@@ -121,6 +121,82 @@ async function loadedFrom (path: string): Promise<SessionStore> {
   return store
 }
 
+describe('a held session store', () => {
+  const urls = async (): Promise<string[]> => (JSON.parse(await readFile(file, 'utf8')) as { windows: SavedWindow[] }).windows.map((window) => window.tabs[0]?.url ?? '')
+
+  it('writes nothing while held, whatever changes, and keeps the file it found', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, clean: false, windows: [saved('https://old.example/')] }))
+    const store = await loadedFrom(file)
+    store.attach(() => [saved('https://new.example/')])
+    store.hold()
+    store.changed()
+    await store.flush()
+    expect(await urls()).toEqual(['https://old.example/'])
+    expect(JSON.parse(await readFile(file, 'utf8')).clean).toBe(false)
+  })
+
+  it('records no orderly end while held: finish writes nothing, so the next start finds the last run as it was', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, clean: false, windows: [saved('https://old.example/')] }))
+    const store = await loadedFrom(file)
+    store.attach(() => [])
+    store.hold()
+    store.finish()
+    await store.flush()
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ clean: false, windows: [{ tabs: [{ url: 'https://old.example/' }] }] })
+  })
+
+  it('keeps an orderly end that came while held from being written once it is released', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, clean: false, windows: [saved('https://old.example/')] }))
+    const store = await loadedFrom(file)
+    store.attach(() => [saved('https://new.example/')])
+    const release = store.hold()
+    store.finish()
+    release()
+    await store.flush()
+    expect(JSON.parse(await readFile(file, 'utf8')).clean).toBe(false)
+  })
+
+  it('writes what the windows are by the time it is released, with no further change', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, clean: false, windows: [saved('https://old.example/')] }))
+    const store = await loadedFrom(file)
+    let url = 'https://first.example/'
+    store.attach(() => [saved(url)])
+    const release = store.hold()
+    store.changed()
+    await store.flush()
+    url = 'https://second.example/'
+    release()
+    await store.flush()
+    expect(await urls()).toEqual(['https://second.example/'])
+  })
+
+  it('stays held until every hold is released, and a release answers once', async () => {
+    await writeFile(file, JSON.stringify({ version: 1, clean: false, windows: [saved('https://old.example/')] }))
+    const store = await loadedFrom(file)
+    store.attach(() => [saved('https://new.example/')])
+    const one = store.hold()
+    const two = store.hold()
+    one()
+    one()
+    store.changed()
+    await store.flush()
+    expect(await urls()).toEqual(['https://old.example/'])
+    two()
+    await store.flush()
+    expect(await urls()).toEqual(['https://new.example/'])
+  })
+
+  it('writes as before once released, an orderly end included', async () => {
+    const store = await loadedFrom(file)
+    store.attach(() => [saved('https://a.example/')])
+    const release = store.hold()
+    release()
+    store.finish()
+    await store.flush()
+    expect(JSON.parse(await readFile(file, 'utf8'))).toMatchObject({ clean: true, windows: [{ tabs: [{ url: 'https://a.example/' }] }] })
+  })
+})
+
 describe('the null session store', () => {
   it('writes nothing and remembers nothing', async () => {
     await writeFile(file, JSON.stringify({ version: 1, clean: true, windows: [saved('https://old.example/')] }))
@@ -128,6 +204,7 @@ describe('the null session store', () => {
     await store.load()
     store.attach()
     store.changed()
+    store.hold()()
     store.finish()
     await store.flush()
     expect(store.previous()).toBeNull()

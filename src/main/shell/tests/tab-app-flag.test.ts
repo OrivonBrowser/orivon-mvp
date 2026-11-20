@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { originFromUrl } from '../../../broker/policy/origin.js'
 import type { SubsystemContext } from '../../registry.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 // ADR-0017's synchronous fetch()-routing flag (appTabArgsFor), split out of
 // tabs.test.ts as its own concern (Rule 2), alongside that file's other

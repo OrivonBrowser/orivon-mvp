@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { TabOpener } from '../tab-open.js'
 import type { TabOpenerHost } from '../tab-open.js'
 import type { TabFactory } from '../tab-factory.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 function setup (capacity = false): { opener: TabOpener, fresh: ReturnType<typeof vi.fn>, contents: object, trusted: ReturnType<typeof vi.fn> } {
   const contents = { loadURL: vi.fn(() => Promise.resolve()) }

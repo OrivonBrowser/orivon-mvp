@@ -45,6 +45,7 @@ import { copyPrivateExtensions } from './launch/private-extensions.js'
 import { copyPrivatePicture } from './launch/private-picture.js'
 import { moveLongNamedPartitionFolders } from './launch/partition-folders.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
+import { openWebContent } from './startup/web-ready.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { configureVerifier, ethServersChanged, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
 import { effectiveEthServers, noteEthSecrets } from './verifier/eth-servers.js'
@@ -206,6 +207,8 @@ export function boot (runtime: Runtime): void {
       app.exit(1)
       return
     }
+    // The route has set every session and every enabled extension is loaded: a web page may load from here.
+    openWebContent()
 
     const shell = createShellServices(app.getPath('userData'), runtime, ctx)
     // Wires every window's tab lifecycle into the extensions library

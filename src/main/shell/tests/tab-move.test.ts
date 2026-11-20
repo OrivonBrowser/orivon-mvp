@@ -2,6 +2,10 @@ import { EventEmitter } from 'node:events'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemContext } from '../../registry.js'
 import type { ShellWindow } from '../window-registry.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 // Two windows' tab managers over fake views. What matters is which manager
 // answers for a tab after it has moved: its views' handlers were attached once,

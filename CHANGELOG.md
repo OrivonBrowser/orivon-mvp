@@ -43,6 +43,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **A page waits for the start to finish**: an address, link or restored tab opened before the proxy route and the extensions are in place waits for them and then opens, so no page loads unrouted or unblocked. In this version the window opens only after both, so nothing is delayed.
 - **Cookies and site data no longer clears a Web3 site you allowed**: its data sits in the session websites use, so that choice now leaves its cookies and storage alone and App data clears them; the Cache API of every site, an allowed one included, still goes with site data.
 - **A page in an ordinary tab that loads a file from an allowed web3 app's own address gets it from the copy Orivon keeps**, with the app's own rules, and it works with no network. Files are checked as before.
 - **An allowed Web3 site gets its permissions only on a page Orivon checked**: a site with a tunnel of its own opens at once while its copy is still being made, each file checked and read through that tunnel, and a page of the site left open from before you allowed it loads again.

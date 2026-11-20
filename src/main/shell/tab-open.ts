@@ -1,12 +1,15 @@
 // How a tab comes into the collection: a new tab, a blob: tab, a trusted
 // caller's target, one of the shell's own pages, or a popup Chromium already
 // made. It builds through the factory and registers through the narrow host
-// TabManager gives it, so it holds no tab state itself.
+// TabManager gives it, so it holds no tab state itself. A tab that loads a web
+// page waits for ../startup/web-ready.ts first; the new-tab page and the shell's
+// own pages never do.
 import type { LoadURLOptions, WebContents, WebContentsView } from 'electron'
 import { internalUrl } from '../pages/internal-pages.js'
 import type { InternalPageId } from '../pages/internal-pages.js'
 import { fileProtocolFuse, knownFileProtocolFuse } from '../local-files/file-fuse.js'
 import type { FileProtocolFuse } from '../local-files/file-fuse.js'
+import { deferUntilWebReady, isWebContentReady, webContentReady } from '../startup/web-ready.js'
 import type { BuiltTab, TabFactory } from './tab-factory.js'
 import type { TabRecord } from './tab-types.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
@@ -43,9 +46,11 @@ export class TabOpener {
   }
 
   /** `active`/`loadOptions` -- `addAndShow`'s own doc. `tunnelChoice` is the choice of the tab this one is opened from, which it keeps. Refuses rather than crashes at MAX_TABS
-   * -- a caller that uses the id (a split's partner) checks atCapacity() first. */
+   * -- a caller that uses the id (a split's partner) checks atCapacity() first. With a `url` before web pages may load, the tab opens when they may and this answers the active
+   * tab's id, as at the limit. */
   createTab (url?: string, active = true, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice): string {
     if (this.host.atCapacity()) return this.host.activeId() ?? ''
+    if (url !== undefined && deferUntilWebReady(() => { this.createTab(url, active, loadOptions, tunnelChoice) })) return this.host.activeId() ?? ''
     const built = this.factory.content(url, tunnelChoice)
     const id = this.addAndShow(built, active, loadOptions)
     if (url === undefined && active) this.host.freshTabInFront?.(id, built.record.view.webContents)
@@ -57,22 +62,24 @@ export class TabOpener {
    * neither of which fits a URL with no origin of its own that nobody could ever type. */
   openBlobTab (url: string, partition: string | undefined, active = true, loadOptions?: LoadURLOptions, tunnelChoice?: TabTunnelChoice): string {
     if (this.host.atCapacity()) return this.host.activeId() ?? ''
+    if (deferUntilWebReady(() => { this.openBlobTab(url, partition, active, loadOptions, tunnelChoice) })) return this.host.activeId() ?? ''
     return this.addAndShow(this.factory.blob(url, partition, tunnelChoice), active, loadOptions)
   }
 
   /** A local file in a new tab of its local-files session, whole (query and fragment kept). Undefined for a URL `localFileKey` refuses, at MAX_TABS, and unless the binary's
    * file-protocol fuse is off: with it on, a local page could read other files, so no tab opens and the person is told. The binary is read on the first open only
-   * (README.md's Design notes), so that one open waits for the answer; every later one is as quick as any other tab. */
+   * (README.md's Design notes), so that one open waits for the answer; every later one is as quick as any other tab. Before web pages may load it waits for them too. */
   openLocalFile (url: string, active = true): Promise<string | undefined> {
     if (this.host.atCapacity()) return Promise.resolve(undefined)
+    if (!isWebContentReady()) return webContentReady().then(() => this.openLocalFile(url, active))
     if (knownFileProtocolFuse() !== undefined) return Promise.resolve(this.openLocalFileNow(url, active))
     return fileProtocolFuse().then((fuse) => this.host.atCapacity() ? undefined : this.openWithFuse(url, active, fuse))
   }
 
-  /** `openLocalFile` for a caller that needs the id at once: undefined, with nothing said, while the fuse has not been read yet. */
+  /** `openLocalFile` for a caller that needs the id at once: undefined, with nothing said, while the fuse has not been read yet or web pages may not load yet. */
   openLocalFileNow (url: string, active = true): string | undefined {
     const known = knownFileProtocolFuse()
-    if (known === undefined || this.host.atCapacity()) return undefined
+    if (known === undefined || !isWebContentReady() || this.host.atCapacity()) return undefined
     return this.openWithFuse(url, active, known)
   }
 
@@ -85,9 +92,10 @@ export class TabOpener {
     return built === undefined ? undefined : this.addAndShow(built, active)
   }
 
-  /** createTab() for a trusted caller (the extension host): skips the sanitizeDirectUrl gate that refuses chrome-extension: outright, since its own policy already checked `target`. `partition` is the session the page must run in when the caller names one (a profile's, for a page of an extension in it, or the one `tunnelChoice` calls for). */
+  /** createTab() for a trusted caller (the extension host): skips the sanitizeDirectUrl gate that refuses chrome-extension: outright, since its own policy already checked `target`. `partition` is the session the page must run in when the caller names one (a profile's, for a page of an extension in it, or the one `tunnelChoice` calls for). A `target` before web pages may load opens when they may, and this answers undefined, as at the limit. */
   openTrusted (target?: string, partition?: string, tunnelChoice?: TabTunnelChoice): [string, WebContents] | undefined {
     if (this.host.atCapacity()) return undefined
+    if (target !== undefined && deferUntilWebReady(() => { this.openTrusted(target, partition, tunnelChoice) })) return undefined
     const built = target === undefined ? this.factory.content() : this.factory.trusted(target, partition, tunnelChoice)
     this.host.add(built.id, built.record)
     void built.record.view.webContents.loadURL(built.target)
