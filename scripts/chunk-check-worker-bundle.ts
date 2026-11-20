@@ -3,6 +3,7 @@
 // app.asar that a thread cannot read from. electron.vite.config.ts inlines it into the host's entry; a unit test builds it the same way.
 import { resolve } from 'node:path'
 import { build } from 'vite'
+import { licenceNotices } from './licence-notices-plugin.js'
 
 export const CHUNK_CHECK_WORKER_SOURCE = 'src/protocols/verifier-host/chunk-check-worker.ts'
 
@@ -12,6 +13,7 @@ export async function chunkCheckWorkerCode (root: string): Promise<string> {
     root,
     logLevel: 'warn',
     ssr: { target: 'node', noExternal: true },
+    plugins: [licenceNotices(root)],
     build: {
       ssr: resolve(root, CHUNK_CHECK_WORKER_SOURCE),
       write: false,
