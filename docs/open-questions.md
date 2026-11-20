@@ -924,11 +924,12 @@ Orivon is an engineering call, tagged AI-REC and not brought to the owner.
 ### A291: The packaged app carries no licence texts for its bundled code **[OWNER]**
 
 - **Question:** The packaged app (`out/**` plus `package.json`) bundles vendored and npm code
-  with no licence texts anywhere in it. Does the package ship any?
+  with no licence texts in it. Does the package ship any?
 - **Why it matters:** `vendor/`'s GPL-3.0, MIT and BSD-3-Clause code, and every npm dependency's
-  own licence, reach a person's machine with nothing beside them once packaged.
-- **Options:** a generated third-party notices file shipped in the package (rec.); the licence
-  texts shipped beside each bundle instead.
+  own licence, reach a person's machine with their texts only in a file beside the bundle, if at all.
+- **Options:** a generated third-party notices file shipped in the package (rec.; built provisionally:
+  `resources/THIRD-PARTY-NOTICES.txt`, `scripts/licence-notices-plugin.ts`); the licence texts shipped beside
+  each bundle instead.
 - **Who decides:** owner
 - **Blocks:** the first public release
 

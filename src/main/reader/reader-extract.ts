@@ -1,9 +1,9 @@
 // Asks a page's isolated world whether the page is an article, and for the article. The library runs next to
 // the page's DOM but out of reach of its scripts and its Content-Security-Policy; what comes back is JSON
 // that reader-blocks.ts checks before anything uses it.
-import { readFileSync } from 'node:fs'
-import { createRequire } from 'node:module'
 import type { WebContents } from 'electron'
+import readability from '@mozilla/readability/Readability.js?raw'
+import readerable from '@mozilla/readability/Readability-readerable.js?raw'
 import { validateArticle } from './reader-blocks.js'
 import type { Article } from './reader-blocks.js'
 import { walkReaderContent } from './reader-walk.js'
@@ -22,17 +22,9 @@ export interface LibrarySources {
   readonly readerable: string
 }
 
-let cached: LibrarySources | undefined
-
-/** The library's two files, read once. They are text sent to a page, never bundled into one of Orivon's own pages. */
+/** The library's two files as text, inlined into the main bundle at build time. They are sent to a page, never bundled into one of Orivon's own pages. */
 export function librarySources (): LibrarySources {
-  if (cached !== undefined) return cached
-  const require = createRequire(import.meta.url)
-  cached = {
-    readability: readFileSync(require.resolve('@mozilla/readability/Readability.js'), 'utf8'),
-    readerable: readFileSync(require.resolve('@mozilla/readability/Readability-readerable.js'), 'utf8')
-  }
-  return cached
+  return { readability, readerable }
 }
 
 /** `typeof module` is "undefined" inside the wrapper, so the files only define their functions. */
