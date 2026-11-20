@@ -18,6 +18,8 @@ on:
       - build/**
       - scripts/smoke-packaged.mjs
       - scripts/smoke-orivon-link.mjs
+      - scripts/first-start-probe.mjs
+      - scripts/ci/fetch-release-package.mjs
       - scripts/pin-releases.sh
       - scripts/install-macos.sh
       - scripts/install-linux.sh
@@ -27,6 +29,11 @@ on:
     inputs:
       tag:
         description: A published release tag (v0.0.9) to offer to winget, the Microsoft Store and the AUR again. Empty only builds the packages.
+        required: false
+        default: ''
+        type: string
+      baseline_release:
+        description: A published release tag (v0.1.0) whose package for each system is timed beside this branch's (scripts/first-start-probe.mjs). Empty times only this branch's.
         required: false
         default: ''
         type: string
@@ -227,6 +234,28 @@ jobs:
           chmod +x release/*.AppImage
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs release/*.AppImage
 
+      # How long a click takes to show the browser, timed from outside by scripts/first-start-probe.mjs on the package
+      # each system installs: three launches on new profiles, then three more on one. Timing is evidence, never a
+      # gate, so these steps cannot fail the job; the numbers are the artifact start-probe-<platform>, which
+      # `node scripts/ci/cross-os.mjs --packaged` brings back. A baseline_release is timed the same way on each system.
+      - name: Time the start of the installed deb
+        if: matrix.platform == 'linux'
+        continue-on-error: true
+        run: node scripts/run-headless.mjs node scripts/first-start-probe.mjs /opt/Orivon/orivon --runs 3 --label current --json start-probe/linux-current.json
+
+      # The deb of the baseline replaces the one just timed; no later step uses the installed deb.
+      - name: Time the start of the baseline release's deb
+        if: matrix.platform == 'linux' && inputs.baseline_release != ''
+        continue-on-error: true
+        env:
+          BASELINE: ${{ inputs.baseline_release }}
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          deb="$(node scripts/ci/fetch-release-package.mjs "$BASELINE" linux "$RUNNER_TEMP/baseline")"
+          sudo apt-get install -y --allow-downgrades "$deb"
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs /opt/Orivon/orivon --runs 3 --label "baseline $BASELINE" --json start-probe/linux-baseline.json
+
       # The one-line Linux install, on the AppImage just built, in a scratch home: no sudo, the files it promises, and the
       # launcher starts it (on this runner without libfuse2 the launcher unpacks the AppImage first).
       - name: Install with the one-line installer and launch it
@@ -262,6 +291,38 @@ jobs:
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
           if (-not $exe) { throw "the installer put no Orivon.exe under $env:LOCALAPPDATA\Programs" }
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs $exe.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The installer may start the app it installed; a leftover one would take CPU from the launches timed here.
+      - name: Time the start of the installed package
+        if: matrix.platform == 'win'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs $exe.FullName --runs 3 --label current --json start-probe/win-current.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # The baseline installs into a folder of its own, so the installed package of this branch stays as it is.
+      - name: Time the start of the baseline release's installer
+        if: matrix.platform == 'win' && inputs.baseline_release != ''
+        continue-on-error: true
+        shell: pwsh
+        env:
+          BASELINE: ${{ inputs.baseline_release }}
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = node scripts/ci/fetch-release-package.mjs $env:BASELINE win "$env:RUNNER_TEMP\baseline"
+          if ($LASTEXITCODE -ne 0) { throw "could not fetch the $env:BASELINE installer" }
+          $folder = Join-Path $env:RUNNER_TEMP 'orivon-baseline'
+          # NSIS reads /D= to the end of the line, so it comes last and is not quoted.
+          (Start-Process -FilePath $installer -ArgumentList "/S /D=$folder" -PassThru).WaitForExit()
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = Join-Path $folder 'Orivon.exe'
+          if (-not (Test-Path $exe)) { throw "the $env:BASELINE installer put no Orivon.exe at $exe" }
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs $exe --runs 3 --label "baseline $env:BASELINE" --json start-probe/win-baseline.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The installer's registry entries, and a link handed to Windows the way another program hands one.
@@ -463,6 +524,29 @@ jobs:
         run: |
           node scripts/smoke-orivon-link.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon" "$RUNNER_TEMP/apps-local/Orivon.app"
 
+      # The copy the one-line installer made, which is what a person runs; the runner is Apple silicon, so the arm64 dmg.
+      - name: Time the start of the installed app
+        if: matrix.platform == 'mac'
+        continue-on-error: true
+        run: node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon" --runs 3 --label current --json start-probe/mac-current.json
+
+      # Copied out of the mounted dmg as the installer does, so the app runs from the disk and not from the image.
+      - name: Time the start of the baseline release's app
+        if: matrix.platform == 'mac' && inputs.baseline_release != ''
+        continue-on-error: true
+        env:
+          BASELINE: ${{ inputs.baseline_release }}
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          dmg="$(node scripts/ci/fetch-release-package.mjs "$BASELINE" mac "$RUNNER_TEMP/baseline")"
+          mount="$RUNNER_TEMP/baseline-dmg"
+          mkdir -p "$RUNNER_TEMP/apps-baseline"
+          hdiutil attach -nobrowse -readonly -mountpoint "$mount" "$dmg"
+          ditto "$mount/Orivon.app" "$RUNNER_TEMP/apps-baseline/Orivon.app"
+          hdiutil detach "$mount" || { sleep 5; hdiutil detach -force "$mount"; }
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$RUNNER_TEMP/apps-baseline/Orivon.app/Contents/MacOS/Orivon" --runs 3 --label "baseline $BASELINE" --json start-probe/mac-baseline.json
+
       # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
       # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
       - name: Install the newest published release with the one-line installer
@@ -473,6 +557,16 @@ jobs:
           ORIVON_INSTALL_DIR="$RUNNER_TEMP/apps-release" ORIVON_NO_OPEN=1 bash scripts/install-macos.sh
           test -d "$RUNNER_TEMP/apps-release/Orivon.app"
           codesign --verify --deep --strict "$RUNNER_TEMP/apps-release/Orivon.app"
+
+      # Not named orivon-*, like the Store package below: the release takes only those.
+      - name: Keep the start timings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: start-probe-${{ matrix.platform }}
+          path: start-probe/*.json
+          if-no-files-found: ignore
+          retention-days: 7
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
