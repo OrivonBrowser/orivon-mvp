@@ -206,7 +206,7 @@ async function main () {
     if (printedStartup) {
       const startup = JSON.parse(startupLine())
       const missing = ['entry', 'launched', 'bootStart', 'appReady', 'afterReadyDone', 'storesLoaded', 'firstWindowCreated', 'chromeLoaded', 'windowShown', 'firstTabLoaded'].filter((name) => !Number.isInteger(startup.marks?.[name]))
-      check('the start-up line is complete and holds the core marks, in whole milliseconds', startup.complete === true && missing.length === 0 && startup.hooks.length > 0, missing.length === 0 ? JSON.stringify({ complete: startup.complete, hooks: startup.hooks.length }) : `missing ${missing.join(', ')}`)
+      check('the start-up line is complete and holds the core marks, in whole milliseconds', startup.complete === true && missing.length === 0 && startup.hooks.length > 0, missing.length === 0 ? JSON.stringify({ base: startup.base, hooks: startup.hooks.length, marks: startup.marks }) : `missing ${missing.join(', ')}`)
     }
 
     // ---- New-tab dashboard: real content, and the privilege boundary ------
