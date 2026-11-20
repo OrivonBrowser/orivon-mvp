@@ -18,9 +18,9 @@ export const STARTUP_MARKS = [
   'bootStart', // index.js and everything it imports were evaluated: boot() began
   'beforeReadyDone', // every subsystem's beforeReady hook ran
   'appReady', // Electron's app is ready
+  'afterReadyDone', // every subsystem's afterReady hook ran
   'extensionsSeedStart', // the bundled extensions are about to be installed into a new profile (a first start only)
   'extensionsSeeded', // they were installed
-  'afterReadyDone', // every subsystem's afterReady hook ran
   'afterWindowDone', // every subsystem's afterWindow hook ran
   'storesLoaded', // settings, bookmarks, session and the other shell stores were read
   'firstWindowStart', // the first window's options were chosen and createShellWindow is called
