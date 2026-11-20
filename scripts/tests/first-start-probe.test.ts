@@ -124,6 +124,12 @@ describe('formatReport', () => {
     expect(text).toContain('first start  shell page rendered        2/2')
     expect(text).toContain('next start   shell page rendered        1/2')
     expect(text.split('\n').at(-1)).toBe('FAILED next start launch 2: the app exited (1) before its shell page rendered')
+    expect(text).not.toContain('NOTE')
+  })
+
+  it('says when a next-start launch had to be killed, since the launch after it then starts as after a crash', () => {
+    const killedOnce = { ...result, next: { ...result.next, warmup: { ...worked(3100, 5100), ended: 'killed' } } }
+    expect(formatReport(killedOnce)).toContain('NOTE next start: 1 launch(es) did not quit when asked and were killed')
   })
 })
 

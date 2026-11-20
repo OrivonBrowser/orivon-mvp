@@ -5,15 +5,17 @@
  * Usage: node scripts/run-headless.mjs node scripts/first-start-probe.mjs <executable> [--runs N] [--json <file>]
  *          [--label <text>] [--offline] [-- extra app arguments]
  *
- * Two series of N launches each (default 5), every launch on a throwaway profile and killed when measured:
+ * Two series of N launches each (default 5), every launch on a throwaway profile and asked to quit when measured:
  *   first start  a new profile each launch, with the welcome screen and defaults a package has, as a first click gets
  *   next start   one profile; a first launch that is not counted, then N launches on it
  * A launch is timed from just before the spawn to the first poll (every 25 ms) that sees the shell page rendered, and
  * to the first that sees the bundled extension running. When the build prints its own one-line record,
  * `[orivon][startup] {json}`, the record is kept as printed and its numbers are summarized too; a build that prints none
- * is timed all the same. `--offline` keeps the launch off the network (smoke-packaged.mjs NETWORK_OFF_ENV), which is
+ * is timed all the same. A launch that does not quit when asked within QUIT_WAIT_MS is killed, and the report says so:
+ * the next launch on that profile then starts as after a crash, which is not the start a click gets. `--offline` keeps the launch off the network (smoke-packaged.mjs NETWORK_OFF_ENV), which is
  * steadier and not what a person's launch does. Prints a table; `--json` also writes every raw value.
  */
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, openSync, readSync, closeSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, platform, release, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -28,6 +30,8 @@ export const MAX_RUNS = 50
 export const POLL_MS = 25
 /** How long after both are seen the app is given to print its own record. */
 export const RECORD_WAIT_MS = 2000
+/** How long a launch is given to quit when asked before it is killed. */
+export const QUIT_WAIT_MS = 15_000
 
 const USAGE = `usage: node scripts/run-headless.mjs node scripts/first-start-probe.mjs <executable> [--runs N] [--json <file>] [--label <text>] [--offline] [-- extra app arguments]`
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -140,7 +144,10 @@ export function formatReport (result) {
     ...(entry.warmup?.error === undefined ? [] : [`${title} warm-up: ${entry.warmup.error}`]),
     ...entry.runs.flatMap((run, at) => (run.error === undefined ? [] : [`${title} launch ${at + 1}: ${run.error}`]))
   ])
-  return [heading, formatTable(series.map(({ title, entry }) => ({ title, stats: entry.stats })), result.runsPerSeries), ...failures.map((failure) => `FAILED ${failure}`)].join('\n')
+  // Only the next-start series reuses a profile, so only there does a kill change what the following launch measures.
+  const killed = [result.next.warmup, ...result.next.runs].filter((run) => run?.ended === 'killed').length
+  const notes = killed === 0 ? [] : [`NOTE next start: ${killed} launch(es) did not quit when asked and were killed, so the launch after each started as after a crash`]
+  return [heading, formatTable(series.map(({ title, entry }) => ({ title, stats: entry.stats })), result.runsPerSeries), ...notes, ...failures.map((failure) => `FAILED ${failure}`)].join('\n')
 }
 
 /**
@@ -194,6 +201,7 @@ async function launchOnce (executable, profile, { env, appArgs }) {
   const t0 = performance.now()
   const { child, output } = launchPackaged(executable, { profile, env, args: appArgs })
   const since = () => Math.round(performance.now() - t0)
+  let run
   try {
     const deadline = Date.now() + STARTUP_TIMEOUT_MS
     const [shellMs, extensionMs] = await Promise.all([
@@ -201,12 +209,27 @@ async function launchOnce (executable, profile, { env, appArgs }) {
       waitForBundledExtension(child, output, deadline, POLL_MS).then(since)
     ])
     const record = await waitForRecord(child, output, RECORD_WAIT_MS)
-    return record === undefined ? { shellMs, extensionMs } : { shellMs, extensionMs, record }
+    run = record === undefined ? { shellMs, extensionMs } : { shellMs, extensionMs, record }
   } catch (error) {
-    return { error: error.message, appOutput: output().split('\n').slice(-20).join('\n') }
-  } finally {
-    await stop(child)
+    run = { error: error.message, appOutput: output().split('\n').slice(-20).join('\n') }
   }
+  return { ...run, ended: await quit(child) }
+}
+
+/**
+ * Asks the app to quit as a person's quit does (SIGTERM, which Electron takes as a quit; on Windows a close without
+ * /F), so it saves its session as ended cleanly; kills it only if it is still running after QUIT_WAIT_MS.
+ * @returns {Promise<'quit' | 'killed'>}
+ */
+async function quit (child) {
+  const gone = () => child.pid === undefined || child.exitCode !== null || child.signalCode !== null
+  if (gone()) return 'quit'
+  if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid)], { stdio: 'ignore' })
+  else try { process.kill(child.pid, 'SIGTERM') } catch {}
+  for (let waited = 0; !gone() && waited < QUIT_WAIT_MS; waited += 250) await sleep(250)
+  if (gone()) return 'quit'
+  await stop(child)
+  return 'killed'
 }
 
 function removeProfile (profile) {
