@@ -217,19 +217,51 @@ async function launchOnce (executable, profile, { env, appArgs }) {
 }
 
 /**
- * Asks the app to quit as a person's quit does (SIGTERM, which Electron takes as a quit; on Windows a close without
- * /F), so it saves its session as ended cleanly; kills it only if it is still running after QUIT_WAIT_MS.
+ * The browser process among `root` and its descendants: a launcher (a shell script, the AppImage's runtime) can stand
+ * between the probe and Electron, and only the browser process takes SIGTERM as a quit. It is the parent of a
+ * Chromium helper (an argument `--type=...`) that is no helper itself; `root` when no such process is seen.
+ * @param {number} root
+ * @param {Array<{ pid: number, ppid: number, args: string }>} table
+ */
+export function browserPid (root, table) {
+  const byPid = new Map(table.map((entry) => [entry.pid, entry]))
+  const isHelper = (entry) => entry.args.split(/\s+/).some((arg) => arg.startsWith('--type='))
+  const under = (pid) => {
+    for (let at = byPid.get(pid), steps = 0; at !== undefined && steps < table.length; at = byPid.get(at.ppid), steps++) if (at.pid === root) return true
+    return false
+  }
+  for (const entry of table) {
+    const parent = byPid.get(entry.ppid)
+    if (isHelper(entry) && parent !== undefined && !isHelper(parent) && under(parent.pid)) return parent.pid
+  }
+  return root
+}
+
+/** Every process with its parent and arguments, from `ps`; empty when `ps` cannot be run. */
+function processTable () {
+  const listed = spawnSync('ps', ['-eo', 'pid=,ppid=,args='], { encoding: 'utf8' })
+  return (listed.stdout ?? '').split('\n').flatMap((line) => {
+    const found = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line)
+    return found === null ? [] : [{ pid: Number(found[1]), ppid: Number(found[2]), args: found[3] }]
+  })
+}
+
+/**
+ * Asks the app to quit as a person's quit does (SIGTERM to its browser process, which Electron takes as a quit; on
+ * Windows a close without /F), so it saves its session as ended cleanly; kills it only if it is still running after
+ * QUIT_WAIT_MS. Whatever a launcher left behind in the launch's process group is killed either way.
  * @returns {Promise<'quit' | 'killed'>}
  */
 async function quit (child) {
   const gone = () => child.pid === undefined || child.exitCode !== null || child.signalCode !== null
   if (gone()) return 'quit'
   if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(child.pid)], { stdio: 'ignore' })
-  else try { process.kill(child.pid, 'SIGTERM') } catch {}
+  else try { process.kill(browserPid(child.pid, processTable()), 'SIGTERM') } catch {}
   for (let waited = 0; !gone() && waited < QUIT_WAIT_MS; waited += 250) await sleep(250)
-  if (gone()) return 'quit'
+  const ended = gone() ? 'quit' : 'killed'
   await stop(child)
-  return 'killed'
+  if (process.platform !== 'win32') try { process.kill(-child.pid, 'SIGKILL') } catch {}
+  return ended
 }
 
 function removeProfile (profile) {
