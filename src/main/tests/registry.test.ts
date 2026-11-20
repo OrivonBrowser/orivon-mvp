@@ -59,6 +59,27 @@ describe('runBeforeReady', () => {
   })
 })
 
+describe('hook timing', () => {
+  it('tells how long each hook took, in the order they ran, and skips a subsystem with no such hook', async () => {
+    const timed: Array<[string, string, number]> = []
+    const onTimed = (name: string, phase: string, ms: number): void => { timed.push([name, phase, ms]) }
+    runBeforeReady([{ name: 'a', beforeReady: () => {} }, { name: 'passive' }, { name: 'b', beforeReady: () => {} }], onTimed)
+    await runAfterReady([{ name: 'slow', afterReady: async () => { await new Promise((resolve) => setTimeout(resolve, 30)) } }, { name: 'a', beforeReady: () => {} }], ctx, onTimed)
+    expect(timed.map(([name, phase]) => `${phase}:${name}`)).toEqual(['beforeReady:a', 'beforeReady:b', 'afterReady:slow'])
+    expect(timed.every(([, , ms]) => Number.isFinite(ms) && ms >= 0)).toBe(true)
+    expect(timed[2]?.[2]).toBeGreaterThanOrEqual(25)
+  })
+
+  it('times a hook that throws as well, and still reports its failure', async () => {
+    const timed: string[] = []
+    const failures = runBeforeReady([{ name: 'broken', beforeReady: () => { throw new Error('x') } }], (name) => { timed.push(name) })
+    const later = await runAfterReady([{ name: 'late', afterReady: () => { throw new Error('y') } }], ctx, (name) => { timed.push(name) })
+    expect(timed).toEqual(['broken', 'late'])
+    expect(failures.map(({ name }) => name)).toEqual(['broken'])
+    expect(later.map(({ name }) => name)).toEqual(['late'])
+  })
+})
+
 describe('runAfterReady', () => {
   it('awaits each subsystem in list order, not concurrently', async () => {
     const order: string[] = []
