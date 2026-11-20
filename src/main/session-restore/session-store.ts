@@ -29,6 +29,12 @@ export interface SessionLog {
   titlesChanged: () => void
   /** The browser is ending in an orderly way: the next write says so. */
   finish: () => void
+  /**
+   * Keeps the file as it is until the answer is called: while held, nothing is written, an orderly end included, so
+   * a browser that is closed before it has opened the saved windows leaves them for the next start. Releasing writes
+   * what the open windows are by then.
+   */
+  hold: () => () => void
   flush: () => Promise<void>
 }
 
@@ -38,6 +44,8 @@ export class SessionStore implements SessionLog {
   private source: SessionSource | null = null
   private carried: SessionSource = () => []
   private clean = false
+  /** How many holds are on: the file is written only at none. */
+  private holds = 0
   /** A write is already waiting: changes until it runs need no timer of their own, so a page whose title never stops changing cannot postpone the write for ever. */
   private waiting = false
   private titleTimer: ReturnType<typeof setTimeout> | null = null
@@ -85,9 +93,22 @@ export class SessionStore implements SessionLog {
 
   finish (): void {
     this.dropTitleTimer()
+    // Held, the end is not recorded: the file keeps saying what the last run left, which a restore reads.
+    if (this.holds > 0) return
     this.clean = true
     this.waiting = false
     this.writer.schedule()
+  }
+
+  hold (): () => void {
+    this.holds += 1
+    let released = false
+    return () => {
+      if (released) return
+      released = true
+      this.holds -= 1
+      if (this.holds === 0) this.changed()
+    }
   }
 
   private dropTitleTimer (): void {
@@ -103,7 +124,7 @@ export class SessionStore implements SessionLog {
   /** Off the main thread: the file and its directory are flushed to disk, which can take a slow disk a while. */
   private async writeNow (): Promise<void> {
     this.waiting = false
-    if (this.source === null) return
+    if (this.source === null || this.holds > 0) return
     try {
       mkdirSync(dirname(this.filePath), { recursive: true })
       const windows = this.clean ? this.source() : [...this.source(), ...this.carried()]
@@ -124,5 +145,6 @@ export class NullSessionStore implements SessionLog {
   changed (): void {}
   titlesChanged (): void {}
   finish (): void {}
+  hold (): () => void { return () => {} }
   async flush (): Promise<void> {}
 }

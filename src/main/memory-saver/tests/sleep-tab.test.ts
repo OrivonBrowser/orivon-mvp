@@ -13,11 +13,18 @@ vi.mock('../../shell/tab-view.js', () => ({ makeTabView, wireView }))
 vi.mock('../../shell/tab-parking.js', () => ({ closeParkedViews, repartitionView }))
 vi.mock('../../shell/tab-partition.js', () => ({ appTabViews: new WeakSet(), partitionForTab }))
 vi.mock('../../overlays/tab-slots.js', () => ({ hasAsk: () => false }))
+// Open unless a test shuts it: what waited then runs when the test says the gate opens.
+const gate = vi.hoisted(() => ({ open: true, waiting: [] as Array<() => void> }))
+vi.mock('../../startup/web-ready.js', () => ({
+  deferUntilWebReady: (later: () => void) => { if (gate.open) return false; gate.waiting.push(later); return true }
+}))
 
 const { reloadOrWake, sleepTab, sleepTabWhy, wakeTab } = await import('../sleep-tab.js')
 const { snapshotOf } = await import('../../session-restore/tab-snapshot.js')
 
 beforeEach(() => {
+  gate.open = true
+  gate.waiting.length = 0
   makeTabView.mockReset().mockReturnValue(blank)
   wireView.mockReset()
   closeParkedViews.mockReset()
@@ -180,6 +187,41 @@ describe('reloadOrWake', () => {
 
     reloadOrWake(tabs, 'b')
     expect(reload).toHaveBeenCalledWith('b')
+  })
+})
+
+describe('wakeTab before web pages may load', () => {
+  async function asleep () {
+    const made = setup()
+    await sleepTab(made.tabs, 'a', env())
+    const record = made.records.get('a')
+    const wc = { ...blank.webContents, isDestroyed: () => false, loadURL: vi.fn(), navigationHistory: { restore: vi.fn(async () => {}) } }
+    if (record !== undefined) record.view = { webContents: wc } as never
+    return { ...made, record, wc }
+  }
+
+  it('loads nothing and leaves the tab asleep, then wakes it when the gate opens', async () => {
+    const { tabs, record, wc } = await asleep()
+    gate.open = false
+
+    wakeTab(tabs, 'a')
+
+    expect(wc.navigationHistory.restore).not.toHaveBeenCalled()
+    expect(wc.loadURL).not.toHaveBeenCalled()
+    expect(repartitionView).not.toHaveBeenCalled()
+    expect(record?.sleeping).not.toBeNull()
+
+    gate.open = true
+    for (const later of gate.waiting.splice(0)) later()
+    expect(wc.navigationHistory.restore).toHaveBeenCalledOnce()
+    expect(record?.sleeping).toBeNull()
+  })
+
+  it('does not wait for a tab that is not asleep', async () => {
+    const { tabs } = setup()
+    gate.open = false
+    wakeTab(tabs, 'b')
+    expect(gate.waiting).toEqual([])
   })
 })
 

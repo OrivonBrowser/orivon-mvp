@@ -9,8 +9,12 @@ import type { NewClosedEntry } from '../closed-stack.js'
 import { hintFor, reopenClosed, reopenEntry } from '../reopen.js'
 import type { SavedWindow } from '../session-types.js'
 import { groupsFor } from '../../tab-groups/groups-model.js'
+import { openWebContent } from '../../startup/web-ready.js'
 import { fakeTabs, shellWindow } from './tabs-fake.js'
 import type { FakeTabs } from './tabs-fake.js'
+
+// Web pages may load: reopen-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 const tab = (n: number, extra: Partial<NewClosedEntry & { kind: 'tab' }> = {}): NewClosedEntry => ({
   kind: 'tab', tab: { url: `https://a.example/${String(n)}`, title: `Page ${String(n)}`, pinned: false }, index: n, windowKey: 1, ...extra

@@ -27,6 +27,10 @@ vi.mock('../../../loader/electron/serve.js', () => ({
   isOriginServedFromCacheSync: (origin: string) => served.has(origin)
 }))
 
+// Open unless a test shuts it: the tripwire in makeTabView reads it.
+const gate = vi.hoisted(() => ({ open: true }))
+vi.mock('../../startup/web-ready.js', async (importOriginal) => ({ ...await importOriginal<typeof import('../../startup/web-ready.js')>(), isWebContentReady: () => gate.open }))
+
 const { appTabArgsFor, appTabFlagChanged, captureTabPage, makeTabView, partitionAfterFileBlock, partitionChanged, partitionForTarget, popupTargetIsApp } = await import('../tab-view.js')
 
 const APP = 'https://app.example'
@@ -207,6 +211,30 @@ describe('makeTabView: an explicit backgroundColor is set on the view before it 
   it('leaves an ordinary tab (no colour passed) at Electron\'s own default', () => {
     const view = makeTabView('preload.js', undefined, undefined)
     expect((view as unknown as { setBackgroundColor: (c: string) => void }).setBackgroundColor).not.toHaveBeenCalled()
+  })
+})
+
+describe('makeTabView: the tripwire for a web view made before web pages may load', () => {
+  const TRIPWIRE = '[startup] web view made before web content may load'
+  let error: ReturnType<typeof vi.spyOn>
+  beforeEach(() => { error = vi.spyOn(console, 'error').mockImplementation(() => {}) })
+  afterEach(() => { error.mockRestore(); gate.open = true })
+
+  it('says so for a view with no backing colour while the gate is shut: that is a view for the web', () => {
+    gate.open = false
+    makeTabView('preload.js', undefined)
+    expect(error).toHaveBeenCalledExactlyOnceWith(TRIPWIRE)
+  })
+
+  it('says nothing for the new-tab page or an internal page, which carry a backing colour', () => {
+    gate.open = false
+    makeTabView('preload.js', undefined, undefined, { backgroundColor: '#0d0e14' })
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('says nothing for a web view once the gate is open', () => {
+    makeTabView('preload.js', undefined)
+    expect(error).not.toHaveBeenCalled()
   })
 })
 

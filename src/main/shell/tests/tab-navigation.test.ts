@@ -4,7 +4,12 @@ vi.mock('../tab-factory.js', () => ({ BLANK_URL: 'about:blank' }))
 vi.mock('../load-in-tab.js', () => ({ repartitionForTarget: vi.fn(() => false) }))
 vi.mock('../tab-view.js', () => ({ EXIT_FULLSCREEN_WORLD_ID: 1001 }))
 
+const { openWebContent } = await import('../../startup/web-ready.js')
 const { navigateTab, reloadTab } = await import('../tab-navigation.js')
+
+// Web pages may load: tab-navigation-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
+
 type Env = Parameters<typeof navigateTab>[0]
 
 function setup (gatewayTarget?: (url: string) => string | undefined): { navigate: (input: string) => void, openInternal: ReturnType<typeof vi.fn>, viewSource: ReturnType<typeof vi.fn>, loadURL: ReturnType<typeof vi.fn> } {

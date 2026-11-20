@@ -3,6 +3,7 @@
 import type { OverlayDef } from '../overlays/overlay-types.js'
 import { restoreWindows, takeOffStack } from './startup-open.js'
 import { deferUntilFuseKnown, holdsLocalFile } from '../session-restore/fuse-wait.js'
+import { deferUntilWebReady } from './web-ready.js'
 import type { Displays } from '../session-restore/restore.js'
 import { usableWindows } from './startup-plan.js'
 import { lastRunCrashId, reportPath } from '../diagnostics/crash-lookup.js'
@@ -54,7 +55,9 @@ export function restoreOverlayFor (deps: RestoreDeps): OverlayDef {
           // Only what Reopen has not already brought back: a second copy of a window is worse than none.
           const windows = takeOffStack(services.closedTabs, usableWindows(services.session.previous()))
           const open = (): void => { restoreWindows(windows, (options) => { services.commands.openWindow(options) }, deps.displays()) }
-          if (!deferUntilFuseKnown(windows.some((window) => holdsLocalFile(window.tabs)), open)) open()
+          // After web pages may load, and then, for a local file, after the binary's fuse is read.
+          const afterGate = (): void => { if (!deferUntilFuseKnown(windows.some((window) => holdsLocalFile(window.tabs)), open)) open() }
+          if (!deferUntilWebReady(afterGate)) afterGate()
           return undefined
         },
         closed: stop

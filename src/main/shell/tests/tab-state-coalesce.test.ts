@@ -1,5 +1,9 @@
 import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 // Page signals (title, loading, address inside the page, icon) reach the strip's listeners as one trailing push,
 // driven through a real TabManager over fake views.
