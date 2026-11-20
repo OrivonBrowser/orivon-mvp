@@ -42,6 +42,7 @@ import { NATIVE_TAB_DRAG_ARGUMENT } from '../channels.js'
 import { pointerIsLocal } from './local-pointer.js'
 import { showToast } from '../page-tools/toast.js'
 import { relayoutOnSizeChange } from './window-size-settle.js'
+import { markStartup } from '../startup/startup-marks-runner.js'
 
 /** The new-tab page's own URL: the dev server's nested path, or its address on the shell scheme. */
 export function resolveDashboardUrl (): string {
@@ -239,6 +240,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   // registers onState before that), so this re-sync is guaranteed to
   // land, not timing-dependent.
   chrome.webContents.on('did-finish-load', pushState)
+  if (firstOfLaunch === true) chrome.webContents.once('did-finish-load', () => { markStartup('chromeLoaded') })
   // The preload's gate and isFromChrome compare `chromeUrl` exactly; a
   // mismatch would leave the chrome dead with no other sign.
   chrome.webContents.on('did-finish-load', () => {
@@ -301,6 +303,8 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   created?.(win)
   if (first === undefined) tabs.createTab()
   else first(tabs)
+  // `did-stop-loading` ends a load that failed as well as one that finished: the mark says the tab settled.
+  if (firstOfLaunch === true) tabs.activeWebContents()?.once('did-stop-loading', () => { markStartup('firstTabLoaded') })
   // After the first tab, so the view stacks above it.
   if (intro !== undefined) showIntro(win, tabs, intro, () => { services.commands.run('nav.focusAddress', entry) })
   runWindowHooks('opened', context, options)

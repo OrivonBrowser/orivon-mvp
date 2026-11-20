@@ -7,6 +7,7 @@ import type { WebContents } from 'electron'
 import { devModeEnabled } from '../dev/dev-mode.js'
 import { currentOzonePlatform, x11VulkanReading } from '../graphics/x11-vulkan-runner.js'
 import { ownFetch } from '../route/own-requests.js'
+import { startupRecord } from '../startup/startup-marks-runner.js'
 import { networkServiceRestart } from '../sessions/network-service-hold.js'
 import { cookieMirrorStatus } from '../route/cookie-mirror/mirror-status.js'
 import { currentNameRelayStatus } from '../route/name-relay/relay-status.js'
@@ -96,7 +97,8 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       appSockets: readAppSockets(broker),
       settings: reportedSettings((key) => services.settings.get(key))
     },
-    crashes: diagnostics()?.crashes() ?? []
+    crashes: diagnostics()?.crashes() ?? [],
+    startup: startupRecord()
   }
 }
 

@@ -2,6 +2,7 @@ import { buildDiagnostics } from '../diagnostics-facts.js'
 import type { DiagnosticsFacts } from '../diagnostics-facts.js'
 import type { CrashRecord } from '../crash-records.js'
 import type { ReportChoices, ReportSources } from '../report-payload.js'
+import type { StartupRecord } from '../../startup/startup-marks.js'
 
 export const HOME = '/home/ann'
 
@@ -18,6 +19,18 @@ export const CRASH: CrashRecord = {
   page: 'https://example.org/path?q=1'
 }
 
+export const STARTUP: StartupRecord = {
+  schema: 1,
+  base: 'process-creation',
+  complete: true,
+  firstRun: false,
+  electron: '44.0.0',
+  app: '0.1.0',
+  packaged: false,
+  marks: { entry: 310, launched: 335, bootStart: 480, beforeReadyDone: 495, appReady: 560, extensionsSeedStart: null, extensionsSeeded: null, afterReadyDone: 790, storesLoaded: 820, firstWindowStart: 900, firstWindowCreated: 960, chromeLoaded: 1210, chromeReadyToShow: 1230, windowShown: 1240, firstTabLoaded: 1390 },
+  hooks: [{ name: 'diagnostics', phase: 'beforeReady', ms: 2 }, { name: 'broker', phase: 'afterReady', ms: 41 }]
+}
+
 export const FACTS: DiagnosticsFacts = {
   commit: 'abcdef012345',
   channel: 'source',
@@ -32,7 +45,8 @@ export const FACTS: DiagnosticsFacts = {
   displays: [{ width: 1920, height: 1080, scaleFactor: 1.25 }],
   processes: [{ type: 'Tab', workingSetKb: 2048 }, { type: 'Tab', workingSetKb: 1024 }, { type: 'GPU', workingSetKb: 512 }],
   browser: { windows: 1, tabs: 3, privateSession: false, tunnels: { tabs: { nym: 1, socks5: 0, direct: 0 } }, networkService: { restarts: 2, timedOut: 1, last: 'reapplied' }, systemProxy: { source: 'gnome', mode: 'manual', state: 'mirrored', reason: 'copied' }, nameRelay: { state: 'relaying', provider: 'quad9', resolver: 'held', refused: { 'not-found': 2, 'no-answer': 0, 'sign-in': 0, refused: 0, unreachable: 1, inside: 0, anonymity: 0, unsure: 0, unpinned: 0 } }, signIns: { state: 'mirroring', sessions: 2, copied: 14, removed: 1, failed: 0, suppressed: 0 }, extensions: [{ id: 'abc', name: 'Ext', version: '1.0', enabled: true }], appSockets: [{ open: 5, inFlight: 2, allowance: 64 }], settings: { 'appearance.theme': 'system' } },
-  crashes: [CRASH]
+  crashes: [CRASH],
+  startup: STARTUP
 }
 
 export const CHOICES: ReportChoices = { crashId: CRASH.id, description: '  It crashed.  ', contact: ' ann@example.org ', diagnostics: true, log: true, page: true, dump: true }
