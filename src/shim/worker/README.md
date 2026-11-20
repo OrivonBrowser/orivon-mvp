@@ -61,9 +61,7 @@ array.
 **`runtime.generated.json` is `runtime.ts` bundled, and it is checked in.** A child Worker starts
 from that text through a `blob:` URL, which works whatever bundler a port uses and passes the served
 CSP's `worker-src 'self' blob:`. `tests/runtime-bundle.test.ts` fails when it is stale: after
-changing anything the runtime imports, run it with `ORIVON_WRITE_WORKER_RUNTIME=1`. The file also holds
-`packages`, the folder of each npm package inside the bundle, written from the bundler's metafile: the build's licence
-notices (`scripts/licence-notices-plugin.ts`) read it, because the build sees the bundle as one string.
+changing anything the runtime imports, run it with `ORIVON_WRITE_WORKER_RUNTIME=1`.
 
 **A forked child or thread gets a global `require`** (`runtime-fork.ts`'s `setupChildProcess`),
 the loader behind `createRequire` ([`../polyfills/cjs-loader.ts`](../polyfills/cjs-loader.ts)):
