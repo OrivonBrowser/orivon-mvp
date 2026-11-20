@@ -1,11 +1,12 @@
 import { app } from 'electron'
 import { createRequire } from 'node:module'
 import { startLaunch } from './launch/start-launch.js'
+import { markStartup } from './startup/startup-marks-runner.js'
 
 // The process entry. It reads nothing but the launch code, so a second start of a profile that is already open asks
 // for the single-instance lock and exits before the rest of the browser (index.ts, most of this build) is loaded:
-// loading it is about half of what such a start costs. Imports here stay within electron, node:module and
-// launch/start-launch.js (tests/start.test.ts holds that).
+// loading it is about half of what such a start costs. Imports here stay within electron, node:module,
+// launch/start-launch.js and the start-up marks, which load nothing (tests/start.test.ts holds that).
 
 // The browser's crash recorder, handed over once index.js is loaded; an error before that has no record.
 let onFatal: ((kind: string, error: unknown) => void) | undefined
@@ -24,10 +25,13 @@ function exitOnUncaught (kind: string, error: unknown): void {
 process.on('uncaughtException', (error) => { exitOnUncaught('uncaught exception', error) })
 process.on('unhandledRejection', (reason) => { exitOnUncaught('unhandled promise rejection', reason) })
 
+markStartup('entry')
+
 // Which browser this process is, before anything reads a byte of data: another profile or a private session
 // has a directory of its own, and a second start of a profile already open hands over and stops here.
 const runtime = startLaunch(app, process.argv)
 if (runtime !== null) {
+  markStartup('launched')
   // A require at this point, not an import at the top: the bundle's static imports would all be evaluated first.
   const browser = createRequire(import.meta.url)('./index.js') as typeof import('./index.js')
   onFatal = browser.recordFatal

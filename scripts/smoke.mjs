@@ -50,7 +50,7 @@
 // plumbing.
 import { createServer } from 'node:http'
 import { runBookmarksJourney } from './smoke-bookmarks.mjs'
-import { closeElectron, launchElectron } from '../test/support/launch-electron.mjs'
+import { closeElectron, launchElectron, mainOutput } from '../test/support/launch-electron.mjs'
 import {
   ABSENCE_SETTLE_MS,
   activeTabFaviconSrc,
@@ -198,6 +198,16 @@ async function main () {
       }
     }
     await leakCheck('on launch', 2)
+
+    // ---- Start-up marks: one line, printed once the window is shown and its first tab has loaded -----
+    const startupLine = () => /^\[orivon\]\[startup\] (\{.*\})$/m.exec(mainOutput(app))?.[1]
+    const printedStartup = await waitFor(() => startupLine() !== undefined)
+    check('the start prints its start-up marks once', printedStartup && (mainOutput(app).match(/^\[orivon\]\[startup\] /gm) ?? []).length === 1)
+    if (printedStartup) {
+      const startup = JSON.parse(startupLine())
+      const missing = ['entry', 'launched', 'bootStart', 'appReady', 'afterReadyDone', 'storesLoaded', 'firstWindowCreated', 'chromeLoaded', 'windowShown', 'firstTabLoaded'].filter((name) => !Number.isInteger(startup.marks?.[name]))
+      check('the start-up line is complete and holds the core marks, in whole milliseconds', startup.complete === true && missing.length === 0 && startup.hooks.length > 0, missing.length === 0 ? JSON.stringify({ complete: startup.complete, hooks: startup.hooks.length }) : `missing ${missing.join(', ')}`)
+    }
 
     // ---- New-tab dashboard: real content, and the privilege boundary ------
     // Owner override, 2026-08-28 -- replaces about:blank for a fresh tab

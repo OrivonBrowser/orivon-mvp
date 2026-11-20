@@ -187,6 +187,16 @@ describe('the diagnostics limits', () => {
     expect(fitted.app).toEqual(base.app)
   })
 
+  it('drops the start-up hooks first and keeps the marks, which are what a slow start is read from', () => {
+    const base = buildDiagnostics(FACTS)
+    const hooks = Array.from({ length: 3000 }, (_, index) => ({ name: `subsystem-${index}`, phase: 'afterReady' as const, ms: index }))
+    const fitted = fitDiagnostics({ ...base, startup: { ...base.startup, hooks } })
+    expect(fitted.startup.hooks).toEqual([])
+    expect(fitted.startup.marks).toEqual(base.startup.marks)
+    expect(fitted.processes).toEqual(base.processes)
+    expect(fitted.recentCrashes).toEqual(base.recentCrashes)
+  })
+
   it('keeps the WebGPU entry when it has to drop the graphics features, since the entry is what the features told', () => {
     const base = buildDiagnostics(FACTS)
     const settings = Object.fromEntries(Array.from({ length: 4000 }, (_, index) => [`setting.${index}`, 'x'.repeat(20)]))

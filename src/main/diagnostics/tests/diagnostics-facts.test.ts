@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { appSocketReadings, buildDiagnostics, channelOf, REPORTED_APPS, REPORTED_SETTINGS, reportedSettings, siteAnswerCounts } from '../diagnostics-facts.js'
 import type { DiagnosticsFacts } from '../diagnostics-facts.js'
 import type { CrashRecord } from '../crash-records.js'
-import { CRASH, FACTS } from './report-fixtures.js'
+import { CRASH, FACTS, STARTUP } from './report-fixtures.js'
 
 describe('buildDiagnostics', () => {
   const diagnostics = buildDiagnostics(FACTS)
 
   it('has the groups the notice describes, in order, and nothing else', () => {
-    expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
+    expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'startup', 'recentCrashes'])
     expect(Object.keys(diagnostics.app)).toEqual(['commit', 'channel', 'electron', 'chromium', 'node', 'v8', 'packaged', 'uptimeSec'])
     expect(Object.keys(diagnostics.system)).toEqual(['platform', 'release', 'arch', 'cpus', 'cpuModel', 'memoryMb', 'freeMemoryMb', 'locale', 'session', 'desktop', 'ozone'])
     expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'networkService', 'systemProxy', 'nameRelay', 'signIns', 'extensions', 'appSockets', 'settings'])
@@ -49,6 +49,13 @@ describe('buildDiagnostics', () => {
     expect(diagnostics.browser.signIns).toEqual({ state: 'mirroring', sessions: 2, copied: 14, removed: 1, failed: 0, suppressed: 0 })
     expect(Object.keys(diagnostics.browser.signIns)).toEqual(['state', 'sessions', 'copied', 'removed', 'failed', 'suppressed'])
     expect(Object.values(diagnostics.browser.signIns).filter((value) => typeof value !== 'number')).toEqual(['mirroring'])
+  })
+
+  it('carries the start-up record whole, and it holds only numbers, flags and names', () => {
+    expect(diagnostics.startup).toEqual(STARTUP)
+    const leaves = (value: unknown): unknown[] => typeof value === 'object' && value !== null ? Object.values(value).flatMap(leaves) : [value]
+    for (const leaf of leaves(diagnostics.startup)) expect(['number', 'boolean', 'string'].includes(typeof leaf) || leaf === null).toBe(true)
+    for (const leaf of leaves(diagnostics.startup).filter((value) => typeof value === 'string')) expect(String(leaf)).not.toMatch(/[/\\]/)
   })
 
   it('rounds the uptime to whole seconds', () => {

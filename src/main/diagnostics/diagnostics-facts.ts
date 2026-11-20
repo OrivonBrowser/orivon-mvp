@@ -8,6 +8,7 @@ import type { RestartCounts } from '../sessions/network-service-restart.js'
 import type { CookieMirrorStatus } from '../route/cookie-mirror/mirror-status.js'
 import type { MirrorStatus } from '../route/proxy-mirror/mirror-status.js'
 import type { NameRelayStatus } from '../route/name-relay/relay-status.js'
+import type { StartupRecord } from '../startup/startup-marks.js'
 import { newest } from './crash-records.js'
 import type { CrashKind, CrashRecord } from './crash-records.js'
 import { gpuDevicesOf, gpuFeaturesOf } from './gpu-reading.js'
@@ -139,6 +140,8 @@ export interface DiagnosticsFacts {
     readonly settings: Readonly<Record<string, string | boolean | number>>
   }
   readonly crashes: readonly CrashRecord[]
+  /** How long this run's start took, step by step (`startup/startup-marks.ts`). */
+  readonly startup: StartupRecord
 }
 
 export interface Diagnostics {
@@ -157,6 +160,8 @@ export interface Diagnostics {
   readonly displays: ReadonlyArray<{ readonly width: number, readonly height: number, readonly scale: number }>
   readonly processes: ReadonlyArray<{ readonly type: string, readonly count: number, readonly memoryMb: number }>
   readonly browser: DiagnosticsFacts['browser']
+  /** The marks of this run's start, in milliseconds since the process was created, and how long each subsystem's start-up hook took: names and numbers only. */
+  readonly startup: StartupRecord
   readonly recentCrashes: ReadonlyArray<{ readonly kind: CrashKind, readonly at: string, readonly process: string, readonly reason: string, readonly exitCode: number | null }>
 }
 
@@ -208,6 +213,7 @@ export function buildDiagnostics (facts: DiagnosticsFacts, adapter?: AdapterRead
     displays: facts.displays.map((display) => ({ width: display.width, height: display.height, scale: display.scaleFactor })),
     processes: groupProcesses(facts.processes),
     browser: facts.browser,
+    startup: facts.startup,
     recentCrashes: newest(facts.crashes, RECENT_CRASHES).map(({ kind, at, process, reason, exitCode }) => ({ kind, at, process, reason, exitCode }))
   }
 }

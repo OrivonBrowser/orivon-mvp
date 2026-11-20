@@ -55,9 +55,10 @@ import { netFetchJson } from './browsing/score-provider-client.js'
 import { isDevEthName } from './dev/eth-resolver.js'
 import { needsNoVerifierHost } from './shell/app-session.js'
 import type { Runtime } from './launch/start-launch.js'
-import { decideDefaultProfile } from './default-profile/profile-start.js'
+import { decideDefaultProfile, startsFromDefaultProfile } from './default-profile/profile-start.js'
 import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
 import { attachX11Vulkan, startX11Vulkan, x11VulkanStartAborted, x11VulkanWindowPainted, x11VulkanWindowShown } from './graphics/x11-vulkan-runner.js'
+import { describeStartup, markStartup, noteStartupHook, printStartupLineAtCap } from './startup/startup-marks-runner.js'
 
 // Do not add `ozone-platform: x11` here: the GPU process crashes under
 // XWayland. A window that never appears is `shell/window-frame.ts`'s
@@ -142,10 +143,14 @@ export function recordFatal (kind: string, error: unknown): void {
 
 /** Starts the browser this process is. */
 export function boot (runtime: Runtime): void {
+  // The time since `launched` is the load of this file and its imports (startup/startup-marks.ts).
+  markStartup('bootStart')
   // First of all, so the log holds everything this run printed and the marker is down before anything can fail.
   startDiagnostics({ dir: runtime.dir, isPrivate: runtime.isPrivate })
   // Read before any store or subsystem opens a file of the profile.
   decideDefaultProfile(runtime.dir, process.env)
+  describeStartup({ firstRun: startsFromDefaultProfile(), electron: process.versions.electron, app: app.getVersion(), packaged: app.isPackaged })
+  printStartupLineAtCap()
   // Before any session is made: a session opens the folder its name says, so the folders of the old names move first.
   moveLongNamedPartitionFolders(runtime.dir)
   app.setMaxListeners(Math.max(app.getMaxListeners(), APP_LISTENER_ROOM))
@@ -153,7 +158,8 @@ export function boot (runtime: Runtime): void {
   applyGlobalPrivacyControl(app.commandLine, readSettingBeforeReady(join(runtime.dir, 'settings.json'), 'privacy.globalPrivacyControl'))
   // The same, for the opt-in that gives an X11 session WebGPU (graphics/README.md).
   startX11Vulkan(runtime.dir)
-  const beforeReadyFailures = runBeforeReady(subsystems)
+  const beforeReadyFailures = runBeforeReady(subsystems, noteStartupHook)
+  markStartup('beforeReadyDone')
   report(beforeReadyFailures)
 
   // A second start of this profile asks it to show itself, to open a window or a private session, and to open what it was given.
@@ -187,10 +193,12 @@ export function boot (runtime: Runtime): void {
   })
 
   void app.whenReady().then(async () => {
+    markStartup('appReady')
     // A private session this process made for itself gets its extensions now, before any subsystem reads its folder; no window exists to hold up.
     if (runtime.extensionsFrom !== undefined) await Promise.all([copyPrivateExtensions(runtime.extensionsFrom, runtime.dir), copyPrivatePicture(runtime.extensionsFrom, runtime.dir)])
     const ctx = createSubsystemContext(app, runtime.isPrivate, runtime.launch.kind === 'private' ? runtime.launch.tunnel ?? null : null)
-    const afterReadyFailures = await runAfterReady(subsystems, ctx)
+    const afterReadyFailures = await runAfterReady(subsystems, ctx, noteStartupHook)
+    markStartup('afterReadyDone')
     report(afterReadyFailures)
 
     // A CRITICAL subsystem failing (today: only the broker) means the
@@ -241,6 +249,7 @@ export function boot (runtime: Runtime): void {
     // starred in the first moments is added to the bookmarks on disk, not to an
     // empty tree the file then replaces.
     await Promise.all([shell.settings.load(), shell.searchEngines.load(), shell.shortcutStore.load(), shell.windowState.load(), shell.zoomStore.load(), shell.session.load(), shell.bookmarks.load()])
+    markStartup('storesLoaded')
     // A picture left over by a run that ended before its setting was saved goes, now that the setting is known.
     shell.newTabBackground.reconcile().catch((error: unknown) => { console.error('[orivon] the new tab picture could not be reconciled:', error) })
     const seeded = seedClosedStack(shell.closedTabs, shell.session.previous())
@@ -322,7 +331,9 @@ export function boot (runtime: Runtime): void {
         // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
         const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
         if (plan.localFiles === true) await fileProtocolFuse()
+        markStartup('firstWindowStart')
         createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true, shown: x11VulkanWindowShown, painted: x11VulkanWindowPainted })
+        markStartup('firstWindowCreated')
       } finally {
         markStarted()
       }
@@ -337,7 +348,9 @@ export function boot (runtime: Runtime): void {
         // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
         if (plan.localFiles === true) await fileProtocolFuse()
         const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
+        markStartup('firstWindowStart')
         const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true, shown: x11VulkanWindowShown, painted: x11VulkanWindowPainted })
+        markStartup('firstWindowCreated')
         afterWelcome.windowOpened(intro)
         const after = plan.after
         // The first start of a newer version shows what it changed, once, in front of what the window opened on.
