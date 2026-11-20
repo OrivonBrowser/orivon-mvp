@@ -17,12 +17,19 @@ import { join } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 
 // A native launch renders in about 10 s; an Intel build under Rosetta, translating Electron cold, can take minutes.
-const STARTUP_TIMEOUT_MS = 300_000
+export const STARTUP_TIMEOUT_MS = 300_000
 const PROBE_TIMEOUT_MS = 5_000
 // The bundled extension installs after the shell renders, while the window is already in use.
-const BUNDLED_EXTENSION_MS = 60_000
+export const BUNDLED_EXTENSION_MS = 60_000
 const SHELL_PAGE = /^orivon-shell:\/\/renderer\/index\.html(?:[?#].*)?$/
 const RENDERED = "document.readyState === 'complete' && document.body !== null && document.body.childElementCount > 0"
+
+/** What keeps a launch off the person's screen and speakers; it changes nothing the app does while starting. */
+export const QUIET_ENV = { ORIVON_WINDOW_NO_FOCUS: '1', PULSE_SERVER: 'unix:/nonexistent' }
+/** The switches that keep a launch off the network: telemetry, the update check, secure DNS and the light client. */
+export const NETWORK_OFF_ENV = { ORIVON_TELEMETRY: 'off', ORIVON_UPDATE_CHECK: 'off', ORIVON_SECURE_DNS: 'off', ORIVON_ETH_LIGHT_CLIENT: 'off' }
+/** The smoke's environment: quiet, offline and with no welcome screen. */
+export const SMOKE_ENV = { ...QUIET_ENV, ...NETWORK_OFF_ENV, ORIVON_INTRO: 'off' }
 
 /**
  * The port Chromium's DevTools server listens on, read from the line it prints to stderr.
@@ -95,8 +102,8 @@ export async function stop (child) {
   for (let waited = 0; !exited(child) && waited < 15_000; waited += 250) await sleep(250)
 }
 
-/** Resolves once the shell page has rendered; rejects with what the app printed if it never does. */
-export async function waitForShell (child, output, deadline) {
+/** Resolves once the shell page has rendered, asking every `pollMs`; rejects with what the app printed if it never does. */
+export async function waitForShell (child, output, deadline, pollMs = 1000) {
   while (Date.now() < deadline) {
     if (child.pid === undefined) throw new Error('the app could not be started')
     if (exited(child)) throw new Error(`the app exited (${child.exitCode ?? child.signalCode}) before its shell page rendered`)
@@ -107,21 +114,46 @@ export async function waitForShell (child, output, deadline) {
       const shell = shellTarget(targets)
       if (shell !== undefined && await evaluate(shell.webSocketDebuggerUrl, RENDERED).catch(() => false) === true) return shell.url
     }
-    await sleep(1000)
+    await sleep(pollMs)
   }
   throw new Error(`no rendered shell page within ${STARTUP_TIMEOUT_MS / 1000} s`)
 }
 
-/** Resolves once the bundled extension runs in the app on `port`; rejects naming what did run if it never does. */
-async function waitForBundledExtension (port, deadline) {
+/** Resolves once the bundled extension runs in the app, asking every `pollMs`; rejects naming what did run if it never does. */
+export async function waitForBundledExtension (child, output, deadline, pollMs = 1000) {
   let targets = []
+  const started = Date.now()
   while (Date.now() < deadline) {
-    targets = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
-      .then((r) => r.json()).catch(() => [])
-    if (bundledExtensionRunning(targets)) return
-    await sleep(1000)
+    if (child.pid === undefined) throw new Error('the app could not be started')
+    if (exited(child)) throw new Error(`the app exited (${child.exitCode ?? child.signalCode}) before its bundled extension ran`)
+    const port = devToolsPort(output())
+    if (port !== undefined) {
+      targets = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(PROBE_TIMEOUT_MS) })
+        .then((r) => r.json()).catch(() => [])
+      if (bundledExtensionRunning(targets)) return
+    }
+    await sleep(pollMs)
   }
-  throw new Error(`a new profile has no uBlock Origin running after ${BUNDLED_EXTENSION_MS / 1000} s; targets: ${targets.map((t) => t.url).join(', ')}`)
+  throw new Error(`a new profile has no uBlock Origin running after ${Math.round((Date.now() - started) / 1000)} s; targets: ${targets.map((t) => t.url).join(', ')}`)
+}
+
+/**
+ * Starts `executable` the way a person's click does, on the profile folder given, with a DevTools port Chromium picks and
+ * no sound; `env` is laid over this process's environment, and `args` after the switches this adds.
+ * @param {string} executable
+ * @param {{ profile: string, env?: Record<string, string>, args?: string[] }} options
+ * @returns {{ child: import('node:child_process').ChildProcess, output: () => string }} `output` is everything the app has printed so far
+ */
+export function launchPackaged (executable, { profile, env = {}, args = [] }) {
+  const childEnv = { ...process.env, ...env }
+  delete childEnv.ELECTRON_RUN_AS_NODE
+  const switches = [`--user-data-dir=${profile}`, '--remote-debugging-port=0', '--alsa-output-device=null', ...args]
+  const child = spawn(executable, switches, { env: childEnv, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
+  let log = ''
+  child.stdout.on('data', (chunk) => { log += chunk })
+  child.stderr.on('data', (chunk) => { log += chunk })
+  child.on('error', (error) => { log += `\n${error.message}` })
+  return { child, output: () => log }
 }
 
 /** Resolves once the shell page of an app already running on `port` has rendered. */
@@ -153,24 +185,17 @@ if (isInvokedDirectly(import.meta.url)) {
     process.exit(1)
   }
   const profile = mkdtempSync(join(tmpdir(), 'orivon-packaged-'))
-  const env = { ...process.env, ORIVON_INTRO: 'off', ORIVON_TELEMETRY: 'off', ORIVON_UPDATE_CHECK: 'off', ORIVON_SECURE_DNS: 'off', ORIVON_ETH_LIGHT_CLIENT: 'off', ORIVON_WINDOW_NO_FOCUS: '1', PULSE_SERVER: 'unix:/nonexistent' }
-  delete env.ELECTRON_RUN_AS_NODE
-  const args = [`--user-data-dir=${profile}`, '--remote-debugging-port=0', '--alsa-output-device=null']
-  const child = spawn(executable, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
-  let log = ''
-  child.stdout.on('data', (chunk) => { log += chunk })
-  child.stderr.on('data', (chunk) => { log += chunk })
-  child.on('error', (error) => { log += `\n${error.message}` })
+  const { child, output } = launchPackaged(executable, { profile, env: SMOKE_ENV })
 
   let failed = false
   try {
-    const url = await waitForShell(child, () => log, Date.now() + STARTUP_TIMEOUT_MS)
+    const url = await waitForShell(child, output, Date.now() + STARTUP_TIMEOUT_MS)
     console.log(`[smoke-packaged] ${executable}: shell page rendered (${url})`)
-    await waitForBundledExtension(devToolsPort(log), Date.now() + BUNDLED_EXTENSION_MS)
+    await waitForBundledExtension(child, output, Date.now() + BUNDLED_EXTENSION_MS)
     console.log(`[smoke-packaged] ${executable}: uBlock Origin installed in a new profile`)
   } catch (error) {
     failed = true
-    console.error(`[smoke-packaged] ${executable}: ${error.message}\n--- app output ---\n${log.split('\n').slice(-80).join('\n')}`)
+    console.error(`[smoke-packaged] ${executable}: ${error.message}\n--- app output ---\n${output().split('\n').slice(-80).join('\n')}`)
   } finally {
     await stop(child)
     rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 })
