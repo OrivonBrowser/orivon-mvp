@@ -269,6 +269,18 @@ jobs:
           grep -q 'x-scheme-handler/https' "$install_home/.local/share/applications/orivon.desktop"
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$install_home/.local/lib/orivon/orivon"
 
+      # The launcher the one-line install wrote, which is what a click runs on Linux: on this runner, without libfuse2
+      # (Ubuntu's default since 22.10), it unpacks the whole AppImage before every start; then with libfuse2, mounted.
+      - name: Time the start of the one-line install's AppImage, unpacked and mounted
+        if: matrix.platform == 'linux'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          launcher="$RUNNER_TEMP/install-home/.local/lib/orivon/orivon"
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$launcher" --runs 3 --label 'AppImage without libfuse2' --json start-probe/linux-appimage-unpacked.json
+          sudo apt-get install -y libfuse2t64
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$launcher" --runs 3 --label 'AppImage with libfuse2' --json start-probe/linux-appimage-mounted.json
+
       # The real path as a user runs it: the newest published release is looked up, downloaded and checked. During a
       # release the new one has no packages yet, so this would test the previous release; PRs and manual runs only.
       - name: Install the newest published release with the one-line installer
@@ -302,27 +314,6 @@ jobs:
           Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
           node scripts/run-headless.mjs node scripts/first-start-probe.mjs $exe.FullName --runs 3 --label current --json start-probe/win-current.json
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      # The baseline installs into a folder of its own, so the installed package of this branch stays as it is.
-      - name: Time the start of the baseline release's installer
-        if: matrix.platform == 'win' && inputs.baseline_release != ''
-        continue-on-error: true
-        shell: pwsh
-        env:
-          BASELINE: ${{ inputs.baseline_release }}
-          ORIVON_GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $installer = node scripts/ci/fetch-release-package.mjs $env:BASELINE win "$env:RUNNER_TEMP\baseline"
-          if ($LASTEXITCODE -ne 0) { throw "could not fetch the $env:BASELINE installer" }
-          $folder = Join-Path $env:RUNNER_TEMP 'orivon-baseline'
-          # NSIS reads /D= to the end of the line, so it comes last and is not quoted.
-          (Start-Process -FilePath $installer -ArgumentList "/S /D=$folder" -PassThru).WaitForExit()
-          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
-          $exe = Join-Path $folder 'Orivon.exe'
-          if (-not (Test-Path $exe)) { throw "the $env:BASELINE installer put no Orivon.exe at $exe" }
-          node scripts/run-headless.mjs node scripts/first-start-probe.mjs $exe --runs 3 --label "baseline $env:BASELINE" --json start-probe/win-baseline.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The installer's registry entries, and a link handed to Windows the way another program hands one.
@@ -557,6 +548,28 @@ jobs:
           ORIVON_INSTALL_DIR="$RUNNER_TEMP/apps-release" ORIVON_NO_OPEN=1 bash scripts/install-macos.sh
           test -d "$RUNNER_TEMP/apps-release/Orivon.app"
           codesign --verify --deep --strict "$RUNNER_TEMP/apps-release/Orivon.app"
+
+      # Last of the Windows steps: the baseline's installer, though given a folder of its own, uninstalls the package
+      # this branch installed (the same app id), so no step after it may need that package.
+      - name: Time the start of the baseline release's installer
+        if: matrix.platform == 'win' && inputs.baseline_release != ''
+        continue-on-error: true
+        shell: pwsh
+        env:
+          BASELINE: ${{ inputs.baseline_release }}
+          ORIVON_GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = node scripts/ci/fetch-release-package.mjs $env:BASELINE win "$env:RUNNER_TEMP\baseline"
+          if ($LASTEXITCODE -ne 0) { throw "could not fetch the $env:BASELINE installer" }
+          $folder = Join-Path $env:RUNNER_TEMP 'orivon-baseline'
+          # NSIS reads /D= to the end of the line, so it comes last and is not quoted.
+          (Start-Process -FilePath $installer -ArgumentList "/S /D=$folder" -PassThru).WaitForExit()
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = Join-Path $folder 'Orivon.exe'
+          if (-not (Test-Path $exe)) { throw "the $env:BASELINE installer put no Orivon.exe at $exe" }
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs $exe --runs 3 --label "baseline $env:BASELINE" --json start-probe/win-baseline.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # Not named orivon-*, like the Store package below: the release takes only those.
       - name: Keep the start timings
