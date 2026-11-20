@@ -31,6 +31,7 @@ import type { ShellWindowOptions } from './window-options.js'
 import { runWindowHooks } from './window-hooks.js'
 import { introCovers, showIntro } from './intro-view.js'
 import { createWindowFrame, showWhenReady, windowBackgroundColor } from './window-frame.js'
+import { paintWhileHidden } from './hidden-paint.js'
 import { recordViewBackground } from './view-background-test-hook.js'
 import { onThemeUpdated } from './theme-colors.js'
 import { followActiveTabBacking } from './window-backing.js'
@@ -309,7 +310,7 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
   if (intro !== undefined) showIntro(win, tabs, intro, () => { services.commands.run('nav.focusAddress', entry) })
   runWindowHooks('opened', context, options)
 
-  showWhenReady(frame, { firstOfLaunch, maximized, inactive, onShown: shown, onPainted: painted })
+  showWhenReady(frame, { firstOfLaunch, maximized, inactive, onShown: shown, onPainted: painted, holdPaint: () => paintWhileHidden(chrome.webContents) })
 
   return win
 }
