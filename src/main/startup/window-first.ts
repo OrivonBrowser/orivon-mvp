@@ -11,8 +11,8 @@ export interface EndOfStart {
   readonly report: (failures: readonly SubsystemFailure[]) => void
   /** Ends the start loudly when a failure is critical, and answers true when it did: the gate then never opens. */
   readonly stopOnCritical: (failures: readonly SubsystemFailure[]) => boolean
-  /** Lets web pages load (`openWebContent`). */
-  readonly openWebContent: () => void
+  /** Lets web pages load (`openWebContent`) and settles once they may: a test build holds the gate shut past this call, and the first window must not be filled before it opens. */
+  readonly openWebContent: () => Promise<void>
   /** What the first window opens beyond its new-tab page: the restored session, the addresses on the command line, What's new, the other windows. Runs once pages of the web may load. */
   readonly fill: () => Promise<void>
   /** Lets a second launch be answered. Called whatever happened above, so one that arrived early is never stranded. */
@@ -31,7 +31,7 @@ export async function endStart (shown: Promise<void>, steps: EndOfStart): Promis
     steps.mark('afterWindowDone')
     steps.report(failures)
     if (steps.stopOnCritical(failures)) return
-    steps.openWebContent()
+    await steps.openWebContent()
     await steps.fill()
   } finally {
     steps.started()

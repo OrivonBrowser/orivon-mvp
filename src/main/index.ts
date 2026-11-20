@@ -366,7 +366,7 @@ export function boot (runtime: Runtime): void {
       afterWindow: async () => await runAfterWindow(subsystems, ctx, noteStartupHook),
       report,
       stopOnCritical,
-      openWebContent: () => { openWebContent(); webContentReady().then(() => { markStartup('webContentReady') }).catch((error: unknown) => { console.error('[startup] marking web content ready failed:', error) }) },
+      openWebContent: async () => { openWebContent(); await webContentReady(); markStartup('webContentReady') },
       fill: firstWindow.fill,
       // Marked started only once the first window is filled, never before: a second launch arriving earlier
       // would run the opener with a window that has none of its tabs yet, or with no window open, creating one of

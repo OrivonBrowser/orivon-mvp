@@ -15,7 +15,7 @@ import { ABSENCE_SETTLE_MS, delay, evaluateRetrying, HERMETIC_RESOLVER, waitFor,
 
 const TEST_TIMEOUT_MS = 180_000
 /** Long enough that a spec reads the whole gap, and the gate is still shut when it has. */
-const HOLD_MS = 14_000
+const HOLD_MS = 30_000
 const UBLOCK_ORIGIN_ID = 'fkgkibajhfbepljeaefdnfnegdcjomkh'
 const electronBinary = createRequire(import.meta.url)('electron') as string
 
@@ -101,8 +101,9 @@ it('shows the browser with its chrome painted while web pages may not load yet, 
 
     await clickAddressBarRetrying(chrome, url('typed'))
     await delay(ABSENCE_SETTLE_MS)
-    expect(requests).toEqual([])
-    expect(await gateOpen(app)).toBe(false)
+    const askedInGap = [...requests]
+    expect(await gateOpen(app), 'the hold ended before the gap was read').toBe(false)
+    expect(askedInGap).toEqual([])
 
     await untilGateOpens(app)
     expect((await waitForTab(chrome, { address: url('typed') })).ok).toBe(true)
@@ -129,7 +130,10 @@ it('has the bundled extension loaded before the first web request of a new profi
 
     await clickAddressBarRetrying(chrome, url('first'))
     await delay(ABSENCE_SETTLE_MS)
-    expect(requests).toEqual([])
+    const askedInGap = [...requests]
+    // Read before the gate: it only ever opens, so a shut gate here was shut when the requests were read.
+    expect(await gateOpen(app), 'the hold ended before the gap was read').toBe(false)
+    expect(askedInGap).toEqual([])
 
     await untilGateOpens(app)
     expect(await waitFor(() => requests.length > 0 && extensionsWhenAsked !== undefined)).toBe(true)
@@ -153,9 +157,11 @@ it('restores the last session only once web pages may load, with the window and 
     expect(await titles(chrome)).toEqual([])
     // Past the session store's write delay: a window with no tab yet must not have replaced the file.
     await delay(ABSENCE_SETTLE_MS * 2)
-    expect(requests).toEqual([])
-    expect(await gateOpen(app)).toBe(false)
-    expect(await readFile(join(dir, 'session.json'), 'utf8')).toBe(sessionText())
+    const askedInGap = [...requests]
+    const fileInGap = await readFile(join(dir, 'session.json'), 'utf8')
+    expect(await gateOpen(app), 'the hold ended before the gap was read').toBe(false)
+    expect(askedInGap).toEqual([])
+    expect(fileInGap).toBe(sessionText())
 
     await untilGateOpens(app)
     expect(await waitFor(async () => (await titles(chrome)).join('|') === 'page a|page b')).toBe(true)
@@ -178,6 +184,7 @@ it('keeps the previous session when the browser is closed while the window waits
   try {
     expect(await gateOpen(app)).toBe(false)
     await delay(ABSENCE_SETTLE_MS * 2)
+    expect(await gateOpen(app), 'the hold ended before the browser was closed').toBe(false)
   } finally {
     await closeElectron(app, { keepProfile: true })
   }
@@ -207,8 +214,9 @@ it('answers a second start made during the gap once, with one window, after web 
     expect(await gateOpen(app)).toBe(false)
     expect(await secondStart([url('second')], dir)).toBe(0)
     await delay(ABSENCE_SETTLE_MS)
-    expect(await gateOpen(app)).toBe(false)
-    expect(requests).toEqual([])
+    const askedInGap = [...requests]
+    expect(await gateOpen(app), 'the hold ended before the gap was read').toBe(false)
+    expect(askedInGap).toEqual([])
     expect(await visibleWindows(app)).toEqual([true])
 
     await untilGateOpens(app)
