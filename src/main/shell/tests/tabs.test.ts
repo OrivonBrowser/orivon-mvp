@@ -3,6 +3,10 @@ import { EventEmitter } from 'node:events'
 import { originFromUrl } from '../../../broker/policy/origin.js'
 import { partitionFor } from '../../../broker/grants/origin-hash.js'
 import type { SubsystemContext } from '../../registry.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 // tabs.ts imports WebContentsView directly from 'electron' at module scope --
 // outside a real Electron process this cannot even be imported without

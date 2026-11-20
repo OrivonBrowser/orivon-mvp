@@ -2,6 +2,10 @@ import { EventEmitter } from 'node:events'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemContext } from '../../registry.js'
 import type { TabSignal } from '../tab-signals.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 // The per-tab hooks a feature plugs in, driven through a real TabManager so
 // the wiring points (a new view, a parked view coming back, every state push,

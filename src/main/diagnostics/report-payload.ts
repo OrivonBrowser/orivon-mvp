@@ -92,6 +92,7 @@ function depthOf (value: unknown): number {
 
 /** The parts a report can lose, in the order they go when the block is over its size: the least useful first. */
 const DROP_ORDER: ReadonlyArray<(d: Diagnostics) => Diagnostics> = [
+  (d) => ({ ...d, startup: { ...d.startup, hooks: [] } }),
   (d) => ({ ...d, recentCrashes: [] }),
   (d) => ({ ...d, processes: [] }),
   (d) => ({ ...d, browser: { ...d.browser, extensions: [] } }),

@@ -47,6 +47,7 @@ import { readableNow } from '../reader/reader-signal.js'
 import { APP_TAB_FLAG, appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, dashboardViews, partitionAfterFileBlock, partitionChanged, partitionChangedByPage, partitionForTab } from './tab-partition.js'
 import { noteTabVisit } from './tab-tunnel-facts.js'
 import { isWebsitePageOfApp } from './app-session.js'
+import { isWebContentReady } from '../startup/web-ready.js'
 
 export { popupTargetIsApp } from './popup-opener.js'
 export { appTabArgsFor, appTabFlagChanged, appTabOrigins, appTabViews, dashboardViews, partitionAfterFileBlock, partitionChanged, partitionForTab, partitionForTarget } from './tab-partition.js'
@@ -125,6 +126,9 @@ export function tabWebPreferences (preload: string, partition: string | undefine
  * object, not two more positional strings: both are optional and hard to
  * tell apart at a call site by position alone. */
 export function makeTabView (preload: string, partition: string | undefined, additionalArguments?: string[], opts: { backgroundColor?: string, target?: string } = {}): WebContentsView {
+  // Only the shell's own pages carry a backing colour (above): a view without one is for the web, and the gate in
+  // ../startup/web-ready.ts must have kept every path to it shut. This is the tripwire for a path it missed.
+  if (opts.backgroundColor === undefined && !isWebContentReady()) console.error('[startup] web view made before web content may load')
   if (partition !== undefined && isLocalPartition(partition)) ensureLocalSession(partition)
   if (partition !== undefined) ensureSiteSession(partition)
   const view = new WebContentsView({ webPreferences: tabWebPreferences(preload, partition, additionalArguments) })

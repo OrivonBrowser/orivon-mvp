@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TabOpenerHost } from '../tab-open.js'
 import type { TabFactory } from '../tab-factory.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: tab-open-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 const known = vi.hoisted(() => ({ fuse: undefined as 'off' | 'on' | 'unknown' | undefined, reads: 0, answer: 'off' as 'off' | 'on' | 'unknown' }))
 vi.mock('../../local-files/file-fuse.js', () => ({

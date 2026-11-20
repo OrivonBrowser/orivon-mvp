@@ -1,6 +1,7 @@
 // Putting one tab to sleep and waking it. The page is closed and the tab keeps a blank view in its place; its
 // history, with each entry's page state, stays in memory on the record and is handed back to the view on waking.
 import { showTitleUntilLoaded } from '../session-restore/restored-title.js'
+import { deferUntilWebReady } from '../startup/web-ready.js'
 import { boundHistory, rememberOpenedFrom } from '../session-restore/tab-snapshot.js'
 import { closeParkedViews, repartitionView } from '../shell/tab-parking.js'
 import { partitionForTab } from '../shell/tab-partition.js'
@@ -79,12 +80,13 @@ export function reloadOrWake (tabs: TabManager, id: string): void {
 }
 
 /** Brings a sleeping tab back on the view it has now: its history returns and its page loads, scrolled and filled as
- * it was. A tab that is not asleep is left alone. */
+ * it was. A tab that is not asleep is left alone. Before web pages may load it wakes when they may. */
 export function wakeTab (tabs: TabManager, id: string): void {
   const record = tabs.record(id)
   const wc = tabs.liveWebContents(id)
   const kept = record?.sleeping
   if (record === undefined || wc === undefined || kept == null) return
+  if (deferUntilWebReady(() => { wakeTab(tabs, id) })) return
   record.sleeping = null
   showTitleUntilLoaded(record, kept.title)
   // The view has no address until its first commit, so the session file and the closed-tab stack read what the tab was.
