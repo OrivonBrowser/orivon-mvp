@@ -7,16 +7,19 @@
 #
 # Finds the newest release with an x86_64 AppImage (the highest version, pre-releases included, drafts and
 # tags that are not versions skipped, as the update check reads them), downloads it with curl, checks its
-# SHA-256 against the digest GitHub reports for the file, and puts it in ~/.local/lib/orivon/. A launcher,
-# a desktop entry that lists Orivon as a browser (http and https) and its icon go in your home folder, so it
-# shows in the application menu and in the default-browser choice of your desktop. Run it again to update.
+# SHA-256 against the digest GitHub reports for the file, and unpacks it once into ~/.local/lib/orivon/app, so a
+# start runs the program from disk like the .deb's, with no FUSE and no unpacking at each start (an AppImage
+# costs about two seconds on every start, mounted or not). A launcher, a desktop entry that lists Orivon as a
+# browser (http and https) and its icon go in your home folder, so it shows in the application menu and in the
+# default-browser choice of your desktop. Run it again to update; an install that kept the AppImage itself
+# (an earlier version of this script) is converted by that run.
 #
 # Options: an app id (2 to 24 lower-case letters and digits) is handed to the first launch as
 # --orivon-flavour=<id>; --no-launch installs without starting Orivon. Settings come from the environment:
 #
 #   ORIVON_REPO         the GitHub repository to read releases from (default OrivonBrowser/orivon-mvp)
 #   ORIVON_APPIMAGE     a local AppImage to install instead: skips the release lookup, the download and the
-#                       digest check, since the caller vouches for the file
+#                       digest check, since the caller vouches for the file; it is unpacked, never kept
 #   ORIVON_NO_OPEN=1    the same as --no-launch
 #   ORIVON_GITHUB_TOKEN a GitHub token for the release lookup, which lifts the per-address rate limit an
 #                       unauthenticated lookup shares (a CI runner's address is shared by many jobs)
@@ -39,8 +42,8 @@ usage () {
   cat <<'EOF'
 Usage: install-linux.sh [--no-launch] [app-id]
 
-Installs or updates Orivon for your user (no sudo): the newest release's x86_64 AppImage, a launcher, a
-desktop entry and an icon. An app id is passed to the first launch as --orivon-flavour=<id>.
+Installs or updates Orivon for your user (no sudo): the newest release's x86_64 AppImage unpacked once, a
+launcher, a desktop entry and an icon. An app id is passed to the first launch as --orivon-flavour=<id>.
 EOF
 }
 
@@ -109,38 +112,22 @@ sha256_of () {
   fi
 }
 
-# The launcher the desktop entry and ~/.local/bin/orivon run. It decides at every start whether the AppImage
-# can mount itself (FUSE 2: the device, fusermount and libfuse.so.2 must all be there), so installing libfuse2
-# later needs no new install; without it the AppImage unpacks itself to a temporary folder and runs from there.
+# The launcher the desktop entry and ~/.local/bin/orivon run. It starts the unpacked app's AppRun, not its
+# `orivon` binary: electron-builder's AppRun puts the app's own libraries and data folders on the search paths and,
+# where unprivileged user namespaces are off (Ubuntu 24.04 restricts them), adds --no-sandbox, which an unpacked
+# tree needs because its chrome-sandbox helper cannot be setuid root in a home folder. It is a short shell script,
+# so it costs a few milliseconds. It does not set APPIMAGE, so Orivon sees a packaged program in a folder and finds
+# the AppRun beside its executable where it must name one (src/main/launch/unpacked-app-image.ts).
 write_launcher () {
   cat >"$1" <<'LAUNCHER'
 #!/bin/sh
-# Starts Orivon from the AppImage beside this file (written by scripts/install-linux.sh).
+# Starts Orivon from the unpacked app beside this file (written by scripts/install-linux.sh).
 here=$(dirname "$(readlink -f "$0")")
-app=$here/Orivon.AppImage
-# ORIVON_FUSE_DEVICE names another device file than /dev/fuse, which is how a test makes the AppImage unable to mount.
-fuse_device=${ORIVON_FUSE_DEVICE:-/dev/fuse}
-
-fuse2_library () {
-  if command -v ldconfig >/dev/null 2>&1 || [ -x /sbin/ldconfig ] || [ -x /usr/sbin/ldconfig ]; then
-    { ldconfig -p || /sbin/ldconfig -p || /usr/sbin/ldconfig -p; } 2>/dev/null | grep -q 'libfuse\.so\.2' && return 0
-  fi
-  for lib in /usr/lib /usr/lib64 /lib /lib64 /usr/lib/*-linux-gnu /lib/*-linux-gnu /usr/lib/*/lib; do
-    for file in "$lib"/libfuse.so.2*; do
-      [ -e "$file" ] && return 0
-    done
-  done
-  return 1
-}
-
-can_mount () {
-  [ -r "$fuse_device" ] && [ -w "$fuse_device" ] || return 1
-  command -v fusermount >/dev/null 2>&1 || [ -x /usr/bin/fusermount ] || [ -x /bin/fusermount ] || return 1
-  fuse2_library
-}
-
-if can_mount; then exec "$app" "$@"; fi
-exec "$app" --appimage-extract-and-run "$@"
+if [ ! -x "$here/app/AppRun" ]; then
+  echo "[orivon] $here/app/AppRun is missing: run the install command again to repair this install." >&2
+  exit 1
+fi
+exec "$here/app/AppRun" "$@"
 LAUNCHER
   chmod 755 "$1"
 }
@@ -180,15 +167,13 @@ Exec="$exec_path" --new-private-window
 EOF
 }
 
-# Puts the icon in the user's icon theme. The AppImage's own copy first (unpacking a few files needs no FUSE);
-# the repository's copy at the release's tag when that fails and the release is known. Never fatal.
+# Puts the icon in the user's icon theme. The unpacked app's own copy first; the repository's copy at the release's
+# tag when it has none and the release is known. Never fatal.
 install_icon () {
-  local appimage=$1 tag=$2 icon_dir=$3 found="" work
+  local app=$1 tag=$2 icon_dir=$3 found="" work
   work=$TMP_DIR/icon
   mkdir -p "$work" "$icon_dir"
-  if ( cd "$work" && "$appimage" --appimage-extract 'usr/share/icons/hicolor/*/apps/*.png' >/dev/null 2>&1 ); then
-    found=$(find "$work/squashfs-root/usr/share/icons/hicolor" -name '*.png' 2>/dev/null | sort | tail -n 1)
-  fi
+  found=$(find "$app/usr/share/icons/hicolor" -name '*.png' 2>/dev/null | sort | tail -n 1)
   if [ -z "$found" ] && [ -n "$tag" ]; then
     if curl -fsSL -o "$work/icon.png" "https://raw.githubusercontent.com/$REPO/$tag/build/icon.png" 2>/dev/null; then found=$work/icon.png; fi
   fi
@@ -197,6 +182,65 @@ install_icon () {
     return 0
   fi
   cp "$found" "$icon_dir/orivon.png"
+}
+
+# True when a process runs its program from inside the folder $1. /proc/<pid>/exe names where each program lives, and a
+# folder renamed while a program runs from it keeps that program's inode, so the name follows the rename.
+runs_from () {
+  local dir exe
+  dir=$(cd "$1" && pwd -P) || return 1
+  for exe in /proc/[0-9]*/exe; do
+    case $(readlink "$exe" 2>/dev/null || true) in "$dir"/*) return 0 ;; esac
+  done
+  return 1
+}
+
+# Removes the tree $1, which an update replaced, unless Orivon runs from it: a running Orivon reads what it had not yet
+# opened (the GPU process loads its libraries again when it restarts) from the folder it started in. A tree in use is
+# renamed to app.held.<pid>, a name the swap never uses, so the next install can swap again and removes it once nothing
+# runs from it. Returns 1 when the tree is kept.
+remove_old_tree () {
+  local tree=$1 held
+  [ -e "$tree" ] || return 0
+  if ! runs_from "$tree"; then
+    rm -rf "$tree"
+    return 0
+  fi
+  case ${tree##*/} in
+    app.held.*) ;;
+    *)
+      held=${tree%/*}/app.held.$$
+      while [ -e "$held" ]; do held=$held.x; done
+      mv "$tree" "$held" || fail "Could not set aside the old copy of Orivon, which is still running."
+      ;;
+  esac
+  return 1
+}
+
+# Unpacks the AppImage in $1 (an absolute path, run from its own folder or a copy) into $2/app. The unpacked tree is
+# built beside the install, on its own filesystem, so the swap is renames: the new tree goes in at a temporary name,
+# the old one is renamed aside, the new one renamed in, the old one removed unless Orivon runs from it (see
+# remove_old_tree). The next start gets the new tree. Nothing is changed when the unpacking fails.
+unpack_app () {
+  local package=$1 lib_dir=$2 unpack=$TMP_DIR/unpack log=$TMP_DIR/unpack.log
+  mkdir -p "$unpack"
+  # The AppImage's own runtime unpacks itself: no FUSE is involved, so this works where libfuse2 is missing.
+  if ! ( cd "$unpack" && "$package" --appimage-extract ) >"$log" 2>&1; then
+    tail -n 5 "$log" >&2
+    fail "Unpacking Orivon failed (is there room in $lib_dir, and is it a folder programs may run from?). Nothing was changed."
+  fi
+  [ -x "$unpack/squashfs-root/AppRun" ] && [ -x "$unpack/squashfs-root/orivon" ] \
+    || fail "The AppImage unpacked without an AppRun and an orivon program in it. Nothing was changed."
+  mv "$unpack/squashfs-root" "$lib_dir/app.new" || fail "Moving Orivon into place failed. Nothing was changed."
+  if [ -e "$lib_dir/app" ]; then
+    mv "$lib_dir/app" "$lib_dir/app.old" || fail "Moving the old Orivon aside failed. Nothing was changed."
+  fi
+  if ! mv "$lib_dir/app.new" "$lib_dir/app"; then
+    [ ! -e "$lib_dir/app.old" ] || mv "$lib_dir/app.old" "$lib_dir/app"
+    fail "Moving Orivon into place failed; the old one was put back."
+  fi
+  remove_old_tree "$lib_dir/app.old" \
+    || say "Orivon is running: restart it to use the new version; the old copy is removed at the next install."
 }
 
 main () {
@@ -225,9 +269,18 @@ main () {
   local bin_dir=$HOME/.local/bin
   plain_path "$lib_dir" || fail "$lib_dir has a character a desktop entry cannot hold here; set HOME to a plainer path."
 
-  TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/orivon-install.XXXXXX")
-  trap cleanup EXIT
   mkdir -p "$lib_dir" "$apps_dir" || fail "Cannot create folders under $HOME/.local."
+  # What an earlier run left: its working folder, and the new tree. When it stopped between the two renames of the
+  # swap (the old tree aside, the new one not yet in), the old tree is the install and goes back. Old trees a running
+  # Orivon held are removed once it is gone.
+  rm -rf "$lib_dir"/.install.* "$lib_dir/app.new"
+  if [ ! -e "$lib_dir/app" ] && [ -e "$lib_dir/app.old" ]; then mv "$lib_dir/app.old" "$lib_dir/app"; fi
+  local left
+  for left in "$lib_dir/app.old" "$lib_dir"/app.held.*; do remove_old_tree "$left" || true; done
+  # The working folder is beside the install, not under /tmp: the download and the unpacked tree are hundreds of
+  # megabytes, /tmp is often memory, and a program may not run from it (noexec) while it may from the home folder.
+  TMP_DIR=$(mktemp -d "$lib_dir/.install.XXXXXX") || fail "Cannot write to $lib_dir."
+  trap cleanup EXIT
 
   local package tag
   if [ -n "${ORIVON_APPIMAGE:-}" ]; then
@@ -268,15 +321,27 @@ main () {
     fi
     say "Checked the SHA-256."
   fi
+  # The AppImage unpacks itself, so it must be a program that may run, and it is run from the folder it is in.
+  case $package in /*) ;; *) package=$PWD/$package ;; esac
+  if [ ! -x "$package" ]; then
+    if [ "$package" != "$TMP_DIR/Orivon.AppImage" ]; then
+      cp "$package" "$TMP_DIR/Orivon.AppImage" || fail "Copying Orivon failed."
+      package=$TMP_DIR/Orivon.AppImage
+    fi
+    chmod 755 "$package"
+  fi
 
-  # A running Orivon keeps its old file open: the new one takes the name with one rename.
-  say "Installing into $lib_dir ..."
-  cp "$package" "$lib_dir/Orivon.AppImage.new" || fail "Copying Orivon failed."
-  chmod 755 "$lib_dir/Orivon.AppImage.new"
-  mv -f "$lib_dir/Orivon.AppImage.new" "$lib_dir/Orivon.AppImage"
-  install_icon "$lib_dir/Orivon.AppImage" "$tag" "$icon_dir"
+  say "Unpacking Orivon into $lib_dir ..."
+  unpack_app "$package" "$lib_dir"
+  install_icon "$lib_dir/app" "$tag" "$icon_dir"
   write_launcher "$lib_dir/orivon.new"
   mv -f "$lib_dir/orivon.new" "$lib_dir/orivon"
+  # An install of the earlier layout kept the AppImage beside the launcher; nothing reads it now, and the old launcher
+  # that did is already replaced.
+  if [ -e "$lib_dir/Orivon.AppImage" ]; then
+    rm -f "$lib_dir/Orivon.AppImage"
+    say "Converted the earlier install, which ran the AppImage, to the unpacked one: it starts faster."
+  fi
 
   write_desktop_entry "$apps_dir/orivon.desktop.new" "$lib_dir/orivon"
   mv -f "$apps_dir/orivon.desktop.new" "$apps_dir/orivon.desktop"
@@ -296,7 +361,7 @@ main () {
     fi
   fi
 
-  say "Installed Orivon${tag:+ $tag} at $lib_dir/Orivon.AppImage"
+  say "Installed Orivon${tag:+ $tag} at $lib_dir/app"
   say "It is in your application menu as Orivon Browser, and a desktop's default-browser choice can list it."
   if [ "$on_path" = "1" ]; then
     say "Start it from a terminal with: orivon"
