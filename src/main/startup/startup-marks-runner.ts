@@ -21,7 +21,7 @@ function printLine (): void {
   console.log(startupLine(marks.record()))
 }
 
-/** Records a moment of this start (the first call for a name counts) and prints the line when the first window is shown and its first tab has loaded. */
+/** Records a moment of this start (the first call for a name counts) and prints the line when the first window is shown, its chrome page and first tab have loaded and web pages may load. */
 export function markStartup (name: StartupMark): void {
   marks.mark(name)
   if (marks.isComplete()) printLine()

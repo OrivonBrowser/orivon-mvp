@@ -199,7 +199,7 @@ async function main () {
     }
     await leakCheck('on launch', 2)
 
-    // ---- Start-up marks: one line, printed once the window is shown and its first tab has loaded -----
+    // ---- Start-up marks: one line, printed once the window is shown, its page and first tab have loaded and web pages may load -----
     const startupLine = () => /^\[orivon\]\[startup\] (\{.*\})$/m.exec(mainOutput(app))?.[1]
     const printedStartup = await waitFor(() => startupLine() !== undefined)
     check('the start prints its start-up marks once', printedStartup && (mainOutput(app).match(/^\[orivon\]\[startup\] /gm) ?? []).length === 1)

@@ -2,8 +2,9 @@
 // the record a start prints once and a problem report carries. Pure: the clock is passed in (startup-marks-runner.ts).
 //
 // The line, which a probe reads from a packaged build's output or `logs/current.log`: `[orivon][startup] ` and one
-// JSON object on the same line, printed once, when the first window is shown, its first tab has loaded and web pages
-// may load, or after the cap with what exists (`complete` false). Keys, in this order:
+// JSON object on the same line, printed once, when the first window is shown, its chrome page and its first tab have
+// loaded (in whatever order they come) and web pages may load, or after the cap with what exists (`complete` false).
+// Keys, in this order:
 //   schema (1), base (`process-creation` or `performance-origin`), complete, firstRun, electron, app, packaged,
 //   marks (every name of STARTUP_MARKS, in order, a whole number or null when not reached),
 //   hooks (`{name, phase, ms}` for each subsystem hook that ran, in order).
@@ -55,7 +56,7 @@ export interface StartupRecord extends StartupFacts {
   readonly schema: 1
   /** What the milliseconds count from: the operating system's creation time of the process, or when that is unavailable the first reading of the performance clock. */
   readonly base: 'process-creation' | 'performance-origin'
-  /** The first window is shown, its first tab has loaded and web pages may load. */
+  /** The first window is shown, its chrome page and its first tab have loaded, and web pages may load. */
   readonly complete: boolean
   readonly marks: Readonly<Record<StartupMark, number | null>>
   readonly hooks: readonly HookTiming[]
@@ -92,7 +93,7 @@ export function createStartupMarks (clock: StartupClock): StartupMarks {
   const hooks: HookTiming[] = []
   let facts: StartupFacts = { firstRun: false, electron: '', app: '', packaged: false }
 
-  const isComplete = (): boolean => reached.has('windowShown') && reached.has('firstTabLoaded') && reached.has('webContentReady')
+  const isComplete = (): boolean => reached.has('windowShown') && reached.has('chromeLoaded') && reached.has('firstTabLoaded') && reached.has('webContentReady')
   return {
     mark: (name) => { if (!reached.has(name)) reached.set(name, elapsed()) },
     hook: ({ name, phase, ms }) => { hooks.push({ name, phase, ms: Math.round(ms) }) },

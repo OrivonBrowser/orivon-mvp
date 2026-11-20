@@ -58,7 +58,7 @@ describe('createStartupMarks', () => {
     expect(read.firstTabLoaded).toBeNull()
   })
 
-  it('is complete once the window is shown, its first tab has loaded and web pages may load, and not before', () => {
+  it('is complete once the window is shown, its chrome page and first tab have loaded and web pages may load, and not before', () => {
     const marks = createStartupMarks(fakeClock(null))
     expect(marks.isComplete()).toBe(false)
     marks.mark('windowShown')
@@ -66,6 +66,8 @@ describe('createStartupMarks', () => {
     marks.mark('firstTabLoaded')
     expect(marks.isComplete()).toBe(false)
     marks.mark('webContentReady')
+    expect(marks.isComplete()).toBe(false)
+    marks.mark('chromeLoaded')
     expect(marks.isComplete()).toBe(true)
     expect(marks.record().complete).toBe(true)
   })
