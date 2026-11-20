@@ -45,6 +45,11 @@ import type { ExtensionCommandKeys } from './extension-commands-runner.js'
 import { installDnrWebRequestHandlers } from './dnr-webrequest.js'
 import { closeSidePanels } from './side-panel-runner.js'
 
+/**
+ * Published by `afterReady`, before `afterWindow` has loaded the extensions: every method that installs, changes or
+ * reloads an extension, and every store method, waits for that tail and then acts. `list`, `prefs` and `commandKeys` answer
+ * at once.
+ */
 export interface ExtensionsApi {
   readonly installFromFolder: (dir: string, where?: InstallWhere) => Promise<InstallOutcome>
   readonly installFromFile: (filePath: string, where?: InstallWhere) => Promise<InstallOutcome>
