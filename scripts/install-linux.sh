@@ -184,10 +184,43 @@ install_icon () {
   cp "$found" "$icon_dir/orivon.png"
 }
 
+# True when a process runs its program from inside the folder $1. /proc/<pid>/exe names where each program lives, and a
+# folder renamed while a program runs from it keeps that program's inode, so the name follows the rename.
+runs_from () {
+  local dir exe
+  dir=$(cd "$1" && pwd -P) || return 1
+  for exe in /proc/[0-9]*/exe; do
+    case $(readlink "$exe" 2>/dev/null || true) in "$dir"/*) return 0 ;; esac
+  done
+  return 1
+}
+
+# Removes the tree $1, which an update replaced, unless Orivon runs from it: a running Orivon reads what it had not yet
+# opened (the GPU process loads its libraries again when it restarts) from the folder it started in. A tree in use is
+# renamed to app.held.<pid>, a name the swap never uses, so the next install can swap again and removes it once nothing
+# runs from it. Returns 1 when the tree is kept.
+remove_old_tree () {
+  local tree=$1 held
+  [ -e "$tree" ] || return 0
+  if ! runs_from "$tree"; then
+    rm -rf "$tree"
+    return 0
+  fi
+  case ${tree##*/} in
+    app.held.*) ;;
+    *)
+      held=${tree%/*}/app.held.$$
+      while [ -e "$held" ]; do held=$held.x; done
+      mv "$tree" "$held" || fail "Could not set aside the old copy of Orivon, which is still running."
+      ;;
+  esac
+  return 1
+}
+
 # Unpacks the AppImage in $1 (an absolute path, run from its own folder or a copy) into $2/app. The unpacked tree is
 # built beside the install, on its own filesystem, so the swap is renames: the new tree goes in at a temporary name,
-# the old one is renamed aside, the new one renamed in, the old one removed. A running Orivon keeps the files it has
-# open, and the next start gets the new tree. Nothing is changed when the unpacking fails.
+# the old one is renamed aside, the new one renamed in, the old one removed unless Orivon runs from it (see
+# remove_old_tree). The next start gets the new tree. Nothing is changed when the unpacking fails.
 unpack_app () {
   local package=$1 lib_dir=$2 unpack=$TMP_DIR/unpack log=$TMP_DIR/unpack.log
   mkdir -p "$unpack"
@@ -206,7 +239,8 @@ unpack_app () {
     [ ! -e "$lib_dir/app.old" ] || mv "$lib_dir/app.old" "$lib_dir/app"
     fail "Moving Orivon into place failed; the old one was put back."
   fi
-  rm -rf "$lib_dir/app.old"
+  remove_old_tree "$lib_dir/app.old" \
+    || say "Orivon is running: restart it to use the new version; the old copy is removed at the next install."
 }
 
 main () {
@@ -236,11 +270,13 @@ main () {
   plain_path "$lib_dir" || fail "$lib_dir has a character a desktop entry cannot hold here; set HOME to a plainer path."
 
   mkdir -p "$lib_dir" "$apps_dir" || fail "Cannot create folders under $HOME/.local."
-  # What an interrupted run left: its working folder, and the new tree. When it stopped between the two renames of
-  # the swap (the old tree aside, the new one not yet in), the old tree is the install and goes back.
+  # What an earlier run left: its working folder, and the new tree. When it stopped between the two renames of the
+  # swap (the old tree aside, the new one not yet in), the old tree is the install and goes back. Old trees a running
+  # Orivon held are removed once it is gone.
   rm -rf "$lib_dir"/.install.* "$lib_dir/app.new"
   if [ ! -e "$lib_dir/app" ] && [ -e "$lib_dir/app.old" ]; then mv "$lib_dir/app.old" "$lib_dir/app"; fi
-  rm -rf "$lib_dir/app.old"
+  local left
+  for left in "$lib_dir/app.old" "$lib_dir"/app.held.*; do remove_old_tree "$left" || true; done
   # The working folder is beside the install, not under /tmp: the download and the unpacked tree are hundreds of
   # megabytes, /tmp is often memory, and a program may not run from it (noexec) while it may from the home folder.
   TMP_DIR=$(mktemp -d "$lib_dir/.install.XXXXXX") || fail "Cannot write to $lib_dir."

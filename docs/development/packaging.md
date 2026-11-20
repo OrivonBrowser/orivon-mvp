@@ -785,10 +785,12 @@ a packaged program in a folder, and what must know it came from an AppImage find
 `appimage` channel).
 
 **Updating and converting.** The new tree is unpacked beside the install and swapped in by renames: the old `app/` is
-renamed aside, the new one renamed in, the old one removed. A running Orivon keeps the files it has open and the next
-start is the new version, but it may fail to open a file it had not yet opened (a locale, a rarely used library), so
-restart it after an update. Nothing is changed when the unpacking fails, and a swap that was interrupted between its two
-renames is undone by the next run. An install of the earlier layout, which kept `Orivon.AppImage` and a launcher that
+renamed aside, the new one renamed in, the old one removed, and the next start is the new version. A running Orivon
+reads what it had not yet opened (a locale, a library the GPU process loads again when it restarts) from the folder it
+started in, so the old tree is removed only when no process's `/proc/<pid>/exe` is under it: a rename keeps the inode,
+so the link follows the renamed folder. Otherwise it is renamed to `app.held.<pid>`, the installer says to restart
+Orivon, and the next install removes it once nothing runs from it. Nothing is changed when the unpacking fails, and a
+swap that was interrupted between its two renames is undone by the next run. An install of the earlier layout, which kept `Orivon.AppImage` and a launcher that
 mounted it, is converted by running the command again: its launcher is replaced, its desktop entry and `~/.local/bin`
 link keep working, and the AppImage is removed.
 

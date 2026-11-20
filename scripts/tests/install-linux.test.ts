@@ -1,6 +1,6 @@
-import { spawn, spawnSync } from 'node:child_process'
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -119,7 +119,30 @@ beforeEach(() => {
   chmodSync(join(toolDir, 'curl'), 0o755)
 })
 
-afterEach(() => { rmSync(root, { recursive: true, force: true }) })
+const holders: ChildProcess[] = []
+
+afterEach(() => {
+  for (const child of holders.splice(0)) child.kill('SIGKILL')
+  rmSync(root, { recursive: true, force: true })
+})
+
+/** Starts a program whose executable file is in `dir`, as a running Orivon's is in the folder it was installed to. */
+function runFrom (dir: string): ChildProcess {
+  const sleep = spawnSync('sh', ['-c', 'command -v sleep'], { encoding: 'utf8' }).stdout.trim()
+  mkdirSync(dir, { recursive: true })
+  copyFileSync(sleep, join(dir, 'held-sleep'))
+  chmodSync(join(dir, 'held-sleep'), 0o755)
+  const child = spawn(join(dir, 'held-sleep'), ['300'], { stdio: 'ignore' })
+  holders.push(child)
+  return child
+}
+
+/** Ends a program started by runFrom and waits until it is gone. */
+async function stop (child: ChildProcess): Promise<void> {
+  const gone = new Promise<void>((resolve) => { child.on('exit', () => { resolve() }) })
+  child.kill('SIGKILL')
+  await gone
+}
 
 describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
   it('installs the newest version, pre-releases counted, drafts and non-version tags and a release with no AppImage skipped', () => {
@@ -195,6 +218,45 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     expect(seen).toContain('# 0.0.8')
     expect(installedVersion()).toBe('# 0.0.9')
     expect(libEntries()).toEqual(['app', 'orivon'])
+  })
+
+  it('keeps the old tree while Orivon runs from it, says to restart, and removes it at the next install once Orivon has stopped', async () => {
+    publish([withImage('v0.0.8')])
+    expect(run(['--no-launch']).status).toBe(0)
+    const running = runFrom(app())
+    publish([withImage('v0.0.9'), withImage('v0.0.8')])
+    const update = run(['--no-launch'])
+    expect(update.status, update.out).toBe(0)
+    expect(update.out).toContain('Orivon is running: restart it to use the new version')
+    expect(installedVersion()).toBe('# 0.0.9')
+    const held = libEntries().filter((name) => name.startsWith('app.held.'))
+    expect(held).toHaveLength(1)
+    expect(libEntries()).toEqual(['app', held[0], 'orivon'])
+    expect(existsSync(join(lib(), held[0] ?? '', 'held-sleep'))).toBe(true)
+    expect(readFileSync(join(lib(), held[0] ?? '', 'version'), 'utf8').trim()).toBe('# 0.0.8')
+    // A second update with Orivon still running replaces the tree of the first one, which nothing runs from, and keeps the held one.
+    publish([withImage('v0.0.10'), withImage('v0.0.9')])
+    const again = run(['--no-launch'])
+    expect(again.status, again.out).toBe(0)
+    expect(again.out).not.toContain('Orivon is running')
+    expect(installedVersion()).toBe('# 0.0.10')
+    expect(libEntries()).toEqual(['app', held[0], 'orivon'])
+    await stop(running)
+    expect(run(['--no-launch']).status).toBe(0)
+    expect(libEntries()).toEqual(['app', 'orivon'])
+  }, 30_000)
+
+  it('removes the old trees of an earlier run that nothing runs from, and keeps one Orivon still runs from', () => {
+    publish([withImage('v0.0.9', undefined, 'fails')])
+    mkdirSync(app(), { recursive: true })
+    writeFileSync(join(app(), 'version'), '# 0.0.7\n')
+    mkdirSync(join(lib(), 'app.old'))
+    writeFileSync(join(lib(), 'app.old', 'version'), '# 0.0.6\n')
+    mkdirSync(join(lib(), 'app.held.1'))
+    runFrom(join(lib(), 'app.held.2'))
+    expect(run(['--no-launch']).status).toBe(1)
+    expect(installedVersion()).toBe('# 0.0.7')
+    expect(libEntries()).toEqual(['app', 'app.held.2'])
   })
 
   it('converts an install that kept the AppImage: the AppImage goes, the launcher and the link stay valid', () => {
