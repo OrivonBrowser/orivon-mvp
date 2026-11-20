@@ -7,7 +7,7 @@ import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ElectronApplication, Locator, Page } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
-import { assertNoElectronSurvivors, closeElectron, launchElectron, profileDirOf } from '../support/launch-electron.mjs'
+import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput, profileDirOf } from '../support/launch-electron.mjs'
 import { evaluateRetrying, findChrome, HERMETIC_RESOLVER, waitFor } from '../support/smoke-helpers.mjs'
 import { readRegistry } from '../../src/main/extensions/registry-runner.js'
 import { serializeRegistry } from '../../src/main/extensions/registry.js'
@@ -64,6 +64,13 @@ it('starts a new profile with the bookmarks, uBlock Origin pinned, the Extension
     const pinnedOnDisk = async (): Promise<unknown> => { try { return (JSON.parse(await readFile(prefsFile, 'utf8')) as { extensions: Record<string, { pinned: boolean }> }).extensions[UBLOCK_ORIGIN_ID]?.pinned } catch { return undefined } }
     expect(await waitFor(async () => await pinnedOnDisk() === true)).toBe(true)
     expect(await waitFor(async () => (await toolbarIds(chrome)).includes(UBLOCK_ORIGIN_ID))).toBe(true)
+
+    // The start-up line says it was the first start of a profile and times the seeding of the bundled extension.
+    const startupLine = (): string | undefined => /^\[orivon\]\[startup\] (\{.*\})$/m.exec(mainOutput(app))?.[1]
+    expect(await waitFor(() => startupLine() !== undefined)).toBe(true)
+    const startup = JSON.parse(startupLine() as string) as { firstRun: boolean, marks: Record<string, number | null> }
+    expect(startup.firstRun).toBe(true)
+    expect(Number.isInteger(startup.marks['extensionsSeedStart']) && Number.isInteger(startup.marks['extensionsSeeded'])).toBe(true)
 
     expect(await evaluateRetrying(chrome, () => {
       const button = document.getElementById('extensions-menu-btn')

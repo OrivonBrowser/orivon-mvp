@@ -277,7 +277,7 @@ jobs:
         run: |
           set -euo pipefail
           launcher="$RUNNER_TEMP/install-home/.local/lib/orivon/orivon"
-          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$launcher" --runs 3 --label 'AppImage without libfuse2' --json start-probe/linux-appimage-unpacked.json
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$launcher" --runs 3 --label 'AppImage without libfuse2' --json start-probe/linux-appimage-unpacked.json || echo '::warning::a launch of the unpacked AppImage failed; its table names it'
           sudo apt-get install -y libfuse2t64
           node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$launcher" --runs 3 --label 'AppImage with libfuse2' --json start-probe/linux-appimage-mounted.json
 

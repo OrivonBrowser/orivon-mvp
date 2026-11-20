@@ -15,6 +15,7 @@ import { readRegistry } from './registry-runner.js'
 import { startsFromDefaultProfile } from '../default-profile/profile-start.js'
 import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
 import { seedBundledExtensions } from './seed-bundled.js'
+import { markStartup } from '../startup/startup-marks-runner.js'
 import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome, type InstallWhere } from './install-runner.js'
 import { setEnabled, uninstall } from './install-lifecycle.js'
 import { createExtensionInstallPrompt } from './extension-install-prompt.js'
@@ -190,7 +191,11 @@ export const extensionsSubsystem: Subsystem = {
     await loadEnabledExtensions(userDataPath)
 
     const install: InstallContext = { userDataPath, session: session.defaultSession, prompt: createExtensionInstallPrompt(), prefs, privateSession: ctx.privateSession, pinInstalled: () => shellServices()?.settings.get('extensions.pinInstalled') === true, clearExtensionStorage: async (id, target) => { await clearChromeStorage(target ?? session.defaultSession, id) }, profileSessions: profileExtensionSessions, closeSidePanels }
-    if (seeds) await seedBundledExtensions(install, currentDefaultProfileDir())
+    if (seeds) {
+      markStartup('extensionsSeedStart')
+      await seedBundledExtensions(install, currentDefaultProfileDir())
+      markStartup('extensionsSeeded')
+    }
     const preloadPath = join(import.meta.dirname, '../preload/web-store.js')
     // Started in every runtime: a store tab in a private window must never reach the native
     // `chrome.webstorePrivate`. In a private one installs are denied inside it.

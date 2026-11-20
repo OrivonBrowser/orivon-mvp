@@ -11,6 +11,7 @@ import { app, BaseWindow, nativeTheme, screen } from 'electron'
 import { join } from 'node:path'
 import type { Placement } from './window-options.js'
 import { onThemeUpdated } from './theme-colors.js'
+import { markStartup } from '../startup/startup-marks-runner.js'
 
 // Kept in sync with src/renderer/style.css's --wchrome/--wink tokens --
 // same dual-source-of-truth pattern as window.ts's CHROME_HEIGHT. The overlay
@@ -222,6 +223,7 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
       win.setBounds(initialBounds)
       if (options.maximized === true) win.maximize()
     }
+    if (options.firstOfLaunch === true) markStartup('windowShown')
     options.onShown?.()
   }
   if (options.firstOfLaunch !== true && options.inactive !== true) {
@@ -229,6 +231,10 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
     return
   }
   ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
-    .once('ready-to-show', () => { showOnce(); options.onPainted?.() })
+    .once('ready-to-show', () => {
+      if (options.firstOfLaunch === true) markStartup('chromeReadyToShow')
+      showOnce()
+      options.onPainted?.()
+    })
   setTimeout(showOnce, 1000)
 }

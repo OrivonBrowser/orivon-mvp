@@ -6,7 +6,7 @@ about one. `log-ring.ts` and `log-file.ts` keep the main process's console outpu
 piped output into console lines and `host-fork.ts` forks every host that way; `crash-records.ts` and `crash-store.ts` the crash records (`crashes.json`, newest 30,
 dropped after 30 days) and the run marker (`running.json`) that says whether the last run ended in an orderly quit;
 `dumps.ts` and `dump-files.ts` the native crash dumps Crashpad leaves; `diagnostics-service.ts` composes them for one
-run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `gpu-reading.ts` parses what Chromium reports about the graphics setup (the feature map, the device list and the names of a device) for every reader of it, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code; `orivon://gpu` shows its sentence; the block also carries the WebGPU question's default and how many sites are allowed and blocked for it, counts only, `siteAnswerCounts`), `report-payload.ts` builds the body and cuts
+run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `gpu-reading.ts` parses what Chromium reports about the graphics setup (the feature map, the device list and the names of a device) for every reader of it, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code, and the WebGPU question's default with the counts of sites allowed and blocked, `siteAnswerCounts`; `orivon://gpu` shows its sentence), and the start-up record (`../startup/startup-marks.ts`: the marks of this start and each hook's duration), `report-payload.ts` builds the body and cuts
 every field to the length the server accepts, `address-redact.ts` cuts an address in a log line to its scheme and the kind of its site, `report-text.ts` writes the Markdown for "Copy as text",
 `report-channel.ts` posts and reads the status, `sent-reports.ts` keeps the list of what was sent, and
 `report-domain.ts` is what [`orivon://report`](../../renderer/pages/report/) may ask. `diagnostics-runner.ts` and
@@ -62,9 +62,9 @@ run: what a host held back is then in the file, not lost with the process. A hos
 `ORIVON_IPFS_NODE_LOG`, `ORIVON_SWARM_NODE_LOG`, `ORIVON_NYM_TUNNEL_LOG`, each `=1`) is on is neither collapsed, capped nor
 filtered: a developer running from a terminal sees everything the host prints. The 60 is *provisional*. A host writes mainly one
 line per site mounted, one per file of 256 KiB or more and one per failure, so only a failure flood reaches 60 a minute.
-Measured on a source run of the Swarm end-to-end spec (six Swarm sites mounted and one large file read in 13 s), the verifier host
-wrote 6 lines, 4 of them within one second, beside 3 of main's own; the smoke run, which loads no `.eth` name, made it write none,
-and the IPFS node, Swarm node and Nym hosts ran in neither. A real person's log would settle the number.
+A source run of the Swarm end-to-end spec (six sites mounted, one large file read, 13 s) made the verifier host write 6 lines, 4 within
+one second; the smoke run, which loads no `.eth` name, made it write none, and the other hosts ran in neither. A real person's log
+would settle the number.
 
 **The Nym tunnel's host writes only its own lines to the log.** The WebAssembly library the host runs passes its own strings to
 `console.error` and `console.warn`, and they can name where a Nym-routed app connects, which is what Nym exists to hide. Every line

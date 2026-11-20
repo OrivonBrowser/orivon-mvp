@@ -124,7 +124,12 @@ it('shows the literal report, sends it only on Send, and deletes it from the ser
     expect(body['version']).toMatch(/^[0-9A-Za-z.+-]{1,32}$/)
     // The literal preview is what was sent: the diagnostics and the log of the moment the page asked.
     expect(body['diagnostics']).toEqual(full['diagnostics'])
-    expect(Object.keys(body['diagnostics'] as object)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'recentCrashes'])
+    expect(Object.keys(body['diagnostics'] as object)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'startup', 'recentCrashes'])
+    // The start-up record of this run: the launch's own marks, whole milliseconds, and the hooks that ran.
+    const startup = (body['diagnostics'] as { startup: { complete: boolean, marks: Record<string, number | null>, hooks: Array<{ name: string, phase: string, ms: number }> } }).startup
+    for (const name of ['entry', 'launched', 'bootStart', 'appReady', 'afterReadyDone', 'storesLoaded', 'firstWindowCreated']) expect(Number.isInteger(startup.marks[name])).toBe(true)
+    expect(startup.hooks.length).toBeGreaterThan(0)
+    expect(startup.hooks.every((hook) => Number.isInteger(hook.ms) && ['beforeReady', 'afterReady'].includes(hook.phase))).toBe(true)
     // Main states WebGPU's state and the reason in one word each; on a virtual display it is off.
     const webgpu = (body['diagnostics'] as { gpu: { webgpu: Record<string, string> } }).gpu.webgpu
     expect(Object.keys(webgpu)).toEqual(['state', 'reason'])

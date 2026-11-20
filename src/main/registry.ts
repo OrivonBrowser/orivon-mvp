@@ -411,6 +411,9 @@ export interface SubsystemFailure {
   readonly critical: boolean
 }
 
+/** Told how long each hook took, in milliseconds, whether it returned or threw. */
+export type HookTimed = (name: string, phase: 'beforeReady' | 'afterReady', ms: number) => void
+
 /**
  * Failures are collected and returned, never swallowed and never propagated.
  *
@@ -420,15 +423,17 @@ export interface SubsystemFailure {
  * enforcing nothing, which is the one class of failure that must never be
  * quiet (handle-contracts.md's "What the shim must do" section, rule 2).
  */
-export function runBeforeReady (list: Subsystem[]): SubsystemFailure[] {
+export function runBeforeReady (list: Subsystem[], onTimed?: HookTimed): SubsystemFailure[] {
   const failures: SubsystemFailure[] = []
   for (const subsystem of list) {
     if (subsystem.beforeReady === undefined) continue
+    const started = performance.now()
     try {
       subsystem.beforeReady()
     } catch (error) {
       failures.push({ name: subsystem.name, phase: 'beforeReady', error, critical: subsystem.critical === true })
     }
+    onTimed?.(subsystem.name, 'beforeReady', performance.now() - started)
   }
   return failures
 }
@@ -442,16 +447,19 @@ export function runBeforeReady (list: Subsystem[]): SubsystemFailure[] {
  */
 export async function runAfterReady (
   list: Subsystem[],
-  ctx: SubsystemContext
+  ctx: SubsystemContext,
+  onTimed?: HookTimed
 ): Promise<SubsystemFailure[]> {
   const failures: SubsystemFailure[] = []
   for (const subsystem of list) {
     if (subsystem.afterReady === undefined) continue
+    const started = performance.now()
     try {
       await subsystem.afterReady(ctx)
     } catch (error) {
       failures.push({ name: subsystem.name, phase: 'afterReady', error, critical: subsystem.critical === true })
     }
+    onTimed?.(subsystem.name, 'afterReady', performance.now() - started)
   }
   return failures
 }
