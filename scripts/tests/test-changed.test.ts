@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { declaredReads, parseDeclarations, planTestRun } from '../test-changed.mjs'
+import { declaredReads, dependencyFingerprint, parseDeclarations, planTestRun } from '../test-changed.mjs'
 
 // Every test's declaration is read here, and a folder renamed away voids one, so any change to code brings this test.
 // test:changed reads src/ scripts/
@@ -64,6 +64,19 @@ describe('planTestRun', () => {
 
   it('runs nothing when no unit test covers what changed', () => {
     expect(planTestRun(['docs/README.md', 'devlog/journal.md'], nobody, nothing)).toEqual({ mode: 'none' })
+  })
+})
+
+describe('dependencyFingerprint', () => {
+  const manifest = (extra: object): string => JSON.stringify({ type: 'module', scripts: { a: 'x' }, devDependencies: { vite: '1.0.0' }, ...extra })
+
+  it('sees a change of a dependency, an override or the shim\'s package list, and not of a script', () => {
+    const before = dependencyFingerprint(manifest({}))
+    expect(dependencyFingerprint(manifest({ scripts: { a: 'y' } }))).toBe(before)
+    expect(dependencyFingerprint(manifest({ devDependencies: { vite: '2.0.0' } }))).not.toBe(before)
+    expect(dependencyFingerprint(manifest({ overrides: { foo: '1.0.0' } }))).not.toBe(before)
+    expect(dependencyFingerprint(manifest({ orivon: { shimPackages: ['buffer'] } }))).not.toBe(before)
+    expect(dependencyFingerprint(manifest({ orivon: { shimPackages: ['buffer', 'events'] } }))).not.toBe(dependencyFingerprint(manifest({ orivon: { shimPackages: ['buffer'] } })))
   })
 })
 

@@ -148,26 +148,31 @@ function installedAt (name: string, fromDir: string): string | undefined {
   return undefined
 }
 
-/** Every package this checkout's `dependencies` reach, transitively: what the shim stands on, and never a devDependency. */
+/**
+ * Every package `orivon.shimPackages` in this checkout's package.json names, and the packages
+ * each depends on, transitively: what the shim stands on. Every other package of this checkout's
+ * node_modules (its build tools, the libraries the browser's own process bundles) is outside it.
+ */
 function shimPackages (): Set<string> {
   if (shimPackageDirs !== undefined) return shimPackageDirs
   const seen = new Set<string>()
-  const visit = (json: { dependencies?: Record<string, string> }, dir: string): void => {
-    for (const name of Object.keys(json.dependencies ?? {})) {
+  const visit = (names: readonly string[], dir: string): void => {
+    for (const name of names) {
       const found = installedAt(name, dir)
       if (found === undefined || seen.has(found)) continue
       seen.add(found)
-      visit(JSON.parse(readFileSync(join(found, 'package.json'), 'utf8')), found)
+      visit(Object.keys(JSON.parse(readFileSync(join(found, 'package.json'), 'utf8')).dependencies ?? {}), found)
     }
   }
-  visit(JSON.parse(readFileSync(join(CHECKOUT_ROOT, 'package.json'), 'utf8')), CHECKOUT_ROOT)
+  const root: { orivon?: { shimPackages?: readonly string[] } } = JSON.parse(readFileSync(join(CHECKOUT_ROOT, 'package.json'), 'utf8'))
+  visit(root.orivon?.shimPackages ?? [], CHECKOUT_ROOT)
   shimPackageDirs = seen
   return seen
 }
 
 /**
  * True for a file of the shim or of a package the shim depends on: those run in a page, so a
- * package's `browser` field applies to them. A devDependency of this checkout does not.
+ * package's `browser` field applies to them. Another package of this checkout does not.
  */
 function isShimTree (file: string): boolean {
   if (file.startsWith(SHIM_DIR)) return true
