@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  anyFailed, appVersionOf, formatReport, formatTable, numericLeaves, parseArgs, parseStartupRecord, readAsarFile, seriesStats, stats
+  anyFailed, appVersionOf, browserPid, formatReport, formatTable, numericLeaves, parseArgs, parseStartupRecord, readAsarFile, seriesStats, stats
 } from '../first-start-probe.mjs'
 
 describe('parseArgs', () => {
@@ -188,5 +188,26 @@ describe('the version of a package', () => {
     writeFileSync(mac, asar({ 'package.json': '{"version":"0.3.0"}' }))
     expect(appVersionOf(join(mac, '..', '..', 'MacOS', 'Orivon'))).toBe('0.3.0')
     expect(appVersionOf(join(packageAt('Orivon.AppImage'), '..', 'Orivon.AppImage'))).toBeUndefined()
+  })
+})
+
+describe('browserPid', () => {
+  const table = [
+    { pid: 100, ppid: 1, args: 'bash /home/a/.local/lib/orivon/orivon --user-data-dir=/tmp/p' },
+    { pid: 101, ppid: 100, args: '/home/a/.local/lib/orivon/Orivon.AppImage --appimage-extract-and-run' },
+    { pid: 102, ppid: 101, args: '/tmp/appimage_extracted_x/orivon --user-data-dir=/tmp/p' },
+    { pid: 103, ppid: 102, args: '/tmp/appimage_extracted_x/orivon --type=zygote' },
+    { pid: 104, ppid: 103, args: '/tmp/appimage_extracted_x/orivon --type=renderer' },
+    { pid: 199, ppid: 1, args: '/opt/Other/other' },
+    { pid: 200, ppid: 199, args: '/opt/Other/other --type=gpu-process' }
+  ]
+
+  it('finds Electron behind a launcher and the AppImage runtime, and never another program\'s browser', () => {
+    expect(browserPid(100, table)).toBe(102)
+  })
+
+  it('is the launched process itself when no helper of its own runs', () => {
+    expect(browserPid(100, table.filter((entry) => entry.pid < 103))).toBe(100)
+    expect(browserPid(300, table)).toBe(300)
   })
 })
