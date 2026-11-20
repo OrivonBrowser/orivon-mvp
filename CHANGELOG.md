@@ -43,6 +43,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **The Linux one-line install starts as fast as the `.deb`**: it unpacks the AppImage once, at install time, instead of keeping it, so a click no longer pays about two seconds of mounting or unpacking, and it needs no `libfuse2`. Run the command again to update, or to convert an earlier install; restart Orivon after an update.
 - **Cookies and site data no longer clears a Web3 site you allowed**: its data sits in the session websites use, so that choice now leaves its cookies and storage alone and App data clears them; the Cache API of every site, an allowed one included, still goes with site data.
 - **A page in an ordinary tab that loads a file from an allowed web3 app's own address gets it from the copy Orivon keeps**, with the app's own rules, and it works with no network. Files are checked as before.
 - **An allowed Web3 site gets its permissions only on a page Orivon checked**: a site with a tunnel of its own opens at once while its copy is still being made, each file checked and read through that tunnel, and a page of the site left open from before you allowed it loads again.

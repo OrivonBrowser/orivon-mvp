@@ -1,6 +1,6 @@
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -10,15 +10,32 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 const SCRIPT = join(process.cwd(), 'scripts', 'install-linux.sh')
 const onUnix = process.platform !== 'win32'
 
-const APPIMAGE = `#!/bin/sh
-# Stands in for the AppImage: unpacks an icon on --appimage-extract, otherwise records what it was started with.
-if [ "$1" = "--appimage-extract" ]; then
-  mkdir -p squashfs-root/usr/share/icons/hicolor/512x512/apps
-  echo icon > squashfs-root/usr/share/icons/hicolor/512x512/apps/orivon.png
-  exit 0
-fi
-echo "$@" > "$ORIVON_TEST_STARTED"
-`
+/** What a stand-in AppImage does when asked to unpack itself: a whole tree, a failure, or a tree with no AppRun. */
+type Unpacking = 'tree' | 'fails' | 'no-apprun'
+
+const STAND_IN_APPRUN = '#!/bin/sh\necho "$@" > "$ORIVON_TEST_STARTED"\n'
+
+/** The stand-in AppImage, as a shell script. `--appimage-extract` writes squashfs-root in the working folder, as the real
+ * runtime does with no FUSE: an icon, the version (the script's last line), and a stand-in AppRun that records what it was
+ * started with. Run any other way it records that, so a test can tell the AppImage itself was started. */
+function appImageScript (unpacking: Unpacking): string {
+  const extract = unpacking === 'fails'
+    ? ['  echo "FATAL: no space left on device" >&2', '  exit 1']
+    : [
+        '  mkdir -p squashfs-root/usr/share/icons/hicolor/512x512/apps',
+        '  echo icon > squashfs-root/usr/share/icons/hicolor/512x512/apps/orivon.png',
+        '  tail -n 1 "$0" > squashfs-root/version',
+        ...(unpacking === 'tree'
+          ? [
+              `  printf '%s' '${STAND_IN_APPRUN}' > squashfs-root/AppRun`,
+              "  printf '#!/bin/sh\\nexit 0\\n' > squashfs-root/orivon",
+              '  chmod 755 squashfs-root/AppRun squashfs-root/orivon'
+            ]
+          : []),
+        '  exit 0'
+      ]
+  return ['#!/bin/sh', 'if [ "$1" = "--appimage-extract" ]; then', ...extract, 'fi', 'echo "the AppImage was started itself: $@" > "$ORIVON_TEST_STARTED"', ''].join('\n')
+}
 
 const CURL = `#!/bin/sh
 # Stands in for curl: the release list, one AppImage per file name, nothing else.
@@ -42,10 +59,6 @@ case "$url" in
 esac
 `
 
-/** The three things the launcher needs before it lets the AppImage mount itself, made by stand-ins so no machine decides. */
-const FAKE_FUSERMOUNT = '#!/bin/sh\nexit 0\n'
-const FAKE_LDCONFIG = '#!/bin/sh\necho "\tlibfuse.so.2 (libc6,x86-64) => /usr/lib/x86_64-linux-gnu/libfuse.so.2"\n'
-
 interface Asset { name: string, digest?: string }
 interface Release { tag: string, draft?: boolean, assets?: Asset[], body?: string }
 
@@ -54,14 +67,12 @@ let home: string
 let fixtures: string
 let toolDir: string
 let started: string
-let fuseUsable: Record<string, string>
-let fuseUnusable: Record<string, string>
 
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex')
 
 /** One AppImage file per version, so a different version can be told apart on disk. */
-function appImageFor (version: string): { name: string, digest: string } {
-  const body = `${APPIMAGE}# ${version}\n`
+function appImageFor (version: string, unpacking: Unpacking = 'tree'): { name: string, digest: string } {
+  const body = `${appImageScript(unpacking)}# ${version}\n`
   const name = `Orivon-${version}-x86_64.AppImage`
   writeFileSync(join(fixtures, name), body)
   return { name, digest: `sha256:${sha(body)}` }
@@ -77,21 +88,25 @@ function publish (releases: Release[]): void {
   }))))
 }
 
-function withImage (tag: string, tamper?: (asset: { name: string, digest: string }) => Asset): Release {
-  const made = appImageFor(tag.replace(/^v/, ''))
+function withImage (tag: string, tamper?: (asset: { name: string, digest: string }) => Asset, unpacking: Unpacking = 'tree'): Release {
+  const made = appImageFor(tag.replace(/^v/, ''), unpacking)
   return { tag, assets: [tamper === undefined ? made : tamper(made)] }
 }
 
-function run (args: string[] = [], env: Record<string, string> = {}): { status: number | null, out: string } {
+function run (args: string[] = [], env: Record<string, string> = {}, cwd?: string): { status: number | null, out: string } {
   const result = spawnSync('bash', [SCRIPT, ...args], {
     encoding: 'utf8',
-    env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, HOME: home, TMPDIR: root, FIXTURES: fixtures, ORIVON_TEST_STARTED: started, ...fuseUsable, ...env }
+    ...(cwd === undefined ? {} : { cwd }),
+    env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, HOME: home, FIXTURES: fixtures, ORIVON_TEST_STARTED: started, ...env }
   })
   return { status: result.status, out: `${result.stdout}${result.stderr}` }
 }
 
 const lib = (): string => join(home, '.local', 'lib', 'orivon')
-const installedVersion = (): string => readFileSync(join(lib(), 'Orivon.AppImage'), 'utf8').trim().split('\n').at(-1) ?? ''
+const app = (): string => join(lib(), 'app')
+const installedVersion = (): string => readFileSync(join(app(), 'version'), 'utf8').trim()
+/** What is in the install folder, a working folder or a leftover of the swap included. */
+const libEntries = (): string[] => readdirSync(lib()).sort()
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), 'orivon-install-linux-'))
@@ -101,13 +116,7 @@ beforeEach(() => {
   started = join(root, 'started')
   for (const dir of [home, fixtures, toolDir]) mkdirSync(dir, { recursive: true })
   writeFileSync(join(toolDir, 'curl'), CURL)
-  writeFileSync(join(toolDir, 'fusermount'), FAKE_FUSERMOUNT)
-  writeFileSync(join(toolDir, 'ldconfig'), FAKE_LDCONFIG)
-  for (const tool of ['curl', 'fusermount', 'ldconfig']) chmodSync(join(toolDir, tool), 0o755)
-  writeFileSync(join(root, 'fuse-device'), '')
-  // Every launch starts from "FUSE works", and a test that wants it not to say so; neither depends on this machine's /dev/fuse.
-  fuseUsable = { ORIVON_FUSE_DEVICE: join(root, 'fuse-device') }
-  fuseUnusable = { ORIVON_FUSE_DEVICE: join(root, 'no-such-device') }
+  chmodSync(join(toolDir, 'curl'), 0o755)
 })
 
 afterEach(() => { rmSync(root, { recursive: true, force: true }) })
@@ -144,11 +153,12 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     expect(status).toBe(0)
   })
 
-  it('writes the AppImage, the launcher, the icon and a desktop entry that lists http and https', () => {
+  it('unpacks the app once beside a launcher, keeps no AppImage, and writes the icon and a desktop entry that lists http and https', () => {
     publish([withImage('v0.0.8')])
     expect(run(['--no-launch']).status).toBe(0)
-    expect((lstatSync(join(lib(), 'Orivon.AppImage')).mode & 0o111) !== 0).toBe(true)
+    expect((lstatSync(join(app(), 'AppRun')).mode & 0o111) !== 0).toBe(true)
     expect((lstatSync(join(lib(), 'orivon')).mode & 0o111) !== 0).toBe(true)
+    expect(libEntries()).toEqual(['app', 'orivon'])
     expect(readFileSync(join(home, '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'orivon.png'), 'utf8')).toBe('icon\n')
     const entry = readFileSync(join(home, '.local', 'share', 'applications', 'orivon.desktop'), 'utf8')
     expect(entry).toContain(`Exec="${join(lib(), 'orivon')}" %U`)
@@ -158,14 +168,97 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     expect(existsSync(started)).toBe(false)
   })
 
-  it('updates in place when run again, and leaves no temporary file behind', () => {
+  it('updates in place when run again, and leaves no temporary file or old tree behind', () => {
     publish([withImage('v0.0.8')])
     expect(run(['--no-launch']).status).toBe(0)
     publish([withImage('v0.0.9'), withImage('v0.0.8')])
     expect(run(['--no-launch']).status).toBe(0)
     expect(installedVersion()).toBe('# 0.0.9')
-    expect(existsSync(join(lib(), 'Orivon.AppImage.new'))).toBe(false)
-    expect(existsSync(join(lib(), 'orivon.new'))).toBe(false)
+    expect(libEntries()).toEqual(['app', 'orivon'])
+  })
+
+  it('updates while Orivon runs: the running program keeps the files it opened, and the next start is the new version', async () => {
+    publish([withImage('v0.0.8')])
+    expect(run(['--no-launch']).status).toBe(0)
+    // A stand-in for the running browser: it opens a file of the old tree, says so, and reads it after the update.
+    const running = spawn('sh', ['-c', 'exec 3<"$1"; echo open; read go; cat <&3', 'sh', join(app(), 'version')], { stdio: ['pipe', 'pipe', 'inherit'] })
+    let seen = ''
+    running.stdout.setEncoding('utf8')
+    running.stdout.on('data', (chunk: string) => { seen += chunk })
+    for (let waited = 0; waited < 10_000 && !seen.includes('open'); waited += 50) await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(seen).toContain('open')
+    const finished = new Promise<void>((resolve) => { running.on('close', () => { resolve() }) })
+    publish([withImage('v0.0.9'), withImage('v0.0.8')])
+    expect(run(['--no-launch']).status).toBe(0)
+    running.stdin.write('go\n')
+    await finished
+    expect(seen).toContain('# 0.0.8')
+    expect(installedVersion()).toBe('# 0.0.9')
+    expect(libEntries()).toEqual(['app', 'orivon'])
+  })
+
+  it('converts an install that kept the AppImage: the AppImage goes, the launcher and the link stay valid', () => {
+    mkdirSync(lib(), { recursive: true })
+    writeFileSync(join(lib(), 'Orivon.AppImage'), '#!/bin/sh\n# 0.0.7\n')
+    writeFileSync(join(lib(), 'orivon'), '#!/bin/sh\nexec "$(dirname "$0")/Orivon.AppImage" "$@"\n')
+    chmodSync(join(lib(), 'Orivon.AppImage'), 0o755)
+    chmodSync(join(lib(), 'orivon'), 0o755)
+    mkdirSync(join(home, '.local', 'bin'), { recursive: true })
+    symlinkSync(join(lib(), 'orivon'), join(home, '.local', 'bin', 'orivon'))
+    publish([withImage('v0.0.8')])
+    const { status, out } = run(['--no-launch'], { PATH: `${join(home, '.local', 'bin')}:${toolDir}:${process.env['PATH'] ?? ''}` })
+    expect(status, out).toBe(0)
+    expect(out).toContain('Converted the earlier install')
+    expect(libEntries()).toEqual(['app', 'orivon'])
+    expect(installedVersion()).toBe('# 0.0.8')
+    expect(readFileSync(join(lib(), 'orivon'), 'utf8')).toContain('app/AppRun')
+    expect(readlinkSync(join(home, '.local', 'bin', 'orivon'))).toBe(join(lib(), 'orivon'))
+    expect(spawnSync(join(home, '.local', 'bin', 'orivon'), ['--new-window'], { env: { ORIVON_TEST_STARTED: started } }).status).toBe(0)
+    expect(readFileSync(started, 'utf8').trim()).toBe('--new-window')
+  })
+
+  it('changes nothing when the AppImage cannot be unpacked, and says why', () => {
+    publish([withImage('v0.0.8')])
+    expect(run(['--no-launch']).status).toBe(0)
+    publish([withImage('v0.0.9', undefined, 'fails'), withImage('v0.0.8')])
+    const { status, out } = run(['--no-launch'])
+    expect(status).toBe(1)
+    expect(out).toContain('Unpacking Orivon failed')
+    expect(out).toContain('no space left on device')
+    expect(out).toContain('Nothing was changed')
+    expect(installedVersion()).toBe('# 0.0.8')
+    expect(libEntries()).toEqual(['app', 'orivon'])
+  })
+
+  it('refuses an AppImage that unpacks without an AppRun, and installs nothing', () => {
+    publish([withImage('v0.0.8', undefined, 'no-apprun')])
+    const { status, out } = run(['--no-launch'])
+    expect(status).toBe(1)
+    expect(out).toContain('without an AppRun')
+    expect(existsSync(app())).toBe(false)
+    expect(existsSync(join(lib(), 'orivon'))).toBe(false)
+  })
+
+  it('puts back the tree an interrupted update had set aside, and clears its other leftovers', () => {
+    publish([withImage('v0.0.9', undefined, 'fails')])
+    mkdirSync(join(lib(), 'app.old'), { recursive: true })
+    writeFileSync(join(lib(), 'app.old', 'version'), '# 0.0.7\n')
+    mkdirSync(join(lib(), 'app.new'))
+    mkdirSync(join(lib(), '.install.abc123'))
+    expect(run(['--no-launch']).status).toBe(1)
+    expect(installedVersion()).toBe('# 0.0.7')
+    expect(libEntries()).toEqual(['app'])
+  })
+
+  it('installs a local AppImage that is not executable, never changing the file, and one named by a relative path', () => {
+    const made = appImageFor('0.0.5')
+    const file = join(fixtures, made.name)
+    chmodSync(file, 0o644)
+    const { status, out } = run(['--no-launch'], { ORIVON_APPIMAGE: made.name }, fixtures)
+    expect(status, out).toBe(0)
+    expect(installedVersion()).toBe('# 0.0.5')
+    expect(statSync(file).mode & 0o111).toBe(0)
+    expect(libEntries()).toEqual(['app', 'orivon'])
   })
 
   it('refuses a download that does not match the digest GitHub reports, and installs nothing', () => {
@@ -173,7 +266,7 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     const { status, out } = run(['--no-launch'])
     expect(status).toBe(1)
     expect(out).toContain('does not match the SHA-256')
-    expect(existsSync(join(lib(), 'Orivon.AppImage'))).toBe(false)
+    expect(existsSync(app())).toBe(false)
   })
 
   it.each([
@@ -184,7 +277,7 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     const { status, out } = run(['--no-launch'])
     expect(status).toBe(1)
     expect(out).toContain('reports no SHA-256')
-    expect(existsSync(join(lib(), 'Orivon.AppImage'))).toBe(false)
+    expect(existsSync(app())).toBe(false)
   })
 
   it('says so when no release has an AppImage', () => {
@@ -226,7 +319,7 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     const bash = spawnSync('sh', ['-c', 'command -v bash'], { encoding: 'utf8' }).stdout.trim()
     const result = spawnSync(bash, [SCRIPT, '--no-launch'], {
       encoding: 'utf8',
-      env: { PATH: lean, HOME: home, TMPDIR: root, FIXTURES: fixtures, ORIVON_TEST_STARTED: started }
+      env: { PATH: lean, HOME: home, FIXTURES: fixtures, ORIVON_TEST_STARTED: started }
     })
     expect(result.stderr).not.toContain('python3')
     expect(result.status).toBe(0)
@@ -239,7 +332,7 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
       const { status, out } = run(['--no-launch', id])
       expect(status).toBe(1)
       expect(out).toContain('app id')
-      expect(existsSync(join(lib(), 'Orivon.AppImage'))).toBe(false)
+      expect(existsSync(app())).toBe(false)
     })
 
     it('works piped into bash, the way curl hands it over, with the id after -s', async () => {
@@ -247,7 +340,7 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
       const result = spawnSync('bash', ['-s', '--', 'ab12'], {
         input: readFileSync(SCRIPT, 'utf8'),
         encoding: 'utf8',
-        env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, HOME: home, TMPDIR: root, FIXTURES: fixtures, ORIVON_TEST_STARTED: started, ...fuseUsable }
+        env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, HOME: home, FIXTURES: fixtures, ORIVON_TEST_STARTED: started }
       })
       expect(result.status).toBe(0)
       await waitForFile(started)
@@ -268,13 +361,6 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
       expect(run().status).toBe(0)
       await waitForFile(started)
       expect(readFileSync(started, 'utf8').trim()).toBe('')
-    })
-
-    it('hands the id on after the unpacking switch when the AppImage cannot mount itself', async () => {
-      publish([withImage('v0.0.8')])
-      expect(run(['ab12'], fuseUnusable).status).toBe(0)
-      await waitForFile(started)
-      expect(readFileSync(started, 'utf8').trim()).toBe('--appimage-extract-and-run --orivon-flavour=ab12')
     })
 
     it('does not start Orivon with --no-launch or ORIVON_NO_OPEN=1', async () => {
@@ -315,26 +401,35 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
   })
 
   describe('the launcher', () => {
-    function start (...args: string[]): string {
-      const result = spawnSync(join(lib(), 'orivon'), args, { encoding: 'utf8', env: { PATH: `${toolDir}:${process.env['PATH'] ?? ''}`, ORIVON_TEST_STARTED: started, ...fuseEnv } })
+    const launch = (path: string, ...args: string[]): ReturnType<typeof spawnSync> => spawnSync(path, args, { encoding: 'utf8', env: { PATH: process.env['PATH'] ?? '', ORIVON_TEST_STARTED: started } })
+    const start = (...args: string[]): string => {
+      const result = launch(join(lib(), 'orivon'), ...args)
       expect(result.status).toBe(0)
       return readFileSync(started, 'utf8').trim()
     }
-    let fuseEnv: Record<string, string> = {}
 
     beforeEach(() => {
-      fuseEnv = fuseUsable
       publish([withImage('v0.0.8')])
       expect(run(['--no-launch']).status).toBe(0)
     })
 
-    it('unpacks and runs when the FUSE device cannot be used', () => {
-      fuseEnv = fuseUnusable
-      expect(start('https://example.test/')).toBe('--appimage-extract-and-run https://example.test/')
+    it('runs the unpacked app\'s AppRun with the arguments it was given, and needs neither FUSE nor the AppImage', () => {
+      expect(start('https://example.test/', '--new-window')).toBe('https://example.test/ --new-window')
     })
 
-    it('runs the AppImage itself when the device, fusermount and libfuse.so.2 are all there', () => {
-      expect(start('--new-window')).toBe('--new-window')
+    it('finds the app through a link to it, as ~/.local/bin/orivon is', () => {
+      const link = join(root, 'link-to-orivon')
+      symlinkSync(join(lib(), 'orivon'), link)
+      expect(launch(link, '--new-private-window').status).toBe(0)
+      expect(readFileSync(started, 'utf8').trim()).toBe('--new-private-window')
+    })
+
+    it('says to run the install command again when the app is gone', () => {
+      rmSync(app(), { recursive: true })
+      const result = launch(join(lib(), 'orivon'))
+      expect(result.status).toBe(1)
+      expect(String(result.stderr)).toContain('run the install command again')
+      expect(existsSync(started)).toBe(false)
     })
   })
 })
