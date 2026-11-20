@@ -11,6 +11,7 @@ with a CLI block, unit tested in `tests/`; they import `node:*` and sibling guar
 | `electron-version-changed.mjs` | Prints `changed=true` when the branch moves the Electron range in `package.json` or the version `package-lock.json` resolves, against `--base <ref>`; the `scope` job's output decides whether `ublock-gate` runs ([`testing.md`](../../docs/development/testing.md) section Electron upgrades). A base it cannot read counts as changed |
 | `refresh-weights.mjs` | Rewrites `test/spec-weights.json` (seconds per spec file) from the log of a CI e2e job: `gh api repos/<owner>/<repo>/actions/jobs/<job id>/logs \| node scripts/ci/refresh-weights.mjs`. The weights only balance the shards |
 | `cross-os.mjs` | Starts `.github/workflows/cross-os.yml` (or `release.yml` with `--packaged`) on the pushed branch, waits, downloads what each system saw and prints a summary (section Other systems). Its `--matrix` mode is the workflow's own list of systems |
+| `fetch-release-package.mjs` | Downloads a published release's package for the system it runs on (the deb, the Windows installer, the dmg of the Mac's architecture), checks its SHA-256 against the digest GitHub reports and prints the path. `release.yml` runs it to time a baseline release (section Other systems) |
 | `live-session.mjs` | Starts `.github/workflows/live-session.yml` and drives Orivon on one runner step by step from a terminal (section Live sessions) |
 | `live-host.mjs` | The runner's side of a live session: launches Orivon, runs the caller's Playwright code, opens the tunnel |
 
@@ -52,7 +53,8 @@ node scripts/ci/cross-os.mjs                     # Windows and macOS, smoke and 
 node scripts/ci/cross-os.mjs --systems windows --specs "test/window/e2e-launch.test.ts"
 node scripts/ci/cross-os.mjs --systems macos --specs "test/tabs test/window" --shards 6   # folders, six runners
 node scripts/ci/cross-os.mjs --specs none        # install, build and smoke only
-node scripts/ci/cross-os.mjs --packaged          # release.yml: build, install and launch each package
+node scripts/ci/cross-os.mjs --packaged          # release.yml: build, install and launch each package, and time its start
+node scripts/ci/cross-os.mjs --packaged --baseline v0.1.0   # ... and time that release's package beside it
 node scripts/ci/cross-os.mjs --run latest        # read main's last nightly run, start nothing
 ```
 
@@ -68,6 +70,29 @@ skill says. Pixel baselines are never compared there (`CI=true`): read the scree
 The macOS runner's screen is 1024x768 and AppKit keeps a window's height inside the screen less the menu bar and the
 Dock, so the workflow hides the Dock before `smoke`: a window gets the height a Mac without a Dock gives it, not 677 px.
 The screen's visible frame is in `cross-os/screen.txt` of the evidence.
+
+### Timing a start
+
+`--packaged` also times how long each package takes to show the browser. After its smoke, each leg runs
+[`scripts/first-start-probe.mjs`](../first-start-probe.mjs) with three launches per series on the package it
+installed: the deb on Linux, the installed program on Windows and the copy the one-line installer made on macOS
+(Apple silicon). A first start is a new profile, as a first click gets; a next start is three launches on one profile
+after one that is not counted. The leg uploads `start-probe/<system>-current.json` as the artifact
+`start-probe-<linux|win|mac>`, and `cross-os.mjs --packaged` downloads them to
+`qa-artifacts/cross-os/<run id>/start-probe/` and prints a table (median, minimum and maximum, in ms) per file. The
+steps cannot fail the job: a launch that fails is named in the table.
+
+With `--baseline <release tag>` the run also gets the input `baseline_release`: each leg downloads that release's package
+for its system with `fetch-release-package.mjs` (SHA-256 checked), puts it where it cannot touch the branch's
+(Linux installs its deb over the one just timed, Windows installs into a folder of its own, macOS copies the app out of
+the dmg) and times it the same way into `<system>-baseline.json`, so one run answers "faster or slower than that
+release" on all three systems. The same program times any package by hand, an installed one or an unpacked build:
+
+```bash
+node scripts/run-headless.mjs node scripts/first-start-probe.mjs /opt/Orivon/orivon --runs 5 --json start.json
+```
+
+A run on a developer's own machine is not representative: time packages on the runners, or on a machine nothing else uses.
 
 ### Live sessions
 
