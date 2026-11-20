@@ -176,9 +176,10 @@ export interface ShowOptions {
 }
 
 /** Shows the window, once only. The launch's first window, and a window that comes up behind (`inactive`), wait for
- * their first paint, so no empty frame shows while the process is still starting. A window opened in front later is
- * shown at once: the process is warm, and the creation colour (`windowBackgroundColor`) holds the frame until the
- * views paint. */
+ * their first paint, so no empty frame shows while the process is still starting; a hidden window paints nothing by
+ * itself, so `holdPaint` makes its page paint meanwhile (hidden-paint.ts, and DESIGN.md for why). A window opened in
+ * front later is shown at once: the process is warm, and the creation colour (`windowBackgroundColor`) holds the
+ * frame until the views paint. */
 export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, options: ShowOptions = {}): void {
   const skipFocus = NO_FOCUS && options.firstOfLaunch === true
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
