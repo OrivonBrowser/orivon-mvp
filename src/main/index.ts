@@ -45,7 +45,8 @@ import { copyPrivateExtensions } from './launch/private-extensions.js'
 import { copyPrivatePicture } from './launch/private-picture.js'
 import { moveLongNamedPartitionFolders } from './launch/partition-folders.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
-import { openWebContent } from './startup/web-ready.js'
+import { openWebContent, webContentReady } from './startup/web-ready.js'
+import { endStart } from './startup/window-first.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { configureVerifier, ethServersChanged, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
 import { effectiveEthServers, noteEthSecrets } from './verifier/eth-servers.js'
@@ -56,6 +57,7 @@ import { netFetchJson } from './browsing/score-provider-client.js'
 import { isDevEthName } from './dev/eth-resolver.js'
 import { needsNoVerifierHost } from './shell/app-session.js'
 import type { Runtime } from './launch/start-launch.js'
+import type { ShellWindowOptions } from './shell/window-options.js'
 import { decideDefaultProfile, startsFromDefaultProfile } from './default-profile/profile-start.js'
 import { recordFatal as recordFatalCrash, setPageClassifier, startDiagnostics } from './diagnostics/diagnostics-runner.js'
 import { attachX11Vulkan, startX11Vulkan, x11VulkanStartAborted, x11VulkanWindowPainted, x11VulkanWindowShown } from './graphics/x11-vulkan-runner.js'
@@ -85,7 +87,7 @@ for (const flag of devOnlySwitches()) app.commandLine.appendSwitch(flag)
 disableDnsPrefetching(app.commandLine)
 
 // Subsystems register in subsystems.ts (the append point), never here.
-function report (failures: SubsystemFailure[]): void {
+function report (failures: readonly SubsystemFailure[]): void {
   // Loud, never silent. A subsystem that failed to start may be a capability
   // that is now enforcing nothing, and handle-contracts.md's "What the shim
   // must do" section (rule 2) makes it binding that error visibility in
@@ -93,6 +95,22 @@ function report (failures: SubsystemFailure[]): void {
   for (const { name, phase, error } of failures) {
     console.error(`[orivon] subsystem "${name}" failed during ${phase}:`, error)
   }
+}
+
+// A CRITICAL subsystem failing (today: the broker and the route) means the
+// capability layer or the routing is dark -- a browser that only looks like it
+// works is strictly worse than none: every orivon.* call from every app would be
+// silently unroutable, with only a main-process console line as evidence. Fail
+// loud instead (open-questions.md A51). True when it ended the start; checked
+// before the window for `afterReady` and after it for `afterWindow`, where the
+// gate on web pages then never opens (startup/window-first.ts).
+function stopOnCritical (failures: readonly SubsystemFailure[]): boolean {
+  const fatal = criticalFailureMessage([...failures])
+  if (fatal === null) return false
+  dialog.showErrorBox('Orivon failed to start', fatal)
+  x11VulkanStartAborted()
+  app.exit(1)
+  return true
 }
 
 // A change made within the debounce window of the browser closing (a starred
@@ -201,25 +219,8 @@ export function boot (runtime: Runtime): void {
     const afterReadyFailures = await runAfterReady(subsystems, ctx, noteStartupHook)
     markStartup('afterReadyDone')
     report(afterReadyFailures)
-    const afterWindowFailures = await runAfterWindow(subsystems, ctx, noteStartupHook)
-    markStartup('afterWindowDone')
-    report(afterWindowFailures)
 
-    // A CRITICAL subsystem failing (today: only the broker) means the
-    // capability layer is dark -- opening a normal-looking shell window in
-    // that state is strictly worse than not opening one at all: every
-    // orivon.* call from every app would be silently unroutable, with only a
-    // main-process console line as evidence. Fail loud instead of booting a
-    // browser that only looks like it works (open-questions.md A51).
-    const fatal = criticalFailureMessage([...beforeReadyFailures, ...afterReadyFailures, ...afterWindowFailures])
-    if (fatal !== null) {
-      dialog.showErrorBox('Orivon failed to start', fatal)
-      x11VulkanStartAborted()
-      app.exit(1)
-      return
-    }
-    // The route has set every session and every enabled extension is loaded: a web page may load from here.
-    openWebContent()
+    if (stopOnCritical([...beforeReadyFailures, ...afterReadyFailures])) return
 
     const shell = createShellServices(app.getPath('userData'), runtime, ctx)
     // Wires every window's tab lifecycle into the extensions library
@@ -323,56 +324,75 @@ export function boot (runtime: Runtime): void {
         kiosk: shell.kiosk
       })
     }
-    // Marked started only once the first window exists, never before: a
-    // second launch arriving in the gap while this one is still choosing its
-    // first window's options (planIntro's await, below) would otherwise run
-    // the opener with no window open, creating one of its own -- two windows
-    // for one launch. The `finally` marks it started even if that throws,
-    // so a startup failure (already fatal via start.ts's unhandledRejection handler)
-    // does not also strand every second launch queued behind it.
-    if (runtime.isPrivate) {
-      try {
-        // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
-        // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
-        // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
-        const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
-        if (plan.localFiles === true) await fileProtocolFuse()
-        markStartup('firstWindowStart')
-        createShellWindow(ctx, shell, { ...plan, first: plan.first ?? ((tabs) => { tabs.openInternal('private') }), firstOfLaunch: true, shown: x11VulkanWindowShown, painted: x11VulkanWindowPainted })
-        markStartup('firstWindowCreated')
-      } finally {
-        markStarted()
-      }
-    } else {
-      let afterFirst: (() => void) | undefined
-      try {
-        // Only this first window can open on the welcome screen: the macOS
-        // 'activate' below recreates a window in a process that has already shown it.
-        // A package tagged for an app opens it, after the welcome screen, on the first run of a new profile.
-        const afterWelcome = startFirstRunFlavour(shell, runtime.dir, runtime.launch.kind === 'default', process.argv, process.env, process.execPath)
-        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
-        // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does.
-        if (plan.localFiles === true) await fileProtocolFuse()
-        const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
-        markStartup('firstWindowStart')
-        const firstWindow = createShellWindow(ctx, shell, { ...plan, intro, firstOfLaunch: true, shown: x11VulkanWindowShown, painted: x11VulkanWindowPainted })
-        markStartup('firstWindowCreated')
-        afterWelcome.windowOpened(intro)
-        const after = plan.after
-        // The first start of a newer version shows what it changed, once, in front of what the window opened on.
-        const news = await whatsNewDue(app.getPath('userData'))
-        afterFirst = after === undefined && !news ? undefined : () => {
-          after?.(firstWindow)
-          if (news) shell.windows.all().find((entry) => entry.window === firstWindow)?.tabs.openInternal('about', '/whats-new')
+    // The launch's first window shows with the new-tab page (or the page a private session opens on) and nothing that loads
+    // a web page: what the plan opens in it waits for the gate on web pages, which opens once the route has set every
+    // session and every enabled extension is loaded (startup/window-first.ts). Until then the window has no tab when
+    // the plan fills one, and the session file is held, so a start that ends early keeps the previous session.
+    const createFirstWindow = (plan: ShellWindowOptions, own: ShellWindowOptions, news: () => Promise<boolean>): { readonly shown: Promise<void>, readonly fill: () => Promise<void> } => {
+      const { first: planned, after, ...rest } = plan
+      // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does: started now, read when the plan is filled.
+      const fuse = plan.localFiles === true ? fileProtocolFuse() : undefined
+      const release = planned === undefined ? undefined : shell.session.hold()
+      let resolveShown: () => void = () => {}
+      const shown = new Promise<void>((resolve) => { resolveShown = resolve })
+      markStartup('firstWindowStart')
+      // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
+      // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
+      const window = createShellWindow(ctx, shell, { ...rest, ...own, ...(planned === undefined ? {} : { first: () => {} }), firstOfLaunch: true, shown: () => { x11VulkanWindowShown(); resolveShown() }, painted: x11VulkanWindowPainted })
+      markStartup('firstWindowCreated')
+      // A window closed before it was shown never reports it, and the rest of the start still has to run.
+      window.once('closed', resolveShown)
+      const asked = news()
+      const fill = async (): Promise<void> => {
+        await fuse
+        const tabs = shell.windows.all().find((entry) => entry.window === window)?.tabs
+        try {
+          if (tabs !== undefined) {
+            planned?.(tabs)
+            // With the plan's tabs in, the front one is the first tab (createShellWindow marks it when the window made one itself).
+            if (planned !== undefined) tabs.activeWebContents()?.once('did-stop-loading', () => { markStartup('firstTabLoaded') })
+            // The rest of a restored session, once the first window has its tabs and a second launch may be answered.
+            try { after?.(window) } catch (error) { console.error('[orivon] restoring the other windows failed:', error) }
+            // The first start of a newer version shows what it changed, once, in front of what the window opened on.
+            if (await asked) tabs.openInternal('about', '/whats-new')
+          }
+        } finally {
+          release?.()
         }
-      } finally {
-        markStarted()
       }
-      // The rest of a restored session, once the first window exists and a second launch may be answered.
-      try { afterFirst?.() } catch (error) { console.error('[orivon] restoring the other windows failed:', error) }
+      return { shown, fill }
+    }
+    const end = (firstWindow: ReturnType<typeof createFirstWindow>): Promise<void> => endStart(firstWindow.shown, {
+      afterWindow: async () => await runAfterWindow(subsystems, ctx, noteStartupHook),
+      report,
+      stopOnCritical,
+      openWebContent: () => { openWebContent(); void webContentReady().then(() => { markStartup('webContentReady') }) },
+      fill: firstWindow.fill,
+      // Marked started only once the first window is filled, never before: a second launch arriving earlier
+      // would run the opener with a window that has none of its tabs yet, or with no window open, creating one of
+      // its own -- two windows for one launch. endStart marks it even if the start fails, so a failure does not
+      // also strand every second launch queued behind it.
+      started: markStarted,
+      mark: markStartup
+    })
+    if (runtime.isPrivate) {
+      // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
+      const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
+      await end(createFirstWindow(plan, plan.first === undefined ? { first: (tabs) => { tabs.openInternal('private') } } : {}, async () => false))
+    } else {
+      // Only this first window can open on the welcome screen: the macOS
+      // 'activate' below recreates a window in a process that has already shown it.
+      // A package tagged for an app opens it, after the welcome screen, on the first run of a new profile.
+      const afterWelcome = startFirstRunFlavour(shell, runtime.dir, runtime.launch.kind === 'default', process.argv, process.env, process.execPath)
+      const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
+      const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
+      const firstWindow = createFirstWindow(plan, { intro }, async () => await whatsNewDue(app.getPath('userData')))
+      afterWelcome.windowOpened(intro)
+      // Registered as soon as the window exists: a macOS dock click before the tail has run opens a window of its own.
       app.on('activate', () => {
         if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
       })
+      await end(firstWindow)
     }
   }).catch((error: unknown) => { console.error('[main] starting up failed:', error) })
 }

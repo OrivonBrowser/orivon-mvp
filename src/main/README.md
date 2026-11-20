@@ -6,7 +6,7 @@ subsystem registry every other stream plugs into, one directory per job
 (the process entry: it takes the single-instance lock before `index.ts`, the rest of the browser, is loaded),
 `index.ts`, `registry.ts`, `subsystems.ts` and `channels.ts` stay at the top level: `registry.ts` and
 `channels.ts` are the seam other packages import as values; `published-slot.ts` is the one-time slot behind each field `registry.ts` lists.
-A subsystem hooks in at start through `beforeReady`, `afterReady` (the registrations the rest of the start reads) and `afterWindow` (the slow tail once every `afterReady` has finished: the route's first read of the system's settings, loading the person's extensions), each run in the list order of `subsystems.ts`, and at quit through `beforeQuit`.
+A subsystem hooks in at start through `beforeReady`, `afterReady` (the registrations the rest of the start reads) and `afterWindow` (the slow tail, run once the first window is shown and before any web page may load: the route's first read of the system's settings, loading the person's extensions), each run in the list order of `subsystems.ts`, and at quit through `beforeQuit`.
 
 **Tied to Electron, entirely.** Only the pure `<name>.ts` files run under plain vitest.
 

@@ -2,8 +2,8 @@
 // the record a start prints once and a problem report carries. Pure: the clock is passed in (startup-marks-runner.ts).
 //
 // The line, which a probe reads from a packaged build's output or `logs/current.log`: `[orivon][startup] ` and one
-// JSON object on the same line, printed once, when the first window is shown and its first tab has loaded, or after
-// the cap with what exists (`complete` false). Keys, in this order:
+// JSON object on the same line, printed once, when the first window is shown, its first tab has loaded and web pages
+// may load, or after the cap with what exists (`complete` false). Keys, in this order:
 //   schema (1), base (`process-creation` or `performance-origin`), complete, firstRun, electron, app, packaged,
 //   marks (every name of STARTUP_MARKS, in order, a whole number or null when not reached),
 //   hooks (`{name, phase, ms}` for each subsystem hook that ran, in order).
@@ -11,7 +11,7 @@
 
 export const STARTUP_LINE_PREFIX = '[orivon][startup] '
 
-/** The moments recorded, in the order a normal start reaches them. */
+/** The moments recorded, in the order a normal start reaches them: a first tab that is a restored session loads after the gate opens, so `firstTabLoaded` comes after `webContentReady` there. */
 export const STARTUP_MARKS = [
   'entry', // start.ts began, its imports evaluated
   'launched', // the single-instance lock is taken and the profile chosen
@@ -19,16 +19,17 @@ export const STARTUP_MARKS = [
   'beforeReadyDone', // every subsystem's beforeReady hook ran
   'appReady', // Electron's app is ready
   'afterReadyDone', // every subsystem's afterReady hook ran
-  'extensionsSeedStart', // the bundled extensions are about to be installed into a new profile (a first start only)
-  'extensionsSeeded', // they were installed
-  'afterWindowDone', // every subsystem's afterWindow hook ran
   'storesLoaded', // settings, bookmarks, session and the other shell stores were read
   'firstWindowStart', // the first window's options were chosen and createShellWindow is called
   'firstWindowCreated', // createShellWindow returned: the window, its chrome view and its first tab exist
   'chromeLoaded', // the first window's chrome page finished loading
   'chromeReadyToShow', // the first window's chrome page painted (ready-to-show)
   'windowShown', // the first window was shown
-  'firstTabLoaded' // the first window's front tab stopped loading
+  'firstTabLoaded', // the first window's front tab stopped loading
+  'extensionsSeedStart', // the bundled extensions are about to be installed into a new profile (a first start only)
+  'extensionsSeeded', // they were installed
+  'afterWindowDone', // every subsystem's afterWindow hook ran: the extensions are loaded
+  'webContentReady' // web pages may load: the gate (web-ready.ts) opened
 ] as const
 
 export type StartupMark = typeof STARTUP_MARKS[number]
@@ -54,7 +55,7 @@ export interface StartupRecord extends StartupFacts {
   readonly schema: 1
   /** What the milliseconds count from: the operating system's creation time of the process, or when that is unavailable the first reading of the performance clock. */
   readonly base: 'process-creation' | 'performance-origin'
-  /** The first window is shown and its first tab has loaded. */
+  /** The first window is shown, its first tab has loaded and web pages may load. */
   readonly complete: boolean
   readonly marks: Readonly<Record<StartupMark, number | null>>
   readonly hooks: readonly HookTiming[]
@@ -91,7 +92,7 @@ export function createStartupMarks (clock: StartupClock): StartupMarks {
   const hooks: HookTiming[] = []
   let facts: StartupFacts = { firstRun: false, electron: '', app: '', packaged: false }
 
-  const isComplete = (): boolean => reached.has('windowShown') && reached.has('firstTabLoaded')
+  const isComplete = (): boolean => reached.has('windowShown') && reached.has('firstTabLoaded') && reached.has('webContentReady')
   return {
     mark: (name) => { if (!reached.has(name)) reached.set(name, elapsed()) },
     hook: ({ name, phase, ms }) => { hooks.push({ name, phase, ms: Math.round(ms) }) },

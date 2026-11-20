@@ -58,14 +58,31 @@ describe('createStartupMarks', () => {
     expect(read.firstTabLoaded).toBeNull()
   })
 
-  it('is complete once the window is shown and its first tab has loaded, and not before', () => {
+  it('is complete once the window is shown, its first tab has loaded and web pages may load, and not before', () => {
     const marks = createStartupMarks(fakeClock(null))
     expect(marks.isComplete()).toBe(false)
     marks.mark('windowShown')
     expect(marks.isComplete()).toBe(false)
     marks.mark('firstTabLoaded')
+    expect(marks.isComplete()).toBe(false)
+    marks.mark('webContentReady')
     expect(marks.isComplete()).toBe(true)
     expect(marks.record().complete).toBe(true)
+  })
+
+  it('waits for the gate when the window was shown and its first tab loaded long before it opened', () => {
+    const marks = createStartupMarks(fakeClock(null))
+    marks.mark('firstTabLoaded')
+    marks.mark('windowShown')
+    expect(marks.record().complete).toBe(false)
+    marks.mark('afterWindowDone')
+    expect(marks.record().complete).toBe(false)
+  })
+
+  it('lists the tail of the start after the moment the window is shown', () => {
+    const order: readonly string[] = STARTUP_MARKS
+    for (const name of ['afterWindowDone', 'webContentReady']) expect(order.indexOf(name)).toBeGreaterThan(order.indexOf('windowShown'))
+    expect(order.indexOf('webContentReady')).toBeGreaterThan(order.indexOf('afterWindowDone'))
   })
 
   it('counts from the performance clock and says so when the system gives no creation time', () => {

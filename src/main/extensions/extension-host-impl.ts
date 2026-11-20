@@ -14,6 +14,7 @@ import type { SubsystemContext } from '../registry.js'
 import { extensionOpenedUrl } from './extension-url-policy.js'
 import { applyOrivonTabDetails } from './extension-tab-details.js'
 import { markExtensionOpened, openExtensionTab } from './extension-opened-pages.js'
+import { webContentReady } from '../startup/web-ready.js'
 import { activateTabShowing } from './extension-options-tab.js'
 import { sidePanelGestures } from './side-panel-gesture.js'
 import { sidePanelPages, sidePanelWindowOf } from './side-panel-pages.js'
@@ -122,14 +123,16 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerO
   createTab: async (details) => {
     const bridge = getBridge()
     if (bridge === undefined) throw new Error('extensions: no shell attached yet')
-    const win = windowFor(bridge, details.windowId)
-    if (win === undefined) throw new Error('extensions: no window to open a tab in')
-    const shellWindow = bridge.services.windows.all().find((w) => w.window === win)
-    if (shellWindow === undefined) throw new Error('extensions: window has no tabs')
     const target = details.url === undefined ? undefined : extensionOpenedUrl(details.url, isLoadedExtension)
     if (details.url !== undefined && target === undefined) {
       throw new Error(`extensions: refused to open ${details.url}`)
     }
+    // The extension asks for the tab it opens, and before web pages may load there is none to answer with. Before the window is looked up: it may close meanwhile.
+    if (target !== undefined) await webContentReady()
+    const win = windowFor(bridge, details.windowId)
+    if (win === undefined) throw new Error('extensions: no window to open a tab in')
+    const shellWindow = bridge.services.windows.all().find((w) => w.window === win)
+    if (shellWindow === undefined) throw new Error('extensions: window has no tabs')
     return activatingTab<[WebContents, BaseWindow]>({ extensionId: callerOf(), window: win }, () => {
       const opened = openExtensionTab(shellWindow.tabs, target, partitionOf(target))
       if (opened === undefined) throw new Error('extensions: tab capacity reached')
@@ -170,6 +173,8 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerO
       .map((u) => extensionOpenedUrl(u, isLoadedExtension))
       .filter((u): u is string => u !== undefined)
     const popup = extensionWindowType(details) === 'popup'
+    // Its first tabs are pages, and the library asks the new window for them: it opens once web pages may load.
+    if (urls.length > 0) await webContentReady()
     return createShellWindow(bridge.ctx, bridge.services, {
       place: placeExtensionWindow(details, displayAreas(), MINIMUM_WINDOW, defaultWindowSize(screen.getPrimaryDisplay().bounds)),
       ...(details.focused === false ? { inactive: true } : {}),

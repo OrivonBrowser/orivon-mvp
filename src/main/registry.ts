@@ -396,7 +396,7 @@ export interface Subsystem {
   beforeReady?: () => void
   /** Runs after app ready: the registrations the rest of the start reads, which must exist before the shell's services are built. */
   afterReady?: (ctx: SubsystemContext) => void | Promise<void>
-  /** Runs once every `afterReady` has finished: the slow tail of a start. What `afterReady` published must tolerate a caller that arrives before this has finished. */
+  /** Runs once the first window is shown, before any web page may load: the slow tail of a start. What `afterReady` published must tolerate a caller that arrives before this has finished. */
   afterWindow?: (ctx: SubsystemContext) => void | Promise<void>
   /**
    * Runs when the browser quits, inside `main/index.ts`'s bounded wait: it must tolerate being cut
@@ -464,7 +464,7 @@ async function runSerial (phase: 'afterReady' | 'afterWindow', list: Subsystem[]
 /** Every subsystem's `afterReady`, in list order. */
 export const runAfterReady = async (list: Subsystem[], ctx: SubsystemContext, onTimed?: HookTimed): Promise<SubsystemFailure[]> => await runSerial('afterReady', list, ctx, onTimed)
 
-/** Every subsystem's `afterWindow`, in list order, once `runAfterReady` has finished. */
+/** Every subsystem's `afterWindow`, in list order, once the first window is shown. */
 export const runAfterWindow = async (list: Subsystem[], ctx: SubsystemContext, onTimed?: HookTimed): Promise<SubsystemFailure[]> => await runSerial('afterWindow', list, ctx, onTimed)
 
 /** All `beforeQuit` hooks at once: the quit waits for the slowest, so they must not queue behind each other. Never rejects. */
