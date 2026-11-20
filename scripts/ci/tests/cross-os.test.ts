@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { expandSpecs, jobLabel, logHighlights, matrixFor, parseShards, parseSystems, pickRun, retryingServerErrors, smokeResult, summarize } from '../cross-os.mjs'
+import { expandSpecs, jobLabel, logHighlights, matrixFor, parseBaseline, parseShards, parseSystems, pickRun, retryingServerErrors, smokeResult, startProbeReport, summarize } from '../cross-os.mjs'
 
 describe('parseSystems', () => {
   it('reads a comma or space list once each', () => {
@@ -161,5 +161,45 @@ describe('summarize', () => {
 
   it('says a run was cancelled rather than failed', () => {
     expect(summarize({ url: 'u', conclusion: 'cancelled', jobs: [] }, {})).toBe('CANCELLED  u')
+  })
+})
+
+describe('parseBaseline', () => {
+  it('takes a release tag', () => {
+    expect(parseBaseline('v0.1.0')).toBe('v0.1.0')
+    expect(parseBaseline('v0.2.0-beta.1')).toBe('v0.2.0-beta.1')
+  })
+
+  it('refuses what a tag cannot hold, so no input reaches the workflow that a path could carry', () => {
+    for (const text of ['', 'v0.1.0 v0.2.0', '../x', 'v0.1.0;ls', '$(id)']) expect(() => parseBaseline(text)).toThrow('--baseline takes a release tag')
+  })
+})
+
+describe('startProbeReport', () => {
+  const probe = (label: string): string => JSON.stringify({
+    date: '2026-11-20T10:00:00.000Z',
+    os: { platform: 'win32', release: '10.0', arch: 'x64' },
+    executable: 'Orivon.exe',
+    label,
+    runsPerSeries: 1,
+    first: { runs: [{ shellMs: 3000, extensionMs: 4000 }], stats: { shellMs: { n: 1, median: 3000, min: 3000, max: 3000 }, extensionMs: { n: 1, median: 4000, min: 4000, max: 4000 } } },
+    next: { runs: [], stats: {} }
+  })
+
+  it('prints one block per file in name order and names a file that is not a probe result', () => {
+    const text = startProbeReport([
+      { name: 'win-current.json', text: probe('current') },
+      { name: 'linux-baseline.json', text: 'not json' },
+      { name: 'win-baseline.json', text: probe('baseline v0.1.0') }
+    ])
+    expect(text.split('\n\n').map((block) => block.split('\n').slice(0, 2).join(' | '))).toEqual([
+      'linux-baseline.json | (not a start probe result)',
+      'win-baseline.json | baseline v0.1.0 on win32 x64 (ms, 2026-11-20T10:00:00.000Z)',
+      'win-current.json | current on win32 x64 (ms, 2026-11-20T10:00:00.000Z)'
+    ])
+  })
+
+  it('is empty when no file came back', () => {
+    expect(startProbeReport([])).toBe('')
   })
 })

@@ -2,17 +2,19 @@
  * Runs Orivon on GitHub's Windows and macOS runners from any terminal, waits, and brings back what they saw. It
  * starts `.github/workflows/cross-os.yml` on the current branch as it is on GitHub, then saves each system's smoke
  * result, captured screenshots and failure evidence under `qa-artifacts/cross-os/<run id>/` and prints a summary.
- * `--packaged` starts `release.yml` instead: the packages built, installed and launched on each system.
+ * `--packaged` starts `release.yml` instead: the packages built, installed and launched on each system, and the start
+ * of each timed (scripts/first-start-probe.mjs); `--baseline <tag>` times that published release's package too.
  *
  *   node scripts/ci/cross-os.mjs [--systems windows,macos,linux] [--specs "<e2e spec files or folders>" | --specs none] [--shards <n>]
- *   node scripts/ci/cross-os.mjs --packaged
+ *   node scripts/ci/cross-os.mjs --packaged [--baseline <release tag>]
  *   node scripts/ci/cross-os.mjs --run <run id> | --run latest     reads a run already started (latest: main's nightly)
  */
 import { execFileSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { isInvokedDirectly } from '../cli.mjs'
+import { formatReport } from '../first-start-probe.mjs'
 import { listSpecs, packShards, WEIGHTS } from './select-e2e.mjs'
 
 /** The systems a run can take, and the hosted runner each one runs on. */
@@ -81,6 +83,23 @@ export function matrixFor (text, { specs, shards = 1, weights = {} } = {}) {
       specs: part.length === 0 ? 'none' : part.join(' ')
     })))
   }
+}
+
+/** @param {string} text a published release's tag, whose package the packaged run times beside this branch's */
+export function parseBaseline (text) {
+  if (!/^[\w.+-]+$/.test(text)) throw new Error(`--baseline takes a release tag such as v0.1.0, not ${text}`)
+  return text
+}
+
+/**
+ * The start timings a packaged run brought back, one block per file (`<system>-current.json`, `<system>-baseline.json`)
+ * in name order; a file that is not a probe's result is named and skipped.
+ * @param {Array<{ name: string, text: string }>} files
+ */
+export function startProbeReport (files) {
+  return [...files].sort((a, b) => a.name.localeCompare(b.name)).map(({ name, text }) => {
+    try { return `${name}\n${formatReport(JSON.parse(text))}` } catch { return `${name}\n(not a start probe result)` }
+  }).join('\n\n')
 }
 
 /** The part of a job's name its artifact and evidence folder are named after: `windows`, or `windows-3` for a shard. */
@@ -262,9 +281,16 @@ function collect (run, dir, packaged) {
   return evidence
 }
 
-const FLAGS = new Set(['--systems', '--specs', '--shards', '--packaged', '--run', '--matrix'])
+/** Downloads the start timings of a packaged run (artifacts `start-probe-<platform>`) under `dir` and reads them. */
+function collectStartProbes (id, dir) {
+  const into = join(dir, 'start-probe')
+  try { gh('run', 'download', id, '--pattern', 'start-probe-*', '-D', into) } catch {}
+  return filesUnder(into).filter((file) => file.endsWith('.json')).map((file) => ({ name: basename(file), text: readFileSync(file, 'utf8') }))
+}
+
+const FLAGS = new Set(['--systems', '--specs', '--shards', '--packaged', '--baseline', '--run', '--matrix'])
 const USAGE = `usage: node scripts/ci/cross-os.mjs [--systems windows,macos,linux] [--specs "<spec files or folders>" | --specs none] [--shards <n>]
-       node scripts/ci/cross-os.mjs --packaged
+       node scripts/ci/cross-os.mjs --packaged [--baseline <release tag>]
        node scripts/ci/cross-os.mjs --run <run id> | --run latest
 Every form but --run starts a run on GitHub's runners.`
 
@@ -299,13 +325,19 @@ if (isInvokedDirectly(import.meta.url)) {
       if (missing.length > 0) throw new Error(`no such spec file: ${missing.join(', ')}`)
       // The tag goes into the run's name, so dispatches started at once on one commit each find their own run.
       const tag = randomBytes(4).toString('hex')
+      const baseline = arg('baseline')
+      if (baseline !== undefined && !packaged) throw new Error('--baseline times a published release beside the packages, so it goes with --packaged')
       id = String(packaged
-        ? await dispatch(workflow, {})
+        ? await dispatch(workflow, baseline === undefined ? {} : { baseline_release: parseBaseline(baseline) })
         : await dispatch(workflow, { systems, specs: files.length === 0 ? 'none' : files.join(' '), shards, tag }, `run ${tag}`))
     }
     const run = { ...(await waitFor(id)), databaseId: Number(id) }
     const dir = join(OUT_DIR, id)
     console.log(`\n${summarize(run, collect(run, dir, packaged))}`)
+    if (packaged) {
+      const probes = startProbeReport(collectStartProbes(id, dir))
+      console.log(`\nstart timings: ${probes === '' ? 'none came back' : `${dir}/start-probe/\n\n${probes}`}`)
+    }
     if (!packaged) console.log(`\nevidence: ${dir}/<system>/ (smoke.out, install.log, qa-artifacts/latest/)`)
     process.exit(run.conclusion === 'success' ? 0 : 1)
   } catch (error) {
