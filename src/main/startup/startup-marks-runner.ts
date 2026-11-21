@@ -36,7 +36,7 @@ export function describeStartup (facts: StartupFacts): void {
   marks.setFacts(facts)
 }
 
-/** Prints the line after the cap if the first tab has not loaded by then: a start that never completes is the one to measure. Never keeps the process alive. */
+/** Prints the line after the cap if the start is not complete by then: a start that never completes is the one to measure. Never keeps the process alive. */
 export function printStartupLineAtCap (): void {
   setTimeout(printLine, LINE_CAP_MS).unref()
 }

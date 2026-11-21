@@ -266,6 +266,9 @@ export async function launchElectron ({
   if (env['ORIVON_UPDATE_CHECK'] === undefined) env['ORIVON_UPDATE_CHECK'] = 'off'
   // And secure DNS, which is on by default: off here unless a spec names a choice, so no run asks a DNS provider.
   if (env['ORIVON_SECURE_DNS'] === undefined) env['ORIVON_SECURE_DNS'] = 'off'
+  // And the first-paint hold: off, because Playwright already makes each page visible with the same focus emulation and
+  // a hold that ended would switch it off (src/main/shell/DESIGN.md). Read only by a test build (hidden-paint.ts).
+  if (env['ORIVON_TEST_NO_PAINT_HOLD'] === undefined) env['ORIVON_TEST_NO_PAINT_HOLD'] = '1'
   // A spec that turns it on sends to a loopback address of its own, or to this closed port: never the real server.
   if (env['ORIVON_TELEMETRY_URL'] === undefined) env['ORIVON_TELEMETRY_URL'] = 'http://127.0.0.1:9/'
 

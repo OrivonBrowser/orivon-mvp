@@ -56,6 +56,7 @@ describe('the start-up line', () => {
     vi.advanceTimersByTime(2_000)
     expect(lines().map(({ complete }) => complete)).toEqual([false])
     runner.markStartup('windowShown')
+    runner.markStartup('chromeLoaded')
     runner.markStartup('firstTabLoaded')
     expect(lines()).toHaveLength(1)
   })
@@ -63,6 +64,7 @@ describe('the start-up line', () => {
   it('leaves a mark reached after the line in the record a report carries', async () => {
     const runner = await freshRunner()
     runner.markStartup('windowShown')
+    runner.markStartup('chromeLoaded')
     runner.markStartup('firstTabLoaded')
     expect(runner.startupRecord().marks.extensionsSeeded).toBeNull()
     runner.markStartup('extensionsSeeded')

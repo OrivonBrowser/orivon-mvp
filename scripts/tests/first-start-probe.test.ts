@@ -2,8 +2,11 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { DiagnosticsService } from '../../src/main/diagnostics/diagnostics-service.js'
+import { startupLine } from '../../src/main/startup/startup-marks.js'
+import type { StartupRecord } from '../../src/main/startup/startup-marks.js'
 import {
-  anyFailed, appVersionOf, browserPid, formatReport, formatTable, numericLeaves, parseArgs, parseStartupRecord, readAsarFile, seriesStats, stats
+  anyFailed, appVersionOf, browserPid, formatReport, formatTable, numericLeaves, parseArgs, parseStartupRecord, readAsarFile, readProfileLog, seriesStats, stats
 } from '../first-start-probe.mjs'
 
 describe('parseArgs', () => {
@@ -47,6 +50,45 @@ describe('parseStartupRecord', () => {
 
   it('does not take a line that merely quotes the tag', () => {
     expect(parseStartupRecord('see [orivon][startup] {"a":1}')).toBeUndefined()
+    expect(parseStartupRecord('2026-11-20T10:00:00.000Z LOG see [orivon][startup] {"a":1}')).toBeUndefined()
+  })
+
+  it('reads the line from a log file, where it has the time and the level in front', () => {
+    const log = `--- Orivon log of run abc ---\n2026-11-20T10:00:00.123Z LOG [orivon][startup] ${JSON.stringify(record)}\n2026-11-20T10:00:01.000Z WARN other\n`
+    expect(parseStartupRecord(log)).toEqual(record)
+  })
+})
+
+describe('the startup record of a build that prints nothing', () => {
+  const folders: string[] = []
+  afterEach(() => { for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true }) })
+  const profile = (): string => {
+    const root = mkdtempSync(join(tmpdir(), 'probe-profile-'))
+    folders.push(root)
+    return root
+  }
+
+  it('is read from the log file the app writes in its profile, written as the app writes it', () => {
+    const root = profile()
+    const written: StartupRecord = {
+      schema: 1, base: 'process-creation', complete: true, firstRun: true, electron: '44.0.0', app: '0.1.0', packaged: true,
+      marks: { entry: 100 } as StartupRecord['marks'], hooks: []
+    }
+    const service = new DiagnosticsService({
+      dir: join(root, 'diagnostics'), crashDumpsDir: join(root, 'Crashpad'), isPrivate: false, now: () => Date.parse('2026-11-20T10:00:00Z'),
+      randomBytes: () => Uint8Array.from([1, 2, 3, 4, 5, 6, 7, 8]), pid: 1
+    })
+    service.log('log', 'something else')
+    service.log('log', startupLine(written))
+    service.flush()
+    expect(parseStartupRecord(readProfileLog(root))).toEqual(written)
+  })
+
+  it('is nothing while the app has written no log, and is not found in an empty profile', () => {
+    const root = profile()
+    expect(readProfileLog(root)).toBe('')
+    expect(readProfileLog(join(root, 'absent'))).toBe('')
+    expect(parseStartupRecord(readProfileLog(root))).toBeUndefined()
   })
 })
 
