@@ -7,6 +7,7 @@ import { setPinned } from './tab-pin.js'
 import type { TabMenuModel } from './tab-menu.js'
 import type { TabState } from './tab-types.js'
 import type { TabManager } from './tabs.js'
+import { deferUntilWebReady } from '../startup/web-ready.js'
 
 /** The part of a tab's state these decisions read, so they run over a hand-made strip in a test. */
 type Strip = { readonly tabs: ReadonlyArray<Pick<TabState, 'id' | 'pinned' | 'splitWith'>> }
@@ -75,9 +76,11 @@ export function togglePin (tabs: TabManager, id: string): void {
 }
 
 /** A new tab, in front, right of the tab (and of the one it is joined to): an unpinned one, so beside a pinned
- * tab it opens where the pinned run ends. `url` absent opens the new-tab page. */
+ * tab it opens where the pinned run ends. `url` absent opens the new-tab page. An address before web pages may load
+ * opens when they may and answers undefined: `createTab` would answer the tab in front, which is not the new one. */
 export function openBeside (tabs: TabManager, id: string, url?: string): string | undefined {
   if (!tabs.hasRoom()) return undefined
+  if (url !== undefined && deferUntilWebReady(() => { openBeside(tabs, id, url) })) return undefined
   const at = endOf(tabs.getState(), id) + 1
   // An address opened beside (a copy of the tab) keeps the tab's tunnel choice; the new-tab page has none.
   const created = tabs.createTab(url, true, undefined, url === undefined ? undefined : tabs.record(id)?.tunnelChoice)
@@ -97,6 +100,8 @@ export function newTabToRight (tabs: TabManager, id: string): void {
 export function duplicateTab (tabs: TabManager, id: string): void {
   const tab = tabs.getState().tabs.find((candidate) => candidate.id === id)
   if (tab === undefined || tab.isNewTab || tab.isInternal) return
+  // The copy's history is carried by the id the new tab is given, so the whole copy waits.
+  if (deferUntilWebReady(() => { duplicateTab(tabs, id) })) return
   const created = openBeside(tabs, id, tab.url)
   if (created === undefined) return
   // A sleeping tab's view never loaded: its pages are the ones it kept when it went to sleep.

@@ -181,6 +181,9 @@ export function registerLaunchForTeardown (app, { userDataDir } = {}) {
  *   CHROME_FRAMES_WAIT_MS but never fail the launch. The dev server's root counts as the chrome when
  *   ELECTRON_RENDERER_URL is set. A launch whose entry is not the shell (a bare Electron entry
  *   that opens no chrome) passes `chrome: false`.
+ * @param {boolean} [options.webReady] Default true: before returning, wait until the app says web pages may load
+ *   (src/main/startup/web-ready.ts), so an address opened right after the launch is not held by the gate. A spec of
+ *   the gap itself, the browser shown while the gate is shut, passes `false` and waits on `webReady` when it wants it.
  * @param {'light' | 'dark'} [options.scheme] Run the shell in this colour scheme,
  *   the way a real run follows its theme setting. Playwright pins every page it
  *   attaches to `prefers-color-scheme: light` unless the launch passes
@@ -213,6 +216,7 @@ export async function launchElectron ({
   scheme,
   reuseProfile,
   chrome = true,
+  webReady = true,
   freshDefaultBrowserAsk = false,
   onLaunch
 } = {}) {
@@ -420,7 +424,7 @@ export async function launchElectron ({
 
   // A spec drives the page right after the launch returns, and an address opened while the gate is shut waits for it
   // (src/main/startup/web-ready.ts), so the launch does not return before web pages may load.
-  await waitForWebReady(app)
+  if (webReady) await waitForWebReady(app)
 
   return app
 }

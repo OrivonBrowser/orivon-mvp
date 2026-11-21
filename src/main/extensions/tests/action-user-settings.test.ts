@@ -4,6 +4,10 @@ import type { ShellServices } from '../../shell/shell-services.js'
 import type { ExtensionApiContext, ApiEvent } from '../api/api-types.js'
 import { createExtensionPrefsStore } from '../extension-prefs-runner.js'
 import { extensionsMenuDeps, setExtensionsMenuDeps } from '../extensions-menu-deps.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: the web-ready tests are the ones that hold the gate shut.
+openWebContent()
 
 // The vendored router, driven for real: a second `handle` of one name replaces the first, which is how
 // this module answers `chrome.action.getUserSettings` over the library's own answer.

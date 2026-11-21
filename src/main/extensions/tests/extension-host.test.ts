@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BaseWindow } from 'electron'
 import type { ShellServices } from '../../shell/shell-services.js'
 import type { SubsystemContext } from '../../registry.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: the web-ready tests are the ones that hold the gate shut.
+openWebContent()
 
 // extension-host.ts imports 'electron' and the seven virtual specifiers
 // (electron-chrome-extensions-lib.d.ts's own header says why they exist)

@@ -7,6 +7,10 @@ import type { ExtensionsMenuDeps } from '../extensions-menu-deps.js'
 import { setExtensionsMenuDeps } from '../extensions-menu-deps.js'
 import type { MenuPayload } from '../extensions-menu-model.js'
 import * as points from '../extensions-menu-points.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: the web-ready tests are the ones that hold the gate shut.
+openWebContent()
 
 const A = 'a'.repeat(32)
 const B = 'b'.repeat(32)

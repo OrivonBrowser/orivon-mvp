@@ -7,7 +7,7 @@ reads the binary's file-protocol fuse before the window exists (`planOpensLocalF
 (tabs, display-aware placement, taking reopened windows off the closed stack). `startup-domain.ts` answers the
 Settings page's two questions about the pages list. `restore-offer.ts` and `restore-overlay.ts` are the bar
 that offers the last session back after a run that did not end cleanly, and the report of that crash ("Report the problem", from `../diagnostics/crash-lookup.ts`), which it also offers when nothing is left to restore; `startup-overlays.ts` wires it to the
-real displays. `fetch-stack.ts` loads Node's `fetch`/`Response` implementation before any hook or window exists, so a debugger command cannot arrive in the middle of its lazy load. `startup-marks.ts` records named moments of a start in milliseconds since the operating system created the process, and defines the one line a start prints and the record a problem report carries; `startup-marks-runner.ts` is the process's one set of them on the real clock, imports no `electron`, and loads nothing, so `../start.ts` may import it ahead of the lock. `web-ready.ts` is the gate on web pages: no tab, navigation or wake of a sleeping tab loads a page of the web until the start has routed every session and loaded every enabled extension, and what asks earlier waits and runs, in order, when `index.ts` opens it (`deferUntilWebReady`); the shell's own pages never wait. `web-ready-test-seam.ts` is its test-build hook.
+real displays. `fetch-stack.ts` loads Node's `fetch`/`Response` implementation before any hook or window exists, so a debugger command cannot arrive in the middle of its lazy load. `startup-marks.ts` records named moments of a start in milliseconds since the operating system created the process, and defines the one line a start prints and the record a problem report carries; `startup-marks-runner.ts` is the process's one set of them on the real clock, imports no `electron`, and loads nothing, so `../start.ts` may import it ahead of the lock. `web-ready.ts` is the gate on web pages: no tab, navigation or wake of a sleeping tab loads a page of the web until the start has routed every session and loaded every enabled extension, and what asks earlier waits and runs, in order, when `index.ts` opens it (`deferUntilWebReady`); the shell's own pages never wait. `web-ready-test-seam.ts` is its test-build hook. `window-first.ts` is the order of the end of a start: the first window shows, the subsystems' `afterWindow` tail runs, the gate opens, the first window is filled, and only then is a second launch answered.
 
 **Tied to Electron, partly.** Only `startup-overlays.ts` imports `electron`; the rest takes plain values and
 structural types, so it runs under plain vitest. `startup-marks-runner.ts` reads Electron's `process.getCreationTime()` and falls back to the performance clock where it is absent. The gate in `web-ready.ts` is durable: it has no Electron in it, and what must wait calls it.
@@ -36,6 +36,10 @@ re-validated line by line with the address bar's own rule (`parsePages`), and th
 
 **The previous session's windows are on the closed stack already.** When the launch reopens them, or the bar's
 Restore does, they are taken off it, so "Reopen closed tab" never offers the same windows twice.
+
+**The first window shows before any web page may load, with no tab when the plan fills it.** A restored session or the
+command line's addresses open once the gate does, and the session file is held until then (`SessionLog.hold`), so a start
+that ends early keeps the previous session. A caller that needs the tab a deferred open makes waits for `webContentReady()`.
 
 **Restored tabs load at once.** This build has no deferred loading of background tabs, so a session of thirty
 tabs loads thirty pages at start.

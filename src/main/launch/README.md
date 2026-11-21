@@ -68,7 +68,7 @@ loaded, and a check would fail the build that started to.
 an address, a `file:` URI or a path that exists opens in the open window, and an operand that is none of those (a `mailto:`,
 a path that is not there) only brings it forward. The request travels as the single-instance lock's additional data, and the running profile checks it as it
 would any input from another process, reading anything malformed as a plain open of the addresses on the command
-line. A request that reaches a browser still starting waits for its first window; a new window with no address then
+line. A request that reaches a browser still starting waits until its first window is filled (its tabs open once web pages may load); a new window with no address then
 only brings that window forward, so one launch never shows two. The second exits with status 0. A first start of a profile with `--new-private-window` has nothing to hand
 over to: it releases the lock and runs as a private session, leaving the profile free for the next start. A
 private session that made its own directory has a small program of its own remove it once the process has ended (on

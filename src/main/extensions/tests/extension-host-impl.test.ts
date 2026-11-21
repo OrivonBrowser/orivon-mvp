@@ -13,6 +13,10 @@ vi.mock('../../shell/window-frame.js', () => ({ MIN_WINDOW_WIDTH: 500, MIN_WINDO
 const { buildHostImpl, extensionJustActivatedTab, EXTENSION_FOCUS_HANDOVER_MS } = await import('../extension-host-impl.js')
 const { isExtensionOpened } = await import('../extension-opened-pages.js')
 const { createShellWindow } = await import('../../shell/window.js')
+const { openWebContent } = await import('../../startup/web-ready.js')
+
+// Web pages may load: extension-host-web-ready.test.ts is the one that holds the gate shut.
+openWebContent()
 
 function bridgeWith (record: Record<string, unknown>): ShellBridge {
   const tabs = { faviconFor: () => null, record: () => record }

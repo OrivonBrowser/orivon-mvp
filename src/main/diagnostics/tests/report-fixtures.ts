@@ -27,7 +27,7 @@ export const STARTUP: StartupRecord = {
   electron: '44.0.0',
   app: '0.1.0',
   packaged: false,
-  marks: { entry: 310, launched: 335, bootStart: 480, beforeReadyDone: 495, appReady: 560, extensionsSeedStart: null, extensionsSeeded: null, afterReadyDone: 790, afterWindowDone: 800, storesLoaded: 820, firstWindowStart: 900, firstWindowCreated: 960, chromeLoaded: 1210, chromeReadyToShow: 1230, windowShown: 1240, firstTabLoaded: 1390 },
+  marks: { entry: 310, launched: 335, bootStart: 480, beforeReadyDone: 495, appReady: 560, extensionsSeedStart: null, extensionsSeeded: null, afterReadyDone: 790, storesLoaded: 820, firstWindowStart: 900, firstWindowCreated: 960, chromeLoaded: 1210, chromeReadyToShow: 1230, windowShown: 1240, firstTabLoaded: 1390, afterWindowDone: 1500, webContentReady: 1510 },
   hooks: [{ name: 'diagnostics', phase: 'beforeReady', ms: 2 }, { name: 'broker', phase: 'afterReady', ms: 41 }]
 }
 
