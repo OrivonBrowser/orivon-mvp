@@ -123,7 +123,7 @@ export function x11VulkanWindowPainted (): void {
   clearStartMarker()
 }
 
-/** Orivon itself ended the start before its first window (a subsystem it cannot run without failed): that is not the switches' doing, so the marker goes. A kill or a hang during start-up leaves it. */
+/** Orivon itself ended the start (a subsystem it cannot run without failed): that is not the switches' doing, so the marker goes. A kill or a hang during start-up leaves it. */
 export function x11VulkanStartAborted (): void {
   clearStartMarker()
 }

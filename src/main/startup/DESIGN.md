@@ -16,8 +16,8 @@ active tab's id when it defers, as it does at the tab limit, so a restored tab's
 wrong tab. The reopen key and the restore bar wait first for that reason; any new caller of `openSnapshot` must too.
 
 **The window waits for its own first paint and nothing else; the pages wait for the tail.** The route's first read of the
-system's settings and the loading of the extensions (on a new profile, unpacking the bundled one synchronously) took
-seconds before the first window existed, and a window needs neither: its pages are the shell's own, served by Orivon.
+system's settings and the loading of the extensions (on a new profile, unpacking the bundled one synchronously) can take
+seconds, and a window needs neither: its pages are the shell's own, served by Orivon.
 [`window-first.ts`](window-first.ts) is the order: the window shows, `afterWindow` runs, the gate opens, the first window is
 filled, and a second launch is answered last, so it never meets a window with no tabs or opens a second one. A critical
 failure of the tail ends the start with the error dialog and the gate never opens. A window the plan fills has no tab until the

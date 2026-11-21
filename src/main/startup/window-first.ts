@@ -15,7 +15,7 @@ export interface EndOfStart {
   readonly openWebContent: () => Promise<void>
   /** What the first window opens beyond its new-tab page: the restored session, the addresses on the command line, What's new, the other windows. Runs once pages of the web may load. */
   readonly fill: () => Promise<void>
-  /** Lets a second launch be answered. Called whatever happened above, so one that arrived early is never stranded. */
+  /** Lets a second launch be answered. Called whatever failed above, so one that arrived early is never stranded, except when the start ended the process. */
   readonly started: () => void
   readonly mark: (name: StartupMark) => void
 }
@@ -25,15 +25,18 @@ export interface EndOfStart {
  * shown still lets the tail run, because the process may stay resident (macOS) and the next window needs the extensions.
  */
 export async function endStart (shown: Promise<void>, steps: EndOfStart): Promise<void> {
+  let stopped = false
   try {
     await shown
     const failures = await steps.afterWindow()
     steps.mark('afterWindowDone')
     steps.report(failures)
-    if (steps.stopOnCritical(failures)) return
+    stopped = steps.stopOnCritical(failures)
+    if (stopped) return
     await steps.openWebContent()
     await steps.fill()
   } finally {
-    steps.started()
+    // A start that ended the process answers no launch queued behind it.
+    if (!stopped) steps.started()
   }
 }

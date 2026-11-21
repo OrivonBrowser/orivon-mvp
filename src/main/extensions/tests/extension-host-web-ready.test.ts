@@ -52,6 +52,18 @@ describe('the extension host before web pages may load', () => {
     expect(isExtensionOpened(tab, ID)).toBe(true)
   })
 
+  it('has chrome.tabs.update load the address only once the gate has opened', async () => {
+    const { gate, buildHostImpl } = await setup()
+    const tab = pageWith()
+    const asked = buildHostImpl(() => undefined).navigateTab?.(tab, 'https://example.com/')
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect((tab as unknown as { loadURL: ReturnType<typeof vi.fn> }).loadURL).not.toHaveBeenCalled()
+
+    gate.openWebContent()
+    await asked
+    expect((tab as unknown as { loadURL: ReturnType<typeof vi.fn> }).loadURL).toHaveBeenCalledWith('https://example.com/')
+  })
+
   it('opens the new-tab page for an extension at once', async () => {
     const { openExtensionTab } = await setup()
     const openTrusted = vi.fn((): [string, WebContents] => ['t', pageWith()])

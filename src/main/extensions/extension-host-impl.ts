@@ -220,6 +220,8 @@ export function buildHostImpl (getBridge: () => ShellBridge | undefined, callerO
   navigateTab: async (wc, url) => {
     const target = extensionOpenedUrl(url, isLoadedExtension)
     if (target === undefined) return
+    // An extension loaded early in the start must not send a tab to a page before every enabled extension is loaded.
+    await webContentReady()
     markExtensionOpened(wc, target)
     await wc.loadURL(target)
   }

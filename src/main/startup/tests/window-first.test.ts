@@ -50,13 +50,13 @@ describe('the end of a start', () => {
     expect(log.slice(-4)).toEqual(['openWebContent', 'gate open', 'fill', 'started'])
   })
 
-  it('never opens web content, fills or lets a launch in when a failure is critical, and still marks the start', async () => {
+  it('never opens web content, fills or lets a launch in when a failure is critical', async () => {
     const log: string[] = []
     await endStart(Promise.resolve(), steps(log, {
       afterWindow: async () => { log.push('afterWindow'); return [failure(true)] },
       stopOnCritical: (failures) => { log.push(`stopOnCritical ${String(failures.length)}`); return true }
     }))
-    expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical 1', 'started'])
+    expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical 1'])
   })
 
   it('opens web content after a failure that is not critical', async () => {

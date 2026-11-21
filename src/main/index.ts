@@ -346,16 +346,16 @@ export function boot (runtime: Runtime): void {
       const fill = async (): Promise<void> => {
         await fuse
         const tabs = shell.windows.all().find((entry) => entry.window === window)?.tabs
+        // A window closed before it was filled is not refilled, and the hold stays: nothing of the previous session was opened, so the file keeps it.
+        if (tabs === undefined) return
         try {
-          if (tabs !== undefined) {
-            planned?.(tabs)
-            // With the plan's tabs in, the front one is the first tab (createShellWindow marks it when the window made one itself).
-            if (planned !== undefined) tabs.activeWebContents()?.once('did-stop-loading', () => { markStartup('firstTabLoaded') })
-            // The rest of a restored session, once the first window has its tabs and a second launch may be answered.
-            try { after?.(window) } catch (error) { console.error('[orivon] restoring the other windows failed:', error) }
-            // The first start of a newer version shows what it changed, once, in front of what the window opened on.
-            if (await asked) tabs.openInternal('about', '/whats-new')
-          }
+          planned?.(tabs)
+          // With the plan's tabs in, the front one is the first tab (createShellWindow marks it when the window made one itself).
+          if (planned !== undefined) tabs.activeWebContents()?.once('did-stop-loading', () => { markStartup('firstTabLoaded') })
+          // The rest of a restored session, once the first window has its tabs and a second launch may be answered.
+          try { after?.(window) } catch (error) { console.error('[orivon] restoring the other windows failed:', error) }
+          // The first start of a newer version shows what it changed, once, in front of what the window opened on.
+          if (await asked) tabs.openInternal('about', '/whats-new')
         } finally {
           release?.()
         }
@@ -375,24 +375,39 @@ export function boot (runtime: Runtime): void {
       started: markStarted,
       mark: markStartup
     })
-    if (runtime.isPrivate) {
-      // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
-      const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
-      await end(createFirstWindow(plan, plan.first === undefined ? { first: (tabs) => { tabs.openInternal('private') } } : {}, async () => false))
-    } else {
-      // Only this first window can open on the welcome screen: the macOS
-      // 'activate' below recreates a window in a process that has already shown it.
-      // A package tagged for an app opens it, after the welcome screen, on the first run of a new profile.
-      const afterWelcome = startFirstRunFlavour(shell, runtime.dir, runtime.launch.kind === 'default', process.argv, process.env, process.execPath)
-      const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
-      const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
-      const firstWindow = createFirstWindow(plan, { intro }, async () => await whatsNewDue(app.getPath('userData')))
-      afterWelcome.windowOpened(intro)
-      // Registered as soon as the window exists: a macOS dock click before the tail has run opens a window of its own.
-      app.on('activate', () => {
-        if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
-      })
+    // A start that fails before it has a window still lets a second launch be answered, as the failure is already reported.
+    const begin = async (open: () => Promise<ReturnType<typeof createFirstWindow>>): Promise<void> => {
+      let firstWindow: ReturnType<typeof createFirstWindow>
+      try {
+        firstWindow = await open()
+      } catch (error) {
+        markStarted()
+        throw error
+      }
       await end(firstWindow)
+    }
+    if (runtime.isPrivate) {
+      await begin(async () => {
+        // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
+        const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
+        return createFirstWindow(plan, plan.first === undefined ? { first: (tabs) => { tabs.openInternal('private') } } : {}, async () => false)
+      })
+    } else {
+      await begin(async () => {
+        // Only this first window can open on the welcome screen: the macOS
+        // 'activate' below recreates a window in a process that has already shown it.
+        // A package tagged for an app opens it, after the welcome screen, on the first run of a new profile.
+        const afterWelcome = startFirstRunFlavour(shell, runtime.dir, runtime.launch.kind === 'default', process.argv, process.env, process.execPath)
+        const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
+        const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
+        const firstWindow = createFirstWindow(plan, { intro }, async () => await whatsNewDue(app.getPath('userData')))
+        afterWelcome.windowOpened(intro)
+        // Registered as soon as the window exists: a macOS dock click before the tail has run opens a window of its own.
+        app.on('activate', () => {
+          if (BaseWindow.getAllWindows().length === 0) createShellWindow(ctx, shell)
+        })
+        return firstWindow
+      })
     }
   }).catch((error: unknown) => { console.error('[main] starting up failed:', error) })
 }

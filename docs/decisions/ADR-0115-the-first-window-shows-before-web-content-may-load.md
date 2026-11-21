@@ -51,9 +51,10 @@ and a tripwire in `makeTabView` names a path that missed it.
 
 ## Consequences
 
-- An address typed, a bookmark clicked or a second launch's address during the gap waits until the tail has ended, and
-  then opens in the order it was asked. The window is responsive in the meantime except where the tail itself holds the
-  main process: the synchronous unpack of the bundled extension on a first start.
+- An address typed into a tab, a bookmark clicked or a second launch's address during the gap waits until the tail has
+  ended, and then opens in the order it was asked. The window is responsive in the meantime except where the tail itself
+  holds the main process: the synchronous unpack of the bundled extension on a first start. A window that has no tab yet
+  (the plan's tabs wait) takes no address in its address bar until its first tab is in.
 - What the person gains is the length of the tail, and no more: it is measured at 65 ms on a warm profile with no proxy
   and 300 to 500 ms on a new profile (a Linux package on a loaded development machine, six launches each), against several
   seconds where the system's proxy settings run a script or a disk scans the unpack. The window is shown about 180 ms
@@ -67,7 +68,8 @@ and a tripwire in `makeTabView` names a path that missed it.
   does for `chrome.tabs.create`; `createTab` answers the active tab's id when it defers, which is the wrong tab for such a
   caller.
 - A window closed during the gap, on a platform where the browser stays resident (macOS), is not refilled, and the session
-  file then records no window for that run.
+  file stays as the previous run left it for the rest of that run: nothing of it was opened, and a window opened
+  afterwards is not recorded.
 - The first-start marks (`afterWindowDone`, `webContentReady`) now come after `windowShown`, and the start-up line prints
   once the gate has opened.
 
