@@ -55,15 +55,13 @@ and a tripwire in `makeTabView` names a path that missed it.
   ended, and then opens in the order it was asked. The window is responsive in the meantime except where the tail itself
   holds the main process: the synchronous unpack of the bundled extension on a first start. A window that has no tab yet
   (the plan's tabs wait) takes no address in its address bar until its first tab is in.
-- What the person gains is the length of the tail, and no more: it is measured at 65 ms on a warm profile with no proxy
-  and 300 to 500 ms on a new profile (a Linux package on a loaded development machine, six launches each), against several
-  seconds where the system's proxy settings run a script or a disk scans the unpack. The window is shown about 180 ms
-  earlier on a first start and 90 ms earlier on the next, and the shell page 90 and 55 ms earlier.
-- The tail now starts when the window is shown, so the gate opens later than before by what showing takes: a hidden window
-  under a virtual display never reports its first paint, so the one-second fallback shows it, and there the gate opened
-  1.1 to 1.6 s later than it did and the bundled extension ran as much later. On a screen the window shows at its first
-  paint, and the first page then waits for the paint and the tail as it did before, in the other order: not measured on
-  a screen here.
+- What the person gains is the length of the tail, and no more: it is measured at about 65 ms on a warm profile with no
+  proxy and 300 to 500 ms on a new profile (a Linux package on a loaded development machine, six launches each), against
+  several seconds where the system's proxy settings run a script or a disk scans the unpack. On a first start the window is
+  shown 256 ms earlier and the shell page rendered 317 ms earlier; on the next start 60 and 89 ms.
+- The tail now starts when the window is shown, about 140 to 195 ms after it is created, so the gate opens later than the
+  tail ended before: 560 ms later on a first start and 325 ms later on the next, and the bundled extension runs as much
+  later (540 and 310 ms). The first page waits for the paint and the tail as it did, in the other order.
 - A caller that needs the tab a deferred open creates waits for the gate first (`webContentReady()`), as the extension host
   does for `chrome.tabs.create`; `createTab` answers the active tab's id when it defers, which is the wrong tab for such a
   caller.
@@ -79,4 +77,5 @@ and a tripwire in `makeTabView` names a path that missed it.
   other change (the gate, the callers that wait) is correct in either order.
 - **What would make us revisit:** a marks record from a screen (not a virtual display) showing the gate opening more than
   about a second after the window was shown on a warm profile with no proxy, which would put the tail's cost back in front
-  of the first page it was moved behind the window to hide.
+  of the first page it was moved behind the window to hide. Measured here (a Linux package under a
+  virtual display): the gate opens about 100 ms after the window is shown on the next start and about 480 ms after on a first start.
