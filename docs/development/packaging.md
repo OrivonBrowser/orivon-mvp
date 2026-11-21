@@ -993,6 +993,33 @@ stays a `require` call where it asks (`build.commonjsOptions.ignore` in the main
 undici loads only when its SQLite cache store is made), so a host does not load it at start. The shim's own package
 list, which `src/shim/bundler/esbuild-plugin.ts` starts from, is `orivon.shimPackages` in `package.json`.
 
+### Compiled code cache
+
+The main bundle is one large script that V8 would compile from scratch at every start. `src/main/start.ts` turns on
+Node's compile cache before it requires the bundle (`src/main/launch/compile-cache.ts`), and the next start reads the
+compiled form back. It is kept in `compiled-code-cache/` in the data directory the default profile uses, one folder for
+every profile and private session, since compiled code is the same for all of them. It holds compiled code only, no
+personal data, and deleting it costs one slower start.
+
+- **Keyed on path and contents.** A new build makes new entries, and a program that runs from a path that changes at
+  every start (an AppImage's mount, a macOS app that Gatekeeper moved) has no cache.
+- **Written out and trimmed 15 seconds after the start.** Node writes its entries at a clean exit, which a killed or
+  crashed start never reaches, and a write costs main-process time the first window must not wait for. A folder over
+  32 MB loses its oldest entries down to 16 MB.
+- **Only a folder of the user's own.** On Linux and macOS the folder is made mode `0700`, and each start uses it only if
+  it is a real folder (not a link) owned by the running user that no group or other user can write. On Windows it sits
+  under the user's own profile path and inherits its user-only ACL, so nothing more is checked. A process running as
+  the same user is not defended against (`docs/architecture/security-model.md` T24).
+- **Never stops a start.** A cache that cannot be opened or trusted is one `[orivon] compile cache not used` line,
+  with the reason, and a start that compiles as before; `NODE_DISABLE_COMPILE_CACHE=1` switches it off.
+- **Not covered by the integrity check on `app.asar`.** A same-user process that can write the folder can have the main
+  process run code of its choosing; that risk is accepted, provisionally (`docs/architecture/security-model.md` T24).
+
+The shell scheme and the internal scheme are registered with `codeCache`, so V8 also keeps the compiled scripts of the
+browser's own pages: the shell's session is stored in the profile (`Partitions/orivon-shell/Code Cache`, and `Code Cache`
+for the new-tab page), and the internal pages' session is in memory, so what it keeps lasts the run at most. The hosts
+the main process forks start when something asks for one, never at every start, so they have no cache of their own.
+
 ### Licence notices
 
 A bundled package's folder is not in the package, so its licence text travels in `resources/THIRD-PARTY-NOTICES.txt`.

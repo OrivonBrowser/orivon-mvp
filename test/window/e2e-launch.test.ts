@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
@@ -94,6 +94,24 @@ it('keeps a profile\'s data in a directory of its own, apart from the default pr
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
     await closeElectron(app)
+  }
+}, TEST_TIMEOUT_MS)
+
+const filesIn = (dir: string, only = /./): number => existsSync(dir) ? readdirSync(dir, { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile() && only.test(entry.name)).length : 0
+
+it('keeps the main bundle\'s compiled code in one folder of the shared data directory, written when it quits, and the shell pages\' in their session', async () => {
+  let home = ''
+  const { app } = await launched([`--orivon-profile=${PROFILE}`], (dir) => { home = dir; seedProfile(dir) })
+  // Chromium writes an entry of its own code cache (named `<hash>_0`) once the shell's scripts have run.
+  expect(await waitFor(() => filesIn(join(home, 'profiles', PROFILE, 'Partitions', 'orivon-shell', 'Code Cache', 'js'), /_0$/) > 0, 20_000)).toBe(true)
+  await closeElectron(app, { keepProfile: true })
+  try {
+    expect(filesIn(join(home, 'compiled-code-cache'))).toBeGreaterThan(0)
+    // Compiled code runs at the next start, so on Linux and macOS no group or other user may reach the folder.
+    if (process.platform !== 'win32') expect(statSync(join(home, 'compiled-code-cache')).mode & 0o077).toBe(0)
+    expect(existsSync(join(home, 'profiles', PROFILE, 'compiled-code-cache'))).toBe(false)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
   }
 }, TEST_TIMEOUT_MS)
 
@@ -302,6 +320,9 @@ it('runs a private session in a directory of its own, with the settings it began
     scratch.push(dir)
     expect(dir.startsWith(join(tmpdir(), 'orivon-private-'))).toBe(true)
     expect(dir).not.toBe(home)
+    // The compiled code is the program's, not the session's: it is kept where the next start finds it, never in a directory deleted when this one ends.
+    expect(existsSync(join(home, 'compiled-code-cache'))).toBe(true)
+    expect(existsSync(join(dir, 'compiled-code-cache'))).toBe(false)
 
     // The settings came along; nothing else did.
     expect(await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource)).toBe('dark')
