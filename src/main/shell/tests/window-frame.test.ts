@@ -157,4 +157,56 @@ describe('showWhenReady', () => {
       vi.useRealTimers()
     }
   })
+
+  describe('the hold that makes a hidden window paint', () => {
+    it('starts for a window that waits and ends after the show, once', () => {
+      vi.useFakeTimers()
+      try {
+        const { win, order, ready } = fakeWindow()
+        const release = vi.fn(() => { order.push('release') })
+        const holdPaint = vi.fn(() => { order.push('hold'); return release })
+        showWhenReady({ win, initialBounds: bounds, kiosk: false }, { firstOfLaunch: true, holdPaint })
+        expect(order).toEqual(['hold'])
+        ready()
+        vi.advanceTimersByTime(2000)
+        expect(order).toEqual(['hold', 'show', 'setBounds', 'release'])
+        expect(holdPaint).toHaveBeenCalledTimes(1)
+        expect(release).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('ends when only the fallback timer shows the window', () => {
+      vi.useFakeTimers()
+      try {
+        const { win } = fakeWindow()
+        const release = vi.fn()
+        showWhenReady({ win, initialBounds: bounds, kiosk: false }, { firstOfLaunch: true, holdPaint: () => release })
+        vi.advanceTimersByTime(999)
+        expect(release).not.toHaveBeenCalled()
+        vi.advanceTimersByTime(1)
+        expect(release).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('starts for a window that comes up behind, and not for one shown at once', () => {
+      vi.useFakeTimers()
+      try {
+        const behind = fakeWindow()
+        const holdBehind = vi.fn(() => () => {})
+        showWhenReady({ win: behind.win, initialBounds: bounds, kiosk: false }, { inactive: true, holdPaint: holdBehind })
+        expect(holdBehind).toHaveBeenCalledTimes(1)
+        const front = fakeWindow()
+        const holdFront = vi.fn(() => () => {})
+        showWhenReady({ win: front.win, initialBounds: bounds, kiosk: false }, { holdPaint: holdFront })
+        expect(front.order).toEqual(['show', 'setBounds'])
+        expect(holdFront).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
 })

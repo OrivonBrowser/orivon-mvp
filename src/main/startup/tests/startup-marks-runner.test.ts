@@ -25,14 +25,15 @@ describe('the start-up line', () => {
     vi.restoreAllMocks()
   })
 
-  it('is printed once, when the window is shown and its first tab has loaded', async () => {
+  it('is printed once, when the window is shown and its chrome page and first tab have loaded', async () => {
     const runner = await freshRunner()
     runner.describeStartup({ firstRun: true, electron: '44.0.0', app: '0.1.0', packaged: false })
     runner.noteStartupHook('broker', 'afterReady', 12)
     runner.markStartup('entry')
     runner.markStartup('windowShown')
-    expect(lines()).toEqual([])
     runner.markStartup('firstTabLoaded')
+    expect(lines()).toEqual([])
+    runner.markStartup('chromeLoaded')
     runner.markStartup('windowShown')
     expect(printed.filter((line) => line.startsWith(STARTUP_LINE_PREFIX))).toHaveLength(1)
     const [record] = lines()
@@ -52,6 +53,7 @@ describe('the start-up line', () => {
     vi.advanceTimersByTime(2_000)
     expect(lines().map(({ complete }) => complete)).toEqual([false])
     runner.markStartup('windowShown')
+    runner.markStartup('chromeLoaded')
     runner.markStartup('firstTabLoaded')
     expect(lines()).toHaveLength(1)
   })
@@ -59,6 +61,7 @@ describe('the start-up line', () => {
   it('leaves a mark reached after the line in the record a report carries', async () => {
     const runner = await freshRunner()
     runner.markStartup('windowShown')
+    runner.markStartup('chromeLoaded')
     runner.markStartup('firstTabLoaded')
     expect(runner.startupRecord().marks.extensionsSeeded).toBeNull()
     runner.markStartup('extensionsSeeded')

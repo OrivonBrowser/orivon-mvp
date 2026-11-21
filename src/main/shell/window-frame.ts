@@ -171,12 +171,15 @@ export interface ShowOptions {
   onShown?: (() => void) | undefined
   /** Called once, when the page has rendered (`ready-to-show`), and not when the fallback timer shows the window: that one may show nothing drawn. Only a window that waits for its first paint has one. */
   onPainted?: (() => void) | undefined
+  /** Starts what makes the page paint while the window is hidden and returns the way to end it. Only a window that waits for its first paint calls it, and it ends once the window is shown. */
+  holdPaint?: (() => () => void) | undefined
 }
 
 /** Shows the window, once only. The launch's first window, and a window that comes up behind (`inactive`), wait for
- * their first paint, so no empty frame shows while the process is still starting. A window opened in front later is
- * shown at once: the process is warm, and the creation colour (`windowBackgroundColor`) holds the frame until the
- * views paint. */
+ * their first paint, so no empty frame shows while the process is still starting; a hidden window paints nothing by
+ * itself, so `holdPaint` makes its page paint meanwhile (hidden-paint.ts, and DESIGN.md for why). A window opened in
+ * front later is shown at once: the process is warm, and the creation colour (`windowBackgroundColor`) holds the
+ * frame until the views paint. */
 export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, options: ShowOptions = {}): void {
   const skipFocus = NO_FOCUS && options.firstOfLaunch === true
   // Electron's type declarations only put 'ready-to-show' on BrowserWindow's
@@ -193,6 +196,7 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
   // guards against calling `show()` twice if 'ready-to-show' fires late,
   // after the fallback already ran.
   let shown = false
+  let releasePaint: (() => void) | undefined
   function showOnce (): void {
     if (shown || win.isDestroyed()) return
     shown = true
@@ -223,6 +227,8 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
       win.setBounds(initialBounds)
       if (options.maximized === true) win.maximize()
     }
+    // After the show: the page then stays visible by the window's own state, with no moment hidden between.
+    releasePaint?.()
     if (options.firstOfLaunch === true) markStartup('windowShown')
     options.onShown?.()
   }
@@ -230,6 +236,7 @@ export function showWhenReady ({ win, initialBounds, kiosk }: WindowFrame, optio
     showOnce()
     return
   }
+  releasePaint = options.holdPaint?.()
   ;(win as unknown as { once: (event: 'ready-to-show', cb: () => void) => void })
     .once('ready-to-show', () => {
       if (options.firstOfLaunch === true) markStartup('chromeReadyToShow')

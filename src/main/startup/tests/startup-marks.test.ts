@@ -58,14 +58,26 @@ describe('createStartupMarks', () => {
     expect(read.firstTabLoaded).toBeNull()
   })
 
-  it('is complete once the window is shown and its first tab has loaded, and not before', () => {
+  it('is complete once the window is shown, its chrome page has loaded and its first tab has loaded, and not before', () => {
     const marks = createStartupMarks(fakeClock(null))
     expect(marks.isComplete()).toBe(false)
     marks.mark('windowShown')
     expect(marks.isComplete()).toBe(false)
+    marks.mark('chromeLoaded')
+    expect(marks.isComplete()).toBe(false)
     marks.mark('firstTabLoaded')
     expect(marks.isComplete()).toBe(true)
     expect(marks.record().complete).toBe(true)
+  })
+
+  it('waits for the chrome page when the window was shown and the tab loaded first', () => {
+    const marks = createStartupMarks(fakeClock(null))
+    marks.mark('windowShown')
+    marks.mark('firstTabLoaded')
+    expect(marks.isComplete()).toBe(false)
+    expect(marks.record().complete).toBe(false)
+    marks.mark('chromeLoaded')
+    expect(marks.isComplete()).toBe(true)
   })
 
   it('counts from the performance clock and says so when the system gives no creation time', () => {
