@@ -55,7 +55,12 @@ const PAGE_TITLE = 'Orivon embed local fixture'
 
 /** A listener this process holds itself: another program on the computer, as far as the app is concerned. */
 let strangerConnections = 0
-const stranger: TcpServer = createTcpServer((socket) => { strangerConnections += 1; socket.destroy() })
+const stranger: TcpServer = createTcpServer((socket) => {
+  strangerConnections += 1
+  console.error(`[diag] stranger accepted a connection from ${String(socket.remoteAddress)}:${String(socket.remotePort)} at +${String(Date.now() - diagStart)}ms, count now ${String(strangerConnections)}`)
+  socket.destroy()
+})
+const diagStart = Date.now()
 
 /**
  * Another program on the IPv6 loopback address, on the app's own port, serving a page nothing else does. Chromium
@@ -82,6 +87,7 @@ beforeAll(async () => {
     new Promise<void>((resolve) => { stranger.listen(OTHER_PORT, HOST, resolve) })
   ])
   await Promise.all([waitForTcpReady(HOST, APP_SERVER_PORT, 10_000), waitForTcpReady(HOST, OTHER_PORT, 10_000)])
+  console.error(`[diag] probes returned at +${String(Date.now() - diagStart)}ms, stranger count at that moment ${String(strangerConnections)}`)
   strangerConnections = 0
 }, 15_000)
 
@@ -241,9 +247,11 @@ it(
         if (!installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         await grant(app, manifest, 'web.embed', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN, ORDINARY_ORIGIN])
 
+        console.error(`[diag] test 1 begins +${String(Date.now() - diagStart)}ms count ${String(strangerConnections)}`)
         const view = await navigateToFixture(app, FIXTURE_URL, PAGE_TITLE)
         await view.evaluate(installSurface)
         const { show, run, destroyed } = drive(view)
+        console.error(`[diag] test 1 first step +${String(Date.now() - diagStart)}ms count ${String(strangerConnections)}`)
 
         // ---- (1) the app holds no listener yet, so a page under its own pattern does not load.
         const before = await show('a', `http://a.localhost:${APP_PORT}/`)
@@ -311,8 +319,10 @@ it(
         check('a port the pattern does not name is refused', otherPort === 'refused:ERR_FAILED', otherPort)
 
         // ---- (6) another program's listener on a port the manifest names does not load, and is never connected to.
+        console.error(`[diag] before stranger load +${String(Date.now() - diagStart)}ms count ${String(strangerConnections)}`)
         const strangerLoad = await show('stranger', `http://a.localhost:${OTHER_PORT}/`)
         check('a listener another program holds on a named port does not load', strangerLoad === 'refused:ERR_FAILED', strangerLoad)
+        console.error(`[diag] after stranger load +${String(Date.now() - diagStart)}ms count ${String(strangerConnections)}`)
         check('the request never reached that listener', strangerConnections === 0, String(strangerConnections))
 
         // ---- (7) the app closes its listener: the pages it shows from it are closed, an ordinary granted page is not,
