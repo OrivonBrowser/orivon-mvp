@@ -9,11 +9,13 @@
 
 The first window is created and shown as soon as the registrations (`afterReady`) and the shell's stores exist. The slow
 tail of every subsystem (`afterWindow`: the route's first read of the system's proxy settings, loading the person's
-extensions, unpacking the bundled extensions into a new profile) runs once that window is shown, or after a second if it
-has not been. When it has ended without a critical failure, `openWebContent()` opens the gate on web pages
-([`web-ready.ts`](../../src/main/startup/web-ready.ts)); then the first window is filled (the restored session, the
-addresses on the command line, What's new, the other windows of a session), the session file is released, and only then is a
-second launch answered. A critical failure of the tail shows the error dialog and ends the process; the gate never opens.
+extensions, unpacking the bundled extensions into a new profile) starts when that window is created and runs while the
+window loads and paints its page. The one step of it that holds the main thread, which serves that page, is the synchronous
+unpacking of the bundled extension: it waits until the window is shown, or after a second if it has not been
+(`firstWindowShown` in [`window-first.ts`](../../src/main/startup/window-first.ts)). When the tail has ended without a
+critical failure, `openWebContent()` opens the gate on web pages ([`web-ready.ts`](../../src/main/startup/web-ready.ts));
+then the first window is filled (the restored session, the addresses on the command line, What's new, the other windows of
+a session), the session file is released, and only then is a second launch answered. A critical failure of the tail shows the error dialog and ends the process; the gate never opens.
 
 Until the gate opens the window shows the new-tab page (or the page a private session opens on), or no tab when the plan
 fills the window, and no tab, navigation or wake of a sleeping tab loads a page of the web: what asks waits and runs, in the
@@ -36,6 +38,9 @@ page loads, and the route's promise is that no page loads unrouted. Neither need
 - **Show the window after the tail, but make the tail faster** (the unpack in a worker thread, the proxy read bounded
   shorter). It narrows the wait and keeps it: a PAC script on a slow link still holds the window. It is a follow-up that
   shortens the time to the gate, not a way of showing the window sooner.
+- **Start the whole tail when the window is shown.** The page's load and paint (about 150 to 200 ms) are idle time for the
+  tail, and the gate opens after both. Starting it at creation overlaps them; only the unpacking, which blocks the thread
+  that serves the page, still waits for the show.
 - **Open the window at creation, on its theme colour, without waiting for its first paint.** Kept as a follow-up if the marks
   show the paint taking more than about 200 ms: the window would appear a frame earlier, empty.
 - **A placeholder new-tab page in a window the plan fills, closed after the fill.** The person would see the page flash and
@@ -56,12 +61,18 @@ and a tripwire in `makeTabView` names a path that missed it.
   holds the main process: the synchronous unpack of the bundled extension on a first start. A window that has no tab yet
   (the plan's tabs wait) takes no address in its address bar until its first tab is in.
 - What the person gains is the length of the tail, and no more: it is measured at about 65 ms on a warm profile with no
-  proxy and 300 to 500 ms on a new profile (a Linux package on a loaded development machine, six launches each), against
-  several seconds where the system's proxy settings run a script or a disk scans the unpack. On a first start the window is
-  shown 256 ms earlier and the shell page rendered 317 ms earlier; on the next start 60 and 89 ms.
-- The tail now starts when the window is shown, about 140 to 195 ms after it is created, so the gate opens later than the
-  tail ended before: 560 ms later on a first start and 325 ms later on the next, and the bundled extension runs as much
-  later (540 and 310 ms). The first page waits for the paint and the tail as it did, in the other order.
+  proxy and 300 to 500 ms on a new profile, against several seconds where the system's proxy settings run a script or a
+  disk scans the unpack. Measured on a Linux package under a virtual display (twelve launches of each, four rounds of
+  three with the order alternated, on a development machine with other work running), against the start before this
+  change (`main` with the paint hold): the window is shown 456 ms earlier on a first start and 12 ms earlier on the next,
+  and web pages may load 370 ms later on a first start and 200 ms later on the next, because before this change the tail
+  ran ahead of the window and after it the first tab opens once the tail has ended.
+- The tail starts at the window's creation, not at its show, so its asynchronous work overlaps the page's load. Against
+  the same change with the tail starting at the show, the gate opens 21 ms sooner on a first start and 70 ms sooner on the
+  next, and on a next start before the window is shown (94 ms before, where it was 81 ms after); the window itself is shown
+  at the same time on a first start and about 45 ms later after its creation on a next start, the cost of the tail
+  sharing the main thread with the page's load. On a first start the gate waits for the unpacking, so it opens 377 ms
+  after the window is shown (467 ms before).
 - A caller that needs the tab a deferred open creates waits for the gate first (`webContentReady()`), as the extension host
   does for `chrome.tabs.create`; `createTab` answers the active tab's id when it defers, which is the wrong tab for such a
   caller.
@@ -77,5 +88,5 @@ and a tripwire in `makeTabView` names a path that missed it.
   other change (the gate, the callers that wait) is correct in either order.
 - **What would make us revisit:** a marks record from a screen (not a virtual display) showing the gate opening more than
   about a second after the window was shown on a warm profile with no proxy, which would put the tail's cost back in front
-  of the first page it was moved behind the window to hide. Measured here (a Linux package under a
-  virtual display): the gate opens about 100 ms after the window is shown on the next start and about 480 ms after on a first start.
+  of the first page it was moved behind the window to hide. Measured here: the gate opens about 90 ms before the window is
+  shown on the next start and about 380 ms after it on a first start.
