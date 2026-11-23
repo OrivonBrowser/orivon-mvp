@@ -61,36 +61,40 @@ and a tripwire in `makeTabView` names a path that missed it.
 ## Consequences
 
 - An address typed into a tab, a bookmark clicked or a second launch's address during the gap waits until the tail has
-  ended, and then opens in the order it was asked. The window is responsive in the meantime except where the tail itself
-  holds the main process: the synchronous unpack of the bundled extension on a first start. A window that has no tab yet
+  ended, and then opens in the order it was asked. The window is responsive in the meantime. A window that has no tab yet
   (the plan's tabs wait) takes no address in its address bar until its first tab is in.
-- What the person gains is the length of the tail, and no more: it is measured at about 65 ms on a warm profile with no
-  proxy and 300 to 500 ms on a new profile, against several seconds where the system's proxy settings run a script or a
-  disk scans the unpack. Measured on a Linux package under a virtual display (twelve launches of each, four rounds of
-  three with the order alternated, on a development machine with other work running), against the start before this
-  change (`main` with the paint hold): the window is shown 456 ms earlier on a first start and 12 ms earlier on the next,
-  and web pages may load 370 ms later on a first start and 200 ms later on the next, because before this change the tail
-  ran ahead of the window and after it the first tab opens once the tail has ended.
-- The tail starts at the window's creation, not at its show, so its asynchronous work overlaps the page's load. Against
-  the same change with the tail starting at the show, the gate opens 21 ms sooner on a first start and 70 ms sooner on the
-  next, and on a next start before the window is shown (94 ms before, where it was 81 ms after); the window itself is shown
-  at the same time on a first start and about 45 ms later after its creation on a next start, the cost of the tail
-  sharing the main thread with the page's load. On a first start the gate waits for the unpacking, so it opens 377 ms
-  after the window is shown (467 ms before).
+- What the person gains is the length of the tail, and no more: on a warm profile with no proxy it is about 40 ms of the
+  main thread, more where the system's proxy settings run a script. Measured on a Linux package under a virtual display
+  (twelve launches of each, four rounds of three with the order alternated, on a development machine with other work
+  running; medians, in ms from the process start), against `main` and against the same change with the tail starting at the
+  window's creation. First start: the window is shown at 870 (870 with the tail at the creation, 1134 on `main`) and web
+  pages may load at 642 (805; 652). Next start: the window is shown at 856 (717; 790) and web pages may load at 538 (616;
+  468). From the end of `afterReady`, the point where the three differ in code, the next start's window is shown after 380
+  ms (284; 376) and its gate opens after 78 ms (190; 40).
+- The two ends trade against each other, because the main thread does the same work in every order: the tail's own work
+  (loading the extensions, about 40 to 70 ms on a next start) runs before the window's creation when the tail starts with
+  the boot, and after it, in the time the window spends waiting for its page, when the tail starts at the creation. Starting
+  with the boot gives the earliest gate (38 ms after `main`'s on a next start on Linux, about 110 ms on Windows) and no
+  earlier window than `main`'s on a next start; starting at the creation gives the earliest window (96 ms before this one
+  on a next start) and a gate 112 ms later. On a first start the window is shown at the same time either way (870 and 870) and
+  the gate opens 163 ms sooner when the tail starts with the boot. On Windows (six launches each, two runners, from
+  `afterReady`): first start window 948 (929; 1330), gate 722 (1035; 608); next start window 314 (271; 334), gate 184 (238;
+  71).
 - A caller that needs the tab a deferred open creates waits for the gate first (`webContentReady()`), as the extension host
   does for `chrome.tabs.create`; `createTab` answers the active tab's id when it defers, which is the wrong tab for such a
   caller.
 - A window closed during the gap, on a platform where the browser stays resident (macOS), is not refilled, and the session
   file stays as the previous run left it for the rest of that run: nothing of it was opened, and a window opened
   afterwards is not recorded.
-- The first-start marks (`afterWindowDone`, `webContentReady`) now come after `windowShown`, and the start-up line prints
-  once the gate has opened.
+- The marks `afterWindowDone` and `webContentReady` can come before `firstWindowCreated` and `windowShown` (on a next start
+  they usually do), and the start-up line prints once the gate has opened.
 
 ## Reversibility
 
-- **Cost to reverse:** cheap: `index.ts` runs the tail before `createShellWindow` again and opens the gate at once; every
-  other change (the gate, the callers that wait) is correct in either order.
+- **Cost to reverse:** cheap: `index.ts` starts the tail once the first window is created instead of with the boot, or
+  awaits it before `createShellWindow` and opens the gate at once; every other change (the gate, the callers that wait) is
+  correct in any of the three orders.
 - **What would make us revisit:** a marks record from a screen (not a virtual display) showing the gate opening more than
-  about a second after the window was shown on a warm profile with no proxy, which would put the tail's cost back in front
-  of the first page it was moved behind the window to hide. Measured here: the gate opens about 90 ms before the window is
-  shown on the next start and about 380 ms after it on a first start.
+  about a second after `afterReady` ended on a warm profile with no proxy, which would put the tail's cost back in front of
+  the first page it was moved behind the window to hide; or a start-up goal that prefers the next start's window to its gate
+  by more than the 100 ms the measurements put between them (starting the tail at the window's creation).
