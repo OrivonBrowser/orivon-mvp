@@ -7,22 +7,56 @@
 // it needs the fetched and unpacked package (`node scripts/fetch-bundled-extensions.mjs`) and fails, never skips, without it.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-profiles-ublock.test.ts
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:https'
 import type { Server } from 'node:https'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, expect, it } from 'vitest'
+import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
+import { readBundledRecord } from '../../src/main/extensions/bundled-folder.js'
+import { canonicalizeManifestKey } from '../../src/main/extensions/registry-runner.js'
+import { parseRegistry, serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
+import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
 import type { ElectronApplication, Page } from 'playwright'
 import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
-import { seedBundledUblockOrigin } from '../support/extensions-fixtures.js'
 import { selfSigned } from '../support/self-signed.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { findViewShowing, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
+
+/** The folder the build unpacked uBlock Origin into, which a new profile loads it from. */
+const UBLOCK_ORIGIN_FOLDER = fileURLToPath(new URL('../../resources/default-profile/extensions/ublock-origin', import.meta.url))
+
+/** Registers the unpacked uBlock Origin in a profile's registry as a new profile's first start leaves it: the folder the build made, no copy of it in the profile. */
+function seedBundledUblockOrigin (userDataDir: string): InstalledExtension {
+  const record = readBundledRecord(join(UBLOCK_ORIGIN_FOLDER, '..'), 'ublock-origin')
+  if (record === undefined) throw new Error('uBlock Origin is not unpacked: run node scripts/fetch-bundled-extensions.mjs')
+  const parsed = readExtensionManifest(record.manifest)
+  if (!parsed.ok) throw new Error(`uBlock Origin's manifest was refused: ${parsed.reason}`)
+  const now = Date.now()
+  const entry: InstalledExtension = {
+    id: generateId(canonicalizeManifestKey(record.manifest['key'] as string) as string),
+    name: parsed.facts.name,
+    version: parsed.facts.version,
+    enabled: true,
+    installedAt: now,
+    updatedAt: now,
+    source: { kind: 'bundled', folder: 'ublock-origin' },
+    updater: { kind: 'none', reason: 'comes with Orivon' },
+    path: UBLOCK_ORIGIN_FOLDER,
+    stripped: loadableManifest(record.manifest).stripped
+  }
+  mkdirSync(join(userDataDir, 'extensions'), { recursive: true })
+  const registryPath = join(userDataDir, 'extensions', 'registry.json')
+  const earlier = existsSync(registryPath) ? parseRegistry(readFileSync(registryPath, 'utf8')).entries : []
+  writeFileSync(registryPath, serializeRegistry([...earlier, entry]))
+  return entry
+}
 
 const SITES = { tunnelled: 'tunnelled.socks.test', direct: 'direct.socks.test', plain: 'plain.socks.test' } as const
 type Site = keyof typeof SITES
