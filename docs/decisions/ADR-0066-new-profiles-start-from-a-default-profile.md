@@ -25,8 +25,16 @@ back, and an existing profile keeps what it has, even one with no bookmarks or n
 
 uBlock Origin is fetched, not committed: `resources/default-profile/bundled-extensions.json` pins a release asset
 and its sha256, `scripts/fetch-bundled-extensions.mjs` downloads it into a folder git ignores, and every
-`package:*` script runs it with `--required`. It installs through the ordinary extension installer with no prompt
-and with the pin recorded before the load.
+`package:*` script runs it with `--required`. The same script checks the release signature and unpacks the file
+into a folder beside it, with a record of the file it came from. The package carries that folder and not the
+`.crx`, so the installer writes (and the system's antivirus scans) the extension's files, and the first start
+writes none: a new profile registers the extension in its registry, with no prompt and with the pin recorded before
+the load, and loads it from the folder where it is. The entry says it came with Orivon (`source.kind` `bundled`),
+and on every start it follows the folder of the Orivon that runs: a newer uBlock Origin that an Orivon update
+brings replaces the version of every profile whose entry still says so. A file of the same extension that the
+person installs over it replaces it as it would any installed copy, and from then on is theirs. Its settings change
+the loaded manifest only for an optional permission it declares (uBlock Origin declares none); then the extension gets
+a copy of its own in the profile, because the application's folder is read-only in an installed package.
 
 Telemetry is unchanged: the welcome screen asks, and an unanswered question sends nothing.
 
@@ -40,6 +48,10 @@ The full uBlock Origin works through `webRequest` (ADR-0053), which is what make
   record of where it came from. The pinned url and digest say both.
 - **Download uBlock Origin at the first start.** The first start would depend on the network, and a download that
   fails is silent for the person. A package that fetched at build time has it on every machine.
+- **Unpack the file into the profile at the first start.** What the first version did: a signature check and
+  hundreds of file writes on the main thread before the first web page, measured at half a second on Linux and
+  two seconds on Windows, where each written file is scanned. Loading the folder the installer wrote costs none
+  of it.
 - **Seed on every start while the item is missing.** Removing a bookmark or uBlock Origin would be undone, and a
   person would learn that a choice does not stick.
 - **Seed only the new tab and leave the bar empty.** The tiles of the new tab are not a place a person keeps
@@ -59,8 +71,14 @@ seeds so a later change to them reaches everyone who never chose, as the provide
   `https://vitalik.eth/` (the same origin the tab has).
 - uBlock Origin's id is the one its release key signs to (`fkgkibajhfbepljeaefdnfnegdcjomkh`), not the Chrome Web
   Store's.
-- A newer bundled uBlock Origin does **not** update a profile that already has it. *Provisional*: an update path
-  for bundled extensions settles it.
+- A newer bundled uBlock Origin updates a profile whose entry still says it came with Orivon, and does **not**
+  update one that has its own copy: a profile seeded before the extension was loaded in place, one the person
+  installed a file over, and one that was given a copy because a choice had to change its manifest.
+- The extension's files are the installed application's: whoever can write the application's folder can change
+  them, as they can change the application. The signature is checked once, when the package is built, and the
+  folder is not checked again at a start.
+- A package is about 18 MB larger on disk (the unpacked files) and its download about the same as before: the
+  `.crx` no longer travels in it.
 - The packaging machine needs the network once per `package:*` run, or the file already fetched.
 
 ## Reversibility

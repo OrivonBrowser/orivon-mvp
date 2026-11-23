@@ -21,7 +21,7 @@
  * its .cmd shim launchable on Windows.
  */
 import { spawnCommandSync } from './cli.mjs'
-import { fetchBundledExtensions } from './fetch-bundled-extensions.mjs'
+import { fetchBundledExtensions, prepareBundledExtensions } from './fetch-bundled-extensions.mjs'
 import { fetchLocalNodes } from './fetch-local-nodes.mjs'
 import { devSwitches, makeDevProfile, removeWhenDone, sweepDevProfiles } from './dev-profile.mjs'
 
@@ -30,7 +30,7 @@ const skipIntro = passed.includes('--skip-intro') || process.env.npm_config_skip
 const intro = skipIntro ? 'off' : process.env.ORIVON_INTRO ?? 'always'
 sweepDevProfiles()
 // A new dev profile installs the bundled extensions (src/main/default-profile/); a failed fetch costs only that.
-for (const failure of await fetchBundledExtensions()) console.error(`[dev] ${failure}`)
+for (const failure of [...await fetchBundledExtensions(), ...await prepareBundledExtensions()]) console.error(`[dev] ${failure}`)
 // The local nodes' files, the same way: a failed fetch costs only that node, which then says why it is off.
 for (const failure of await fetchLocalNodes()) console.error(`[dev] ${failure}`)
 const { switches, profile } = devSwitches(passed, () => makeDevProfile())

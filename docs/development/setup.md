@@ -96,7 +96,7 @@ installed and pinned to the toolbar (`src/main/default-profile/`); only a profil
 never run on gets them (no `history.db`, `bookmarks.json` or `extensions/registry.json` when it starts), so removing
 one is never undone and an existing profile, even one with no bookmarks or extensions, keeps what it has. `npm install`, `npm run dev` and
 `npm start` fetch uBlock Origin's release file into `resources/default-profile/extensions/` (git ignores it) when
-it is missing; with no network the browser starts without it, and `node scripts/fetch-bundled-extensions.mjs`
+it is missing, and unpack it there into the folder the browser loads it from; with no network the browser starts without it, and `node scripts/fetch-bundled-extensions.mjs`
 retries. `ORIVON_DEFAULT_PROFILE=off` starts a profile blank:
 
 | `ORIVON_DEFAULT_PROFILE` | Behaviour |
