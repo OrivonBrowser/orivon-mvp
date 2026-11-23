@@ -18,6 +18,8 @@ function setup (): {
   tabsChanged: ReturnType<typeof vi.fn>
   stop: () => void
   unsubscribed: ReturnType<typeof vi.fn>
+  endWindow: () => void
+  tabsRead: ReturnType<typeof vi.fn>
 } {
   let snapshot: TabsSnapshot = { tabs: [], activeTabId: null }
   let notify: () => void = () => {}
@@ -30,7 +32,9 @@ function setup (): {
   const setFavicon = vi.fn()
   const tabsChanged = vi.fn()
   const tabLayout = vi.fn()
-  const tabs = { getState: () => snapshot, onStateChange: (cb: () => void) => { notify = cb }, layout: tabLayout }
+  const tabsRead = vi.fn()
+  let windowDestroyed = false
+  const tabs = { getState: () => { tabsRead(); return snapshot }, onStateChange: (cb: () => void) => { notify = cb }, layout: tabLayout }
   const subscribe = () => unsubscribed
   let chromeHeight = 76
   let bookmarksChanged: () => void = () => {}
@@ -42,8 +46,9 @@ function setup (): {
     settings: { onChange: subscribe }
   }
   const state = createWindowState({
-    win: { isDestroyed: () => false } as never,
-    chrome: { webContents: { isDestroyed: () => false, send } } as never,
+    win: { isDestroyed: () => windowDestroyed } as never,
+    // The chrome view of a window that ended has no page left to ask.
+    chrome: { get webContents () { if (windowDestroyed) throw new TypeError('Object has been destroyed'); return { isDestroyed: () => false, send } } } as never,
     tabs: tabs as never,
     services: services as never,
     context: { window: { chrome: { webContents: { isDestroyed: () => false, send } } }, services } as never,
@@ -56,6 +61,7 @@ function setup (): {
   return {
     push: (list, active) => { snapshot = { tabs: list as never, activeTabId: active }; notify() },
     changeBookmarks: (height) => { chromeHeight = height; bookmarksChanged() },
+    endWindow: () => { windowDestroyed = true }, tabsRead,
     barItems: (items) => { bar = items }, tabLayout, send, overlays, closeSiteInfo, fillMissingFavicon, setFavicon, tabsChanged, stop: state.stop, unsubscribed
   }
 }
@@ -226,6 +232,19 @@ describe('createWindowState', () => {
     push([tab('a', 'https://a.example/', 'data:icon'), tab('b', 'https://b.example/')], 'a')
 
     expect(setFavicon).toHaveBeenCalledExactlyOnceWith('a.example', 'data:icon')
+  })
+
+  it('reads and sends nothing once its window is destroyed', () => {
+    const { push, send, endWindow, tabsRead } = setup()
+    push([tab('a', 'https://a.example/')], 'a')
+    send.mockClear()
+    tabsRead.mockClear()
+
+    endWindow()
+
+    expect(() => { push([tab('a', 'https://a.example/'), tab('b', 'https://b.example/')], 'b') }).not.toThrow()
+    expect(tabsRead).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
   })
 
   it('ends every subscription it made when stopped', () => {

@@ -209,13 +209,23 @@ export class ExtensionStore extends EventEmitter {
     return tab
   }
 
+  /**
+   * Orivon patch (UPSTREAM.md patch 77): the window a tab is in while that window still exists. A window
+   * that ended with no `close` (its display went away, `destroy()`) stays in `tabToWindow`, and reading
+   * anything from it, its `id` included, throws; for the library such a tab is in no window.
+   */
+  liveWindowOf(tab: Electron.WebContents): Electron.BaseWindow | undefined {
+    const win = this.tabToWindow.get(tab)
+    return win?.isDestroyed() ? undefined : win
+  }
+
   getActiveTabFromWindow(win: Electron.BaseWindow) {
     const activeTab = win && !win.isDestroyed() && this.windowToActiveTab.get(win)
     return (activeTab && !activeTab.isDestroyed() && activeTab) || undefined
   }
 
   getActiveTabFromWebContents(wc: Electron.WebContents): Electron.WebContents | undefined {
-    const win = this.tabToWindow.get(wc) || BrowserWindow.fromWebContents(wc)
+    const win = this.liveWindowOf(wc) || BrowserWindow.fromWebContents(wc)
     const activeTab = win ? this.getActiveTabFromWindow(win) : undefined
     return activeTab
   }
@@ -252,6 +262,8 @@ export class ExtensionStore extends EventEmitter {
     if (!win) {
       throw new Error('Active tab has no parent window')
     }
+    // Orivon patch (UPSTREAM.md patch 77): nothing is in front of a window that ended.
+    if (win.isDestroyed()) return
 
     const prevActiveTab = this.getActiveTabFromWebContents(tab)
 

@@ -169,8 +169,7 @@ export class TabsAPI {
   private createTabDetails(tab: TabContents) {
     const tabId = tab.id
     const activeTab = this.ctx.store.getActiveTabFromWebContents(tab)
-    let win = this.ctx.store.tabToWindow.get(tab)
-    if (win?.isDestroyed()) win = undefined
+    const win = this.ctx.store.liveWindowOf(tab)
     const [width = 0, height = 0] = win ? win.getSize() : []
 
     const details: chrome.tabs.Tab = {
@@ -246,8 +245,8 @@ export class TabsAPI {
     const tabs = Array.from(this.ctx.store.tabs).filter((tab) => {
       if (tab.isDestroyed()) return false
 
-      const browserWindow = this.ctx.store.tabToWindow.get(tab)
-      if (!browserWindow || browserWindow.isDestroyed()) return
+      const browserWindow = this.ctx.store.liveWindowOf(tab)
+      if (!browserWindow) return
 
       return browserWindow.id === windowId
     })
@@ -514,7 +513,9 @@ export class TabsAPI {
     const activeChanged = activeTab?.id !== tabId
     if (!activeChanged) return
 
-    const win = this.ctx.store.tabToWindow.get(tab)
+    const win = this.ctx.store.liveWindowOf(tab)
+    // Orivon patch (UPSTREAM.md patch 77): a tab of a window that ended is not brought to the front.
+    if (!win) return
 
     this.ctx.store.setActiveTab(tab)
 
@@ -537,7 +538,7 @@ export class TabsAPI {
     if (this.ctx.store.getActiveTabFromWebContents(tab) !== tab) return
     this.ctx.router.broadcastEvent('tabs.onActivated', {
       tabId: tab.id,
-      windowId: this.ctx.store.tabToWindow.get(tab)?.id,
+      windowId: this.ctx.store.liveWindowOf(tab)?.id,
     })
   }
 

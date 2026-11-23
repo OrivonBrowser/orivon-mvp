@@ -58,6 +58,7 @@ function fakeStore (tabs: any[]): any {
   return {
     tabs: new Set(tabs),
     tabToWindow: new WeakMap(),
+    liveWindowOf: () => undefined,
     tabDetailsCache: new Map(),
     lastFocusedWindowId: undefined,
     getActiveTabFromWebContents: () => undefined,
@@ -264,6 +265,7 @@ describe('chrome.windows.*: tabs gated the same way as a direct tabs.get, popula
       tabs: new Set(tabs),
       windows: new Set([win]),
       tabToWindow,
+      liveWindowOf: (tab: any) => tabToWindow.get(tab),
       tabDetailsCache: new Map(),
       windowDetailsCache: new Map(),
       lastFocusedWindowId: win.id,

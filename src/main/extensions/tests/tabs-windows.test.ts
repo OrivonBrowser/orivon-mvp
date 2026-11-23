@@ -228,6 +228,43 @@ describe('which tab is active in each window', () => {
   })
 })
 
+describe('a window that ended with no close (UPSTREAM.md patch 77)', () => {
+  /** What Electron does to a destroyed window: every read of it, its id included, throws. */
+  function endWindow (win: any): void {
+    win.isDestroyed = () => true
+    Object.defineProperty(win, 'id', { get: () => { throw new TypeError('Object has been destroyed') } })
+  }
+
+  it('brings no tab of it to the front, announces nothing, and does not throw', () => {
+    const { store, tabs, call, events } = setup()
+    const win = fakeWindow()
+    const front = fakeTab()
+    const behind = fakeTab()
+    store.addTab(front, win)
+    store.addTab(behind, win)
+    call('tabs.query', extensionEvent(), {})
+    events.length = 0
+    endWindow(win)
+
+    expect(() => { tabs.onActivated(behind.id) }).not.toThrow()
+    expect(() => { store.setActiveTab(behind) }).not.toThrow()
+
+    expect(events.filter((e) => e[0] === 'tabs.onActivated')).toEqual([])
+  })
+
+  it('answers no window for its tabs', () => {
+    const { store } = setup()
+    const win = fakeWindow()
+    const tab = fakeTab()
+    store.addTab(tab, win)
+    expect(store.liveWindowOf(tab)).toBe(win)
+
+    endWindow(win)
+
+    expect(store.liveWindowOf(tab)).toBeUndefined()
+  })
+})
+
 describe('chrome.tabs.remove', () => {
   it('announces the removal once, with the window the tab was in', () => {
     const { store, call, events } = setup({ removeTab: (tab: any) => { tab.destroy() } })

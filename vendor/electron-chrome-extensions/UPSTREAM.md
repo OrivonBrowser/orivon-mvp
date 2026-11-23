@@ -945,6 +945,14 @@ and `api/common.ts`/`impl.ts` sit on the same import path and needed no patch of
     finds none, and a tab that takes the front afterwards is the only one. Reason: Chrome opens an action's popup
     over whatever page is in front, its own pages included, and acts on the page in front, not on the one a
     toolbar last drew; the library tied a click to a tab and kept the tab behind a page it did not track active.
+77. **A tab's window is used only while it exists.** `src/browser/store.ts`: the new `liveWindowOf(tab)` answers
+    the window a tab is in, or nothing once that window is destroyed; `getActiveTabFromWebContents` reads the window
+    through it, and `setActiveTab` returns for a destroyed window instead of recording a front tab there.
+    `src/browser/api/tabs.ts`: `createTabDetails`, `getAllInWindow`, `onActivated` (which brings no tab to the front
+    of a destroyed window) and `announceIfActive` read the window through it; `src/browser/api/runtime.ts`:
+    `getContexts` does too. Reason: a window the display server took away is destroyed with no `close`, stays in
+    `tabToWindow`, and every read of it (its `id` included) throws "Object has been destroyed"; the next tab to
+    end then threw from `onActivated` out of the embedder's tab activation.
 
 Nothing else changed; upstream code is not reformatted.
 

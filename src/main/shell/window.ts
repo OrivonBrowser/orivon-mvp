@@ -270,11 +270,17 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     reachChrome
   }))
   const forgetWindow = services.windows.add(entry)
+  let closeRan = false
   win.on('close', () => {
+    closeRan = true
     runWindowHooks('closing', context, options)
     tabs.dispose()
   })
   win.on('closed', () => {
+    // A window can end with no `close` (the display went away, `destroy()`, `app.exit()`). Its tabs are then still live
+    // and each page's end would put a neighbour in front of a window that is gone, so they are disposed here, before
+    // anything else touches them. The `closing` hooks stay out: they record a close the person made, and none was made.
+    if (!closeRan) tabs.dispose()
     forgetWindow()
     windowState.stop()
     overlays.dispose()
