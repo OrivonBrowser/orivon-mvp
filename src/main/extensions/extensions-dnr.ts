@@ -55,7 +55,7 @@ function hostAccessPatternsFor(entry: InstalledExtension): readonly string[] {
  * Design notes on why `dnr-dynamic.json`/`dnr-enabled-rulesets.json` live
  * one level up from `entry.path`. */
 function slotDirFor(userDataPath: string, entry: InstalledExtension): string {
-  return slotDirOf(userDataPath, entry.id, entry.path)
+  return slotDirOf(userDataPath, entry.id, entry.path, entry.source)
 }
 
 function loadExtensionIntoEngine(engine: DnrEngine, entry: InstalledExtension, userDataPath: string): void {

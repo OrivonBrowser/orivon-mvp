@@ -31,7 +31,7 @@ export async function uninstall (ctx: InstallContext, id: string): Promise<void>
     // Chrome clears an uninstalled extension's dynamic rules and enabled-
     // ruleset choice too. The slot's key.pub stays: a reinstall into the
     // same slot must resolve to the same id.
-    const slotDir = slotDirOf(ctx.userDataPath, entry.id, entry.path)
+    const slotDir = slotDirOf(ctx.userDataPath, entry.id, entry.path, entry.source)
     clearPersistedRuleState(slotDir)
     clearOpenOnActionClick(slotDir)
     restoreBaseManifest(slotDir, undefined)

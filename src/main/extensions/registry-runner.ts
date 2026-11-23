@@ -24,9 +24,12 @@ export function isProfileFolder (userDataPath: string, path: string): boolean {
 }
 
 /** Where an extension keeps what Orivon records about it (`key.pub`, its base manifest, its rule state): the folder above
- * its loaded version, or `<userData>/extensions/<id>/` for one loaded from the application's own folder. */
-export function slotDirOf (userDataPath: string, id: string, loadedPath: string): string {
-  return isProfileFolder(userDataPath, loadedPath) ? dirname(loadedPath) : join(extensionsDir(userDataPath), id)
+ * its loaded version, or `<userData>/extensions/<id>/` for one loaded from the application's own folder. A caller that has
+ * the registry entry passes its `source`; one that only knows where the extension is loaded from (a side panel's saved
+ * choice, read while the install is still loading it) is told by where that folder is. */
+export function slotDirOf (userDataPath: string, id: string, loadedPath: string, source?: InstalledExtension['source']): string {
+  const bundled = source === undefined ? !isProfileFolder(userDataPath, loadedPath) : source.kind === 'bundled'
+  return bundled ? join(extensionsDir(userDataPath), id) : dirname(loadedPath)
 }
 
 function registryPath (userDataPath: string): string {

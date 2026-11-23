@@ -79,10 +79,10 @@ function plan (userDataPath: string, entry: InstalledExtension, prefs: Extension
   const loadedPath = join(entry.path, 'manifest.json')
   const current = readText(loadedPath)
   if (current === undefined) return undefined
-  let base = entry.source.kind === 'bundled' ? current : readBaseManifestText(slotDirOf(userDataPath, entry.id, entry.path))
+  let base = entry.source.kind === 'bundled' ? current : readBaseManifestText(slotDirOf(userDataPath, entry.id, entry.path, entry.source))
   if (base === undefined) {
     base = current
-    writeBaseManifest(slotDirOf(userDataPath, entry.id, entry.path), base)
+    writeBaseManifest(slotDirOf(userDataPath, entry.id, entry.path, entry.source), base)
   }
   const next = manifestText(effectiveManifest(JSON.parse(base) as ExtensionManifest, prefs.get(entry.id)))
   return { base, current: manifestText(JSON.parse(current) as ExtensionManifest), next }
@@ -95,7 +95,7 @@ function plan (userDataPath: string, entry: InstalledExtension, prefs: Extension
  * it. Synchronous; the caller records the returned entry and loads from it.
  */
 function detachFromBundle (userDataPath: string, entry: InstalledExtension, base: string, loaded: string): InstalledExtension {
-  const slotDir = slotDirOf(userDataPath, entry.id, entry.path)
+  const slotDir = slotDirOf(userDataPath, entry.id, entry.path, entry.source)
   const target = join(extensionsDir(userDataPath), entry.id, entry.version)
   rmSync(target, { recursive: true, force: true })
   writeFolderCopy(entry.path, target, loaded)
@@ -192,7 +192,12 @@ export function createManifestApplier (deps: ManifestApplierDeps): ManifestAppli
           console.error(`[extensions] could not apply the manifest of ${entry.id} at start:`, error)
         }
       }
-      if (detached.size > 0) writeRegistry(deps.userDataPath, registry.map((entry) => detached.get(entry.id) ?? entry))
+      if (detached.size === 0) return
+      try {
+        writeRegistry(deps.userDataPath, registry.map((entry) => detached.get(entry.id) ?? entry))
+      } catch (error) {
+        console.error('[extensions] could not record the copies of the bundled extensions at start:', error)
+      }
     }
   }
 }

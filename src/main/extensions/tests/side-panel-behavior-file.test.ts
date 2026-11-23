@@ -15,6 +15,14 @@ describe('the saved toolbar behaviour', () => {
     })
   })
 
+  it('makes the slot folder when there is none yet, as for an extension loaded from the application\'s folder', async () => {
+    await withTempDir(async (dir) => {
+      const slot = join(dir, 'extensions', 'an-id')
+      writeOpenOnActionClick(slot, true)
+      expect(readOpenOnActionClick(slot)).toBe(true)
+    })
+  })
+
   it('reads a damaged file as off, and clearing it is safe twice', async () => {
     await withTempDir(async (dir) => {
       writeFileSync(behaviorPath(dir), '{not json')

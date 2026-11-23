@@ -89,7 +89,7 @@ export function describeUpdater (entry: InstalledExtension): string {
 
 // --- serialisation, strict on the way back in ---
 
-/** A bundled extension's folder name: one path segment, so a registry file cannot point the loader elsewhere. */
+/** A bundled extension's folder name as the default profile's list gives it: one plain path segment. The entry's `path` is what loads. */
 export const BUNDLED_FOLDER = /^[\w-][\w.-]*$/
 
 function parseSource (raw: unknown): ExtensionSource | undefined {

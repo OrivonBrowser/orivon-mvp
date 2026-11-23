@@ -88,7 +88,7 @@ export function parseBundledExtensions (text: string, dir: string, report: (prob
   for (const entry of listed as unknown[]) {
     const item = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>
     const { file, name, pinned } = item
-    if (typeof file !== 'string' || !/^[\w.-]+\.crx$/.test(file) || file.includes('..') || typeof name !== 'string') {
+    if (typeof file !== 'string' || !/^[\w-][\w.-]*\.crx$/.test(file) || file.includes('..') || typeof name !== 'string') {
       report('a bundled extensions entry has no usable file or name')
       continue
     }

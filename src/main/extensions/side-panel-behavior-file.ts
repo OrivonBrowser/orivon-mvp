@@ -1,6 +1,6 @@
 // What `chrome.sidePanel.setPanelBehavior` chose, kept in the extension's slot so it outlives a restart.
 // Everything else an extension sets for its panel is held in memory and set again by the extension at start.
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 
@@ -24,6 +24,7 @@ export function readOpenOnActionClick (slotDir: string): boolean {
 
 export function writeOpenOnActionClick (slotDir: string, value: boolean): void {
   try {
+    mkdirSync(slotDir, { recursive: true })
     writeFileAtomic(behaviorPath(slotDir), JSON.stringify({ openPanelOnActionClick: value }))
   } catch (error) {
     console.error('[extensions] could not save the side panel behaviour:', error)

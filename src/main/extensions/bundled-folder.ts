@@ -2,7 +2,7 @@
 // installed package carries that folder and the application loads the extension from it, where it is, so the first
 // start writes no file of it. Durable: node:fs and node:crypto, no Electron; the build script and the application both
 // import it.
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
 import { loadableManifest, readExtensionManifest } from '../../broker/policy/extension-manifest.js'
@@ -56,6 +56,10 @@ export function prepareBundledFolder (extensionsDir: string, file: string, folde
   const parsed = readExtensionManifest(manifest)
   if (!parsed.ok) throw new Error(`${file}: manifest refused: ${parsed.reason}`)
 
+  // A build that was killed half way leaves its working folder behind, and the package would carry it.
+  for (const leftover of readdirSync(extensionsDir)) {
+    if (leftover.startsWith(`${folder}.next-`)) rmSync(join(extensionsDir, leftover), { recursive: true, force: true })
+  }
   const next = `${target}.next-${randomBytes(4).toString('hex')}`
   try {
     unpackZip(crx.archive, next)

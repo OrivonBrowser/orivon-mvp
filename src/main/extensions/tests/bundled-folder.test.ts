@@ -49,6 +49,16 @@ describe('prepareBundledFolder', () => {
     })
   })
 
+  it('removes the working folder an earlier killed build left, so a package never carries it', async () => {
+    await withTempDir(async (root) => {
+      const { dir, sha256 } = crxIn(root)
+      mkdirSync(join(dir, 'a.next-deadbeef'))
+      writeFileSync(join(dir, 'a.next-deadbeef', 'half.js'), '')
+      prepareBundledFolder(dir, 'a.crx', 'a', sha256)
+      expect(readdirSync(dir).sort()).toEqual(['a', 'a.bundled.json', 'a.crx'])
+    })
+  })
+
   it('refuses a file that is not a signed extension, and writes nothing for it', async () => {
     await withTempDir(async (root) => {
       const dir = join(root, 'extensions')

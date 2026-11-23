@@ -183,8 +183,9 @@ export const extensionsSubsystem: Subsystem = {
       ? createExtensionPrefsStore(null, readPrefsFile(prefsFilePath(userDataPath)))
       : createExtensionPrefsStore(prefsFilePath(userDataPath))
     const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen, pages: extensionPagesAroundReload })
-    // A private runtime is given its registry and never changes it.
-    if (!ctx.privateSession) refreshBundledExtensions(userDataPath, currentDefaultProfileDir())
+    // A private runtime follows too: its registry is its own copy, and a peer that started from a package that mounts
+    // itself (the AppImage) is somewhere else than the window that copied it.
+    refreshBundledExtensions(userDataPath, currentDefaultProfileDir())
     manifests.applyAtBoot()
     const held = installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
     installExtensionMedia({ ctx, prefs, defaultSession: session.defaultSession })

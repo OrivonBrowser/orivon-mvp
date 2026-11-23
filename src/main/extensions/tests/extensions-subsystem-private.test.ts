@@ -125,12 +125,12 @@ describe('extensionsSubsystem', () => {
     expect(seedBundledExtensions).not.toHaveBeenCalled()
   })
 
-  it('brings the bundled extensions up to date before anything loads in an ordinary runtime, and leaves a private registry as it was given', async () => {
+  it('brings the bundled extensions up to date before anything loads, in a private runtime too: a peer of a package that mounts itself anew runs from another folder than the window that copied its registry', async () => {
     await start(false)
     expect(refreshBundledExtensions).toHaveBeenCalledWith('/profile', '/default-profile')
 
     refreshBundledExtensions.mockClear()
     await start(true)
-    expect(refreshBundledExtensions).not.toHaveBeenCalled()
+    expect(refreshBundledExtensions).toHaveBeenCalledWith('/profile', '/default-profile')
   })
 })

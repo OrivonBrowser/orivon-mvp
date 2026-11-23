@@ -96,6 +96,13 @@ describe('parseBundledExtensions', () => {
     expect(report).not.toHaveBeenCalled()
   })
 
+  it('leaves out a file whose folder the registry would refuse, so one bad line cannot make the whole registry unreadable', () => {
+    const report = vi.fn()
+    const list = ['.x.crx', 'a..crx', '../b.crx', 'c/d.crx', 'ok.v2.crx'].map((file) => ({ file, name: file, pinned: false }))
+    expect(parseBundledExtensions(JSON.stringify(list), '/p', report).map((extension) => extension.folder)).toEqual(['ok.v2'])
+    expect(report).toHaveBeenCalledTimes(4)
+  })
+
   it('gives nothing for text that is not a list', () => {
     const report = vi.fn()
     expect(parseBundledExtensions('{', '/p', report)).toEqual([])

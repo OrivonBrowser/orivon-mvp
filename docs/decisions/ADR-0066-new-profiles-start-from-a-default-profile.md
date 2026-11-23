@@ -77,6 +77,9 @@ seeds so a later change to them reaches everyone who never chose, as the provide
 - The extension's files are the installed application's: whoever can write the application's folder can change
   them, as they can change the application. The signature is checked once, when the package is built, and the
   folder is not checked again at a start.
+- A build that predates the `bundled` source reads a registry holding one as unreadable, moves it aside
+  (`registry.json.corrupt-<time>`) and starts with none, as it would for any entry it does not know: a profile that
+  runs an older build after this one loses its extensions list until the file is put back.
 - A package is about 18 MB larger on disk (the unpacked files) and its download about the same as before: the
   `.crx` no longer travels in it.
 - The packaging machine needs the network once per `package:*` run, or the file already fetched.
