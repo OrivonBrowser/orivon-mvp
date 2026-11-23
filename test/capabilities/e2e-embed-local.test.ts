@@ -18,7 +18,7 @@ import { createServer as createTcpServer } from 'node:net'
 import type { Server as TcpServer } from 'node:net'
 import { assertNoElectronSurvivors, launchElectron } from '../support/launch-electron.mjs'
 import { HERMETIC_RESOLVER } from '../support/smoke-helpers.mjs'
-import { asPage, closeElectronApp, navigateToFixture, runPhase, waitForTcpReady } from '../support/e2e-helpers.js'
+import { asPage, closeElectronApp, navigateToFixture, runPhase } from '../support/e2e-helpers.js'
 import type { DevGrantRequest } from '../../src/main/dev/dev-grant.js'
 import type { Grant, Manifest } from '../../src/contracts/index.js'
 
@@ -53,14 +53,18 @@ const appServer = createHttpServer((req, res) => {
 })
 const PAGE_TITLE = 'Orivon embed local fixture'
 
-/** A listener this process holds itself: another program on the computer, as far as the app is concerned. */
-let strangerConnections = 0
+/**
+ * A listener this process holds itself: another program on the computer, as far as the app is concerned. It records
+ * the source of every connection it accepts, and this file never connects to it: `listen`'s callback says it is
+ * bound and accepting, so there is no readiness probe whose connection the count would have to tell from a page's.
+ * (A probe's accept reaches this handler after the probe's own `connect` has resolved, and whether that is before or
+ * after the next line of the test differs between systems, so a count reset after a probe cannot be relied on.)
+ */
+const strangerConnections: string[] = []
 const stranger: TcpServer = createTcpServer((socket) => {
-  strangerConnections += 1
-  console.error(`[diag] stranger accepted a connection from ${String(socket.remoteAddress)}:${String(socket.remotePort)} at +${String(Date.now() - diagStart)}ms, count now ${String(strangerConnections)}`)
+  strangerConnections.push(`${String(socket.remoteAddress)}:${String(socket.remotePort)}`)
   socket.destroy()
 })
-const diagStart = Date.now()
 
 /**
  * Another program on the IPv6 loopback address, on the app's own port, serving a page nothing else does. Chromium
@@ -86,9 +90,6 @@ beforeAll(async () => {
     new Promise<void>((resolve) => { appServer.listen(APP_SERVER_PORT, HOST, resolve) }),
     new Promise<void>((resolve) => { stranger.listen(OTHER_PORT, HOST, resolve) })
   ])
-  await Promise.all([waitForTcpReady(HOST, APP_SERVER_PORT, 10_000), waitForTcpReady(HOST, OTHER_PORT, 10_000)])
-  console.error(`[diag] probes returned at +${String(Date.now() - diagStart)}ms, stranger count at that moment ${String(strangerConnections)}`)
-  strangerConnections = 0
 }, 15_000)
 
 afterAll(async () => {
@@ -247,11 +248,9 @@ it(
         if (!installed) throw new Error('dev-grant hook missing -- was this built via npm run test:e2e?')
         await grant(app, manifest, 'web.embed', [BARE_PATTERN, NAMED_PATTERN, OTHER_PATTERN, ORDINARY_ORIGIN])
 
-        console.error(`[diag] test 1 begins +${String(Date.now() - diagStart)}ms count ${String(strangerConnections)}`)
         const view = await navigateToFixture(app, FIXTURE_URL, PAGE_TITLE)
         await view.evaluate(installSurface)
         const { show, run, destroyed } = drive(view)
-        console.error(`[diag] test 1 first step +${String(Date.now() - diagStart)}ms count ${String(strangerConnections)}`)
 
         // ---- (1) the app holds no listener yet, so a page under its own pattern does not load.
         const before = await show('a', `http://a.localhost:${APP_PORT}/`)
@@ -319,11 +318,9 @@ it(
         check('a port the pattern does not name is refused', otherPort === 'refused:ERR_FAILED', otherPort)
 
         // ---- (6) another program's listener on a port the manifest names does not load, and is never connected to.
-        console.error(`[diag] before stranger load +${String(Date.now() - diagStart)}ms count ${String(strangerConnections)}`)
         const strangerLoad = await show('stranger', `http://a.localhost:${OTHER_PORT}/`)
         check('a listener another program holds on a named port does not load', strangerLoad === 'refused:ERR_FAILED', strangerLoad)
-        console.error(`[diag] after stranger load +${String(Date.now() - diagStart)}ms count ${String(strangerConnections)}`)
-        check('the request never reached that listener', strangerConnections === 0, String(strangerConnections))
+        check('the request never reached that listener', strangerConnections.length === 0, JSON.stringify(strangerConnections))
 
         // ---- (7) the app closes its listener: the pages it shows from it are closed, an ordinary granted page is not,
         // and the address is refused from then on.
@@ -375,7 +372,7 @@ it(
         check('"*" does not reach 127.0.0.1 named by address', literal === 'refused:ERR_FAILED', literal)
         check('"*" does not reach the bare localhost name', bareName === 'refused:ERR_FAILED', bareName)
         check('"*" does not reach a localhost label on a port the pattern does not name', otherLocal === 'refused:ERR_FAILED', otherLocal)
-        check('the request never reached a listener the app does not hold', strangerConnections === 0, String(strangerConnections))
+        check('the request never reached a listener the app does not hold', strangerConnections.length === 0, JSON.stringify(strangerConnections))
       } finally {
         await closeElectronApp(app)
       }
