@@ -2,6 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BaseWindow, WebContents } from 'electron'
 import type { ShellServices } from '../../shell/shell-services.js'
 import type { SubsystemContext } from '../../registry.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: the web-ready tests are the ones that hold the gate shut.
+openWebContent()
 
 // Same mocking shape as extension-host.test.ts's own header: every module
 // extension-host.ts imports at module scope is mocked, and the mocked

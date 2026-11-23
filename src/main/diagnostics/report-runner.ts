@@ -28,6 +28,7 @@ import { reportDomain } from './report-domain.js'
 import type { TestKind } from './report-domain.js'
 import { SentStore } from './sent-reports.js'
 import { join } from 'node:path'
+import { deferUntilWebReady } from '../startup/web-ready.js'
 
 function id32 (): string {
   return randomBytes(16).toString('hex')
@@ -107,6 +108,8 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
 function crashATab (services: ShellServices, page: WebContents): void {
   const owner = services.windows.findOwner(page)
   if (owner === undefined) return
+  // Before web pages may load `createTab` answers the tab in front, which is this page: the crash waits for its own tab.
+  if (deferUntilWebReady(() => { crashATab(services, page) })) return
   const target = owner.tabs.liveWebContents(owner.tabs.createTab('about:blank'))
   if (target === undefined) return
   const crash = (): void => { setTimeout(() => { if (!target.isDestroyed()) target.forcefullyCrashRenderer() }, 0) }

@@ -9,6 +9,10 @@ import type { ShellServices } from '../../shell/shell-services.js'
 import { ClosedStack } from '../../session-restore/closed-stack.js'
 import * as pageCommands from '../../page-tools/page-commands.js'
 import * as shareCommands from '../../os/share-commands.js'
+import { openWebContent } from '../../startup/web-ready.js'
+
+// Web pages may load: the web-ready tests are the ones that hold the gate shut.
+openWebContent()
 
 // The page tools have tests of their own; here only that a key reaches them.
 vi.mock('../../page-tools/page-commands.js', () => Object.fromEntries(['print', 'pdf', 'save', 'viewSource', 'screenshot', 'pip'].map((name) => [`${name}Command`, vi.fn(async () => {})])))

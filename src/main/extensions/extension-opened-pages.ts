@@ -5,6 +5,7 @@
 // Navigating a page again after an extension reload is therefore limited to
 // the pages recorded here (extension-pages-reload.ts).
 import type { WebContents } from 'electron'
+import { deferUntilWebReady } from '../startup/web-ready.js'
 
 /** The part of a WebContents this needs. */
 export interface TrackablePage {
@@ -54,8 +55,12 @@ export function isExtensionOpened (contents: WebContents, extensionId: string): 
   return hostOpened.isOpenedBy(contents, extensionId)
 }
 
-/** `tabs.openTrusted` for a caller that has checked `target`, remembering a tab it puts on an extension page. `partition` is the profile session a page of an extension in that session runs in. */
+/**
+ * `tabs.openTrusted` for a caller that has checked `target`, remembering a tab it puts on an extension page. `partition` is the profile session a page of an extension in that session runs in.
+ * Before web pages may load it waits here, not inside `openTrusted`, so the tab it opens later is remembered too, and answers undefined: a caller that needs the tab waits for `webContentReady` first.
+ */
 export function openExtensionTab (tabs: { readonly openTrusted: (target?: string, partition?: string) => [string, WebContents] | undefined }, target?: string, partition?: string): [string, WebContents] | undefined {
+  if (target !== undefined && deferUntilWebReady(() => { openExtensionTab(tabs, target, partition) })) return undefined
   const opened = partition === undefined ? tabs.openTrusted(target) : tabs.openTrusted(target, partition)
   if (opened !== undefined && target !== undefined) markExtensionOpened(opened[1], target)
   return opened

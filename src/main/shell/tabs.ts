@@ -25,6 +25,7 @@ import { KeyboardWaiters, watchFreshTab } from './new-tab-focus.js'
 import { TabPanes } from './tab-panes.js'
 import { setTabTunnelChoice } from './tab-tunnel-choice.js'
 import type { TabTunnelChoice } from '../route/tab-tunnel.js'
+import { deferUntilWebReady } from '../startup/web-ready.js'
 
 export type { TabState, TabsSnapshot, ShellState, Bounds } from './tab-types.js'
 import type { TabsSnapshot, Bounds, TabRecord, TabShell, TabViewHost } from './tab-types.js'
@@ -91,7 +92,12 @@ export class TabManager {
       attachView: (id, view) => { this.panes.swap(id, view) },
       paneCommitted: (id) => { this.panes.recheck(id) },
       paneClicked: (id) => { this.panes.clicked(id) },
-      openInSplit: (id, url) => { if (!this.atCapacity()) this.splits.split(id, this.createTab(url, true, undefined, this.tabs.get(id)?.tunnelChoice), 'right') },
+      openInSplit: (id, url) => {
+        if (this.atCapacity()) return
+        // Before web pages may load `createTab` answers the tab in front, which would split a tab with itself: the split waits.
+        if (deferUntilWebReady(() => { if (this.tabs.has(id)) this.viewHost.openInSplit(id, url) })) return
+        this.splits.split(id, this.createTab(url, true, undefined, this.tabs.get(id)?.tunnelChoice), 'right')
+      },
       reload: (id) => { this.reload(id) },
       back: (id) => { this.back(id) },
       forward: (id) => { this.forward(id) },

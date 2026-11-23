@@ -25,13 +25,16 @@ describe('the start-up line', () => {
     vi.restoreAllMocks()
   })
 
-  it('is printed once, when the window is shown and its chrome page and first tab have loaded', async () => {
+  it('is printed once, when the window is shown, its chrome page and first tab have loaded and web pages may load', async () => {
     const runner = await freshRunner()
     runner.describeStartup({ firstRun: true, electron: '44.0.0', app: '0.1.0', packaged: false })
     runner.noteStartupHook('broker', 'afterReady', 12)
     runner.markStartup('entry')
     runner.markStartup('windowShown')
     runner.markStartup('firstTabLoaded')
+    expect(lines()).toEqual([])
+    runner.markStartup('afterWindowDone')
+    runner.markStartup('webContentReady')
     expect(lines()).toEqual([])
     runner.markStartup('chromeLoaded')
     runner.markStartup('windowShown')
@@ -74,6 +77,7 @@ describe('the start-up line', () => {
     runner.onStartupLine(() => { told.push('early') })
     runner.markStartup('windowShown')
     runner.markStartup('chromeLoaded')
+    runner.markStartup('webContentReady')
     expect(told).toEqual([])
     runner.markStartup('firstTabLoaded')
     expect(told).toEqual(['early'])
@@ -90,6 +94,7 @@ describe('the start-up line', () => {
     runner.onStartupLine(() => { told.push('second') })
     runner.markStartup('windowShown')
     runner.markStartup('chromeLoaded')
+    runner.markStartup('webContentReady')
     expect(() => { runner.markStartup('firstTabLoaded') }).not.toThrow()
     expect(lines()).toHaveLength(1)
     expect(told).toEqual(['second'])

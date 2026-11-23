@@ -34,7 +34,7 @@ export function onStartupLine (listener: () => void): void {
   else lineListeners.push(listener)
 }
 
-/** Records a moment of this start (the first call for a name counts) and prints the line once the first window is shown and its chrome page and first tab have loaded, whichever of the three comes last. */
+/** Records a moment of this start (the first call for a name counts) and prints the line when the first window is shown, its chrome page and first tab have loaded and web pages may load. */
 export function markStartup (name: StartupMark): void {
   marks.mark(name)
   if (marks.isComplete()) printLine()
