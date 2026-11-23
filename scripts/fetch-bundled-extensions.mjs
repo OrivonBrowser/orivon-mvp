@@ -5,7 +5,9 @@
  * with a record of what it was unpacked from (src/main/extensions/bundled-folder.ts): a package
  * carries that folder, and the browser loads the extension from it without writing a file.
  *
- * `postinstall`, `npm run dev` and `npm start` call it without `--required`: a failed download
+ * `postinstall`, `npm run dev`, `npm start`, `npm run smoke` and `npm run test:e2e` call it without
+ * `--required` (a worktree whose `node_modules` is linked never ran `postinstall`, and the specs of a new
+ * profile need the unpacked folder): a failed download
  * prints one line and the browser starts, a new profile then has no bundled extension. Every
  * `package:*` script passes `--required`, so a release cannot ship without them.
  *
