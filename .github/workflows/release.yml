@@ -1,3 +1,4 @@
+# (throwaway: times the start on a pull request, which the macOS leg needs to skip notarization)
 name: Release
 
 # Packages Orivon for Linux (deb, AppImage), Windows (NSIS installer) and macOS (dmg, Apple
