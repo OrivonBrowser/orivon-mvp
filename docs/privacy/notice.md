@@ -207,6 +207,10 @@ report ID, for access, deletion or anything else; the rights and the complaint r
 own profile folder: its log of this run and of the previous one, a record of the last 30
 problems (from the last 30 days), and up to 10 crash dumps from the last 30 days. None of it
 leaves unless you send a report that includes it. A private window's records go when it closes.
+Orivon also writes a CPU profile of its start, which lists the names of the functions it ran and
+the paths of its own program files (the path of your home folder among them), only when you start
+it with the environment variable `ORIVON_STARTUP_PROFILE` naming a file, and only to that file: it
+is never part of a report, and it is not sent anywhere.
 
 ## Everything else the browser sends by itself
 

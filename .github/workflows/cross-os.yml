@@ -143,8 +143,11 @@ jobs:
             osascript -l JavaScript -e 'ObjC.import("AppKit"); const f = $.NSScreen.mainScreen.visibleFrame; [f.origin.x, f.origin.y, f.size.width, f.size.height].join(", ")' 2>&1 || echo "not readable"
           } | tee cross-os/screen.txt
 
-      # Its JSON result goes to cross-os/smoke.out; the failure list is printed to the log as well.
+      # Its JSON result goes to cross-os/smoke.out; the failure list is printed to the log as well. Smoke launches the
+      # browser once, so ORIVON_STARTUP_PROFILE gives one CPU profile of its start per system (scripts/startup-profile-summary.mjs).
       - name: Smoke
+        env:
+          ORIVON_STARTUP_PROFILE: ${{ github.workspace }}/cross-os/startup.cpuprofile
         run: node scripts/run-headless.mjs node scripts/smoke.mjs > cross-os/smoke.out
 
       - name: Build with the developer-only hooks the specs need

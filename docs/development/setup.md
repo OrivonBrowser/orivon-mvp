@@ -249,6 +249,31 @@ The script and `src/main/verifier/checkpoint-fetch.ts` hold the same rule, and a
 
 ---
 
+## Profiling a start
+
+Every start records its own timeline as the `[orivon][startup]` line (`docs/features.md`, Start-up timing). When the marks
+do not say what a stretch between two of them was spent on, a CPU profile of the main process does. It works on any
+build, a package included, and costs nothing unless asked for:
+
+| Variable | What it does |
+|---|---|
+| `ORIVON_STARTUP_PROFILE=<file>` | Runs V8's sampling profiler (every 250 us, through `node:inspector`) on the main process from the first statement of `src/main/start.ts`, and writes a `.cpuprofile` (Chrome DevTools' format) to that file when the start-up line prints, or after 20 s if it never does. A failure is one `[orivon][startup-profile]` line in the log and the start goes on. A profiled start is slower than an unprofiled one: read its profile, not its times. The file holds function names and the paths of Orivon's own files (which include the home folder's name), and goes nowhere but the file asked for |
+
+```bash
+ORIVON_STARTUP_PROFILE=/tmp/start.cpuprofile ./Orivon          # or any package, or `npm start`
+node scripts/startup-profile-summary.mjs /tmp/start.cpuprofile  # the whole profile
+node scripts/startup-profile-summary.mjs /tmp/start.cpuprofile --from-ms 900 --to-ms 1500
+```
+
+`--from-ms` and `--to-ms` are on the start-up line's clock, milliseconds since the system created the process, so the marks of
+the same launch (`afterWindowDone` to `storesLoaded`, say) bound the window directly. The summary lists the functions that
+ran longest by themselves and with what they called, with their file and line, and the files and packages that spent the
+time; `(idle)` is the event loop waiting, not working. The profile also opens in DevTools (Performance, Load profile)
+and in speedscope. `scripts/first-start-probe.mjs --profile <folder>` asks each counted launch of a package for one
+(`scripts/ci/README.md` section Timing a start), and the Release and Cross-OS runs keep one per system.
+
+---
+
 ## The welcome screen
 
 A launch can open on a full-window welcome screen ("The browser Web3 deserves.", an "Enter
