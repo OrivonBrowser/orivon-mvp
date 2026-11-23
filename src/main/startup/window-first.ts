@@ -1,56 +1,98 @@
-// The end of a start, from the moment the first window exists: run the subsystems' slow tail (`afterWindow`) while its
-// chrome page loads, open the gate on web pages (./web-ready.ts), fill the first window, and only then answer a second
-// launch. The one piece of the tail that blocks the main thread, which serves the chrome page, waits for the window to show
-// (`firstWindowShown`). One place for the order, because each step's reason is the one before it; DESIGN.md says why the
-// window comes first.
+// The end of a start. The subsystems' slow tail (`afterWindow`) starts where the boot reaches it and is not awaited
+// there: the stores, the window and the tail run side by side, the tail ends by opening the gate on web pages
+// (./web-ready.ts), and the start ends when the first window is filled, which is when a second launch is answered.
+// One place for the order, because each step's reason is the one before it; DESIGN.md says why the window comes first.
 import type { SubsystemFailure } from '../registry.js'
 import type { StartupMark } from './startup-marks.js'
 
-export interface EndOfStart {
-  /** Every subsystem's `afterWindow` hook (`runAfterWindow`): the route's first read of the system's settings, loading the person's extensions. Runs while the window is still loading its page. */
+/** A window that has not reported it is shown after this long is not waited for: the signal opens, whatever became of the window. */
+export const SHOWN_WAIT_CAP_MS = 5000
+
+export interface TailSteps {
+  /** Every subsystem's `afterWindow` hook (`runAfterWindow`): the route's first read of the system's settings, loading the person's extensions. */
   readonly afterWindow: () => Promise<readonly SubsystemFailure[]>
   /** Prints what failed. */
   readonly report: (failures: readonly SubsystemFailure[]) => void
   /** Ends the start loudly when a failure is critical, and answers true when it did: the gate then never opens. */
   readonly stopOnCritical: (failures: readonly SubsystemFailure[]) => boolean
-  /** Lets web pages load (`openWebContent`) and settles once they may: a test build holds the gate shut past this call, and the first window must not be filled before it opens. */
+  /** Lets web pages load (`openWebContent`) and settles once they may: a test build holds the gate shut past this call. */
   readonly openWebContent: () => Promise<void>
-  /** What the first window opens beyond its new-tab page: the restored session, the addresses on the command line, What's new, the other windows. Runs once pages of the web may load. */
-  readonly fill: () => Promise<void>
-  /** Lets a second launch be answered. Called whatever failed above, so one that arrived early is never stranded, except when the start ended the process. */
-  readonly started: () => void
   readonly mark: (name: StartupMark) => void
+}
+
+export interface TailOutcome {
+  /** A critical failure ended the start: the gate never opened and nothing more is to be done. */
+  readonly stopped: boolean
+}
+
+export interface Tail {
+  /** Settles, and never rejects, once the tail has ended and the gate has opened, or the start was stopped. */
+  readonly done: Promise<TailOutcome>
+  /** The first window is on screen, or is gone, or the start ended without one: lets the steps that wait for it go on (`firstWindowShown`). Safe to call more than once. */
+  readonly windowShown: () => void
 }
 
 let shownSignal: Promise<void> | undefined
 
 /**
- * Settles once the first window is on screen, or gone. A piece of the tail that holds the main thread for long (the
- * synchronous unpacking of the bundled extension into a new profile) awaits it first, because the main thread serves the
- * chrome page the window is waiting to paint. Settles at once where no start is running the tail.
+ * Settles once the first window is on screen, or gone, or after SHOWN_WAIT_CAP_MS. A step of the tail that holds the main
+ * thread for long (the synchronous unpacking of the bundled extension into a new profile) awaits it first, because the
+ * main thread serves the chrome page the window is waiting to paint. Settles at once where no start runs the tail.
  */
 export function firstWindowShown (): Promise<void> {
   return shownSignal ?? Promise.resolve()
 }
 
 /**
- * Runs the end of a start. The tail starts at once, while the window loads its page; `shown` settles when the window is
- * on screen, or gone (a window closed before it was shown still lets the tail run, because the process may stay resident
- * on macOS and the next window needs the extensions), and is what `firstWindowShown` answers with.
+ * Starts the tail and returns at once, with the signal `firstWindowShown` answers with already made: a step of the tail
+ * that asks for it finds it pending, never absent. The tail never rejects: a throw that no subsystem caught is a critical
+ * failure of the start, said and ended like one, so nothing is left waiting on a promise nobody awaits yet.
  */
-export async function endStart (shown: Promise<void>, steps: EndOfStart): Promise<void> {
-  shownSignal = shown
+export function startTail (steps: TailSteps): Tail {
+  let release: () => void = () => {}
+  shownSignal = new Promise<void>((resolve) => { release = resolve })
+  setTimeout(release, SHOWN_WAIT_CAP_MS).unref()
+  const run = async (): Promise<TailOutcome> => {
+    try {
+      const failures = await steps.afterWindow()
+      steps.mark('afterWindowDone')
+      steps.report(failures)
+      if (steps.stopOnCritical(failures)) {
+        release()
+        return { stopped: true }
+      }
+      await steps.openWebContent()
+      return { stopped: false }
+    } catch (error) {
+      const failure: SubsystemFailure = { name: 'startup', phase: 'afterWindow', error, critical: true }
+      steps.report([failure])
+      release()
+      return { stopped: steps.stopOnCritical([failure]) }
+    }
+  }
+  const done = run().catch((error: unknown) => {
+    console.error('[startup] ending the start failed:', error)
+    release()
+    return { stopped: true }
+  })
+  return { done, windowShown: release }
+}
+
+/**
+ * Ends the start: waits for the tail and for the first window to exist, fills the window (the restored session, the
+ * addresses on the command line, What's new, the other windows), and only then lets a second launch be answered, so it never
+ * meets a window with no tabs or opens a second one. A start that failed before its window existed still lets a launch in
+ * and opens the signal; one that ended the process answers no launch queued behind it.
+ */
+export async function endStart (tail: Tail, firstWindow: Promise<{ readonly fill: () => Promise<void> }>, started: () => void): Promise<void> {
   let stopped = false
   try {
-    const failures = await steps.afterWindow()
-    steps.mark('afterWindowDone')
-    steps.report(failures)
-    stopped = steps.stopOnCritical(failures)
+    const [outcome, window] = await Promise.all([tail.done, firstWindow])
+    stopped = outcome.stopped
     if (stopped) return
-    await steps.openWebContent()
-    await steps.fill()
+    await window.fill()
   } finally {
-    // A start that ended the process answers no launch queued behind it.
-    if (!stopped) steps.started()
+    tail.windowShown()
+    if (!stopped) started()
   }
 }

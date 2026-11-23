@@ -46,7 +46,8 @@ import { copyPrivatePicture } from './launch/private-picture.js'
 import { moveLongNamedPartitionFolders } from './launch/partition-folders.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { openWebContent, webContentReady } from './startup/web-ready.js'
-import { endStart } from './startup/window-first.js'
+import { endStart, startTail } from './startup/window-first.js'
+import type { Tail } from './startup/window-first.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { configureVerifier, ethServersChanged, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
 import { effectiveEthServers, noteEthSecrets } from './verifier/eth-servers.js'
@@ -102,8 +103,8 @@ function report (failures: readonly SubsystemFailure[]): void {
 // works is strictly worse than none: every orivon.* call from every app would be
 // silently unroutable, with only a main-process console line as evidence. Fail
 // loud instead (open-questions.md A51). True when it ended the start; checked
-// before the window for `afterReady` and after it for `afterWindow`, where the
-// gate on web pages then never opens (startup/window-first.ts).
+// after `afterReady` and again when the tail has ended, where the gate on web
+// pages then never opens (startup/window-first.ts).
 function stopOnCritical (failures: readonly SubsystemFailure[]): boolean {
   const fatal = criticalFailureMessage([...failures])
   if (fatal === null) return false
@@ -211,6 +212,8 @@ export function boot (runtime: Runtime): void {
     if (runtime.isPrivate || process.platform !== 'darwin') app.quit()
   })
 
+  // What lets the steps of the tail that wait for the first window go on when the start fails before one exists.
+  let abandonTail: () => void = () => {}
   void app.whenReady().then(async () => {
     markStartup('appReady')
     // A private session this process made for itself gets its extensions now, before any subsystem reads its folder; no window exists to hold up.
@@ -222,6 +225,18 @@ export function boot (runtime: Runtime): void {
 
     if (stopOnCritical([...beforeReadyFailures, ...afterReadyFailures])) return
 
+    // The slow tail (the route's first read of the system's settings, loading the extensions) starts here, where it always
+    // did, and is not awaited: the services, the stores and the window below are made while it runs, and the start ends
+    // when it has (startup/window-first.ts). Nothing from here to the first `await` below yields, so what the tail finds
+    // of the services is the same whenever it resumes (DESIGN.md in startup/ says why each interleaving is safe).
+    const tail = startTail({
+      afterWindow: async () => await runAfterWindow(subsystems, ctx, noteStartupHook),
+      report,
+      stopOnCritical,
+      openWebContent: async () => { openWebContent(); await webContentReady(); markStartup('webContentReady') },
+      mark: markStartup
+    })
+    abandonTail = tail.windowShown
     const shell = createShellServices(app.getPath('userData'), runtime, ctx)
     // Wires every window's tab lifecycle into the extensions library
     // (extensionsSubsystem.afterReady already constructed it, above) and
@@ -325,23 +340,21 @@ export function boot (runtime: Runtime): void {
       })
     }
     // The launch's first window shows with the new-tab page (or the page a private session opens on) and nothing that loads
-    // a web page (the tail, startup/window-first.ts, runs while it loads and paints): what the plan opens in it waits for the gate on web pages, which opens once the route has set every
-    // session and every enabled extension is loaded (startup/window-first.ts). Until then the window has no tab when
+    // a web page: what the plan opens in it waits for the gate on web pages, which the tail opens once the route has set
+    // every session and every enabled extension is loaded (startup/window-first.ts). Until then the window has no tab when
     // the plan fills one, and the session file is held, so a start that ends early keeps the previous session.
-    const createFirstWindow = (plan: ShellWindowOptions, own: ShellWindowOptions, news: () => Promise<boolean>): { readonly shown: Promise<void>, readonly fill: () => Promise<void> } => {
+    const createFirstWindow = (plan: ShellWindowOptions, own: ShellWindowOptions, news: () => Promise<boolean>, running: Tail): { readonly fill: () => Promise<void> } => {
       const { first: planned, after, ...rest } = plan
       // A first tab that is a local file needs the binary's fuse read, which nothing else at start-up does: started now, read when the plan is filled.
       const fuse = plan.localFiles === true ? fileProtocolFuse() : undefined
       const release = planned === undefined ? undefined : shell.session.hold()
-      let resolveShown: () => void = () => {}
-      const shown = new Promise<void>((resolve) => { resolveShown = resolve })
       markStartup('firstWindowStart')
       // firstOfLaunch: true -- the ONLY createShellWindow call ORIVON_WINDOW_NO_FOCUS=1 may leave
       // unfocused (window-options.ts's own doc); every other window this process opens always takes focus.
-      const window = createShellWindow(ctx, shell, { ...rest, ...own, ...(planned === undefined ? {} : { first: () => {} }), firstOfLaunch: true, shown: () => { x11VulkanWindowShown(); resolveShown() }, painted: x11VulkanWindowPainted })
+      const window = createShellWindow(ctx, shell, { ...rest, ...own, ...(planned === undefined ? {} : { first: () => {} }), firstOfLaunch: true, shown: () => { x11VulkanWindowShown(); running.windowShown() }, painted: x11VulkanWindowPainted })
       markStartup('firstWindowCreated')
-      // A window closed before it was shown never reports it, and the rest of the start still has to run.
-      window.once('closed', resolveShown)
+      // A window closed before it was shown never reports it, and what waits for it (the unpacking of the bundled extension) still has to run.
+      window.once('closed', running.windowShown)
       const asked = news()
       const fill = async (): Promise<void> => {
         await fuse
@@ -360,37 +373,19 @@ export function boot (runtime: Runtime): void {
           release?.()
         }
       }
-      return { shown, fill }
+      return { fill }
     }
-    const end = (firstWindow: ReturnType<typeof createFirstWindow>): Promise<void> => endStart(firstWindow.shown, {
-      afterWindow: async () => await runAfterWindow(subsystems, ctx, noteStartupHook),
-      report,
-      stopOnCritical,
-      openWebContent: async () => { openWebContent(); await webContentReady(); markStartup('webContentReady') },
-      fill: firstWindow.fill,
-      // Marked started only once the first window is filled, never before: a second launch arriving earlier
-      // would run the opener with a window that has none of its tabs yet, or with no window open, creating one of
-      // its own -- two windows for one launch. endStart marks it even if the start fails, so a failure does not
-      // also strand every second launch queued behind it.
-      started: markStarted,
-      mark: markStartup
-    })
-    // A start that fails before it has a window still lets a second launch be answered, as the failure is already reported.
+    // Marked started only once the first window is filled, never before: a second launch arriving earlier would run the
+    // opener with a window that has none of its tabs yet, or with no window open, creating one of its own -- two windows for
+    // one launch. endStart marks it even when the window cannot be made, so a failure does not strand a second launch.
     const begin = async (open: () => Promise<ReturnType<typeof createFirstWindow>>): Promise<void> => {
-      let firstWindow: ReturnType<typeof createFirstWindow>
-      try {
-        firstWindow = await open()
-      } catch (error) {
-        markStarted()
-        throw error
-      }
-      await end(firstWindow)
+      await endStart(tail, open(), markStarted)
     }
     if (runtime.isPrivate) {
       await begin(async () => {
         // A private session begins with the page that says what it does, and has no welcome screen: it is the person's own second browser.
         const plan = firstWindowOptions({ services: shell, isPrivate: true, argv: process.argv, packaged: app.isPackaged })
-        return createFirstWindow(plan, plan.first === undefined ? { first: (tabs) => { tabs.openInternal('private') } } : {}, async () => false)
+        return createFirstWindow(plan, plan.first === undefined ? { first: (tabs) => { tabs.openInternal('private') } } : {}, async () => false, tail)
       })
     } else {
       await begin(async () => {
@@ -400,7 +395,7 @@ export function boot (runtime: Runtime): void {
         const afterWelcome = startFirstRunFlavour(shell, runtime.dir, runtime.launch.kind === 'default', process.argv, process.env, process.execPath)
         const plan = firstWindowOptions({ services: shell, isPrivate: false, argv: process.argv, packaged: app.isPackaged, displays: screen.getAllDisplays(), openWindow: (options) => { createShellWindow(ctx, shell, options) } })
         const intro = afterWelcome.wrap(plan.intro ?? await planIntro(process.env['ORIVON_INTRO'], app.getPath('userData'), { offered: welcomeOffersTelemetry, renewal: telemetryRenewal, choose: async (on) => { await setTelemetryOn(on, 'welcome') } }))
-        const firstWindow = createFirstWindow(plan, { intro }, async () => await whatsNewDue(app.getPath('userData')))
+        const firstWindow = createFirstWindow(plan, { intro }, async () => await whatsNewDue(app.getPath('userData')), tail)
         afterWelcome.windowOpened(intro)
         // Registered as soon as the window exists: a macOS dock click before the tail has run opens a window of its own.
         app.on('activate', () => {
@@ -409,5 +404,5 @@ export function boot (runtime: Runtime): void {
         return firstWindow
       })
     }
-  }).catch((error: unknown) => { console.error('[main] starting up failed:', error) })
+  }).catch((error: unknown) => { abandonTail(); console.error('[main] starting up failed:', error) })
 }

@@ -1,38 +1,67 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemFailure } from '../../registry.js'
-import { endStart, firstWindowShown } from '../window-first.js'
-import type { EndOfStart } from '../window-first.js'
+import { endStart, firstWindowShown, SHOWN_WAIT_CAP_MS, startTail } from '../window-first.js'
+import type { TailSteps } from '../window-first.js'
 
 const failure = (critical: boolean): SubsystemFailure => ({ name: 'route', phase: 'afterWindow', error: new Error('no settings'), critical })
 
-/** The steps, each noting itself in `log`; `shown` is settled by the test. */
-function steps (log: string[], over: Partial<EndOfStart> = {}): EndOfStart {
+/** The tail's steps, each noting itself in `log`. */
+function steps (log: string[], over: Partial<TailSteps> = {}): TailSteps {
   return {
     afterWindow: async () => { log.push('afterWindow'); return [] },
     report: () => { log.push('report') },
     stopOnCritical: () => { log.push('stopOnCritical'); return false },
     openWebContent: async () => { log.push('openWebContent') },
-    fill: async () => { log.push('fill') },
-    started: () => { log.push('started') },
     mark: (name) => { log.push(`mark ${name}`) },
     ...over
   }
 }
 
-describe('the end of a start', () => {
-  it('starts the tail at once, while the window is not shown yet, and answers firstWindowShown when it shows', async () => {
+const filled = (log: string[]): Promise<{ readonly fill: () => Promise<void> }> => Promise.resolve({ fill: async () => { log.push('fill') } })
+const settles = async (promise: Promise<unknown>): Promise<boolean> => await Promise.race([promise.then(() => true), new Promise<boolean>((resolve) => { setTimeout(() => { resolve(false) }, 10) })])
+
+afterEach(() => { vi.useRealTimers() })
+
+describe('the tail', () => {
+  it('starts at once and is not awaited by whoever starts it', async () => {
     const log: string[] = []
-    let show: () => void = () => {}
-    const shown = new Promise<void>((resolve) => { show = resolve })
-    const ended = endStart(shown, steps(log))
-    let reached = false
-    void firstWindowShown().then(() => { reached = true })
-    await ended
-    expect(log[0]).toBe('afterWindow')
-    expect(reached).toBe(false)
-    show()
-    await firstWindowShown()
-    expect(reached).toBe(true)
+    let finish: () => void = () => {}
+    const tail = startTail(steps(log, { afterWindow: async () => { log.push('afterWindow'); await new Promise<void>((resolve) => { finish = resolve }); return [] } }))
+    expect(log).toEqual(['afterWindow'])
+    expect(await settles(tail.done)).toBe(false)
+    finish()
+    await tail.done
+    expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical', 'openWebContent'])
+  })
+
+  it('has the shown signal made, and pending, before the first step of the tail runs', async () => {
+    let seen: Promise<void> | undefined
+    const tail = startTail(steps([], { afterWindow: async () => { seen = firstWindowShown(); return [] } }))
+    await tail.done
+    expect(seen).toBeDefined()
+    expect(await settles(seen as Promise<void>)).toBe(false)
+    tail.windowShown()
+    expect(await settles(seen as Promise<void>)).toBe(true)
+  })
+
+  it('opens the shown signal once the window is shown, and as often as it is asked', async () => {
+    const tail = startTail(steps([]))
+    const signal = firstWindowShown()
+    expect(await settles(signal)).toBe(false)
+    tail.windowShown()
+    tail.windowShown()
+    expect(await settles(signal)).toBe(true)
+  })
+
+  it('opens the shown signal after a cap, for a window that never says', async () => {
+    vi.useFakeTimers()
+    startTail(steps([]))
+    let open = false
+    void firstWindowShown().then(() => { open = true })
+    await vi.advanceTimersByTimeAsync(SHOWN_WAIT_CAP_MS - 1)
+    expect(open).toBe(false)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(open).toBe(true)
   })
 
   it('answers firstWindowShown at once where no start runs the tail', async () => {
@@ -41,43 +70,118 @@ describe('the end of a start', () => {
     await expect(fresh.firstWindowShown()).resolves.toBeUndefined()
   })
 
-  it('runs the tail, then opens web content, then fills the window, and answers a second launch last', async () => {
+  it('opens web content after the tail, in this order, and says the start goes on', async () => {
     const log: string[] = []
-    await endStart(Promise.resolve(), steps(log))
-    expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical', 'openWebContent', 'fill', 'started'])
-  })
-
-  it('fills the window only once web content may load, however long the gate is held', async () => {
-    const log: string[] = []
-    let letIn: () => void = () => {}
-    const gate = new Promise<void>((resolve) => { letIn = resolve })
-    const ended = endStart(Promise.resolve(), steps(log, { openWebContent: async () => { log.push('openWebContent'); await gate; log.push('gate open') } }))
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    const outcome = await startTail(steps(log)).done
+    expect(outcome).toEqual({ stopped: false })
     expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical', 'openWebContent'])
-    letIn()
-    await ended
-    expect(log.slice(-4)).toEqual(['openWebContent', 'gate open', 'fill', 'started'])
-  })
-
-  it('never opens web content, fills or lets a launch in when a failure is critical', async () => {
-    const log: string[] = []
-    await endStart(Promise.resolve(), steps(log, {
-      afterWindow: async () => { log.push('afterWindow'); return [failure(true)] },
-      stopOnCritical: (failures) => { log.push(`stopOnCritical ${String(failures.length)}`); return true }
-    }))
-    expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical 1'])
   })
 
   it('opens web content after a failure that is not critical', async () => {
     const log: string[] = []
-    await endStart(Promise.resolve(), steps(log, { afterWindow: async () => { log.push('afterWindow'); return [failure(false)] } }))
+    await startTail(steps(log, { afterWindow: async () => { log.push('afterWindow'); return [failure(false)] } })).done
     expect(log).toContain('openWebContent')
-    expect(log).toContain('fill')
+  })
+
+  it('never opens web content when a failure is critical, and opens the shown signal', async () => {
+    const log: string[] = []
+    const tail = startTail(steps(log, {
+      afterWindow: async () => { log.push('afterWindow'); return [failure(true)] },
+      stopOnCritical: (failures) => { log.push(`stopOnCritical ${String(failures.length)}`); return true }
+    }))
+    expect(await tail.done).toEqual({ stopped: true })
+    expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical 1'])
+    expect(await settles(firstWindowShown())).toBe(true)
+  })
+
+  it('never rejects: a throw no subsystem caught is a critical failure of the start, said and ended like one', async () => {
+    const log: string[] = []
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    try {
+      const reported: SubsystemFailure[][] = []
+      const tail = startTail(steps(log, {
+        afterWindow: async () => { throw new Error('runSerial broke') },
+        report: (failures) => { reported.push([...failures]) },
+        stopOnCritical: (failures) => { log.push(`stopOnCritical ${String(failures[0]?.critical)}`); return true }
+      }))
+      // Awaited a good while after it settled, as the start awaits it, hundreds of milliseconds after it was made.
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(await tail.done).toEqual({ stopped: true })
+      expect(reported[0]?.[0]).toMatchObject({ name: 'startup', phase: 'afterWindow', critical: true })
+      expect(log).toEqual(['stopOnCritical true'])
+      expect(await settles(firstWindowShown())).toBe(true)
+      await new Promise((resolve) => setTimeout(resolve, 10))
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      process.off('unhandledRejection', unhandled)
+    }
+  })
+
+  it('never rejects even when saying the failure throws, and stops the start', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const tail = startTail(steps([], { afterWindow: async () => { throw new Error('first') }, stopOnCritical: () => { throw new Error('dialog failed') } }))
+    expect(await tail.done).toEqual({ stopped: true })
+    expect(error).toHaveBeenCalled()
+    error.mockRestore()
+    expect(await settles(firstWindowShown())).toBe(true)
+  })
+
+  it('holds the start for as long as the gate is held shut', async () => {
+    const log: string[] = []
+    let letIn: () => void = () => {}
+    const gate = new Promise<void>((resolve) => { letIn = resolve })
+    const tail = startTail(steps(log, { openWebContent: async () => { log.push('openWebContent'); await gate; log.push('gate open') } }))
+    const ended = endStart(tail, filled(log), () => { log.push('started') })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(log.at(-1)).toBe('openWebContent')
+    letIn()
+    await ended
+    expect(log.slice(-4)).toEqual(['openWebContent', 'gate open', 'fill', 'started'])
+  })
+})
+
+describe('the end of a start', () => {
+  it('fills the window once the tail has ended, and answers a second launch last', async () => {
+    const log: string[] = []
+    await endStart(startTail(steps(log)), filled(log), () => { log.push('started') })
+    expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical', 'openWebContent', 'fill', 'started'])
+  })
+
+  it('waits for a window that is made after the tail ended, and fills it then', async () => {
+    const log: string[] = []
+    let made: (window: { readonly fill: () => Promise<void> }) => void = () => {}
+    const window = new Promise<{ readonly fill: () => Promise<void> }>((resolve) => { made = resolve })
+    const ended = endStart(startTail(steps(log)), window, () => { log.push('started') })
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect(log).not.toContain('fill')
+    expect(log).not.toContain('started')
+    made({ fill: async () => { log.push('fill') } })
+    await ended
+    expect(log.slice(-2)).toEqual(['fill', 'started'])
+  })
+
+  it('fills nothing and lets no launch in when a failure is critical', async () => {
+    const log: string[] = []
+    const tail = startTail(steps(log, { afterWindow: async () => [failure(true)], stopOnCritical: () => true }))
+    await endStart(tail, filled(log), () => { log.push('started') })
+    expect(log).not.toContain('fill')
+    expect(log).not.toContain('started')
   })
 
   it('marks the start whatever the fill does, so a second launch is never stranded', async () => {
     const log: string[] = []
-    await expect(endStart(Promise.resolve(), steps(log, { fill: async () => { throw new Error('restore failed') } }))).rejects.toThrow('restore failed')
+    const window = Promise.resolve({ fill: async () => { throw new Error('restore failed') } })
+    await expect(endStart(startTail(steps(log)), window, () => { log.push('started') })).rejects.toThrow('restore failed')
     expect(log.at(-1)).toBe('started')
+  })
+
+  it('opens the shown signal and lets a launch in when the window cannot be made', async () => {
+    const log: string[] = []
+    const tail = startTail(steps(log))
+    const signal = firstWindowShown()
+    await expect(endStart(tail, Promise.reject(new Error('no window')), () => { log.push('started') })).rejects.toThrow('no window')
+    expect(log.at(-1)).toBe('started')
+    expect(await settles(signal)).toBe(true)
   })
 })

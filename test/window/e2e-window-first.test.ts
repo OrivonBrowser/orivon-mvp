@@ -111,9 +111,8 @@ it('shows the browser with its chrome painted while web pages may not load yet, 
 
     const startup = await startupOf(app)
     expect(startup.complete).toBe(true)
-    // The page painted before the window showed; the tail ran from the window's creation, not from its show, and the gate opened after it, a hold later.
+    // The page painted before the window showed; the tail ran beside the window's making, and the gate opened after it, a hold later.
     expect(reached(startup, 'chromeReadyToShow')).toBeLessThanOrEqual(reached(startup, 'windowShown'))
-    expect(reached(startup, 'firstWindowCreated')).toBeLessThanOrEqual(reached(startup, 'afterWindowDone'))
     expect(reached(startup, 'webContentReady') - reached(startup, 'afterWindowDone')).toBeGreaterThanOrEqual(HOLD_MS - 1000)
     expectNoTripwire(app)
   } finally {

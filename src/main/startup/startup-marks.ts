@@ -13,9 +13,9 @@
 export const STARTUP_LINE_PREFIX = '[orivon][startup] '
 
 /**
- * The moments recorded, in the order a first start reaches them. A next start's tail overlaps the window's page load, so
- * `afterWindowDone` and `webContentReady` can come before `chromeLoaded`; a first tab that is a restored session loads after
- * the gate opens, so `firstTabLoaded` comes after `webContentReady` there.
+ * The moments recorded, in the order a first start reaches them. The tail runs beside the stores and the first window, so on a
+ * next start `afterWindowDone` and `webContentReady` can come before `storesLoaded` and `firstWindowCreated`; a first tab
+ * that is a restored session loads after the gate opens, so `firstTabLoaded` comes after `webContentReady` there.
  */
 export const STARTUP_MARKS = [
   'entry', // start.ts began, its imports evaluated
