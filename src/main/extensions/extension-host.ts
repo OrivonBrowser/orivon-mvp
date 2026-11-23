@@ -388,6 +388,9 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       if (front !== undefined && front !== wc && hostForSession(front.session) !== host) host.clearActiveTab(win)
     },
     tabActivated: (wc) => {
+      const found = bridge?.services.windows.findTab(wc)
+      // A tab in a window that ended is in front of nothing, and the library cannot name that window.
+      if (found?.window.window.isDestroyed() === true) return
       // Chrome closes an open browserAction popup the moment the PERSON
       // switches tabs -- 'browser-action-popup-created' wires the same
       // close for the active tab's own navigation; this is the other half.
@@ -396,7 +399,6 @@ export function attachExtensionShell (ctx: SubsystemContext, services: ShellServ
       // test/extensions/e2e-extensions-toolbar.test.ts deliberately keeps the popup
       // open and interactive across its own chrome.tabs.create() call.
       if (!isExtensionActivatingTab()) closeCurrentPopup()
-      const found = bridge?.services.windows.findTab(wc)
       pointToolbarAt(wc)
       if (trackedTabs.has(wc)) {
         if (found != null) clearOthers(wc, found.window.window)

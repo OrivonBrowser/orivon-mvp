@@ -122,6 +122,8 @@ export function createWindowState (deps: WindowStateDeps): WindowState {
   }
 
   function pushState (): void {
+    // A window that ended with no close has no `chrome` left to read either, and a state part reads the window itself.
+    if (win.isDestroyed()) return
     // Closing the last tab destroys `chrome`, and a late bookmarks or zoom
     // callback must not send to it: sending on a destroyed WebContents throws.
     if (chrome.webContents.isDestroyed()) return

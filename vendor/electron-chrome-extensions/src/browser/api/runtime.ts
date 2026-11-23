@@ -129,7 +129,7 @@ export class RuntimeAPI extends EventEmitter {
     for (const tab of this.ctx.store.tabs) {
       const url = tab.getURL()
       if (!url.startsWith(`${origin}/`)) continue
-      const windowId = this.ctx.store.tabToWindow.get(tab)?.id ?? -1
+      const windowId = this.ctx.store.liveWindowOf(tab)?.id ?? -1
       contexts.push({
         contextId: `tab:${String(tab.id)}`, contextType: 'TAB',
         documentOrigin: documentOriginOf(url), documentUrl: url,
