@@ -49,9 +49,9 @@ The full uBlock Origin works through `webRequest` (ADR-0053), which is what make
 - **Download uBlock Origin at the first start.** The first start would depend on the network, and a download that
   fails is silent for the person. A package that fetched at build time has it on every machine.
 - **Unpack the file into the profile at the first start.** What the first version did: a signature check and
-  hundreds of file writes on the main thread before the first web page, measured at half a second on Linux and
-  two seconds on Windows, where each written file is scanned. Loading the folder the installer wrote costs none
-  of it.
+  hundreds of file writes on the main thread before the first web page, measured at 0.28 s on a Linux runner
+  and 1.1 s on a Windows runner, where each written file is scanned. Loading the folder the installer wrote
+  costs 0.06 s and 0.09 s.
 - **Seed on every start while the item is missing.** Removing a bookmark or uBlock Origin would be undone, and a
   person would learn that a choice does not stick.
 - **Seed only the new tab and leave the bar empty.** The tiles of the new tab are not a place a person keeps
