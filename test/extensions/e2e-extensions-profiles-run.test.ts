@@ -140,8 +140,8 @@ async function visit (name: Name): Promise<Page> {
   return view
 }
 
-/** The name the beacon extension's copy in `partition` stored for itself, once its background page is up. */
-const copyIn = async (partition: string | undefined): Promise<string> => {
+/** The name the beacon extension's copy in `partition` stored for itself, once its background page is up (waited for up to `within` ms). */
+const copyIn = async (partition: string | undefined, within = 10_000): Promise<string> => {
   let found = ''
   await waitFor(async () => {
     found = await app.evaluate(async ({ session, webContents }, [name, id]) => {
@@ -150,7 +150,7 @@ const copyIn = async (partition: string | undefined): Promise<string> => {
       return page === undefined ? '' : await page.executeJavaScript('new Promise((resolve) => chrome.storage.local.get("copy", (stored) => resolve(stored.copy || "")))') as string
     }, [partition, beaconId] as const)
     return found !== ''
-  }, 10_000).catch(() => false)
+  }, within).catch(() => false)
   return found
 }
 
@@ -226,13 +226,20 @@ it('[app:extensions-run-in-the-profiles] with the whole browser on the tunnel, t
 /** Sends the tab in front to a page of the extension and returns at once: the page that asks is unloaded with its extension, so it can never answer. */
 const SHOW_EXTENSION_PAGE = `(() => { chrome.tabs.query({ active: true }).then(([tab]) => chrome.tabs.update(tab.id, { url: chrome.runtime.getURL('config.js') })); return true })()`
 
-/** Runs `code` in the page of the beacon extension that session `partition` holds. */
-const inBeacon = async (partition: string, code: string): Promise<unknown> => await app.evaluate(async ({ session, webContents }, [name, id, run]) => {
-  const target = session.fromPartition(name as string)
-  const page = webContents.getAllWebContents().find((wc) => !wc.isDestroyed() && wc.session === target && wc.getType() === 'backgroundPage' && wc.getURL().startsWith(`chrome-extension://${id as string}/`))
-  if (page === undefined) throw new Error(`no beacon page in ${name as string}`)
-  return await page.executeJavaScript(run as string)
-}, [partition, beaconId, code] as const)
+/**
+ * Runs `code` in the page of the beacon extension that session `partition` holds, once that page's script has run. A profile's copies
+ * load when a website opens in it and the website opens as soon as they are loaded, so the background page of a copy can still be
+ * coming up (slowest on a macOS runner) when the website is on screen.
+ */
+const inBeacon = async (partition: string, code: string): Promise<unknown> => {
+  expect(await copyIn(partition, 20_000), `the beacon extension's background page is up in ${partition}`).not.toBe('')
+  return await app.evaluate(async ({ session, webContents }, [name, id, run]) => {
+    const target = session.fromPartition(name as string)
+    const page = webContents.getAllWebContents().find((wc) => !wc.isDestroyed() && wc.session === target && wc.getType() === 'backgroundPage' && wc.getURL().startsWith(`chrome-extension://${id as string}/`))
+    if (page === undefined) throw new Error(`no beacon page in ${name as string}`)
+    return await page.executeJavaScript(run as string)
+  }, [partition, beaconId, code] as const)
+}
 
 it('[app:extensions-run-in-the-profiles] the tunnel profile holds no extension, background page or worker while no website of it is open, and gets them back with the next', async () => {
   await visit('tunnelled')
