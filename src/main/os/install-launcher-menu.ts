@@ -1,7 +1,8 @@
 // Puts "New window" and "New private window" in the menu the system draws for Orivon's icon: the taskbar's jump list
 // on Windows, the dock's menu on macOS. On Linux the installed package's desktop entry carries them
 // (electron-builder.yml). Only the default profile offers them: a task starts the default profile's browser, and a
-// kiosk or a private session has no business adding entries for it.
+// kiosk or a private session has no business adding entries for it. The entries are set after the start
+// (../startup/after-start.ts); only the process's id must come before the first window.
 import { Menu } from 'electron'
 import type { MenuItemConstructorOptions } from 'electron'
 import type { ShellInstaller } from '../shell/shell-installers.js'
@@ -12,9 +13,11 @@ type BuildMenu = (items: MenuItemConstructorOptions[]) => Electron.Menu
 export function launcherMenuInstaller (platform: NodeJS.Platform, buildMenu: BuildMenu): ShellInstaller {
   return {
     name: 'launcher-menu',
-    install: (app, services, _ctx, runtime) => {
+    install: (app) => {
       // Before any window exists, and for every profile: the taskbar groups a process's windows under this id.
       if (platform === 'win32') app.setAppUserModelId(appUserModelId(app.isPackaged))
+    },
+    afterStart: (app, services, _ctx, runtime) => {
       if (runtime.profileId !== 'default' || runtime.isPrivate || services.kiosk) return
       if (platform === 'win32') {
         if (!app.setUserTasks(launcherTasks(runtime.source))) console.error('[os] the taskbar menu could not be set')

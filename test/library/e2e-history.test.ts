@@ -1,7 +1,7 @@
 // History in the running shell: the pages a tab reaches are written down and
 // listed on the History page, the new-tab and shell pages are not, a page can
 // be searched for and removed, history turned off records nothing, what is
-// older than the retention is gone at launch, and Clear browsing data forgets
+// older than the retention is gone shortly after launch, and Clear browsing data forgets
 // what it is asked to.
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -35,6 +35,8 @@ afterAll(async () => {
 })
 
 const TEST_TIMEOUT_MS = 60_000
+/** The work after the start waits AFTER_START_DELAY_MS; a loaded runner starts it late. */
+const AFTER_START_WAIT_MS = 20_000
 
 async function launched (seed?: (dir: string) => void | Promise<void>): Promise<{ app: ElectronApplication, chrome: Page }> {
   const app = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], ...(seed === undefined ? {} : { seedProfile: async (dir: string) => { await seed(dir) } }) })
@@ -127,7 +129,7 @@ it('records nothing while history is off, and says so on the page', async () => 
   }
 }, TEST_TIMEOUT_MS)
 
-it('removes at launch what is older than the retention, and keeps what is newer', async () => {
+it('removes shortly after launch what is older than the retention, and keeps what is newer', async () => {
   const { app, chrome } = await launched(async (dir) => {
     await mkdir(dir, { recursive: true })
     const seeded = new SqliteHistoryStore(join(dir, 'history.db'))
@@ -137,8 +139,8 @@ it('removes at launch what is older than the retention, and keeps what is newer'
   })
   try {
     const page = await openHistoryPage(app, chrome)
-    expect(await waitFor(async () => (await titles(page)).length > 0)).toBe(true)
-    expect(await titles(page)).toEqual(['Recent page'])
+    // The retention prune runs a few seconds after the start (startup/after-start.ts), and the open page follows it.
+    expect(await waitFor(async () => (await titles(page)).join() === 'Recent page', AFTER_START_WAIT_MS)).toBe(true)
     expect(await page.locator('.day h2').count()).toBe(1)
     expect(mainOutput(app)).not.toContain('uncaught exception')
   } finally {
