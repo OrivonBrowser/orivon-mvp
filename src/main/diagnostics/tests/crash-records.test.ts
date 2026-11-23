@@ -83,6 +83,24 @@ describe('parseMarker', () => {
   })
 })
 
+describe('parseMarker, the window system\'s end', () => {
+  const ended = '{"sessionId":"s","pid":4,"startedAt":9,"endedBy":"window-system","stalls":{"over1s":2,"over5s":1,"longestMs":6200}}'
+
+  it('reads the field a run wrote when the window system ended its window, with the stalls it had', () => {
+    expect(parseMarker(ended)).toEqual({ sessionId: 's', pid: 4, startedAt: 9, endedBy: 'window-system', stalls: { over1s: 2, over5s: 1, longestMs: 6200 } })
+  })
+
+  it('keeps an old marker, with no field, reading as it did', () => {
+    expect(parseMarker('{"sessionId":"s","pid":4,"startedAt":9}')).toEqual({ sessionId: 's', pid: 4, startedAt: 9 })
+  })
+
+  it('drops a field it does not know and stalls that are not counts, and keeps the marker', () => {
+    expect(parseMarker('{"sessionId":"s","pid":4,"startedAt":9,"endedBy":"somebody"}')).toEqual({ sessionId: 's', pid: 4, startedAt: 9 })
+    expect(parseMarker('{"sessionId":"s","pid":4,"startedAt":9,"endedBy":"window-system","stalls":{"over1s":"2","over5s":1,"longestMs":-1}}')).toEqual({ sessionId: 's', pid: 4, startedAt: 9, endedBy: 'window-system' })
+    expect(parseMarker('{"sessionId":"s","pid":4,"startedAt":9,"stalls":{"over1s":2,"over5s":1,"longestMs":3}}')).toEqual({ sessionId: 's', pid: 4, startedAt: 9 })
+  })
+})
+
 describe('uncleanExitRecord', () => {
   const marker = { sessionId: 'prev', pid: 7, startedAt: Date.parse('2026-10-07T08:00:00Z') }
 
@@ -96,6 +114,31 @@ describe('uncleanExitRecord', () => {
 
   it('dates it at a native dump\'s time when there is one, so the dump matches it', () => {
     expect(uncleanExitRecord(marker, [], 'c'.repeat(16), Date.parse('2026-10-07T09:30:00Z'))).toMatchObject({ at: '2026-10-07T09:30:00Z', reason: 'crashed' })
+  })
+
+  it('says the display server ended the run when its marker says the window system did, and no dump explains it', () => {
+    const lost = { ...marker, endedBy: 'window-system' as const }
+    const record = uncleanExitRecord(lost, [], 'c'.repeat(16), undefined)
+    expect(record).toMatchObject({ kind: 'unclean-exit', reason: 'display-lost', at: '2026-10-07T08:00:00Z', process: 'main', exitCode: null })
+    expect(record?.message).toBe('The desktop\'s display server ended its connection to Orivon\'s window, so Orivon could not go on.')
+  })
+
+  it('adds the main process\'s stalls to the words when it had stalled, and nothing when it had not', () => {
+    const stalled = uncleanExitRecord({ ...marker, endedBy: 'window-system', stalls: { over1s: 3, over5s: 1, longestMs: 6200 } }, [], 'c'.repeat(16), undefined)
+    expect(stalled?.message).toContain('Before that the main process had stalled 3 times for 1 s or more, the longest for 6.2 s.')
+    const once = uncleanExitRecord({ ...marker, endedBy: 'window-system', stalls: { over1s: 1, over5s: 0, longestMs: 1300 } }, [], 'c'.repeat(16), undefined)
+    expect(once?.message).toContain('stalled once for 1 s or more, the longest for 1.3 s.')
+    const quiet = uncleanExitRecord({ ...marker, endedBy: 'window-system', stalls: { over1s: 0, over5s: 0, longestMs: 0 } }, [], 'c'.repeat(16), undefined)
+    expect(quiet?.message).not.toContain('stalled')
+  })
+
+  it('keeps the kind the report server takes, and gives a native dump the last word', () => {
+    const lost = { ...marker, endedBy: 'window-system' as const }
+    expect(uncleanExitRecord(lost, [], 'c'.repeat(16), Date.parse('2026-10-07T09:30:00Z'))).toMatchObject({ kind: 'unclean-exit', reason: 'crashed', message: 'The previous run ended in a native crash.' })
+  })
+
+  it('leaves a marker with no field exactly as it was', () => {
+    expect(uncleanExitRecord(marker, [], 'c'.repeat(16), undefined)).toMatchObject({ reason: 'abnormal-exit', message: 'The previous run ended without an orderly quit.' })
   })
 
   it('is not made when that run already left a fatal record, which is the same event', () => {

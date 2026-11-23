@@ -1,5 +1,6 @@
 // What the browser knows about its own crashes: the record kept for each one, and the rules for which survive.
 // Pure: reading and writing the file is crash-store.ts's, and the clock and the randomness come in as arguments.
+import type { StallCounts } from './main-stalls.js'
 
 export type CrashKind = 'main-error' | 'renderer' | 'child-process' | 'unclean-exit'
 
@@ -110,32 +111,56 @@ export interface RunMarker {
   readonly pid: number
   /** Milliseconds since the epoch. */
   readonly startedAt: number
+  /** Written when the window system ended the shell window with no close, so the display connection is gone: the next start words that run's end. */
+  readonly endedBy?: 'window-system'
+  /** The main process's stalls up to that moment, with `endedBy`. */
+  readonly stalls?: StallCounts
+}
+
+/** The `reason` of an unclean-exit record whose run the window system ended. */
+export const DISPLAY_LOST = 'display-lost'
+
+function isStallCounts (value: unknown): value is StallCounts {
+  if (typeof value !== 'object' || value === null) return false
+  const counts = value as Record<string, unknown>
+  return ['over1s', 'over5s', 'longestMs'].every((key) => Number.isSafeInteger(counts[key]) && (counts[key] as number) >= 0)
 }
 
 export function parseMarker (text: string): RunMarker | undefined {
   try {
     const value = JSON.parse(text) as Partial<RunMarker> | null
     if (typeof value !== 'object' || value === null) return undefined
-    const { sessionId, pid, startedAt } = value
-    return typeof sessionId === 'string' && sessionId !== '' && typeof pid === 'number' && typeof startedAt === 'number' ? { sessionId, pid, startedAt } : undefined
+    const { sessionId, pid, startedAt, endedBy, stalls } = value
+    if (typeof sessionId !== 'string' || sessionId === '' || typeof pid !== 'number' || typeof startedAt !== 'number') return undefined
+    if (endedBy !== 'window-system') return { sessionId, pid, startedAt }
+    return { sessionId, pid, startedAt, endedBy, ...(isStallCounts(stalls) ? { stalls: { over1s: stalls.over1s, over5s: stalls.over5s, longestMs: stalls.longestMs } } : {}) }
   } catch {
     return undefined
   }
 }
 
-/** The record for a previous run that did not end in an orderly quit, or undefined when there is nothing to record: no marker, or that run already left a fatal record of its own. `at` is when the run began, unless a native crash dump of that run says better. */
+/** The words of a window-system end: what ended it, and what the main process was doing before when it had stalled. */
+function displayLostMessage (stalls: StallCounts | undefined): string {
+  const ended = 'The desktop\'s display server ended its connection to Orivon\'s window, so Orivon could not go on.'
+  if (stalls === undefined || stalls.over1s === 0) return ended
+  const times = stalls.over1s === 1 ? 'once' : `${String(stalls.over1s)} times`
+  return `${ended} Before that the main process had stalled ${times} for 1 s or more, the longest for ${(stalls.longestMs / 1000).toFixed(1)} s.`
+}
+
+/** The record for a previous run that did not end in an orderly quit, or undefined when there is nothing to record: no marker, or that run already left a fatal record of its own. `at` is when the run began, unless a native crash dump of that run says better; a dump also outranks a window-system end, which is the cause only when nothing crashed. */
 export function uncleanExitRecord (marker: RunMarker | undefined, records: readonly CrashRecord[], id: string, dumpAtMs: number | undefined): CrashRecord | undefined {
   if (marker === undefined) return undefined
   if (records.some((record) => record.sessionId === marker.sessionId && record.kind === 'main-error')) return undefined
+  const displayLost = dumpAtMs === undefined && marker.endedBy === 'window-system'
   return {
     id,
     sessionId: marker.sessionId,
     kind: 'unclean-exit',
     at: stamp(dumpAtMs ?? marker.startedAt),
     process: 'main',
-    reason: dumpAtMs === undefined ? 'abnormal-exit' : 'crashed',
+    reason: dumpAtMs !== undefined ? 'crashed' : displayLost ? DISPLAY_LOST : 'abnormal-exit',
     exitCode: null,
-    message: dumpAtMs === undefined ? 'The previous run ended without an orderly quit.' : 'The previous run ended in a native crash.',
+    message: dumpAtMs !== undefined ? 'The previous run ended in a native crash.' : displayLost ? displayLostMessage(marker.stalls) : 'The previous run ended without an orderly quit.',
     stack: ''
   }
 }

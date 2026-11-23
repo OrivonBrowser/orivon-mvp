@@ -2,7 +2,8 @@
 // takes its tabs down with it: the main process must not throw while it does. With an extension loaded the library
 // tracks every tab, so a tab's page ending after its window would put a neighbour in front of a window that no longer
 // exists, and the library would read the id of that destroyed window. The person closed nothing, so the session file is
-// left as it was last written, unclean, and the next start offers that window's tabs back.
+// left as it was last written, unclean, and the next start offers that window's tabs back. The run marker is told the
+// window system ended a window, so the next start words it as the display's doing, not as a crash.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/tabs/e2e-window-destroyed.test.ts
 import { existsSync, readFileSync } from 'node:fs'
@@ -19,6 +20,10 @@ import { waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 180_000
 const EXIT_WAIT_MS = 30_000
+/** On macOS the browser stays running with no window, as a Mac app does (index.ts's `window-all-closed`): this long is
+ * well past when a tab's page ending would have thrown. */
+const STAYS_OPEN_WAIT_MS = 5_000
+const STAYS_OPEN = process.platform === 'darwin'
 
 let server: FixtureServer
 
@@ -75,9 +80,10 @@ it('ends without an error in the main process when a window is destroyed with no
         page.close()
       }, second).catch(() => { /* the browser may end before the call answers */ })
 
-      const code = await Promise.race([exited, new Promise<'still running'>((resolve) => { setTimeout(() => { resolve('still running') }, EXIT_WAIT_MS) })])
+      const code = await Promise.race([exited, new Promise<'still running'>((resolve) => { setTimeout(() => { resolve('still running') }, STAYS_OPEN ? STAYS_OPEN_WAIT_MS : EXIT_WAIT_MS) })])
       const log = mainOutput(app)
-      check('the browser ended on its own, not by an error', code !== 'still running' && code !== 1, `exit code ${String(code)}`)
+      if (STAYS_OPEN) check('the browser kept running with no window, as a Mac app does', code === 'still running', `exit code ${String(code)}`)
+      else check('the browser ended on its own, not by an error', code !== 'still running' && code !== 1, `exit code ${String(code)}`)
       check('the main process logged no uncaught exception', !log.includes('uncaught exception in the main process'),
         log.split('\n').filter((line) => line.includes('uncaught exception') || line.includes('TypeError') || line.includes('    at ')).slice(0, 14).join('\n'))
       check('no state push read the destroyed window', !log.includes('state part fullScreen failed'))
@@ -89,6 +95,40 @@ it('ends without an error in the main process when a window is destroyed with no
       check('the session file still lists the window\'s tabs after the browser ended', sessionTabs().includes(first) && sessionTabs().includes(second), JSON.stringify(session))
       check('and it is not marked as ended in order, so the next start offers them back', session?.clean === false, JSON.stringify(session))
       check('no main-process crash was recorded', !crashes.some((record) => record.kind === 'main-error'), JSON.stringify(crashes.map((record) => `${record.kind}: ${record.message}`)))
+    } finally {
+      await closeElectron(app)
+    }
+  })
+}, TEST_TIMEOUT_MS)
+
+it('tells the run marker and the log that the window system ended a window, while the browser goes on in another', async () => {
+  await runPhase('a window destroyed with no close, in a browser with a second window', async (check) => {
+    const { app, chrome } = await launchShell()
+    try {
+      await chrome.evaluate(() => { (window as unknown as { orivonShell: { newWindow: () => void } }).orivonShell.newWindow() })
+      const windowIds = async (): Promise<number[]> => await app.evaluate(({ BaseWindow }) => BaseWindow.getAllWindows().map((window) => window.id).sort((a, b) => a - b))
+      check('a second window is open', await waitFor(async () => (await windowIds()).length === 2))
+
+      const dir = profileDirOf(app)
+      const marker = dir === undefined ? undefined : join(dir, 'diagnostics', 'running.json')
+      const logFile = dir === undefined ? undefined : join(dir, 'diagnostics', 'logs', 'current.log')
+      const markerNow = (): Record<string, unknown> => marker !== undefined && existsSync(marker) ? JSON.parse(readFileSync(marker, 'utf8')) as Record<string, unknown> : {}
+      check('the run marker is there and says nothing of the window system yet', marker !== undefined && existsSync(marker) && markerNow()['endedBy'] === undefined)
+
+      // The window goes with no `close`, as it does when the display connection is lost; the other window keeps the browser running.
+      await app.evaluate(({ BaseWindow }) => {
+        const [oldest] = BaseWindow.getAllWindows().sort((a, b) => a.id - b.id)
+        if (oldest === undefined) throw new Error('no window to destroy')
+        oldest.destroy()
+      })
+      check('the first window is gone and the second remains', await waitFor(async () => (await windowIds()).length === 1))
+      check('the run marker says the window system ended a window', await waitFor(() => markerNow()['endedBy'] === 'window-system'), JSON.stringify(markerNow()))
+      check('the browser is still running, with no quit to clear the marker', app.process().exitCode === null && marker !== undefined && existsSync(marker))
+      const logged = (): string => logFile !== undefined && existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+      check('the log has the line saying the window ended without a close', await waitFor(() => logged().includes('WARN The window was ended without a close: the display connection ended.')), logged().split('\n').slice(-6).join('\n'))
+      const crashes = dir === undefined || !existsSync(join(dir, 'diagnostics', 'crashes.json')) ? [] : parseRecords(readFileSync(join(dir, 'diagnostics', 'crashes.json'), 'utf8'))
+      check('no main-process crash was recorded', !crashes.some((record) => record.kind === 'main-error'), JSON.stringify(crashes))
+      check('the main process logged no uncaught exception', !mainOutput(app).includes('uncaught exception'))
     } finally {
       await closeElectron(app)
     }

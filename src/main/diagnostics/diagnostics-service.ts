@@ -3,13 +3,14 @@
 // environment (clock, randomness, folders) as arguments, so a start, a fatal error and an unclean exit are all
 // tested without Electron; diagnostics-runner.ts is what connects it to the process.
 import { errorFacts, idFromBytes, lastRunCrash, stamp, uncleanExitRecord } from './crash-records.js'
-import type { CrashKind, CrashRecord } from './crash-records.js'
+import type { CrashKind, CrashRecord, RunMarker } from './crash-records.js'
 import { CrashStore, RunMarkerFile } from './crash-store.js'
 import { listDumps, pruneDumps } from './dump-files.js'
 import { dumpFor, uncleanExitDump } from './dumps.js'
 import { LogFile, logHeader, readLogTail, sessionOfLog } from './log-file.js'
 import { LOG_RING_LINES, LogRing } from './log-ring.js'
 import type { LogLevel } from './log-ring.js'
+import type { StallCounts } from './main-stalls.js'
 import { cut, LIMITS } from './report-payload.js'
 import { scrub } from './secret-scrub.js'
 
@@ -50,6 +51,9 @@ export class DiagnosticsService {
   private previousCrashId: string | undefined
   private previousLogSession: string | undefined
   private fatal: CrashRecord | undefined
+  private running: RunMarker | undefined
+  private ended = false
+  private windowEnd = false
 
   constructor (private readonly env: ServiceEnv) {
     this.sessionId = idFromBytes(env.randomBytes(8))
@@ -88,7 +92,8 @@ export class DiagnosticsService {
     if (unclean !== undefined) this.store.add(unclean, now)
     this.previousLogSession = sessionOfLog(`${this.env.dir}/logs/previous.log`)
     this.previousCrashId = lastRunCrash(this.store.list(), previous?.sessionId)?.id
-    this.marker.write({ sessionId: this.sessionId, pid: this.env.pid, startedAt: now })
+    this.running = { sessionId: this.sessionId, pid: this.env.pid, startedAt: now }
+    this.marker.write(this.running)
     pruneDumps(this.env.crashDumpsDir, now)
   }
 
@@ -104,8 +109,23 @@ export class DiagnosticsService {
 
   /** The browser is quitting in order: the next start finds no marker. */
   end (): void {
+    this.ended = true
     this.logFile.flush()
     this.marker.clear()
+  }
+
+  /**
+   * The window system ended the shell window with no close, which is what a lost display connection does, and the
+   * process goes with it. The marker says so for the next start and the log says so now, both on disk before this
+   * returns. A run that left a fatal record already has its own account (`app.exit()` destroys windows without a
+   * close too), and a run that quit in order has no marker to add to.
+   */
+  windowSystemEnded (stalls: StallCounts): void {
+    if (this.fatal !== undefined || this.ended || this.windowEnd || this.running === undefined) return
+    this.windowEnd = true
+    this.marker.write({ ...this.running, endedBy: 'window-system', stalls })
+    this.log('warn', 'The window was ended without a close: the display connection ended.')
+    this.logFile.flush()
   }
 
   /** Writes a crash record now, on disk before it returns. A private session keeps no page address. */

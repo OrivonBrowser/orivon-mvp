@@ -44,6 +44,7 @@ import { pointerIsLocal } from './local-pointer.js'
 import { showToast } from '../page-tools/toast.js'
 import { relayoutOnSizeChange } from './window-size-settle.js'
 import { markStartup } from '../startup/startup-marks-runner.js'
+import { noteWindowSystemEnd } from '../diagnostics/diagnostics-runner.js'
 
 /** The new-tab page's own URL: the dev server's nested path, or its address on the shell scheme. */
 export function resolveDashboardUrl (): string {
@@ -280,7 +281,11 @@ export function createShellWindow (ctx: SubsystemContext, services: ShellService
     // A window can end with no `close` (the display went away, `destroy()`, `app.exit()`). Its tabs are then still live
     // and each page's end would put a neighbour in front of a window that is gone, so they are disposed here, before
     // anything else touches them. The `closing` hooks stay out: they record a close the person made, and none was made.
-    if (!closeRan) tabs.dispose()
+    // The next start is told first, on disk, so it words the end as the display's and not as a crash.
+    if (!closeRan) {
+      noteWindowSystemEnd()
+      tabs.dispose()
+    }
     forgetWindow()
     windowState.stop()
     overlays.dispose()

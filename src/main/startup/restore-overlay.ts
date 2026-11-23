@@ -37,9 +37,10 @@ export function restoreOverlayFor (deps: RestoreDeps): OverlayDef {
           stop()
           timer = setTimeout(close, OFFER_SHOWN_MS)
           timer.unref()
-          const asked = (typeof payload === 'object' && payload !== null ? payload : {}) as { restore?: unknown, report?: unknown }
+          const asked = (typeof payload === 'object' && payload !== null ? payload : {}) as { restore?: unknown, report?: unknown, reason?: unknown }
           // The offer to restore is the bar's reason by default; the report is only there when the last run left a crash to report.
-          return { keys: services.shortcuts.keysOf('tab.reopen'), restore: asked.restore !== false, report: asked.report === true }
+          // The crash's reason passes on as it is: the page words the few it knows and says the usual for the rest.
+          return { keys: services.shortcuts.keysOf('tab.reopen'), restore: asked.restore !== false, report: asked.report === true, ...(typeof asked.reason === 'string' ? { reason: asked.reason } : {}) }
         },
         request: (command) => {
           const type = typeof command === 'object' && command !== null ? (command as { type?: unknown }).type : undefined

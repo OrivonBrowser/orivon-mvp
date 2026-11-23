@@ -83,6 +83,13 @@ describe('the restore overlay', () => {
     expect(handler.show?.({ report: 'yes' })).toMatchObject({ restore: true, report: false })
   })
 
+  it('hands the page the crash\'s reason when it is a string, and none otherwise', () => {
+    const { handler } = setup(previous)
+    expect(handler.show?.({ restore: true, report: true, reason: 'display-lost' })).toMatchObject({ reason: 'display-lost' })
+    expect(handler.show?.({ restore: true, report: true, reason: 7 })).not.toHaveProperty('reason')
+    expect(handler.show?.({ restore: true })).not.toHaveProperty('reason')
+  })
+
   it('opens the report page at the last run\'s crash on Report, closes, and restores nothing', () => {
     setCrashLookups({ page: () => undefined, lastRun: () => '0123456789abcdef' })
     const { handler, openInternal, close, openWindow } = setup(previous)

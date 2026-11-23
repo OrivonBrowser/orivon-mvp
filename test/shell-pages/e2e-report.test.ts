@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { listDumps } from '../../src/main/diagnostics/dump-files.js'
+import { LOGGED_STALL_MS, STALL_TICK_MS } from '../../src/main/diagnostics/main-stalls.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
@@ -269,6 +270,61 @@ it('offers a report of the last run\'s fatal error at the next start, with the s
     expect(String((shown['crash'] as Record<string, unknown>)['message'])).toContain('thrown on purpose')
     expect(String((shown['crash'] as Record<string, unknown>)['stack'])).toContain('thrown on purpose')
     expect(JSON.stringify(shown['log'])).toContain('uncaught exception')
+  } finally {
+    await closeElectron(second)
+  }
+}, QA_TEST_TIMEOUT_MS * 2)
+
+/** Holds the main process's event loop for `ms`, the way a long synchronous job does. */
+const stallMain = async (app: App, ms: number): Promise<void> => {
+  await app.evaluate((_electron, hold) => { const end = Date.now() + hold; while (Date.now() < end) { /* busy */ } }, ms)
+}
+
+it('counts the main process\'s stalls, and words a run the window system ended as the desktop\'s doing at the next start', async () => {
+  const first = await launch()
+  let profile: string | undefined
+  try {
+    profile = await first.app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
+    // The monitor's timer reads a stall up to one tick short, so the hold is a tick past the length that gets a log line.
+    await stallMain(first.app, LOGGED_STALL_MS + 2 * STALL_TICK_MS)
+    await delay(1200)
+    await runCommand(first.chrome, 'report.open')
+    const page = await pageAt(first.app, 'orivon://report')
+    const stalls = (report: Record<string, unknown>): { over1s: number, over5s: number, longestMs: number } | undefined => (report['diagnostics'] as { browser?: { mainStalls?: { over1s: number, over5s: number, longestMs: number } } } | null)?.browser?.mainStalls
+    const counted = await previewWhere(page, (report) => (stalls(report)?.over1s ?? 0) >= 1)
+    expect(Object.keys(stalls(counted) ?? {})).toEqual(['over1s', 'over5s', 'longestMs'])
+    expect(stalls(counted)?.longestMs).toBeGreaterThanOrEqual(1500)
+    expect(stalls(counted)?.over5s).toBeLessThanOrEqual(stalls(counted)?.over1s ?? 0)
+    // What the shell does when a window ends with no close: the call is made in the main process, then the process goes without a quit.
+    await first.app.evaluate(() => { (globalThis as unknown as { __orivonDevWindowSystemEnd: () => void }).__orivonDevWindowSystemEnd() })
+    first.app.process().kill('SIGKILL')
+  } finally {
+    await closeElectron(first.app, { keepProfile: true })
+  }
+
+  const second = await launchElectron({ appPath: '.', args: [HERMETIC_RESOLVER], reuseProfile: profile, env: { ORIVON_TELEMETRY_URL: ingest.url } })
+  try {
+    findChrome(second)
+    expect(await waitFor(async () => await popoverShown(second, 'overlay=restore'))).toBe(true)
+    expect(await waitFor(() => second.windows().some((w) => w.url().includes('overlay=restore') && !w.isClosed()))).toBe(true)
+    const bar = second.windows().find((w) => w.url().includes('overlay=restore') && !w.isClosed()) as Page
+    await bar.waitForSelector('.restorebar')
+    await bar.waitForFunction(() => document.querySelector('.restore-text')?.textContent !== 'Orivon didn\'t shut down correctly.')
+    expect(await bar.textContent('.restore-text')).toBe('The desktop ended Orivon\'s window.')
+    expect(await bar.getAttribute('.restore-text', 'title')).toBe('The desktop\'s display server ended its connection to Orivon\'s window, so Orivon could not go on.')
+    await shoot(bar, 'report-display-lost-bar')
+    await bar.getByRole('button', { name: 'Report the problem' }).click()
+    const page = await pageAt(second, 'orivon://report/crash/')
+    const shown = await previewWhere(page, (report) => report['crash'] !== null)
+    // The kind is one the report server takes; the reason and the words say what happened.
+    expect(shown['crash']).toMatchObject({ kind: 'unclean-exit', process: 'main', reason: 'display-lost' })
+    const message = String((shown['crash'] as Record<string, unknown>)['message'])
+    expect(message).toContain('display server ended its connection to Orivon\'s window')
+    expect(message).toMatch(/Before that the main process had stalled (once|\d+ times) for 1 s or more, the longest for \d+\.\d s\./)
+    // The log is the dead run's own: the stall and the end are in it.
+    expect(JSON.stringify(shown['log'])).toContain('The main process did not answer for about')
+    expect(JSON.stringify(shown['log'])).toContain('The window was ended without a close')
+    expect(await page.locator('#report-crash option:checked').textContent()).toMatch(/^The desktop's display server ended Orivon's window: /)
   } finally {
     await closeElectron(second)
   }
