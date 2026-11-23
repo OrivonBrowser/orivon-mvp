@@ -16,6 +16,8 @@ import { isInvokedDirectly } from './cli.mjs'
 
 export const DEFAULT_TOP = 15
 const PSEUDO = new Set(['(root)', '(program)', '(idle)', '(garbage collector)'])
+/** Every `require` and `import` of a start has these on its stack, each with the whole time of what it loaded: they head the total-time table and say nothing. */
+const LOADER_PLUMBING = 'node:internal/modules/'
 const USAGE = 'usage: node scripts/startup-profile-summary.mjs <file.cpuprofile> [--from-ms N] [--to-ms M] [--top K]'
 
 /**
@@ -44,7 +46,7 @@ export function parseArgs (argv) {
 
 /** A file's path in a profile, shortened to what tells it apart: the part inside the app archive, or its last three folders. */
 export function shortPath (url) {
-  if (url === '') return ''
+  if (url === '' || url.startsWith('node:')) return url
   let path = url
   if (/^file:/.test(path)) { try { path = decodeURIComponent(new URL(path).pathname) } catch { path = path.replace(/^file:\/+/, '/') } }
   path = path.replace(/\\/g, '/').replace(/^\/([A-Za-z]:\/)/, '$1')
@@ -58,8 +60,8 @@ export function shortPath (url) {
 export function groupOf (functionName, url) {
   if (PSEUDO.has(functionName)) return functionName
   if (url === '') return '(native)'
+  if (url.startsWith('node:electron/') || url.startsWith('electron/js2c/')) return 'electron:js2c'
   if (url.startsWith('node:')) return url.startsWith('node:internal/') ? 'node:internal' : url.split('/')[0]
-  if (url.startsWith('electron/js2c/')) return 'electron:js2c'
   const found = /node_modules\/((?:@[^/]+\/)?[^/]+)\//.exec(url.replace(/\\/g, '/'))
   if (found !== null) return `node_modules/${found[1]}`
   return shortPath(url)
@@ -167,7 +169,11 @@ function table (header, rows) {
   return [line(header), ...rows.map(line)].join('\n')
 }
 
-/** The text a summary prints. */
+/**
+ * The text a summary prints.
+ * @param {ReturnType<typeof summarizeProfile>} summary
+ * @param {{ file?: string, top?: number }} [options] the profile's name for the first line, and how many rows of each table
+ */
 export function formatSummary (summary, { file, top = DEFAULT_TOP } = {}) {
   const pct = (value) => (summary.totalMs === 0 ? '0.0' : ((100 * value) / summary.totalMs).toFixed(1))
   const clock = summary.anchored
@@ -175,7 +181,7 @@ export function formatSummary (summary, { file, top = DEFAULT_TOP } = {}) {
     : 'ms from the profile\'s start (it carries no start-up line anchor)'
   const where = (fn) => (fn.url === '' ? '' : `${shortPath(fn.url)}:${fn.line}`)
   const self = summary.bySelf.slice(0, top).map((fn) => [ms(fn.selfMs), pct(fn.selfMs), fn.name, where(fn)])
-  const total = summary.byTotal.filter((fn) => !PSEUDO.has(fn.name)).slice(0, top).map((fn) => [ms(fn.totalMs), pct(fn.totalMs), fn.name, where(fn)])
+  const total = summary.byTotal.filter((fn) => !PSEUDO.has(fn.name) && !fn.url.startsWith(LOADER_PLUMBING)).slice(0, top).map((fn) => [ms(fn.totalMs), pct(fn.totalMs), fn.name, where(fn)])
   const groups = summary.byGroup.slice(0, top).map(({ group, selfMs }) => [ms(selfMs), pct(selfMs), group, ''])
   return [
     `${file === undefined ? 'profile' : file}: ${ms(summary.profileMs)} ms profiled${summary.stoppedBecause === null ? '' : `, stopped because ${summary.stoppedBecause}`}`,
@@ -185,7 +191,7 @@ export function formatSummary (summary, { file, top = DEFAULT_TOP } = {}) {
     `Self time, top ${self.length}`,
     table(['ms', '%', 'function', 'where'], self),
     '',
-    `Total time (the function and what it called), top ${total.length}`,
+    `Total time (the function and what it called, Node's module loader frames left out), top ${total.length}`,
     table(['ms', '%', 'function', 'where'], total),
     '',
     `Self time by file or package, top ${groups.length}`,

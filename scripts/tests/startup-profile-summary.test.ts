@@ -12,7 +12,7 @@ const APP = 'file:///opt/Orivon/resources/app.asar/out/main/index.js'
  * on the start-up line's clock (the profile began at 100):
  *   i: 0 app, 1 and 2 loadStores, 3 and 4 readFile (called by loadStores), 5 to 7 idle, 8 loadStores
  */
-function tinyProfile (anchor: object | undefined = { schema: 1, startMs: 100, base: 'process-creation', stoppedBecause: 'the start-up line printed' }): Record<string, unknown> {
+function tinyProfile (anchor: object | null = { schema: 1, startMs: 100, base: 'process-creation', stoppedBecause: 'the start-up line printed' }): Record<string, unknown> {
   const frame = (functionName: string, url: string, lineNumber: number): object => ({ functionName, url, lineNumber, columnNumber: 0, scriptId: '1' })
   return {
     nodes: [
@@ -26,7 +26,7 @@ function tinyProfile (anchor: object | undefined = { schema: 1, startMs: 100, ba
     endTime: 1_010_000,
     samples: [2, 3, 3, 5, 5, 4, 4, 4, 3],
     timeDeltas: [1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000, 1000],
-    ...(anchor === undefined ? {} : { orivon: anchor })
+    ...(anchor === null ? {} : { orivon: anchor })
   }
 }
 
@@ -60,7 +60,7 @@ describe('summarizeProfile', () => {
   })
 
   it('counts from the profile\'s own start when it has no anchor', () => {
-    const summary = summarizeProfile(tinyProfile(undefined), { fromMs: 4, toMs: 6 })
+    const summary = summarizeProfile(tinyProfile(null), { fromMs: 4, toMs: 6 })
     expect(summary.anchored).toBe(false)
     expect(summary.samples).toBe(2)
     expect(byName(summary.bySelf, 'readFile')?.selfMs).toBeCloseTo(2)
@@ -93,8 +93,25 @@ describe('formatSummary', () => {
     expect(text).toContain('Self time by file or package')
   })
 
+  it('leaves Node\'s module loader frames out of the total-time table, where every require would head it', () => {
+    const frame = (functionName: string, url: string, lineNumber: number): object => ({ functionName, url, lineNumber, columnNumber: 0, scriptId: '1' })
+    const profile = {
+      nodes: [
+        { id: 1, callFrame: frame('(root)', '', -1), children: [2] },
+        { id: 2, callFrame: frame('wrapModuleLoad', 'node:internal/modules/cjs/loader', 250), children: [3] },
+        { id: 3, callFrame: frame('loadStores', APP, 19) }
+      ],
+      startTime: 0, endTime: 3000, samples: [3, 3], timeDeltas: [1000, 1000]
+    }
+    const text = formatSummary(summarizeProfile(profile))
+    const totals = text.slice(text.indexOf('Total time'), text.indexOf('Self time by file'))
+    expect(totals).toContain('loadStores')
+    expect(totals).not.toContain('wrapModuleLoad')
+    expect(text.slice(0, text.indexOf('Total time'))).not.toContain('wrapModuleLoad')
+  })
+
   it('says so when the profile has no anchor', () => {
-    expect(formatSummary(summarizeProfile(tinyProfile(undefined)))).toContain('it carries no start-up line anchor')
+    expect(formatSummary(summarizeProfile(tinyProfile(null)))).toContain('it carries no start-up line anchor')
   })
 })
 
@@ -105,6 +122,7 @@ describe('groupOf and shortPath', () => {
     expect(groupOf('x', 'node:internal/modules/cjs/loader')).toBe('node:internal')
     expect(groupOf('x', 'node:fs')).toBe('node:fs')
     expect(groupOf('x', 'electron/js2c/browser_init')).toBe('electron:js2c')
+    expect(groupOf('x', 'node:electron/js2c/browser_init')).toBe('electron:js2c')
     expect(groupOf('x', 'file:///opt/Orivon/resources/app.asar/node_modules/@scope/pkg/lib/a.js')).toBe('node_modules/@scope/pkg')
     expect(groupOf('x', 'file:///C:/Users/me/AppData/Local/Programs/Orivon/resources/app.asar/node_modules/zod/index.js')).toBe('node_modules/zod')
     expect(groupOf('x', APP)).toBe('out/main/index.js')
@@ -115,6 +133,7 @@ describe('groupOf and shortPath', () => {
     expect(shortPath('file:///C:/Users/me/App%20Data/Orivon/resources/app.asar/out/main/chunks/a.js')).toBe('out/main/chunks/a.js')
     expect(shortPath('file:///home/me/work/orivon/out/main/index.js')).toBe('.../out/main/index.js')
     expect(shortPath('')).toBe('')
+    expect(shortPath('node:internal/modules/cjs/loader')).toBe('node:internal/modules/cjs/loader')
   })
 })
 
