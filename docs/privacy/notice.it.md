@@ -223,7 +223,11 @@ reclamo in [I tuoi diritti](#i-tuoi-diritti) valgono anche per le segnalazioni.
 Orivon conserva, nella cartella del proprio profilo: il suo registro di questa esecuzione e della
 precedente, una traccia degli ultimi 30 problemi (degli ultimi 30 giorni), e fino a 10 dump degli
 ultimi 30 giorni. Nulla di questo esce se non invii una segnalazione che lo include. Le tracce di
-una finestra privata se ne vanno quando si chiude.
+una finestra privata se ne vanno quando si chiude. Orivon scrive anche un profilo della CPU del
+proprio avvio, che elenca i nomi delle funzioni eseguite e i percorsi dei propri file di programma
+(tra cui quello della tua cartella personale), solo se lo avvii con la variabile d'ambiente
+`ORIVON_STARTUP_PROFILE` che indica un file, e solo in quel file: non fa mai parte di una
+segnalazione e non viene inviato da nessuna parte.
 
 ## Tutto il resto che il browser invia da solo
 

@@ -153,6 +153,7 @@
     { "prefix": "scripts/smoke*", "run": [] },
     { "prefix": "scripts/perf-probe.mjs", "run": [] },
     { "prefix": "scripts/first-start-probe.mjs", "run": [] },
+    { "prefix": "scripts/startup-profile-summary.mjs", "run": [] },
     { "prefix": "scripts/probe-*", "run": [] },
     { "prefix": "scripts/worktree-gc.mjs", "run": [] },
     { "prefix": "scripts/ai", "run": [] },

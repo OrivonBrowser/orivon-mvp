@@ -68,6 +68,35 @@ describe('the start-up line', () => {
     expect(runner.startupRecord().marks.extensionsSeeded).toEqual(expect.any(Number))
   })
 
+  it('tells a listener once the line has printed, never before, and at once when it printed already', async () => {
+    const runner = await freshRunner()
+    const told: string[] = []
+    runner.onStartupLine(() => { told.push('early') })
+    runner.markStartup('windowShown')
+    runner.markStartup('chromeLoaded')
+    expect(told).toEqual([])
+    runner.markStartup('firstTabLoaded')
+    expect(told).toEqual(['early'])
+    runner.onStartupLine(() => { told.push('late') })
+    runner.markStartup('entry')
+    expect(told).toEqual(['early', 'late'])
+  })
+
+  it('goes on past a listener that throws: the line still printed and the other listeners are told', async () => {
+    const runner = await freshRunner()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const told: string[] = []
+    runner.onStartupLine(() => { throw new Error('boom') })
+    runner.onStartupLine(() => { told.push('second') })
+    runner.markStartup('windowShown')
+    runner.markStartup('chromeLoaded')
+    expect(() => { runner.markStartup('firstTabLoaded') }).not.toThrow()
+    expect(lines()).toHaveLength(1)
+    expect(told).toEqual(['second'])
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(() => { runner.onStartupLine(() => { throw new Error('late boom') }) }).not.toThrow()
+  })
+
   it('never keeps the process alive for its cap timer', async () => {
     const runner = await freshRunner()
     const set = vi.spyOn(globalThis, 'setTimeout')

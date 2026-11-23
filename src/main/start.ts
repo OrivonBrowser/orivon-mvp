@@ -1,13 +1,16 @@
+// First, so that the CPU profile a person asks for (ORIVON_STARTUP_PROFILE) begins before the imports below are evaluated.
+import { stopStartupProfile } from './startup/startup-profile-runner.js'
 import { app } from 'electron'
 import { createRequire } from 'node:module'
 import { settleCompileCacheLater, startCompileCache } from './launch/compile-cache.js'
 import { startLaunch } from './launch/start-launch.js'
-import { markStartup } from './startup/startup-marks-runner.js'
+import { markStartup, onStartupLine } from './startup/startup-marks-runner.js'
 
 // The process entry. It reads nothing but the launch code, so a second start of a profile that is already open asks
 // for the single-instance lock and exits before the rest of the browser (index.ts, most of this build) is loaded:
 // loading it is about half of what such a start costs. Imports here stay within electron, node:module,
-// launch/start-launch.js, launch/compile-cache.js and the start-up marks, which load nothing (tests/start.test.ts holds that).
+// launch/start-launch.js, launch/compile-cache.js, the start-up marks and the start-up profile, which load nothing
+// unless asked (tests/start.test.ts holds that).
 
 // The browser's crash recorder, handed over once index.js is loaded; an error before that has no record.
 let onFatal: ((kind: string, error: unknown) => void) | undefined
@@ -25,6 +28,9 @@ function exitOnUncaught (kind: string, error: unknown): void {
 
 process.on('uncaughtException', (error) => { exitOnUncaught('uncaught exception', error) })
 process.on('unhandledRejection', (reason) => { exitOnUncaught('unhandled promise rejection', reason) })
+
+// A profile asked for ends with the start-up line; with none asked for this does nothing.
+onStartupLine(() => { stopStartupProfile('the start-up line printed') })
 
 markStartup('entry')
 

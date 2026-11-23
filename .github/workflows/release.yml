@@ -243,6 +243,14 @@ jobs:
         continue-on-error: true
         run: node scripts/run-headless.mjs node scripts/first-start-probe.mjs /opt/Orivon/orivon --runs 3 --label current --json start-probe/linux-current.json
 
+      # One launch of each series with a CPU profile of the main process's start (ORIVON_STARTUP_PROFILE), in a run of its
+      # own because a profiled start is slower: start-probe/profiles/ holds first-1 and next-1, and linux-profiled.json
+      # the start-up lines of those same launches. Read one with scripts/startup-profile-summary.mjs.
+      - name: Profile the start of the installed deb
+        if: matrix.platform == 'linux'
+        continue-on-error: true
+        run: node scripts/run-headless.mjs node scripts/first-start-probe.mjs /opt/Orivon/orivon --runs 1 --label profiled --profile start-probe/profiles --json start-probe/linux-profiled.json
+
       # The deb of the baseline replaces the one just timed; no later step uses the installed deb.
       - name: Time the start of the baseline release's deb
         if: matrix.platform == 'linux' && inputs.baseline_release != ''
@@ -324,6 +332,17 @@ jobs:
           Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
           $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
           node scripts/run-headless.mjs node scripts/first-start-probe.mjs $exe.FullName --runs 3 --label current --json start-probe/win-current.json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # One launch of each series with a CPU profile of the start, as on Linux (the step after the deb's timing).
+      - name: Profile the start of the installed package
+        if: matrix.platform == 'win'
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          Get-Process -Name Orivon -ErrorAction SilentlyContinue | Stop-Process -Force
+          $exe = Get-ChildItem "$env:LOCALAPPDATA\Programs" -Recurse -Filter Orivon.exe | Select-Object -First 1
+          node scripts/run-headless.mjs node scripts/first-start-probe.mjs $exe.FullName --runs 1 --label profiled --profile start-probe/profiles --json start-probe/win-profiled.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       # The installer's registry entries, and a link handed to Windows the way another program hands one.
@@ -531,6 +550,12 @@ jobs:
         continue-on-error: true
         run: node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon" --runs 3 --label current --json start-probe/mac-current.json
 
+      # One launch of each series with a CPU profile of the start, as on Linux (the step after the deb's timing).
+      - name: Profile the start of the installed app
+        if: matrix.platform == 'mac'
+        continue-on-error: true
+        run: node scripts/run-headless.mjs node scripts/first-start-probe.mjs "$RUNNER_TEMP/apps-local/Orivon.app/Contents/MacOS/Orivon" --runs 1 --label profiled --profile start-probe/profiles --json start-probe/mac-profiled.json
+
       # Copied out of the mounted dmg as the installer does, so the app runs from the disk and not from the image.
       - name: Time the start of the baseline release's app
         if: matrix.platform == 'mac' && inputs.baseline_release != ''
@@ -581,13 +606,15 @@ jobs:
           node scripts/run-headless.mjs node scripts/first-start-probe.mjs $exe --runs 3 --label "baseline $env:BASELINE" --json start-probe/win-baseline.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      # Not named orivon-*, like the Store package below: the release takes only those.
+      # Not named orivon-*, like the Store package below: the release takes only those. The CPU profiles go with them.
       - name: Keep the start timings
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: start-probe-${{ matrix.platform }}
-          path: start-probe/*.json
+          path: |
+            start-probe/*.json
+            start-probe/profiles/*.cpuprofile
           if-no-files-found: ignore
           retention-days: 7
 
