@@ -55,6 +55,7 @@ vi.mock('electron', () => ({
 }))
 
 const { TabManager } = await import('../tabs.js')
+const { TabLifecycle } = await import('../tab-lifecycle.js')
 
 const fakeContentView = { addChildView: vi.fn(), removeChildView: vi.fn() }
 
@@ -113,6 +114,23 @@ describe('TabManager.dispose -- a closing window (A259)', () => {
 
     expect(getBounds).not.toHaveBeenCalled()
     expect(fakeContentView.addChildView).toHaveBeenCalledTimes(2)
+  })
+
+  it('puts no tab in front when a page ends once the manager is disposed', () => {
+    const lifecycle = new TabLifecycle()
+    const activated = vi.fn()
+    lifecycle.subscribe({ tabActivated: activated })
+    const shell = { window: {} as never, htmlFullscreenChanged: vi.fn(), tabLifecycle: lifecycle }
+    const manager = new TabManager(fakeContentView as never, () => ({ x: 0, y: 0, width: 800, height: 600 }), vi.fn(), 'http://localhost:5999/newtab/', {} as SubsystemContext, shell)
+    manager.createTab('https://a.example/')
+    manager.createTab('https://b.example/')
+    activated.mockClear()
+
+    manager.dispose()
+    createdViews[1]?.webContents.emit('destroyed')
+    createdViews[0]?.webContents.emit('destroyed')
+
+    expect(activated).not.toHaveBeenCalled()
   })
 
   it('reports itself disposed from the moment dispose starts', () => {

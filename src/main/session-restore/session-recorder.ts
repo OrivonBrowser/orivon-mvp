@@ -66,6 +66,8 @@ export class SessionRecorder {
   private frozen: SavedWindow[] | null = null
   /** The last window, closed outright: where the browser lives on without windows (macOS), one opened later puts it on the closed stack. */
   private lastClosed: SavedWindow | null = null
+  /** What each window last held when the file asked: a window destroyed with no `close` can no longer be read, and is kept as this. */
+  private readonly lastSeen = new WeakMap<ShellWindow, SavedWindow>()
   private quitting = false
 
   constructor (private readonly deps: RecorderDeps, private readonly snapshot: (shell: ShellWindow) => SavedWindow | null = snapshotWindow) {
@@ -143,15 +145,20 @@ export class SessionRecorder {
   beforeQuit (): void {
     if (this.quitting) return
     this.quitting = true
+    // A window still held but destroyed never reached `closing`: it ended with no close, as the display going away does.
+    // The person ended no session, so the file is left as it was last written, unclean, for the next start to offer back.
+    const lostAWindow = this.frozen === null && [...this.windows].some((shell) => shell.window.isDestroyed())
     this.frozen ??= this.live()
-    this.deps.session.finish()
+    if (!lostAWindow) this.deps.session.finish()
   }
 
   private live (): SavedWindow[] {
     const saved: SavedWindow[] = []
     for (const shell of this.windows) {
-      const window = this.snapshot(shell)
-      if (window !== null) saved.push(window)
+      const window = this.snapshot(shell) ?? this.lastSeen.get(shell) ?? null
+      if (window === null) continue
+      this.lastSeen.set(shell, window)
+      saved.push(window)
     }
     return saved.slice(0, MAX_SESSION_WINDOWS)
   }

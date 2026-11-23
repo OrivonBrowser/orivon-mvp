@@ -148,6 +148,46 @@ describe('the session recorder', () => {
     expect(session.finish).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps a window that was destroyed with no close as it was last written, and leaves the session unfinished at quit', () => {
+    const { recorder, windows, session, closed } = setup(['a', 'b'])
+    expect(urls(session)).toEqual(['https://a.example/', 'https://b.example/'])
+
+    destroy(windows[1])
+    expect(urls(session)).toEqual(['https://a.example/', 'https://b.example/'])
+    recorder.beforeQuit()
+
+    expect(urls(session)).toEqual(['https://a.example/', 'https://b.example/'])
+    expect(session.finish).not.toHaveBeenCalled()
+    expect(closed.size).toBe(0)
+  })
+
+  it('keeps the only window when it was destroyed with no close, and leaves the session unfinished at quit', () => {
+    const { recorder, windows, session } = setup(['a'])
+    expect(urls(session)).toEqual(['https://a.example/'])
+
+    destroy(windows[0])
+    recorder.beforeQuit()
+
+    expect(urls(session)).toEqual(['https://a.example/'])
+    expect(session.finish).not.toHaveBeenCalled()
+  })
+
+  it('ends the session at quit when every window is alive, as before', () => {
+    const { recorder, session } = setup(['a', 'b'])
+    expect(urls(session)).toEqual(['https://a.example/', 'https://b.example/'])
+    recorder.beforeQuit()
+    expect(session.finish).toHaveBeenCalledTimes(1)
+  })
+
+  it('ends the session at quit for a last window that was closed, and keeps it', () => {
+    const { recorder, windows, session } = setup(['a'])
+    recorder.closing(windows[0]?.shell as ShellWindow)
+    destroy(windows[0])
+    recorder.beforeQuit()
+    expect(urls(session)).toEqual(['https://a.example/'])
+    expect(session.finish).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the tab whose closing emptied the last window, rather than an empty window', () => {
     const window = fake('a')
     const session = fakeSession()

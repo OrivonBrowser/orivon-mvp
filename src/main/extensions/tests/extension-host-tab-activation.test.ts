@@ -80,7 +80,7 @@ function buildShell (ctx: SubsystemContext = {} as unknown as SubsystemContext):
   findTab: ReturnType<typeof vi.fn>
   shellWindow: any
 } {
-  const win = { id: 1 } as unknown as BaseWindow
+  const win = { id: 1, isDestroyed: () => false } as unknown as BaseWindow
   const shellWindow = { window: win, tabs: { openTrusted: vi.fn() }, chrome: { webContents: { isDestroyed: () => false, executeJavaScript: vi.fn(async () => undefined) } } }
   const findTab = vi.fn()
   let subscribed: any
@@ -136,6 +136,29 @@ describe('extension-host: tabActivated on an untracked tab (an orivon: page or a
     subscribed.tabActivated(wc)
 
     expect(lastInstance.selectTab).toHaveBeenCalledWith(wc)
+    expect(lastInstance.clearActiveTab).not.toHaveBeenCalled()
+  })
+})
+
+describe('extension-host: tabActivated for a tab whose window was destroyed', () => {
+  beforeEach(() => {
+    capturedOptions = undefined
+    lastInstance = undefined
+    getExtension.mockReset()
+  })
+
+  it('tells the library nothing: no tab is in front of a window that ended', () => {
+    getExtension.mockReturnValue(null)
+    createExtensionHost('preload.js')
+    const { subscribed, findTab, shellWindow } = buildShell()
+    const wc = { session: mockedSession.defaultSession, isDestroyed: () => false } as unknown as WebContents
+    subscribed.tabCreated(wc, shellWindow.window)
+    findTab.mockReturnValue({ window: shellWindow, tabId: 'x' })
+    shellWindow.window.isDestroyed = () => true
+
+    expect(() => { subscribed.tabActivated(wc) }).not.toThrow()
+
+    expect(lastInstance.selectTab).not.toHaveBeenCalled()
     expect(lastInstance.clearActiveTab).not.toHaveBeenCalled()
   })
 })
