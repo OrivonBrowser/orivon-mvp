@@ -18,7 +18,11 @@ wrong tab. The reopen key and the restore bar wait first for that reason; any ne
 **The window waits for its own first paint and nothing else; the pages wait for the tail.** The route's first read of the
 system's settings and the loading of the extensions (on a new profile, unpacking the bundled one synchronously) can take
 seconds, and a window needs neither: its pages are the shell's own, served by Orivon.
-[`window-first.ts`](window-first.ts) is the order: the window shows, `afterWindow` runs, the gate opens, the first window is
-filled, and a second launch is answered last, so it never meets a window with no tabs or opens a second one. A critical
+[`window-first.ts`](window-first.ts) is the order: the window is created, `afterWindow` runs while it loads and paints its
+page, the gate opens, the first window is filled, and a second launch is answered last, so it never meets a window with no
+tabs or opens a second one. The tail starts at the window's creation, not at its show, so that its asynchronous work (a child
+process reading the system's proxy, sessions set, extensions loaded) overlaps the page's load instead of following it. The
+one piece that blocks the main thread, which serves that page, is the unpacking of the bundled extension into a new profile:
+it awaits `firstWindowShown()` and runs once the window is on screen. A critical
 failure of the tail ends the start with the error dialog and the gate never opens. A window the plan fills has no tab until the
 gate opens: a placeholder new-tab page would flash and then be closed, which is a tab closing and can close the window.

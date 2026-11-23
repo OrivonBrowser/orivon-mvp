@@ -325,7 +325,7 @@ export function boot (runtime: Runtime): void {
       })
     }
     // The launch's first window shows with the new-tab page (or the page a private session opens on) and nothing that loads
-    // a web page: what the plan opens in it waits for the gate on web pages, which opens once the route has set every
+    // a web page (the tail, startup/window-first.ts, runs while it loads and paints): what the plan opens in it waits for the gate on web pages, which opens once the route has set every
     // session and every enabled extension is loaded (startup/window-first.ts). Until then the window has no tab when
     // the plan fills one, and the session file is held, so a start that ends early keeps the previous session.
     const createFirstWindow = (plan: ShellWindowOptions, own: ShellWindowOptions, news: () => Promise<boolean>): { readonly shown: Promise<void>, readonly fill: () => Promise<void> } => {

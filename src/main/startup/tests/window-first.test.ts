@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { SubsystemFailure } from '../../registry.js'
-import { endStart } from '../window-first.js'
+import { endStart, firstWindowShown } from '../window-first.js'
 import type { EndOfStart } from '../window-first.js'
 
 const failure = (critical: boolean): SubsystemFailure => ({ name: 'route', phase: 'afterWindow', error: new Error('no settings'), critical })
@@ -20,16 +20,25 @@ function steps (log: string[], over: Partial<EndOfStart> = {}): EndOfStart {
 }
 
 describe('the end of a start', () => {
-  it('runs nothing until the first window is shown', async () => {
+  it('starts the tail at once, while the window is not shown yet, and answers firstWindowShown when it shows', async () => {
     const log: string[] = []
     let show: () => void = () => {}
     const shown = new Promise<void>((resolve) => { show = resolve })
     const ended = endStart(shown, steps(log))
-    await new Promise((resolve) => setTimeout(resolve, 5))
-    expect(log).toEqual([])
-    show()
+    let reached = false
+    void firstWindowShown().then(() => { reached = true })
     await ended
     expect(log[0]).toBe('afterWindow')
+    expect(reached).toBe(false)
+    show()
+    await firstWindowShown()
+    expect(reached).toBe(true)
+  })
+
+  it('answers firstWindowShown at once where no start runs the tail', async () => {
+    vi.resetModules()
+    const fresh = await import('../window-first.js')
+    await expect(fresh.firstWindowShown()).resolves.toBeUndefined()
   })
 
   it('runs the tail, then opens web content, then fills the window, and answers a second launch last', async () => {

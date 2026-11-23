@@ -17,6 +17,7 @@ import { readRegistry } from './registry-runner.js'
 import { startsFromDefaultProfile } from '../default-profile/profile-start.js'
 import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
 import { seedBundledExtensions } from './seed-bundled.js'
+import { firstWindowShown } from '../startup/window-first.js'
 import { markStartup } from '../startup/startup-marks-runner.js'
 import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome, type InstallWhere } from './install-runner.js'
 import { setEnabled, uninstall } from './install-lifecycle.js'
@@ -216,6 +217,8 @@ export const extensionsSubsystem: Subsystem = {
         // windows; every install route refuses there, and the store page's hook still starts (below).
         await loadEnabledExtensions(userDataPath)
         if (seeds) {
+          // The unpacking holds the main thread, which is serving the first window's page: it waits for the window.
+          await firstWindowShown()
           markStartup('extensionsSeedStart')
           await seedBundledExtensions(install, currentDefaultProfileDir())
           markStartup('extensionsSeeded')
