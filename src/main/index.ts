@@ -4,7 +4,7 @@ import { createShellWindow, resolveDashboardUrl } from './shell/window.js'
 import { fileProtocolFuse } from './local-files/file-fuse.js'
 import { answerLaunch } from './shell/opener.js'
 import { createShellServices } from './shell/shell-services.js'
-import { runShellInstallers } from './shell/shell-installers.js'
+import { runShellAfterStart, runShellInstallers } from './shell/shell-installers.js'
 import { askQuestion } from './shell/question/ask-question.js'
 import { SHELL_PARTITION } from './shell/shell-session.js'
 import { attachExtensionShell } from './extensions/extension-host.js'
@@ -46,6 +46,7 @@ import { copyPrivatePicture } from './launch/private-picture.js'
 import { moveLongNamedPartitionFolders } from './launch/partition-folders.js'
 import { loadFetchStack } from './startup/fetch-stack.js'
 import { openWebContent, webContentReady } from './startup/web-ready.js'
+import { afterStart } from './startup/after-start.js'
 import { endStart, startTail } from './startup/window-first.js'
 import { installFocusedContentsGuard } from './focus/focused-contents-guard.js'
 import { configureVerifier, ethServersChanged, ipfsSettingsChanged, lightClientSettingChanged, swarmSettingChanged, tunnelDefaultChanged, verifierEthContentCid } from './verifier/verifier-subsystem.js'
@@ -305,8 +306,7 @@ export function boot (runtime: Runtime): void {
       else if (key === 'web3.swarmNode') swarmSettingChanged()
       else if (key === 'network.tunnel.nodes') tunnelDefaultChanged()
     })
-    shell.history.prune()
-    startInternalPages(shell, ctx)
+    const internalPages = startInternalPages(shell, ctx)
     attachX11Vulkan(shell.settings, () => { shell.internalPages.publish('graphics.changed', undefined, ['settings']) })
     setPageClassifier((contents) => ({ internalPage: shell.internalPages.pageOf(contents), isTab: shell.windows.findTab(contents) !== null }))
     // Another profile's own process can rename, add, remove or start one --
@@ -398,5 +398,11 @@ export function boot (runtime: Runtime): void {
         return firstWindow
       })
     }
+    // Nothing the first window needs: it waits until the start has ended instead of delaying the window (startup/after-start.ts).
+    afterStart([
+      { name: 'launcher entries', run: () => { runShellAfterStart(app, shell, ctx, runtime) } },
+      { name: 'history retention', run: () => { shell.history.prune() } },
+      { name: 'orphaned app partitions', run: internalPages.cleanOrphanedAppPartitions }
+    ])
   }).catch((error: unknown) => { console.error('[main] starting up failed:', error) })
 }

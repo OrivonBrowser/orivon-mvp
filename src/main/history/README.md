@@ -119,5 +119,5 @@ destroyed by a bad start.
 tab that is not the new-tab page or one of the shell's own, and whose response was not an error. A `.eth` name
 and an `ipfs://` page are kept under the address the person sees, not the address that serves them.
 
-**Older than the retention is removed at start.** And again whenever the choice changes. The default of 90 days is
+**Older than the retention is removed shortly after the start** (`../startup/after-start.ts`), and again whenever the choice changes. The default of 90 days is
 provisional (`open-questions.md`).

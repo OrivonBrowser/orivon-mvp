@@ -40,6 +40,8 @@ import type { ShellServices } from './shell-services.js'
 export interface ShellInstaller {
   readonly name: string
   install: (app: App, services: ShellServices, ctx: SubsystemContext, runtime: Runtime) => void
+  /** What the feature does that no first window needs: run by `runShellAfterStart` once the start has ended (`../startup/after-start.ts`). */
+  afterStart?: (app: App, services: ShellServices, ctx: SubsystemContext, runtime: Runtime) => void
 }
 
 // Order is the order the per-site askers answer in: the first answer that is not `undefined` wins. `media-grants`
@@ -86,6 +88,19 @@ export function runShellInstallers (
       installer.install(app, services, ctx, runtime)
     } catch (error) {
       console.error(`[shell] the ${installer.name} installer failed:`, error)
+    }
+  }
+}
+
+/** Runs each installer's `afterStart`, in registration order, with the same isolation as `runShellInstallers`. */
+export function runShellAfterStart (
+  app: App, services: ShellServices, ctx: SubsystemContext, runtime: Runtime, installers: readonly ShellInstaller[] = SHELL_INSTALLERS
+): void {
+  for (const installer of installers) {
+    try {
+      installer.afterStart?.(app, services, ctx, runtime)
+    } catch (error) {
+      console.error(`[shell] the ${installer.name} installer failed after the start:`, error)
     }
   }
 }

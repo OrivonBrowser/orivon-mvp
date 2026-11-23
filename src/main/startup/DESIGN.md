@@ -43,5 +43,31 @@ tunnel, otherwise followed to the system's setting the mirror's set reaches), as
 Before this order the tail ended before `followSettings` (a difference was applied after the gate had opened) or began after
 it; the order now only interleaves those two cases.
 
+**What waits for the end of the start, and why those.** A step that runs before `createShellWindow` delays the window directly, and
+on Windows a few calls of the system cost tens of milliseconds each on the main thread. Measured on a hosted runner: the jump list's
+`setUserTasks` 55 ms on every start and 98 ms on a first one, the history file's checkpoint after the retention prune 48 ms and the
+`fsync` of the orphaned-partition cleanup's marker 58 ms, both on a first start. [`after-start.ts`](after-start.ts) holds the
+tasks that need none of the window: the launcher entries (`../os/install-launcher-menu.ts` keeps only the process's id before the
+window, which the taskbar groups by), the retention prune and the orphaned-partition cleanup. Each was read for an order it needs:
+
+- The system keeps the jump list it was last given, and the dock menu is read at a click on the icon, so neither is needed before
+  the window.
+- The prune only forgets what is past the retention the person chose. The History page and the Settings count follow it through
+  `history.changed`, and a start that ends within the delay prunes at the next one.
+- The cleanup touches only partitions no app uses (an origin with a grant and no app on disk). It asks
+  `isOriginServedFromCacheSync` what serving was restored this run: after the tail has ended that is the settled answer, where at the
+  boot it raced the tail and leaned on the pin and folder checks beside it. An app installed between the cleanup's check and its
+  `clearData` is as exposed as before, now with the person at the browser, but only a profile that has not yet run the cleanup and
+  already holds grants has an app to lose: the marker is written once, and a new profile has no grants.
+
+The cookie mirror stays before the window: it decides the cookies of the tunnel profiles for the first page that loads, so it is
+installed before the gate opens (`../route/cookie-mirror/`).
+
+**The delay is three seconds, from the end of the start.** The first tab finishes loading 0.2 to 0.5 s after the window shows on the
+Windows starts measured, so three seconds is past it with room, and short enough that the jump list and the retention are in place
+before a person looks for either. A longer wait would only lengthen the specs that wait for the prune. The tasks run one to a turn
+of the event loop, so a key or a message that arrived during one is served before the next. The timer is unreferenced: a process
+that ends first never runs them, and the next start does.
+
 A window the plan fills has no tab until the gate opens: a placeholder new-tab page would flash and then be closed, which is a
 tab closing and can close the window.

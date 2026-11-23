@@ -105,8 +105,13 @@ function aboutDomain (): InternalDomain {
   }
 }
 
+export interface InternalPagesStarted {
+  /** Clears the app partitions of origins that hold a grant and no app; never rejects. */
+  readonly cleanOrphanedAppPartitions: () => Promise<void>
+}
+
 /** Once per process. */
-export function startInternalPages (services: ShellServices, ctx: SubsystemContext): void {
+export function startInternalPages (services: ShellServices, ctx: SubsystemContext): InternalPagesStarted {
   const permissions = createPermissionsController(ctx)
   const siteSettings = siteSettingsControllerFor(services, ctx)
   // An app's devices are listed on its Apps card, a website's under Sites; the origin decides which (ADR-0068).
@@ -309,17 +314,19 @@ export function startInternalPages (services: ShellServices, ctx: SubsystemConte
   if (!services.profiles.isPrivate) {
     onTelemetryChanged(() => { services.internalPages.publish('usage.changed', undefined, ['settings']) })
   }
-  // Fire-and-forget, like the update check below it in index.ts: a one-time
-  // cleanup, never the window's own critical path. orphaned-app-partitions.ts's
-  // own header has the full reasoning. A second, throwaway LoaderStorage
-  // (nodeLoaderStorage is a stateless closure over userDataPath, same as
-  // loader/subsystem.ts's own instance) so this cleanup can tell "a pin
-  // exists on disk" apart from "serving is live for this run" without
-  // threading the loader's own storage instance through SubsystemContext.
-  void permissions.list()
-    .then(async (apps) => {
-      const pinnedOrigins = new Set(await nodeLoaderStorage(app.getPath('userData')).listPinnedOrigins())
-      await cleanOrphanedAppPartitions(app.getPath('userData'), apps, isOriginServedFromCacheSync, pinnedOrigins)
-    })
-    .catch((error: unknown) => { console.error('[orivon] clearing an orphaned app partition failed:', error) })
+  return {
+    // A one-time cleanup that no window needs: `index.ts` runs it after the start. orphaned-app-partitions.ts's own header has the
+    // reasoning. A second, throwaway LoaderStorage (nodeLoaderStorage is a stateless closure over userDataPath, same as
+    // loader/subsystem.ts's own instance) so the cleanup can tell "a pin exists on disk" apart from "serving is live for this run"
+    // without threading the loader's own storage instance through SubsystemContext.
+    cleanOrphanedAppPartitions: async () => {
+      try {
+        const apps = await permissions.list()
+        const pinnedOrigins = new Set(await nodeLoaderStorage(app.getPath('userData')).listPinnedOrigins())
+        await cleanOrphanedAppPartitions(app.getPath('userData'), apps, isOriginServedFromCacheSync, pinnedOrigins)
+      } catch (error) {
+        console.error('[orivon] clearing an orphaned app partition failed:', error)
+      }
+    }
+  }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { runShellInstallers, SHELL_INSTALLERS, type ShellInstaller } from '../shell-installers.js'
+import { runShellAfterStart, runShellInstallers, SHELL_INSTALLERS, type ShellInstaller } from '../shell-installers.js'
 
 const NONE = {} as never
 
@@ -39,6 +39,28 @@ describe('runShellInstallers', () => {
     try {
       const later = vi.fn()
       runShellInstallers(NONE, NONE, NONE, NONE, [{ name: 'broken', install: () => { throw new Error('boom') } }, { name: 'fine', install: later }])
+      expect(later).toHaveBeenCalledOnce()
+      expect(error.mock.calls[0]?.[0]).toContain('broken')
+    } finally {
+      error.mockRestore()
+    }
+  })
+})
+
+describe('runShellAfterStart', () => {
+  it('runs only what an installer set to run after the start, in registration order, and not at install', () => {
+    const order: string[] = []
+    const make = (name: string): ShellInstaller => ({ name, install: () => { order.push(`${name} installs`) }, afterStart: (...args) => { order.push(`${name} after`); expect(args).toHaveLength(4) } })
+    const plain: ShellInstaller = { name: 'plain', install: () => { order.push('plain installs') } }
+    runShellAfterStart(NONE, NONE, NONE, NONE, [make('a'), plain, make('b')])
+    expect(order).toEqual(['a after', 'b after'])
+  })
+
+  it('logs an installer that throws by name and still runs the ones after it', () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const later = vi.fn()
+      runShellAfterStart(NONE, NONE, NONE, NONE, [{ name: 'broken', install: () => {}, afterStart: () => { throw new Error('boom') } }, { name: 'fine', install: () => {}, afterStart: later }])
       expect(later).toHaveBeenCalledOnce()
       expect(error.mock.calls[0]?.[0]).toContain('broken')
     } finally {
