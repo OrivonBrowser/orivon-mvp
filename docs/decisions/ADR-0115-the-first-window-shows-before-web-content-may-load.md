@@ -9,13 +9,13 @@
 
 The first window is created and shown as soon as the registrations (`afterReady`) and the shell's stores exist. The slow
 tail of every subsystem (`afterWindow`: the route's first read of the system's proxy settings, loading the person's
-extensions, unpacking the bundled extensions into a new profile) starts when that window is created and runs while the
-window loads and paints its page. The one step of it that holds the main thread, which serves that page, is the synchronous
-unpacking of the bundled extension: it waits until the window is shown, or after a second if it has not been
-(`firstWindowShown` in [`window-first.ts`](../../src/main/startup/window-first.ts)). When the tail has ended without a
-critical failure, `openWebContent()` opens the gate on web pages ([`web-ready.ts`](../../src/main/startup/web-ready.ts));
-then the first window is filled (the restored session, the addresses on the command line, What's new, the other windows of
-a session), the session file is released, and only then is a second launch answered. A critical failure of the tail shows the error dialog and ends the process; the gate never opens.
+extensions, installing the bundled extensions into a new profile) starts with the boot, right after `afterReady`, and is not
+awaited there: it runs beside the making of the stores, the shell's services and the window, and while the window loads and
+paints its page ([`window-first.ts`](../../src/main/startup/window-first.ts)). When the tail has ended without a critical
+failure, it opens the gate on web pages (`openWebContent()` in [`web-ready.ts`](../../src/main/startup/web-ready.ts)); then
+the first window is filled (the restored session, the addresses on the command line, What's new, the other windows of a
+session), the session file is released, and only then is a second launch answered. A critical failure of the tail shows the
+error dialog and ends the process; the gate never opens.
 
 Until the gate opens the window shows the new-tab page (or the page a private session opens on), or no tab when the plan
 fills the window, and no tab, navigation or wake of a sleeping tab loads a page of the web: what asks waits and runs, in the
@@ -25,8 +25,8 @@ file is held, so a start that ends early keeps the previous session.
 ## Context
 
 Every start created its first window only after the whole tail had ended: the system proxy read (up to seconds on a PAC
-script), and on a new profile a synchronous unpack of uBlock Origin's 781 files (1.7 to 3.5 s). A person saw nothing for all
-of it. [ADR-0066](ADR-0066-new-profiles-start-from-a-default-profile.md) promises that uBlock Origin is in place before a
+script), and on a new profile a synchronous unpack of uBlock Origin's 781 files (1.7 to 3.5 s; the package now carries it
+unpacked, so a new profile pays only the install of a folder). A person saw nothing for all of it. [ADR-0066](ADR-0066-new-profiles-start-from-a-default-profile.md) promises that uBlock Origin is in place before a
 page loads, and the route's promise is that no page loads unrouted. Neither needs the window to wait; both need the page to.
 
 ## Alternatives considered
@@ -38,9 +38,13 @@ page loads, and the route's promise is that no page loads unrouted. Neither need
 - **Show the window after the tail, but make the tail faster** (the unpack in a worker thread, the proxy read bounded
   shorter). It narrows the wait and keeps it: a PAC script on a slow link still holds the window. It is a follow-up that
   shortens the time to the gate, not a way of showing the window sooner.
-- **Start the whole tail when the window is shown.** The page's load and paint (about 150 to 200 ms) are idle time for the
-  tail, and the gate opens after both. Starting it at creation overlaps them; only the unpacking, which blocks the thread
-  that serves the page, still waits for the show.
+- **Start the tail when the window is created, or when it is shown.** Both are later than the boot reaching it, and the
+  tail's first steps are asynchronous reads that the window's own making does not need to wait behind: started with the boot
+  the tail overlaps the stores' load, the window's making, its page's load and its paint, and the gate opens sooner than
+  after either.
+- **Hold the tail's one synchronous step (the unpacking of the bundled extension) until the window is shown.** It was needed
+  while the package carried the extension packed: the step held the main thread, which serves the window's page. The
+  package carries it unpacked now, so nothing in the tail holds the thread for long and the wait is gone.
 - **Open the window at creation, on its theme colour, without waiting for its first paint.** Kept as a follow-up if the marks
   show the paint taking more than about 200 ms: the window would appear a frame earlier, empty.
 - **A placeholder new-tab page in a window the plan fills, closed after the fill.** The person would see the page flash and
