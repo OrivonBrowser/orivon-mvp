@@ -80,8 +80,8 @@ seeds so a later change to them reaches everyone who never chose, as the provide
 - A build that predates the `bundled` source reads a registry holding one as unreadable, moves it aside
   (`registry.json.corrupt-<time>`) and starts with none, as it would for any entry it does not know: a profile that
   runs an older build after this one loses its extensions list until the file is put back.
-- A package is about 18 MB larger on disk (the unpacked files) and its download about the same as before: the
-  `.crx` no longer travels in it.
+- A package is about 11 MB larger on disk (the 658 unpacked files, 15.5 MB, where the `.crx` was 4.6 MB) and its
+  download is no larger: the `.crx` no longer travels in it, and the files compress as well as the file did.
 - The packaging machine needs the network once per `package:*` run, or the file already fetched.
 
 ## Reversibility
