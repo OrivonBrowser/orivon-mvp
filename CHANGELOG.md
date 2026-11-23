@@ -45,6 +45,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **A new profile opens its history faster**: the history file is built in one disk commit instead of one per statement, which took about 90 ms off a first start on a hosted Windows runner (about 200 ms to about 110 ms for the stretch that loads the stores). A start that finds the file is unchanged.
 - **The start separates its registrations from its slow tail**: the route's first read of the system's proxy settings and the loading of your extensions now run as a step of their own after every subsystem has registered, and an extension install or change asked meanwhile waits for it. The window still opens after both, so nothing is delayed yet.
 - **The Linux one-line install starts as fast as the `.deb`**: it unpacks the AppImage once, at install time, instead of keeping it, so a click no longer pays about two seconds of mounting or unpacking, and it needs no `libfuse2`. Run the command again to update, or to convert an earlier install; an update never removes the files a running Orivon is using.
 - **Orivon starts faster and the download is smaller**: every library the browser's own process uses is bundled into its files, instead of read module by module from a folder of packages shipped beside them, so its main file loads in about half the time (350 ms to 180 ms in one measurement) and `app.asar` holds 16 MB where it held 88. The licence text of every package bundled into the app, the shim's Worker runtime included, ships in `THIRD-PARTY-NOTICES.txt` beside it.
