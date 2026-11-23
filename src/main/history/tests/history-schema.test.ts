@@ -11,6 +11,7 @@ import { SqliteHistoryStore } from '../sqlite-history-store.js'
 const A = 'https://a.example/'
 
 const version = (db: DatabaseSync): number => (db.prepare('PRAGMA user_version').get() as { user_version: number }).user_version
+const tables = (db: DatabaseSync): string[] => (db.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name").all() as Array<{ name: string }>).map((row) => row.name)
 const columns = (db: DatabaseSync, table: string): string[] => (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((row) => row.name)
 
 describe('the history file schema', () => {
@@ -59,6 +60,35 @@ describe('the history file schema', () => {
     expect((db.prepare('SELECT typed_count FROM pages').get() as { typed_count: number }).typed_count).toBe(0)
     expect((db.prepare('SELECT COUNT(*) AS n FROM visits').get() as { n: number }).n).toBe(2)
     history.close()
+  })
+
+  it('brings a new file up in one transaction: a step that fails leaves it at version 0, with no table and no version set', () => {
+    const file = join(dir, 'history.db')
+    const broken = new DatabaseSync(file)
+    // Versions 1 and 2 build before the FTS step trips over this name, and 1 sets `user_version` to 1.
+    broken.exec('CREATE TABLE pages_fts (stray TEXT)')
+    expect(() => { migrate(broken) }).toThrow(/pages_fts/)
+    expect(version(broken)).toBe(0)
+    expect(tables(broken)).toEqual(['pages_fts'])
+    broken.close()
+  })
+
+  it('leaves a version 1 file at version 1 when the step to version 3 fails, whatever steps ran before it', () => {
+    const file = join(dir, 'history.db')
+    const old = new DatabaseSync(file)
+    old.exec(`
+      CREATE TABLE pages (id INTEGER PRIMARY KEY, url TEXT NOT NULL UNIQUE, title TEXT NOT NULL DEFAULT '', last_visit INTEGER NOT NULL, visit_count INTEGER NOT NULL DEFAULT 0);
+      CREATE TABLE visits (id INTEGER PRIMARY KEY, page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE, at INTEGER NOT NULL);
+      CREATE TABLE favicons (stray TEXT);
+      PRAGMA user_version = 1;
+    `)
+    old.prepare('INSERT INTO pages (url, title, last_visit, visit_count) VALUES (?, ?, ?, 1)').run(A, 'Kept Alpha', 1000)
+    expect(() => { migrate(old) }).toThrow(/favicons/)
+    expect(version(old)).toBe(1)
+    expect(tables(old)).toEqual(['favicons', 'pages', 'visits'])
+    expect(columns(old, 'pages')).not.toContain('typed_count')
+    expect((old.prepare('SELECT title FROM pages').get() as { title: string }).title).toBe('Kept Alpha')
+    old.close()
   })
 
   it('refuses a file from a newer version and leaves it as it was', () => {
