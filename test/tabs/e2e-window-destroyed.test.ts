@@ -20,6 +20,10 @@ import { waitFor } from '../support/smoke-helpers.mjs'
 
 const TEST_TIMEOUT_MS = 180_000
 const EXIT_WAIT_MS = 30_000
+/** On macOS the browser stays running with no window, as a Mac app does (index.ts's `window-all-closed`): this long is
+ * well past when a tab's page ending would have thrown. */
+const STAYS_OPEN_WAIT_MS = 5_000
+const STAYS_OPEN = process.platform === 'darwin'
 
 let server: FixtureServer
 
@@ -76,9 +80,10 @@ it('ends without an error in the main process when a window is destroyed with no
         page.close()
       }, second).catch(() => { /* the browser may end before the call answers */ })
 
-      const code = await Promise.race([exited, new Promise<'still running'>((resolve) => { setTimeout(() => { resolve('still running') }, EXIT_WAIT_MS) })])
+      const code = await Promise.race([exited, new Promise<'still running'>((resolve) => { setTimeout(() => { resolve('still running') }, STAYS_OPEN ? STAYS_OPEN_WAIT_MS : EXIT_WAIT_MS) })])
       const log = mainOutput(app)
-      check('the browser ended on its own, not by an error', code !== 'still running' && code !== 1, `exit code ${String(code)}`)
+      if (STAYS_OPEN) check('the browser kept running with no window, as a Mac app does', code === 'still running', `exit code ${String(code)}`)
+      else check('the browser ended on its own, not by an error', code !== 'still running' && code !== 1, `exit code ${String(code)}`)
       check('the main process logged no uncaught exception', !log.includes('uncaught exception in the main process'),
         log.split('\n').filter((line) => line.includes('uncaught exception') || line.includes('TypeError') || line.includes('    at ')).slice(0, 14).join('\n'))
       check('no state push read the destroyed window', !log.includes('state part fullScreen failed'))

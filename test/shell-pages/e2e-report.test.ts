@@ -7,6 +7,7 @@ import { join } from 'node:path'
 import type { ElectronApplication, Page } from 'playwright'
 import { afterAll, beforeAll, expect, it } from 'vitest'
 import { listDumps } from '../../src/main/diagnostics/dump-files.js'
+import { LOGGED_STALL_MS, STALL_TICK_MS } from '../../src/main/diagnostics/main-stalls.js'
 import { assertNoElectronSurvivors, closeElectron, launchElectron, mainOutput } from '../support/launch-electron.mjs'
 import { html, launchShell, QA_TEST_TIMEOUT_MS, startServer, visit } from '../support/qa-helpers.js'
 import type { FixtureServer } from '../support/qa-helpers.js'
@@ -284,7 +285,8 @@ it('counts the main process\'s stalls, and words a run the window system ended a
   let profile: string | undefined
   try {
     profile = await first.app.evaluate(({ app: electronApp }) => electronApp.getPath('userData'))
-    await stallMain(first.app, 2400)
+    // The monitor's timer reads a stall up to one tick short, so the hold is a tick past the length that gets a log line.
+    await stallMain(first.app, LOGGED_STALL_MS + 2 * STALL_TICK_MS)
     await delay(1200)
     await runCommand(first.chrome, 'report.open')
     const page = await pageAt(first.app, 'orivon://report')
