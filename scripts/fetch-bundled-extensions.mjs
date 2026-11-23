@@ -79,9 +79,10 @@ function isUnpacked(folder, entry) {
  * `.cache/`, where Node finds the two packages it leaves out.
  */
 async function loadBundledFolder() {
-  const { build } = await import('esbuild')
+  // buildSync: esbuild's own build() keeps a service process running that an install's lifecycle script must not leave behind.
+  const { buildSync } = await import('esbuild')
   const outfile = join(ROOT, '.cache', 'bundled-folder', 'bundled-folder.mjs')
-  await build({
+  buildSync({
     entryPoints: [join(ROOT, 'src', 'main', 'extensions', 'bundled-folder.ts')],
     outfile, bundle: true, platform: 'node', format: 'esm', external: ['adm-zip', 'pbf'], logLevel: 'silent'
   })
