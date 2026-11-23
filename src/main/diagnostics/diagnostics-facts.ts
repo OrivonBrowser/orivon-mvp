@@ -12,6 +12,7 @@ import type { StartupRecord } from '../startup/startup-marks.js'
 import { newest } from './crash-records.js'
 import type { CrashKind, CrashRecord } from './crash-records.js'
 import { gpuDevicesOf, gpuFeaturesOf } from './gpu-reading.js'
+import type { StallCounts } from './main-stalls.js'
 import { webGpuState, x11VulkanReadingOf } from './webgpu-state.js'
 import type { AdapterReading, WebGpuReason, WebGpuStateName } from './webgpu-state.js'
 
@@ -129,6 +130,8 @@ export interface DiagnosticsFacts {
     readonly tunnels: { readonly tabs: { readonly nym: number, readonly socks5: number, readonly direct: number } }
     /** How often Chromium's network service ended in this run, and how the latest hold ended: counts and one fixed word. The log ring forgets the lines of an early restart in a long run; this does not. */
     readonly networkService: RestartCounts
+    /** How often the main process stopped answering for 1 s or more in this run, and the longest time: counts and milliseconds, so a report shows whether it stalled before a window ended. */
+    readonly mainStalls: StallCounts
     /** Whether the system's proxy settings are copied into the sessions, and if not why: four fixed words, never an address, a URL or an exception. */
     readonly systemProxy: MirrorStatus
     /** Whether Orivon looks site addresses up itself behind the system's proxy: one of five states, the provider, whether Chromium's resolver is held, and how many connections each refusal word stopped; never a name, an address or a proxy. */

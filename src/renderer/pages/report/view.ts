@@ -11,6 +11,11 @@ const KIND_TEXT: Readonly<Record<string, string>> = {
   'unclean-exit': 'Orivon did not shut down correctly'
 }
 
+/** What a recorded problem is called when its reason says more than its kind does: the desktop ended the window, Orivon did not fail. */
+const REASON_TEXT: Readonly<Record<string, string>> = {
+  'display-lost': 'The desktop\'s display server ended Orivon\'s window'
+}
+
 const FLASH_MS = 2000
 const ARM_MS = 4000
 
@@ -26,7 +31,10 @@ function when (stamp: string): string {
 }
 
 function crashLabel (row: CrashRow): string {
-  return `${KIND_TEXT[row.kind] ?? row.kind}: ${row.process}, ${row.reason}, ${when(row.at)}${row.reported ? ' (already reported)' : ''}`
+  const reported = row.reported ? ' (already reported)' : ''
+  const named = REASON_TEXT[row.reason]
+  if (named !== undefined) return `${named}: ${when(row.at)}${reported}`
+  return `${KIND_TEXT[row.kind] ?? row.kind}: ${row.process}, ${row.reason}, ${when(row.at)}${reported}`
 }
 
 function formatSize (bytes: number): string {

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -120,6 +120,73 @@ describe('a run that does not', () => {
     const third = new DiagnosticsService(env())
     third.begin()
     expect(third.lastRunCrash()).toBeUndefined()
+  })
+})
+
+describe('a run the window system ended', () => {
+  const STALLS = { over1s: 2, over5s: 1, longestMs: 5400 }
+
+  it('is found at the next start as a display-lost record that the person may report, with the stalls in its words', () => {
+    const first = new DiagnosticsService(env())
+    first.begin()
+    first.windowSystemEnded(STALLS)
+    clock += 60_000
+    const second = new DiagnosticsService(env())
+    second.begin()
+    expect(second.crashes()).toHaveLength(1)
+    const record = second.lastRunCrash()
+    expect(record).toMatchObject({ kind: 'unclean-exit', reason: 'display-lost', process: 'main', at: '2026-10-07T10:00:00Z' })
+    expect(record?.message).toContain('display server ended its connection')
+    expect(record?.message).toContain('stalled 2 times for 1 s or more, the longest for 5.4 s')
+  })
+
+  it('writes the marker and the log line before it returns, and says so once however often it is told', () => {
+    const service = new DiagnosticsService(env())
+    service.begin()
+    service.windowSystemEnded(STALLS)
+    service.windowSystemEnded(STALLS)
+    const marker = JSON.parse(readFileSync(join(root, 'diagnostics', 'running.json'), 'utf8')) as Record<string, unknown>
+    expect(marker).toMatchObject({ sessionId: service.sessionId, pid: 42, endedBy: 'window-system', stalls: STALLS })
+    const lines = readFileSync(join(root, 'diagnostics', 'logs', 'current.log'), 'utf8').split('\n').filter((line) => line.includes('ended without a close'))
+    expect(lines).toHaveLength(1)
+    expect(lines[0]).toContain('WARN')
+    expect(lines[0]).toContain('the display connection ended')
+  })
+
+  it('does nothing in a run that recorded a fatal error, which already has its own record', () => {
+    const first = new DiagnosticsService(env())
+    first.begin()
+    first.recordFatal('uncaught exception', new Error('boom'))
+    first.windowSystemEnded(STALLS)
+    expect(JSON.parse(readFileSync(join(root, 'diagnostics', 'running.json'), 'utf8'))).not.toHaveProperty('endedBy')
+    clock += 1000
+    const second = new DiagnosticsService(env())
+    second.begin()
+    expect(second.crashes().map((record) => record.kind)).toEqual(['main-error'])
+  })
+
+  it('does nothing once the run has quit in order, so a closing window does not bring the marker back', () => {
+    const service = new DiagnosticsService(env())
+    service.begin()
+    service.end()
+    service.windowSystemEnded(STALLS)
+    expect(existsSync(join(root, 'diagnostics', 'running.json'))).toBe(false)
+  })
+
+  it('does nothing before the run began', () => {
+    new DiagnosticsService(env()).windowSystemEnded(STALLS)
+    expect(existsSync(join(root, 'diagnostics', 'running.json'))).toBe(false)
+  })
+
+  it('leaves a native dump the last word on what happened', () => {
+    const first = new DiagnosticsService(env())
+    first.begin()
+    first.windowSystemEnded(STALLS)
+    dump('a.dmp', clock + 10_000)
+    clock += 600_000
+    const second = new DiagnosticsService(env())
+    second.begin()
+    expect(second.lastRunCrash()).toMatchObject({ kind: 'unclean-exit', reason: 'crashed' })
   })
 })
 

@@ -54,6 +54,12 @@ describe('RunMarkerFile', () => {
     expect(existsSync(join(dir, 'running.json'))).toBe(false)
   })
 
+  it('writes and reads back the window system\'s end with the stalls', () => {
+    const marker = new RunMarkerFile(dir)
+    marker.write({ sessionId: 's', pid: 3, startedAt: 9, endedBy: 'window-system', stalls: { over1s: 1, over5s: 0, longestMs: 1500 } })
+    expect(marker.read()).toEqual({ sessionId: 's', pid: 3, startedAt: 9, endedBy: 'window-system', stalls: { over1s: 1, over5s: 0, longestMs: 1500 } })
+  })
+
   it('clearing a marker that is not there is fine', () => {
     expect(() => { new RunMarkerFile(dir).clear() }).not.toThrow()
   })

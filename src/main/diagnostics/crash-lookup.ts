@@ -4,10 +4,12 @@
 let pageCrash: (webContentsId: number) => string | undefined = () => undefined
 const endedOnPurpose = new Set<number>()
 let lastRun: () => string | undefined = () => undefined
+let lastRunWhy: () => string | undefined = () => undefined
 
-export function setCrashLookups (lookups: { readonly page: typeof pageCrash, readonly lastRun: typeof lastRun }): void {
+export function setCrashLookups (lookups: { readonly page: typeof pageCrash, readonly lastRun: typeof lastRun, readonly lastRunReason?: typeof lastRunWhy }): void {
   pageCrash = lookups.page
   lastRun = lookups.lastRun
+  lastRunWhy = lookups.lastRunReason ?? (() => undefined)
 }
 
 /** The id of the newest record of a page that died in this run. */
@@ -18,6 +20,11 @@ export function crashIdOfPage (webContentsId: number): string | undefined {
 /** The id of the previous run's crash that has not been reported: a fatal error or an unclean exit. */
 export function lastRunCrashId (): string | undefined {
   return lastRun()
+}
+
+/** The reason of that crash, which the bar words its offer by: `display-lost` is the desktop's doing, not a crash of Orivon's. */
+export function lastRunCrashReason (): string | undefined {
+  return lastRunWhy()
 }
 
 /** Where a report about a crash opens. */

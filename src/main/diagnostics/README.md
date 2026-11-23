@@ -4,12 +4,12 @@
 about one. `log-ring.ts` and `log-file.ts` keep the main process's console output (newest 1000 lines in memory,
 `logs/current.log` on disk), and with it every line Orivon's utility processes print: `host-output.ts` turns a host's
 piped output into console lines and `host-fork.ts` forks every host that way; `crash-records.ts` and `crash-store.ts` the crash records (`crashes.json`, newest 30,
-dropped after 30 days) and the run marker (`running.json`) that says whether the last run ended in an orderly quit;
+dropped after 30 days) and the run marker (`running.json`) that says whether the last run ended in an orderly quit, and whether the window system ended its window (`display-lost`); `main-stalls.ts` counts how long the main process stopped answering (a timer's lateness), and `window-end-test-seam.ts` is the test build's way to say the window system ended a window;
 `dumps.ts` and `dump-files.ts` the native crash dumps Crashpad leaves; `diagnostics-service.ts` composes them for one
-run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `gpu-reading.ts` parses what Chromium reports about the graphics setup (the feature map, the device list and the names of a device) for every reader of it, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code, and the WebGPU question's default with the counts of sites allowed and blocked, `siteAnswerCounts`; `orivon://gpu` shows its sentence), and the start-up record (`../startup/startup-marks.ts`: the marks of this start and each hook's duration), `report-payload.ts` builds the body and cuts
+run. The report: `diagnostics-facts.ts` shapes the `diagnostics` block, `gpu-reading.ts` parses what Chromium reports about the graphics setup (the feature map, the device list and the names of a device) for every reader of it, `webgpu-state.ts` says whether WebGPU works and why not (the block carries its state and reason code, and the WebGPU question's default with the counts of sites allowed and blocked, `siteAnswerCounts`; `orivon://gpu` shows its sentence), the start-up record (`../startup/startup-marks.ts`: the marks of this start and each hook's duration) and the main process's stalls (`browser.mainStalls`: counts of 1 s and 5 s or more, and the longest, in milliseconds), `report-payload.ts` builds the body and cuts
 every field to the length the server accepts, `address-redact.ts` cuts an address in a log line to its scheme and the kind of its site, `report-text.ts` writes the Markdown for "Copy as text",
 `report-channel.ts` posts and reads the status, `sent-reports.ts` keeps the list of what was sent, and
-`report-domain.ts` is what [`orivon://report`](../../renderer/pages/report/) may ask. `diagnostics-runner.ts` and
+`report-domain.ts` is what [`orivon://report`](../../renderer/pages/report/) may ask. `diagnostics-runner.ts` (which also exports `noteWindowSystemEnd`, for the shell window's `closed` handler) and
 `report-runner.ts` connect all of it to Electron. Everything is under `<userData>/diagnostics/`, so a private
 session's copy is removed with its directory.
 
@@ -66,12 +66,7 @@ A source run of the Swarm end-to-end spec (six sites mounted, one large file rea
 one second; the smoke run, which loads no `.eth` name, made it write none, and the other hosts ran in neither. A real person's log
 would settle the number.
 
-**The Nym tunnel's host writes only its own lines to the log.** The WebAssembly library the host runs passes its own strings to
-`console.error` and `console.warn`, and they can name where a Nym-routed app connects, which is what Nym exists to hide. Every line
-the host's own code writes begins with `[nym-tunnel]`, its unhandled-rejection handler included; `HostLog`'s `onlyTagged` counts
-the others and leaves them out, and one line a minute says how many came "from the Nym library". What Node prints itself when the
-host crashes carries no tag and is left out as well: the supervisor reports the exit and its code. This is a `HostLog` option, not
-Nym code here, so another host that runs a library can ask for it.
+**The Nym tunnel's host writes only its own lines to the log**, so a library's lines that could name where an app connects never reach it: [`DESIGN.md`](DESIGN.md) says how.
 
 **A report leaves only when the person presses Send.** Nothing here sends on its own, and `ORIVON_TELEMETRY=off` and
 the telemetry consent do not govern it: it is the person's own act, with its own preview. The page never assembles
@@ -98,7 +93,7 @@ every start. A dump goes into a report only when the person ticks its box, at mo
 **An unclean exit and a fatal error are one event.** The marker is removed at `will-quit`, so `app.exit()` and a crash
 leave it behind. A fatal error (`start.ts` calls `recordFatal` before `app.exit(1)`) already wrote a record, and the
 next start does not add an unclean-exit record for the same run. A renderer crash does not count: it says nothing
-about whether the browser itself ended well.
+about whether the browser itself ended well. A run the window system ended is `display-lost` ([`DESIGN.md`](DESIGN.md)).
 
 **The redaction is the home directory and the secrets main has noted.** `~` replaces the home directory in every string
 sent and in the preview. A username elsewhere (a path under `/Users` of another account, a name in a page address) is not

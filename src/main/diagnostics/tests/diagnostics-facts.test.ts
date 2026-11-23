@@ -11,7 +11,7 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics)).toEqual(['app', 'system', 'gpu', 'displays', 'processes', 'browser', 'startup', 'recentCrashes'])
     expect(Object.keys(diagnostics.app)).toEqual(['commit', 'channel', 'electron', 'chromium', 'node', 'v8', 'packaged', 'uptimeSec'])
     expect(Object.keys(diagnostics.system)).toEqual(['platform', 'release', 'arch', 'cpus', 'cpuModel', 'memoryMb', 'freeMemoryMb', 'locale', 'session', 'desktop', 'ozone'])
-    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'networkService', 'systemProxy', 'nameRelay', 'signIns', 'extensions', 'appSockets', 'settings'])
+    expect(Object.keys(diagnostics.browser)).toEqual(['windows', 'tabs', 'privateSession', 'tunnels', 'networkService', 'mainStalls', 'systemProxy', 'nameRelay', 'signIns', 'extensions', 'appSockets', 'settings'])
   })
 
   it('states how many tabs carry each tunnel choice, as counts and nothing else', () => {
@@ -25,6 +25,12 @@ describe('buildDiagnostics', () => {
     expect(Object.keys(diagnostics.browser.networkService)).toEqual(['restarts', 'timedOut', 'last'])
     const never = buildDiagnostics({ ...FACTS, browser: { ...FACTS.browser, networkService: { restarts: 0, timedOut: 0, last: 'none' } } })
     expect(never.browser.networkService).toEqual({ restarts: 0, timedOut: 0, last: 'none' })
+  })
+
+  it('states how often the main process stalled and the longest stall, as counts and milliseconds', () => {
+    expect(diagnostics.browser.mainStalls).toEqual({ over1s: 3, over5s: 1, longestMs: 6200 })
+    expect(Object.keys(diagnostics.browser.mainStalls)).toEqual(['over1s', 'over5s', 'longestMs'])
+    expect(Object.values(diagnostics.browser.mainStalls).every((count) => Number.isInteger(count))).toBe(true)
   })
 
   it('states whether the system\'s proxy is copied and why not, as four fixed words and nothing else', () => {

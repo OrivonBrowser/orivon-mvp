@@ -21,7 +21,7 @@ import type { InternalDomain } from '../pages/internal-ipc.js'
 import { BUILD_COMMIT } from './build-commit.js'
 import { appSocketReadings, buildDiagnostics, channelOf, reportedSettings, siteAnswerCounts } from './diagnostics-facts.js'
 import type { DiagnosticsFacts } from './diagnostics-facts.js'
-import { diagnostics } from './diagnostics-runner.js'
+import { diagnostics, mainStalls } from './diagnostics-runner.js'
 import { readDumpBase64 } from './dump-files.js'
 import type { Post } from './report-channel.js'
 import { reportDomain } from './report-domain.js'
@@ -92,6 +92,7 @@ async function readFacts (services: ShellServices, ctx: SubsystemContext): Promi
       privateSession: services.isPrivate,
       tunnels: { tabs: tabChoiceCounts(services.windows) },
       networkService: networkServiceRestart.counts(),
+      mainStalls: mainStalls(),
       systemProxy: mirrorStatus(),
       nameRelay: currentNameRelayStatus(),
       signIns: cookieMirrorStatus(),

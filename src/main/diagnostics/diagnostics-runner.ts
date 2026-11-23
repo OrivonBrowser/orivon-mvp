@@ -3,19 +3,24 @@
 // decides is in the pure modules and the service beside this file; this file only connects them to the process.
 import { randomBytes } from 'node:crypto'
 import { join } from 'node:path'
+import { performance } from 'node:perf_hooks'
 import { app, crashReporter } from 'electron'
 import type { WebContents } from 'electron'
 import type { Subsystem } from '../registry.js'
 import { setCrashLookups, takeEndedOnPurpose } from './crash-lookup.js'
 import { DiagnosticsService } from './diagnostics-service.js'
 import { captureConsole } from './log-ring.js'
+import { NO_STALLS, StallMonitor, STALL_TICK_MS } from './main-stalls.js'
+import type { StallCounts } from './main-stalls.js'
 import { childProcessName, isOrdinaryEnd, processName, rendererLine, shellPageName } from './shell-console.js'
+import { exposeWindowSystemEnd } from './window-end-test-seam.js'
 import { isNetworkServiceEnd } from '../sessions/network-service-restart.js'
 import { isShellSchemeUrl } from '../shell/shell-session.js'
 
 let service: DiagnosticsService | undefined
 let classify: (contents: WebContents) => { internalPage: string | undefined, isTab: boolean } = () => ({ internalPage: undefined, isTab: true })
 let quitting = false
+let stalls: StallMonitor | undefined
 
 /** The one service of this process, once `startDiagnostics` has run. */
 export function diagnostics (): DiagnosticsService | undefined {
@@ -64,7 +69,12 @@ export function startDiagnostics (runtime: { readonly dir: string, readonly isPr
     service = started
     captureConsole(console, (level, text) => { started.log(level, text) })
     started.begin()
-    setCrashLookups({ page: (id) => started.crashOfPage(id)?.id, lastRun: () => started.lastRunCrash()?.id })
+    // The clock that does not move with the wall clock: a computer that sleeps or has its time set must not read as a stall.
+    const stallMonitor = new StallMonitor({ now: () => performance.now(), log: (line) => { console.warn(line) } })
+    stalls = stallMonitor
+    exposeWindowSystemEnd(noteWindowSystemEnd)
+    setInterval(() => { stallMonitor.tick() }, STALL_TICK_MS).unref()
+    setCrashLookups({ page: (id) => started.crashOfPage(id)?.id, lastRun: () => started.lastRunCrash()?.id, lastRunReason: () => started.lastRunCrash()?.reason })
 
     app.on('before-quit', () => { quitting = true })
     // An orderly quit removes the marker; app.exit() and a crash do not reach will-quit, which is how the next start knows.
@@ -93,6 +103,24 @@ export function startDiagnostics (runtime: { readonly dir: string, readonly isPr
     })
   } catch (error) {
     console.error('[orivon] diagnostics could not start:', error)
+  }
+}
+
+/** How often the main process stopped answering in this run: counts and the longest, for a report. */
+export function mainStalls (): StallCounts {
+  return stalls?.counts() ?? NO_STALLS
+}
+
+/**
+ * For the shell window's `closed` handler when `close` never ran: the window system ended it, so the display
+ * connection is gone and the process is ending. The next start words that run as `display-lost`, not as a crash.
+ * Does nothing in an orderly quit or after a fatal error, which have their own accounts. Never throws.
+ */
+export function noteWindowSystemEnd (): void {
+  try {
+    if (!quitting) service?.windowSystemEnded(mainStalls())
+  } catch {
+    // The process is already ending; this note must not become a second failure.
   }
 }
 

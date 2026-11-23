@@ -58,6 +58,14 @@ describe('the crash offer', () => {
     expect(show).toHaveBeenCalledWith('restore', undefined, { restore: true, report: true })
   })
 
+  it('passes the crash\'s reason to the bar, so it can word a run the desktop ended', () => {
+    setCrashLookups({ page: () => undefined, lastRun: () => '0123456789abcdef', lastRunReason: () => 'display-lost' })
+    const { ctx, show } = setup()
+    restoreOffer.opened?.(ctx as never, { firstOfLaunch: true })
+    vi.advanceTimersByTime(OFFER_DELAY_MS)
+    expect(show).toHaveBeenCalledWith('restore', undefined, { restore: true, report: true, reason: 'display-lost' })
+  })
+
   it('offers only the report when the start-up choice already reopened the session, or the run ended in an orderly way', () => {
     setCrashLookups({ page: () => undefined, lastRun: () => '0123456789abcdef' })
     for (const over of [{ mode: 'continue' }, { previous: { ...crashed, clean: true } }, { previous: null }]) {

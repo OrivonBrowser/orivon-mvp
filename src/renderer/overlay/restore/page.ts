@@ -10,22 +10,34 @@ interface RestoreView {
   readonly keys: readonly string[] | null
   readonly restore: boolean
   readonly report: boolean
+  readonly reason: string | null
+}
+
+const DEFAULT_TEXT = 'Orivon didn\'t shut down correctly.'
+
+/** The bar's words for the crash reasons that are not Orivon failing; the full sentence is its tooltip. */
+const REASON_TEXT: Readonly<Record<string, { readonly text: string, readonly title: string }>> = {
+  'display-lost': {
+    text: 'The desktop ended Orivon\'s window.',
+    title: 'The desktop\'s display server ended its connection to Orivon\'s window, so Orivon could not go on.'
+  }
 }
 
 function viewOf (payload: unknown): RestoreView {
-  const value = (typeof payload === 'object' && payload !== null ? payload : {}) as { keys?: unknown, restore?: unknown, report?: unknown }
+  const value = (typeof payload === 'object' && payload !== null ? payload : {}) as { keys?: unknown, restore?: unknown, report?: unknown, reason?: unknown }
   const keys = Array.isArray(value.keys) && value.keys.every((key) => typeof key === 'string') ? value.keys as string[] : null
-  return { keys, restore: value.restore !== false, report: value.report === true }
+  return { keys, restore: value.restore !== false, report: value.report === true, reason: typeof value.reason === 'string' ? value.reason : null }
 }
 
 export const restorePage: OverlayPage = {
   mount (content, overlay: Overlay) {
     const restore = h('button', { type: 'button', className: 'btn small primary', textContent: 'Restore tabs', onclick: () => { void overlay.request({ type: 'restore' }) } })
     const report = h('button', { type: 'button', className: 'btn small', textContent: 'Report the problem', onclick: () => { void overlay.request({ type: 'report' }) } })
+    const text = h('span', { className: 'restore-text', textContent: DEFAULT_TEXT })
     const dismiss = h('button', { type: 'button', className: 'btn icon', ariaLabel: 'Dismiss', title: 'Dismiss', onclick: () => { void overlay.request({ type: 'dismiss' }) } }, closeIcon())
     content.append(h('div', { className: 'restorebar', role: 'status' },
       h('span', { className: 'restore-mark' }, warningIcon()),
-      h('span', { className: 'restore-text', textContent: 'Orivon didn\'t shut down correctly.' }),
+      text,
       restore,
       report,
       dismiss))
@@ -35,6 +47,9 @@ export const restorePage: OverlayPage = {
         const view = viewOf(payload)
         restore.hidden = !view.restore
         report.hidden = !view.report
+        const words = view.reason === null ? undefined : REASON_TEXT[view.reason]
+        text.textContent = words?.text ?? DEFAULT_TEXT
+        text.title = words?.title ?? ''
         restore.title = view.keys === null ? 'Restore tabs' : `Restore tabs (${formatKeys(view.keys, overlay.platform)})`
       }
     }
