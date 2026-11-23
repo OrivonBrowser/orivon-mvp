@@ -45,6 +45,7 @@ public surface of `src/contracts/` (named `contracts/<file>`).
 
 ### Changed
 
+- **The system's proxy settings are read while Chromium starts**: the route starts reading the computer's proxy settings (`reg.exe`, `gsettings`, `scutil`) before the browser is ready, and its first check takes that read instead of starting one, so a start no longer waits for those programs (20 to 30 ms on Windows and macOS runners). A window held to a tunnel reads none, as before.
 - **A new profile opens its history faster**: the history file is built in one disk commit instead of one per statement, which took about 90 ms off a first start on a hosted Windows runner (about 200 ms to about 110 ms for the stretch that loads the stores). A start that finds the file is unchanged.
 - **The start separates its registrations from its slow tail**: the route's first read of the system's proxy settings and the loading of your extensions now run as a step of their own after every subsystem has registered, and an extension install or change asked meanwhile waits for it. The window still opens after both, so nothing is delayed yet.
 - **The Linux one-line install starts as fast as the `.deb`**: it unpacks the AppImage once, at install time, instead of keeping it, so a click no longer pays about two seconds of mounting or unpacking, and it needs no `libfuse2`. Run the command again to update, or to convert an earlier install; an update never removes the files a running Orivon is using.
