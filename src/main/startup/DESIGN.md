@@ -18,11 +18,34 @@ wrong tab. The reopen key and the restore bar wait first for that reason; any ne
 **The window waits for its own first paint and nothing else; the pages wait for the tail.** The route's first read of the
 system's settings and the loading of the extensions (on a new profile, unpacking the bundled one synchronously) can take
 seconds, and a window needs neither: its pages are the shell's own, served by Orivon.
-[`window-first.ts`](window-first.ts) is the order: the window is created, `afterWindow` runs while it loads and paints its
-page, the gate opens, the first window is filled, and a second launch is answered last, so it never meets a window with no
-tabs or opens a second one. The tail starts at the window's creation, not at its show, so that its asynchronous work (a child
-process reading the system's proxy, sessions set, extensions loaded) overlaps the page's load instead of following it. The
-one piece that blocks the main thread, which serves that page, is the unpacking of the bundled extension into a new profile:
-it awaits `firstWindowShown()` and runs once the window is on screen. A critical
-failure of the tail ends the start with the error dialog and the gate never opens. A window the plan fills has no tab until the
-gate opens: a placeholder new-tab page would flash and then be closed, which is a tab closing and can close the window.
+[`window-first.ts`](window-first.ts) is the order: the boot starts the tail (`startTail`) the moment `afterReady` has ended,
+where it always ran, and does not await it; the shell's services, its stores and the first window are made while it runs; the
+tail ends by opening the gate (a critical failure of it ends the start with the error dialog and the gate never opens); and
+`endStart` fills the first window once both the tail and the window exist, and only then answers a second launch, so it
+never meets a window with no tabs or opens a second one. The gate therefore opens when the tail ends, not when the boot
+reaches the window, and on a next start that can be before the window is made.
+
+**Only the unpacking of the bundled extension waits for the window to show.** It holds the main thread, which serves the
+window's page (`orivon-shell://`), so it awaits `firstWindowShown()` and runs once the window is on screen. The signal is made
+by `startTail`, before the tail's first step, so no step finds it absent and seeds at once; it opens when the window is shown or
+closed, when the start ends without a window (`endStart`, and the boot's catch in `index.ts`), when the tail is stopped, and
+after a cap (`SHOWN_WAIT_CAP_MS`), so no start leaves the extensions' `loaded` promise and every extension mutator waiting
+for ever. `startTail` never rejects: a throw no subsystem caught becomes a critical failure of the start, so no promise is
+left to reject unhandled until the end of the start awaits it.
+
+**Why the tail may run beside the boot.** `runAfterWindow` runs the route and then the extensions, one after the other
+(`runSerial`), and it yields only at an `await`. Nothing between `startTail` and the first `await` of the boot (the stores'
+load) yields, so `createShellServices`, `attachExtensionShell` and the publishers all run before any step of the tail resumes:
+the extensions are loaded after the shell is attached, exactly as when the tail ran after the window, and the extension host
+accepts either order anyway (`whenShellServices` waits for a shell not yet attached, every other reach is `bridge?.`).
+`ctx.routes.followSettings` runs after the stores load, so it can land before, between or after the steps of the route's first
+pass. It is safe in each place: the route service starts from the settings file read before the store existed, so it applies
+only a difference between that file and the store (none, unless the file changed within the start), through the events a later
+change by the person fires and the controller already settles; the relay's switch and the Secure DNS choice likewise start
+from the file; and the controller adopts every session when it is made (stopped at once while the whole browser is on the
+tunnel, otherwise followed to the system's setting the mirror's set reaches), as it did for a session made after the gate.
+Before this order the tail ended before `followSettings` (a difference was applied after the gate had opened) or began after
+it; the order now only interleaves those two cases.
+
+A window the plan fills has no tab until the gate opens: a placeholder new-tab page would flash and then be closed, which is a
+tab closing and can close the window.
