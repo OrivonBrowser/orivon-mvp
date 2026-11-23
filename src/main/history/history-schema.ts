@@ -47,54 +47,57 @@ export function rebuildFtsIndex (db: DatabaseSync): void {
   db.exec("INSERT INTO pages_fts(pages_fts) VALUES ('rebuild')")
 }
 
-/** Brings the file to `SCHEMA_VERSION`, one step per version, each leaving its rows intact. Throws for a file
- * from a newer version, which is left exactly as it was. */
+/** Brings the file to `SCHEMA_VERSION`, one step per version, each leaving its rows intact. All the steps a file
+ * needs run in one transaction, so a new file costs one commit, not one per statement (each commit syncs the
+ * write-ahead log, which a Windows disk makes slow), and a step that fails leaves the file at the version it had.
+ * `user_version` is part of that transaction. Throws for a file from a newer version, which is left exactly as it
+ * was. Called after `PRAGMA journal_mode = WAL`, which cannot change inside a transaction. */
 export function migrate (db: DatabaseSync): void {
   const row = db.prepare('PRAGMA user_version').get() as { user_version: number } | undefined
-  let version = row?.user_version ?? 0
-  if (version > SCHEMA_VERSION) throw new Error(`the history file is from a newer version (${String(version)})`)
-  if (version < 1) {
-    db.exec(`
-      CREATE TABLE pages (
-        id INTEGER PRIMARY KEY,
-        url TEXT NOT NULL UNIQUE,
-        title TEXT NOT NULL DEFAULT '',
-        last_visit INTEGER NOT NULL,
-        visit_count INTEGER NOT NULL DEFAULT 0
-      );
-      CREATE TABLE visits (
-        id INTEGER PRIMARY KEY,
-        page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
-        at INTEGER NOT NULL
-      );
-      CREATE INDEX visits_at ON visits (at);
-      CREATE INDEX visits_page ON visits (page_id);
-      CREATE INDEX pages_last_visit ON pages (last_visit DESC);
-      PRAGMA user_version = 1;
-    `)
-    version = 1
-  }
-  if (version < 2) {
-    // `secure-delete`, part of the index DDL, stays set across every later reopen: without it, FTS5's own delete
-    // only tombstones a posting, leaving it in already-allocated pages that `secure_delete`/VACUUM on `pages`
-    // itself cannot reach.
-    inTransaction(db, () => {
+  const from = row?.user_version ?? 0
+  if (from > SCHEMA_VERSION) throw new Error(`the history file is from a newer version (${String(from)})`)
+  if (from === SCHEMA_VERSION) return
+  inTransaction(db, () => {
+    let version = from
+    if (version < 1) {
+      db.exec(`
+        CREATE TABLE pages (
+          id INTEGER PRIMARY KEY,
+          url TEXT NOT NULL UNIQUE,
+          title TEXT NOT NULL DEFAULT '',
+          last_visit INTEGER NOT NULL,
+          visit_count INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE visits (
+          id INTEGER PRIMARY KEY,
+          page_id INTEGER NOT NULL REFERENCES pages(id) ON DELETE CASCADE,
+          at INTEGER NOT NULL
+        );
+        CREATE INDEX visits_at ON visits (at);
+        CREATE INDEX visits_page ON visits (page_id);
+        CREATE INDEX pages_last_visit ON pages (last_visit DESC);
+        PRAGMA user_version = 1;
+      `)
+      version = 1
+    }
+    if (version < 2) {
+      // `secure-delete`, part of the index DDL, stays set across every later reopen: without it, FTS5's own delete
+      // only tombstones a posting, leaving it in already-allocated pages that `secure_delete`/VACUUM on `pages`
+      // itself cannot reach.
       rebuildFtsIndex(db)
       db.exec('PRAGMA user_version = 2')
-    })
-    version = 2
-  }
-  if (version < 3) {
-    // `typed_count` is how often an address was typed rather than followed; `favicons` holds one icon per host,
-    // apart from `pages` so that a page's row stays small and an icon is shared by every page of its site.
-    inTransaction(db, () => {
+      version = 2
+    }
+    if (version < 3) {
+      // `typed_count` is how often an address was typed rather than followed; `favicons` holds one icon per host,
+      // apart from `pages` so that a page's row stays small and an icon is shared by every page of its site.
       db.exec(`
         ALTER TABLE pages ADD COLUMN typed_count INTEGER NOT NULL DEFAULT 0;
         CREATE TABLE favicons (host TEXT PRIMARY KEY, data TEXT NOT NULL, updated INTEGER NOT NULL);
         PRAGMA user_version = 3;
       `)
-    })
-  }
+    }
+  })
 }
 
 function inTransaction (db: DatabaseSync, body: () => void): void {
