@@ -100,6 +100,15 @@ node scripts/run-headless.mjs node scripts/first-start-probe.mjs /opt/Orivon/ori
 
 A run on a developer's own machine is not representative: time packages on the runners, or on a machine nothing else uses.
 
+Each leg also runs the probe once more with `--runs 1 --profile start-probe/profiles` (`<system>-profiled.json`): one first
+start and one next start, each asked for a CPU profile of the main process's start (`ORIVON_STARTUP_PROFILE`). It is a run of
+its own because a profiled start is slower, so the timed series stay clean. The profiles go up with the timing JSON
+(`start-probe/profiles/first-1.cpuprofile`, `next-1.cpuprofile`), `cross-os.mjs --packaged` brings them back and says where, and
+`<system>-profiled.json` holds the start-up lines of the same two launches: read a window of a profile with
+`node scripts/startup-profile-summary.mjs <file> --from-ms <mark> --to-ms <mark>`, taking the marks from that file's
+`first.runs[0].record.marks` or `next.runs[0].record.marks`. The from-source smoke of `cross-os.yml` writes one more, of its
+single launch, as `cross-os/startup.cpuprofile` in each system's artifact.
+
 ### Live sessions
 
 When one run's screenshots do not settle a question, [`live-session.yml`](../../.github/workflows/live-session.yml)

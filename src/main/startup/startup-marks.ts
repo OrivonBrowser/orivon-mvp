@@ -87,11 +87,17 @@ export interface StartupMarks {
 /** A creation time further ahead of the wall clock, or further behind it, than this is a reading gone wrong, not a slow start. */
 const MAX_PLAUSIBLE_AGE_MS = 10 * 60_000
 
+/** How long ago the system created the process, in ms; null when it gave no creation time or one that is a reading gone wrong. */
+export function processAgeMs (clock: Pick<StartupClock, 'wallNow' | 'createdAt'>): number | null {
+  if (clock.createdAt === null) return null
+  const age = clock.wallNow() - clock.createdAt
+  return age >= 0 && age <= MAX_PLAUSIBLE_AGE_MS ? age : null
+}
+
 export function createStartupMarks (clock: StartupClock): StartupMarks {
   const perfAtStart = clock.perfNow()
-  const age = clock.createdAt === null ? Number.NaN : clock.wallNow() - clock.createdAt
-  const fromCreation = age >= 0 && age <= MAX_PLAUSIBLE_AGE_MS
-  const elapsed = (): number => Math.round(fromCreation ? age + (clock.perfNow() - perfAtStart) : clock.perfNow())
+  const age = processAgeMs(clock)
+  const elapsed = (): number => Math.round(age === null ? clock.perfNow() : age + (clock.perfNow() - perfAtStart))
 
   const reached = new Map<StartupMark, number>()
   const hooks: HookTiming[] = []
@@ -105,7 +111,7 @@ export function createStartupMarks (clock: StartupClock): StartupMarks {
     isComplete,
     record: () => ({
       schema: 1,
-      base: fromCreation ? 'process-creation' : 'performance-origin',
+      base: age === null ? 'performance-origin' : 'process-creation',
       complete: isComplete(),
       firstRun: facts.firstRun,
       electron: facts.electron,

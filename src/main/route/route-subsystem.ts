@@ -34,9 +34,8 @@ import { setMirrorStatusSource } from './proxy-mirror/mirror-status.js'
 import { createPacFetch } from './proxy-mirror/pac-fetch.js'
 import { createProxyMirror } from './proxy-mirror/proxy-mirror.js'
 import type { ProxyMirror } from './proxy-mirror/proxy-mirror.js'
-import { environmentReader } from './proxy-mirror/read-environment.js'
-import { readKdeSettings } from './proxy-mirror/read-kde-files.js'
-import { readGnomeSettings, readMacosSettings, readWindowsSettings } from './proxy-mirror/run-readers.js'
+import { readerFor, startSystemRead } from './proxy-mirror/early-read.js'
+import type { SettingsReader } from './proxy-mirror/early-read.js'
 import { sourceOf } from './proxy-mirror/settings-source.js'
 import { askHolderOfCopy } from './system-code.js'
 import { guardOfSession, namesVerifierHost, rootDotBypassRules, routedBypassRules, verifierNameFilter, verifierNameGuard } from './verifier-name-guard.js'
@@ -84,6 +83,8 @@ const created: object[] = []
 let adopt: ((created: Session) => void) | undefined
 /** What `afterReady` leaves for `afterWindow`: the first read of the system's settings and the wait for the sessions to follow it. Set by `afterReady`, and undefined where that did not get this far. */
 let settleSessions: (() => Promise<void>) | undefined
+/** What `beforeReady` leaves for the mirror's first pass: the read of the computer's proxy settings, already started. Undefined where none was (a window held to a tunnel, or a source with nothing to read). */
+let systemRead: SettingsReader | undefined
 
 export const routeSubsystem: Subsystem = {
   name: 'route',
@@ -94,6 +95,8 @@ export const routeSubsystem: Subsystem = {
       if (adopt === undefined) created.push(made)
       else adopt(made)
     })
+    // The read waits on a program, not on a session: it runs beside Chromium's own start, and the first pass finds it done.
+    systemRead = startSystemRead(process.platform, process.env, process.argv)
   },
   afterReady: async (ctx: SubsystemContext) => {
     const userData = ctx.app.getPath('userData')
@@ -231,7 +234,7 @@ export const routeSubsystem: Subsystem = {
     const source = sourceOf(process.platform, process.env)
     const mirror = createProxyMirror({
       source,
-      read: source === 'gnome' ? readGnomeSettings : source === 'kde' ? readKdeSettings : source === 'windows' ? readWindowsSettings : source === 'macos' ? readMacosSettings : environmentReader(process.env),
+      read: systemRead ?? readerFor(source, process.env),
       held: heldToNym,
       // The text of the script the system names is fetched direct by a session of its own; the system's session is made to read it again when the text changed.
       fetchScript: createPacFetch(() => session.fromPartition('orivon-pac-fetch')),

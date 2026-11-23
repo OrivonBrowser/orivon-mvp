@@ -15,6 +15,7 @@ A session that follows the system takes the copy through the route controller's 
 | `read-windows.ts` | `reg query` of the per-user Internet Settings key, its connection blob and the machine policy turned into `SystemSettings`, by the rule Chromium's reader follows; reads only the values it needs | Durable: pure |
 | `read-environment.ts` | The environment's `auto_proxy` turned into `SystemSettings` the way Chromium's environment reader takes it, once, and no reader at all when it is not set; the manual variables are not read | Durable: pure |
 | `run-readers.ts` | Runs `gsettings`, `reg.exe` and `/usr/sbin/scutil` (`execFile`, no shell, 3 seconds, an error that names neither the output nor the arguments) | Tied to the operating system: it starts a program |
+| `early-read.ts` | Picks the settings reader and starts it before the browser is ready | Tied to the operating system: it starts a program |
 | `mirrored-config.ts` | The config for manual settings (the system's rules and exceptions, then `*.suffix` for every routed suffix) and for a script (its wrapped text as a `data:` address) | Durable: pure |
 | `pac-wrapper.ts` | The system's proxy script made into a script of Orivon's own that answers `DIRECT` for every routed name before the system's text runs, and runs that text where it cannot reach what decides it | Durable: pure text, which Chromium's PAC context runs |
 | `pac-fetch.ts` | Fetches the text of the script the system names, direct, with no cookies or credentials, at most a megabyte and 30 seconds, decoded as Chromium decodes it | Tied to Electron: it makes a session of its own and asks it |
@@ -22,8 +23,8 @@ A session that follows the system takes the copy through the route controller's 
 | `proxy-mirror.ts` | The poller: reads every 30 seconds, asks Chromium's own answer every 2 seconds, fetches the script the settings name when it is due, checks a copy before applying it, sets the sessions again until each has taken it, and puts every session back on `{ mode: 'system' }` whenever it cannot read, fetch, carry or check (a copy already applied outlasts a failed read or a check with no answer); after each pass it tells its listeners (`onPass`) the status and Chromium's base answers | Free of Electron, over the calls it is handed; its checks rest on how Chromium's `system` mode answers (tied to Chromium) |
 | `mirror-status.ts` | What `orivon://report` and the log say about the mirror: four fixed words | Durable: pure |
 
-**What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), [`../name-relay/quiet-session.ts`](../name-relay/quiet-session.ts) (the spell checker taken off the session that fetches a script), and
-[`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves). `run-readers.ts` uses `node:child_process` and `node:path`, and `read-kde-files.ts` `node:fs/promises`.
+**What it depends on.** [`../system-follow.ts`](../system-follow.ts) (the config's type), [`../within.ts`](../within.ts), [`../name-relay/quiet-session.ts`](../name-relay/quiet-session.ts) (the spell checker taken off the session that fetches a script), [`../../../protocols/builtin.ts`](../../../protocols/builtin.ts) (which suffixes the verifier serves), and
+[`../../launch/launch-context.ts`](../../launch/launch-context.ts) (the command line). `run-readers.ts` uses `node:child_process` and `node:path`, and `read-kde-files.ts` `node:fs/promises`.
 
 **What it must never import.** An Electron value (a type is fine): `../route-subsystem.ts` supplies the sessions. Nothing here calls `setProxy` on a
 session that carries traffic, and the one thing that makes a request is `pac-fetch.ts`, to the address of the script the system names; the sessions
@@ -158,9 +159,7 @@ takes too long or cannot start is `unreadable` whichever it was, and the canary 
 processes at once (about 26 ms of wall time and 14 ms of CPU each on a GitHub Windows runner), and the 30-second reads with the 2-second question
 cost 0.6% of one core in all of Orivon's processes together over twenty minutes.
 
-**An unchanged read does nothing.** The settings and Chromium's two base answers are compared with the last pass; only a difference, or a
-state that is not settled (`unreadable`, `disagrees`), runs the check again. The 2-second question is asked in process of the session
-that only follows the system: it costs no process and no network for fixed rules.
+**When a read starts, and an unchanged one:** [`DESIGN.md`](DESIGN.md).
 
 **Each KDE rule is what Chromium's `kioslaverc` reader makes of the key, measured.** Chromium reads `$HOME/.config/kioslaverc` for KDE 5 and 6,
 the `XDG_CONFIG_DIRS` below it, and `$KDEHOME/share/config` alone when `KDEHOME` is set; it never looks at `XDG_CONFIG_HOME`, though KDE

@@ -5,19 +5,29 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { DiagnosticsService } from '../../src/main/diagnostics/diagnostics-service.js'
 import { startupLine } from '../../src/main/startup/startup-marks.js'
 import type { StartupRecord } from '../../src/main/startup/startup-marks.js'
+import { STARTUP_PROFILE_ENV as APP_PROFILE_ENV } from '../../src/main/startup/startup-profile.js'
 import {
-  anyFailed, appVersionOf, browserPid, formatReport, formatTable, numericLeaves, parseArgs, parseStartupRecord, readAsarFile, readProfileLog, seriesStats, stats
+  anyFailed, appVersionOf, browserPid, cpuProfileFile, formatReport, formatTable, numericLeaves, parseArgs, parseStartupRecord, readAsarFile, readProfileLog, seriesStats, stats, STARTUP_PROFILE_ENV
 } from '../first-start-probe.mjs'
 
 describe('parseArgs', () => {
   it('takes the executable and defaults to five runs', () => {
-    expect(parseArgs(['/opt/Orivon/orivon'])).toEqual({ executable: '/opt/Orivon/orivon', runs: 5, json: undefined, label: undefined, offline: false, appArgs: [] })
+    expect(parseArgs(['/opt/Orivon/orivon'])).toEqual({ executable: '/opt/Orivon/orivon', runs: 5, json: undefined, label: undefined, offline: false, profile: undefined, appArgs: [] })
   })
 
   it('reads the switches in any order and hands everything after -- to the app', () => {
     expect(parseArgs(['--runs', '3', 'orivon', '--json', 'out/probe.json', '--label', 'baseline v0.1.0', '--offline', '--', '--no-sandbox', '--runs', '9'])).toEqual({
       executable: 'orivon', runs: 3, json: 'out/probe.json', label: 'baseline v0.1.0', offline: true, appArgs: ['--no-sandbox', '--runs', '9']
     })
+  })
+
+  it('takes the folder CPU profiles go to', () => {
+    expect(parseArgs(['orivon', '--profile', 'start-probe/profiles']).profile).toBe('start-probe/profiles')
+    expect(() => parseArgs(['orivon', '--profile'])).toThrow('--profile needs a value')
+  })
+
+  it('names the variable the app reads for its CPU profile', () => {
+    expect(STARTUP_PROFILE_ENV).toBe(APP_PROFILE_ENV)
   })
 
   it('refuses a missing or second executable, an unknown switch, a missing value and runs that are not a count', () => {
@@ -172,6 +182,24 @@ describe('formatReport', () => {
   it('says when a next-start launch had to be killed, since the launch after it then starts as after a crash', () => {
     const killedOnce = { ...result, next: { ...result.next, warmup: { ...worked(3100, 5100), ended: 'killed' } } }
     expect(formatReport(killedOnce)).toContain('NOTE next start: 1 launch(es) did not quit when asked and were killed')
+  })
+})
+
+describe('cpuProfileFile', () => {
+  it('is a file of the folder named by the series and the launch, and none when no profile is asked for', () => {
+    expect(cpuProfileFile('start-probe/profiles', 'first', 2)).toBe(join('start-probe/profiles', 'first-2.cpuprofile'))
+    expect(cpuProfileFile('start-probe/profiles', 'next', 1)).toBe(join('start-probe/profiles', 'next-1.cpuprofile'))
+    expect(cpuProfileFile(undefined, 'first', 1)).toBeUndefined()
+  })
+
+  it('is reported with how many profiles were written and that their times are not the series\' timing', () => {
+    const profiled = {
+      ...result,
+      profileDir: 'start-probe/profiles',
+      first: { ...result.first, runs: [{ ...worked(3000, 5000), cpuProfile: 'start-probe/profiles/first-1.cpuprofile' }, worked(3400, 5200)] }
+    }
+    expect(formatReport(profiled)).toContain('NOTE CPU profiles: 1 written to start-probe/profiles; a profiled start is slower')
+    expect(formatReport(result)).not.toContain('CPU profiles')
   })
 })
 

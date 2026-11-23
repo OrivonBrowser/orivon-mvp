@@ -337,6 +337,8 @@ if (isInvokedDirectly(import.meta.url)) {
     if (packaged) {
       const probes = startProbeReport(collectStartProbes(id, dir))
       console.log(`\nstart timings: ${probes === '' ? 'none came back' : `${dir}/start-probe/\n\n${probes}`}`)
+      const profiles = filesUnder(join(dir, 'start-probe')).filter((file) => file.endsWith('.cpuprofile'))
+      if (profiles.length > 0) console.log(`\nCPU profiles of the start (${profiles.length}): ${profiles.join('\n  ')}\nread one with: node scripts/startup-profile-summary.mjs <file> --from-ms <mark> --to-ms <mark>, the marks being the same launch's in <system>-profiled.json`)
     }
     if (!packaged) console.log(`\nevidence: ${dir}/<system>/ (smoke.out, install.log, qa-artifacts/latest/)`)
     process.exit(run.conclusion === 'success' ? 0 : 1)

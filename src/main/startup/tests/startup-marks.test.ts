@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createStartupMarks, STARTUP_LINE_PREFIX, STARTUP_MARKS, startupLine } from '../startup-marks.js'
+import { createStartupMarks, processAgeMs, STARTUP_LINE_PREFIX, STARTUP_MARKS, startupLine } from '../startup-marks.js'
 import type { StartupClock } from '../startup-marks.js'
 
 /** A clock the test moves: the wall clock and the monotonic one advance together, as they do in a real run. */
@@ -147,5 +147,17 @@ describe('startupLine', () => {
     const parsed = JSON.parse(line.slice(STARTUP_LINE_PREFIX.length)) as Record<string, unknown>
     expect(Object.keys(parsed)).toEqual(['schema', 'base', 'complete', 'firstRun', 'electron', 'app', 'packaged', 'marks', 'hooks'])
     expect(parsed['hooks']).toEqual([{ name: 'broker', phase: 'afterReady', ms: 40 }])
+  })
+})
+
+describe('processAgeMs', () => {
+  it('is how long ago the system created the process', () => {
+    expect(processAgeMs({ wallNow: () => 1_000_300, createdAt: 1_000_000 })).toBe(300)
+  })
+
+  it('is null with no creation time, and for one ahead of the wall clock or more than ten minutes behind it', () => {
+    expect(processAgeMs({ wallNow: () => 1_000_000, createdAt: null })).toBeNull()
+    expect(processAgeMs({ wallNow: () => 1_000_000, createdAt: 1_000_001 })).toBeNull()
+    expect(processAgeMs({ wallNow: () => 1_000_000 + 10 * 60_000 + 1, createdAt: 1_000_000 })).toBeNull()
   })
 })
