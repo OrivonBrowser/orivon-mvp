@@ -3,7 +3,7 @@
  * (an installed deb, an AppImage, the NSIS install, a mounted or copied dmg app) and on every system.
  *
  * Usage: node scripts/run-headless.mjs node scripts/first-start-probe.mjs <executable> [--runs N] [--json <file>]
- *          [--label <text>] [--offline] [-- extra app arguments]
+ *          [--label <text>] [--offline] [--profile <folder>] [-- extra app arguments]
  *
  * Two series of N launches each (default 5), every launch on a throwaway profile and asked to quit when measured:
  *   first start  a new profile each launch, with the welcome screen and defaults a package has, as a first click gets
@@ -16,10 +16,12 @@
  * A launch that does not quit when asked within QUIT_WAIT_MS is killed, and the report says so: the next launch on that
  * profile then starts as after a crash, which is not the start a click gets. `--offline` keeps the launch off the network
  * (smoke-packaged.mjs NETWORK_OFF_ENV), which is steadier and not what a person's launch does. Prints a table; `--json`
- * also writes every raw value.
+ * also writes every raw value. `--profile <folder>` asks each counted launch for a CPU profile of its start
+ * (ORIVON_STARTUP_PROFILE), `<folder>/first-<n>.cpuprofile` and `<folder>/next-<n>.cpuprofile`, to read with
+ * `scripts/startup-profile-summary.mjs`; a profiled start is slower, so profile in a run of its own, not in the one whose times are read.
  */
 import { spawnSync } from 'node:child_process'
-import { mkdirSync, mkdtempSync, openSync, readFileSync, readSync, closeSync, rmSync, writeFileSync } from 'node:fs'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs'
 import { arch, platform, release, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
@@ -35,28 +37,31 @@ export const POLL_MS = 25
 export const RECORD_WAIT_MS = 2000
 /** How long a launch is given to quit when asked before it is killed. */
 export const QUIT_WAIT_MS = 15_000
+/** The variable that makes the app write a CPU profile of its start to the file it names (src/main/startup/startup-profile.ts). */
+export const STARTUP_PROFILE_ENV = 'ORIVON_STARTUP_PROFILE'
 
-const USAGE = `usage: node scripts/run-headless.mjs node scripts/first-start-probe.mjs <executable> [--runs N] [--json <file>] [--label <text>] [--offline] [-- extra app arguments]`
+const USAGE = `usage: node scripts/run-headless.mjs node scripts/first-start-probe.mjs <executable> [--runs N] [--json <file>] [--label <text>] [--offline] [--profile <folder>] [-- extra app arguments]`
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * @param {string[]} argv the arguments after the script's name
- * @returns {{ executable: string, runs: number, json: string | undefined, label: string | undefined, offline: boolean, appArgs: string[] }}
+ * @returns {{ executable: string, runs: number, json: string | undefined, label: string | undefined, offline: boolean, profile: string | undefined, appArgs: string[] }}
  */
 export function parseArgs (argv) {
   const split = argv.indexOf('--')
   const own = split === -1 ? argv : argv.slice(0, split)
   const appArgs = split === -1 ? [] : argv.slice(split + 1)
-  const out = { executable: '', runs: DEFAULT_RUNS, json: undefined, label: undefined, offline: false, appArgs }
+  const out = { executable: '', runs: DEFAULT_RUNS, json: undefined, label: undefined, offline: false, profile: undefined, appArgs }
   const positional = []
   for (let at = 0; at < own.length; at++) {
     const word = own[at]
     if (word === '--offline') out.offline = true
-    else if (word === '--runs' || word === '--json' || word === '--label') {
+    else if (word === '--runs' || word === '--json' || word === '--label' || word === '--profile') {
       const value = own[++at]
       if (value === undefined) throw new Error(`${word} needs a value`)
       if (word === '--json') out.json = value
       else if (word === '--label') out.label = value
+      else if (word === '--profile') out.profile = value
       else if (/^\d+$/.test(value) && Number(value) >= 1 && Number(value) <= MAX_RUNS) out.runs = Number(value)
       else throw new Error(`--runs takes a whole number from 1 to ${MAX_RUNS}, not ${value}`)
     } else if (word.startsWith('-')) throw new Error(`unknown switch ${word}`)
@@ -153,6 +158,10 @@ export function formatReport (result) {
   // Only the next-start series reuses a profile, so only there does a kill change what the following launch measures.
   const killed = [result.next.warmup, ...result.next.runs].filter((run) => run?.ended === 'killed').length
   const notes = killed === 0 ? [] : [`NOTE next start: ${killed} launch(es) did not quit when asked and were killed, so the launch after each started as after a crash`]
+  if (result.profileDir !== undefined) {
+    const written = [...result.first.runs, ...result.next.runs].filter((run) => run.cpuProfile !== undefined).length
+    notes.push(`NOTE CPU profiles: ${written} written to ${result.profileDir}; a profiled start is slower, so these times are not the series' timing`)
+  }
   return [heading, formatTable(series.map(({ title, entry }) => ({ title, stats: entry.stats })), result.runsPerSeries), ...notes, ...failures.map((failure) => `FAILED ${failure}`)].join('\n')
 }
 
@@ -207,10 +216,10 @@ async function waitForRecord (child, output, profile, waitMs) {
   }
 }
 
-/** One launch on `profile`: its times in ms from the spawn, the app's own record when it printed one, or the reason it failed. */
-async function launchOnce (executable, profile, { env, appArgs }) {
+/** One launch on `profile`: its times in ms from the spawn, the app's own record when it printed one, or the reason it failed. `cpuProfile` is the file the app is asked to write its CPU profile to. */
+async function launchOnce (executable, profile, { env, appArgs }, cpuProfile = undefined) {
   const t0 = performance.now()
-  const { child, output } = launchPackaged(executable, { profile, env, args: appArgs })
+  const { child, output } = launchPackaged(executable, { profile, env: cpuProfile === undefined ? env : { ...env, [STARTUP_PROFILE_ENV]: cpuProfile }, args: appArgs })
   const since = () => Math.round(performance.now() - t0)
   let run
   try {
@@ -224,7 +233,8 @@ async function launchOnce (executable, profile, { env, appArgs }) {
   } catch (error) {
     run = { error: error.message, appOutput: output().split('\n').slice(-20).join('\n') }
   }
-  return { ...run, ended: await quit(child) }
+  const ended = await quit(child)
+  return { ...run, ...(cpuProfile !== undefined && existsSync(cpuProfile) ? { cpuProfile } : {}), ended }
 }
 
 /**
@@ -279,8 +289,14 @@ function removeProfile (profile) {
   try { rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 }) } catch (error) { console.error(`[first-start-probe] could not remove ${profile}: ${error.message}`) }
 }
 
-function progress (title, at, total, run) {
-  console.log(`[first-start-probe] ${title} ${at}/${total}: ${run.error === undefined ? `shell ${run.shellMs} ms, extension ${run.extensionMs} ms${run.record === undefined ? '' : ', startup record'}` : `FAILED ${run.error}`}`)
+function progress (title, at, total, run, asked = false) {
+  const profile = !asked ? '' : run.cpuProfile === undefined ? ', NO CPU PROFILE written' : ', CPU profile'
+  console.log(`[first-start-probe] ${title} ${at}/${total}: ${run.error === undefined ? `shell ${run.shellMs} ms, extension ${run.extensionMs} ms${run.record === undefined ? '' : ', startup record'}${profile}` : `FAILED ${run.error}`}`)
+}
+
+/** Where the app is asked to write the CPU profile of a counted launch, or undefined when none is asked for. */
+export function cpuProfileFile (profileDir, series, at) {
+  return profileDir === undefined ? undefined : join(profileDir, `${series}-${at}.cpuprofile`)
 }
 
 /** N launches, each on a new profile. */
@@ -288,8 +304,9 @@ async function firstStartSeries (executable, runs, options) {
   const results = []
   for (let at = 1; at <= runs; at++) {
     const profile = mkdtempSync(join(tmpdir(), 'orivon-first-start-'))
-    try { results.push(await launchOnce(executable, profile, options)) } finally { removeProfile(profile) }
-    progress('first start', at, runs, results[at - 1])
+    const cpuProfile = cpuProfileFile(options.profileDir, 'first', at)
+    try { results.push(await launchOnce(executable, profile, options, cpuProfile)) } finally { removeProfile(profile) }
+    progress('first start', at, runs, results[at - 1], cpuProfile !== undefined)
   }
   return { runs: results, stats: seriesStats(results) }
 }
@@ -303,8 +320,9 @@ async function nextStartSeries (executable, runs, options) {
     if (warmup.error !== undefined) return { warmup, runs: [], stats: {} }
     const results = []
     for (let at = 1; at <= runs; at++) {
-      results.push(await launchOnce(executable, profile, options))
-      progress('next start', at, runs, results[at - 1])
+      const cpuProfile = cpuProfileFile(options.profileDir, 'next', at)
+      results.push(await launchOnce(executable, profile, options, cpuProfile))
+      progress('next start', at, runs, results[at - 1], cpuProfile !== undefined)
     }
     return { warmup, runs: results, stats: seriesStats(results) }
   } finally {
@@ -313,9 +331,10 @@ async function nextStartSeries (executable, runs, options) {
 }
 
 /** The probe's whole result, the object `--json` writes. */
-export async function probe (executable, { runs = DEFAULT_RUNS, label, offline = false, appArgs = [] } = {}) {
+export async function probe (executable, { runs = DEFAULT_RUNS, label, offline = false, profile, appArgs = [] } = {}) {
   const env = { ...QUIET_ENV, ...(offline ? NETWORK_OFF_ENV : {}) }
-  const options = { env, appArgs }
+  if (profile !== undefined) mkdirSync(profile, { recursive: true })
+  const options = { env, appArgs, profileDir: profile }
   const first = await firstStartSeries(executable, runs, options)
   const next = await nextStartSeries(executable, runs, options)
   return {
@@ -327,6 +346,7 @@ export async function probe (executable, { runs = DEFAULT_RUNS, label, offline =
     runsPerSeries: runs,
     offline,
     appArgs,
+    ...(profile === undefined ? {} : { profileDir: profile }),
     first,
     next
   }

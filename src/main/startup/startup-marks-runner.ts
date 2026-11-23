@@ -14,11 +14,24 @@ const marks = createStartupMarks({
 })
 
 let printed = false
+const lineListeners: Array<() => void> = []
+
+// A listener's failure is its own: the start must not end because a diagnostic did.
+function tell (listener: () => void): void {
+  try { listener() } catch (error) { console.warn('[orivon][startup] a listener of the start-up line failed:', error) }
+}
 
 function printLine (): void {
   if (printed) return
   printed = true
   console.log(startupLine(marks.record()))
+  for (const listener of lineListeners.splice(0)) tell(listener)
+}
+
+/** Calls `listener` once the line has printed, straight away when it already has. This module knows nothing of what a listener does. */
+export function onStartupLine (listener: () => void): void {
+  if (printed) tell(listener)
+  else lineListeners.push(listener)
 }
 
 /** Records a moment of this start (the first call for a name counts) and prints the line once the first window is shown and its chrome page and first tab have loaded, whichever of the three comes last. */
