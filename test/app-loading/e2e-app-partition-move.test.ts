@@ -75,7 +75,14 @@ it('[app:app-storage-survives-an-update] an installed app finds its stored data 
 
     const second = await launchShell({ reuseProfile: profile })
     live = second.app
-    const again = await visit(second.app, second.chrome, `${ORIGIN}/`)
+    let again: Awaited<ReturnType<typeof visit>>
+    try {
+      again = await visit(second.app, second.chrome, `${ORIGIN}/`)
+    } catch (error) {
+      const log = await readFile(join(profile, 'diagnostics', 'logs', 'current.log'), 'utf8').catch((e: unknown) => `no log: ${String(e)}`)
+      const names = await readdir(partitions).catch((e: unknown) => [`no listing: ${String(e)}`])
+      throw new Error(`DIAG ${String(error)}\n--- partitions: ${names.join(', ')}\n--- current.log (tail)\n${log.slice(-6000)}`)
+    }
     const read = await again.evaluate(async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const open = indexedDB.open('kept', 1)
