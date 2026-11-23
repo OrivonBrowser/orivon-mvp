@@ -4,7 +4,7 @@
 // Windows may hold a file open in the profile's process, so every file is copied on its own and a failure is logged, never
 // raised (a private window must open whatever happens here).
 import { createHash } from 'node:crypto'
-import { readFileSync, realpathSync } from 'node:fs'
+import { mkdirSync, readFileSync, realpathSync } from 'node:fs'
 import { copyFile, lstat, mkdir, readdir, rm } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
@@ -134,9 +134,9 @@ function isInside (extensionsDir: string, path: string): boolean {
 
 interface Allowed {
   readonly entry: InstalledExtension
-  readonly slot: string
-  /** The entry's path below the extensions folder: `<slot>/<version>`. */
-  readonly inside: string
+  /** Where the entry's files are in the profile: `<slot>` and the entry's path below the extensions folder, `<slot>/<version>`.
+   * Undefined for an extension that ships with Orivon, whose files are the application's own and are not copied. */
+  readonly files?: { readonly slot: string, readonly inside: string }
   readonly chosen: ExtensionPrefs
 }
 
@@ -151,6 +151,10 @@ function allowedIn (from: string, log: (message: string) => void): Allowed[] {
     for (const entry of parseRegistry(registryText).entries) {
       const chosen = prefs.get(entry.id)
       if (!entry.enabled || chosen?.privateWindows !== true || !EXTENSION_ID.test(entry.id)) continue
+      if (entry.source.kind === 'bundled') {
+        found.push({ entry, chosen })
+        continue
+      }
       // `<extensions>/<slot>/<version>`, compared by where the folders really are: the registry may name the profile through a
       // link (macOS temp folders), and a path that climbs out of the folder resolves to somewhere else.
       const slot = basename(dirname(entry.path))
@@ -159,7 +163,7 @@ function allowedIn (from: string, log: (message: string) => void): Allowed[] {
         continue
       }
       const inside = join(slot, basename(entry.path))
-      found.push({ entry, slot, inside, chosen })
+      found.push({ entry, files: { slot, inside }, chosen })
     }
   } catch (error) {
     log(`[private] the extensions could not be read: ${describe(error)}`)
@@ -187,20 +191,23 @@ export async function copyPrivateExtensions (from: string, into: string, options
     const entries: InstalledExtension[] = []
     const choices = new Map<string, ExtensionPrefs>()
 
-    for (const { entry, slot, inside, chosen } of allowedIn(from, log)) {
-      const target = join(into, 'extensions', slot)
-      if (!await copyTree(join(extensionsDir, slot), target, copy, log)) {
-        await rm(target, { recursive: true, force: true }).catch(() => {})
-        log(`[private] the files of ${entry.id} could not be copied, so it does not run in this private window`)
-        continue
+    for (const { entry, files, chosen } of allowedIn(from, log)) {
+      if (files !== undefined) {
+        const target = join(into, 'extensions', files.slot)
+        if (!await copyTree(join(extensionsDir, files.slot), target, copy, log)) {
+          await rm(target, { recursive: true, force: true }).catch(() => {})
+          log(`[private] the files of ${entry.id} could not be copied, so it does not run in this private window`)
+          continue
+        }
       }
       await copyData(from, into, entry.id, copy, log)
-      entries.push({ ...entry, path: join(into, 'extensions', inside) })
+      entries.push(files === undefined ? entry : { ...entry, path: join(into, 'extensions', files.inside) })
       choices.set(entry.id, privateCopyOfPrefs(chosen))
       copied.push(entry.id)
     }
 
     if (entries.length > 0) {
+      mkdirSync(join(into, 'extensions'), { recursive: true, mode: 0o700 })
       writeFileAtomic(join(into, 'extensions', 'registry.json'), serializeRegistry(entries))
       writeFileAtomic(join(into, 'extensions', 'prefs.json'), serializePrefs(choices))
     }

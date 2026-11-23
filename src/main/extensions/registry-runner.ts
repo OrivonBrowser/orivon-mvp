@@ -7,13 +7,29 @@
 // that install-runner.ts's `finishInstall` resolves a `key` through.
 
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { createPublicKey, generateKeyPairSync } from 'node:crypto'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { parseRegistry, serializeRegistry, type InstalledExtension } from './registry.js'
 
-function extensionsDir (userDataPath: string): string {
+export function extensionsDir (userDataPath: string): string {
   return join(userDataPath, 'extensions')
+}
+
+/** Whether `path` is a folder Orivon wrote under `<userData>/extensions/`, the only kind it may delete or write into. An
+ * extension that ships with Orivon is loaded from the application's own folder, which is none of those. */
+export function isProfileFolder (userDataPath: string, path: string): boolean {
+  const inside = relative(extensionsDir(userDataPath), path)
+  return inside !== '' && inside !== '..' && !inside.startsWith(`..${sep}`) && !isAbsolute(inside)
+}
+
+/** Where an extension keeps what Orivon records about it (`key.pub`, its base manifest, its rule state): the folder above
+ * its loaded version, or `<userData>/extensions/<id>/` for one loaded from the application's own folder. A caller that has
+ * the registry entry passes its `source`; one that only knows where the extension is loaded from (a side panel's saved
+ * choice, read while the install is still loading it) is told by where that folder is. */
+export function slotDirOf (userDataPath: string, id: string, loadedPath: string, source?: InstalledExtension['source']): string {
+  const bundled = source === undefined ? !isProfileFolder(userDataPath, loadedPath) : source.kind === 'bundled'
+  return bundled ? join(extensionsDir(userDataPath), id) : dirname(loadedPath)
 }
 
 function registryPath (userDataPath: string): string {
@@ -117,10 +133,11 @@ export async function patchStoreUpdater (
  * the existing `source.kind === 'file'` entry whose id is `id` --
  * `undefined` if none matches. An entry's own `path` is
  * `<extensionsDir>/<slot>/<version>`, so its slot is just that path's first
- * segment. */
+ * segment. An extension that ships with Orivon has no folder there: its slot is its id. */
 export function slotOfFileEntry (userDataPath: string, id: string): string | undefined {
-  const entry = readRegistry(userDataPath).find((candidate) => candidate.id === id && candidate.source.kind === 'file')
+  const entry = readRegistry(userDataPath).find((candidate) => candidate.id === id && (candidate.source.kind === 'file' || candidate.source.kind === 'bundled'))
   if (entry === undefined) return undefined
+  if (entry.source.kind === 'bundled') return entry.id
   return relative(extensionsDir(userDataPath), entry.path).split(sep)[0]
 }
 

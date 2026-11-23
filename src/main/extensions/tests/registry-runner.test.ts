@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { readRegistry, writeRegistry } from '../registry-runner.js'
+import { isProfileFolder, readRegistry, slotDirOf, writeRegistry } from '../registry-runner.js'
 
 async function withTempDir (fn: (dir: string) => Promise<void> | void): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'orivon-registry-runner-test-'))
@@ -80,5 +80,31 @@ describe('readRegistry: a corrupt registry.json', () => {
       expect(entries).toEqual([])
       expect(existsSync(join(userDataPath, 'extensions', 'registry.json'))).toBe(true)
     })
+  })
+})
+
+describe('slotDirOf', () => {
+  const userData = join(tmpdir(), 'orivon-slot-test')
+  const extensions = join(userData, 'extensions')
+
+  it('is the folder above the loaded version for an extension installed into the profile', () => {
+    const path = join(extensions, 'an-id', '1.0.0')
+    expect(slotDirOf(userData, 'an-id', path)).toBe(join(extensions, 'an-id'))
+    expect(slotDirOf(userData, 'an-id', path, { kind: 'file', fileName: 'x.crx' })).toBe(join(extensions, 'an-id'))
+  })
+
+  it('is the folder of its id for an extension loaded from the application, and not for one that is merely spelled elsewhere', () => {
+    const app = join(tmpdir(), 'app', 'default-profile', 'extensions', 'ublock-origin')
+    expect(slotDirOf(userData, 'an-id', app)).toBe(join(extensions, 'an-id'))
+    expect(slotDirOf(userData, 'an-id', app, { kind: 'bundled', folder: 'ublock-origin' })).toBe(join(extensions, 'an-id'))
+    const spelledElsewhere = join(tmpdir(), 'link-to-profile', 'extensions', 'u-abc', '1.0.0')
+    expect(slotDirOf(userData, 'an-id', spelledElsewhere, { kind: 'file', fileName: 'x.crx' })).toBe(join(tmpdir(), 'link-to-profile', 'extensions', 'u-abc'))
+  })
+
+  it('names as the profile\'s own only what is inside its extensions folder', () => {
+    expect(isProfileFolder(userData, join(extensions, 'a', '1'))).toBe(true)
+    expect(isProfileFolder(userData, extensions)).toBe(false)
+    expect(isProfileFolder(userData, join(userData, 'elsewhere'))).toBe(false)
+    expect(isProfileFolder(userData, join(extensions, '..', 'elsewhere'))).toBe(false)
   })
 })

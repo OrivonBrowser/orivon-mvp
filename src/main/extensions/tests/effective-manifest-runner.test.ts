@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createManifestApplier, BASE_MANIFEST_FILE, readBaseManifestText, restoreBaseManifest } from '../effective-manifest-runner.js'
 import { createExtensionPrefsStore } from '../extension-prefs-runner.js'
-import { writeRegistry } from '../registry-runner.js'
+import { readRegistry, writeRegistry } from '../registry-runner.js'
 import type { InstalledExtension } from '../registry.js'
 import { fakeSession, withTempDir } from './install-runner-fixtures.js'
 
@@ -248,6 +248,70 @@ describe('applyAtBoot', () => {
       prefs.update(ID, { granted: { permissions: ['tabs'], origins: [] } })
       createManifestApplier({ userDataPath, session: fakeSession().session, prefs, isOpen: () => false }).applyAtBoot()
       expect(JSON.parse(loadedText(entry)).permissions).toEqual(['storage', 'tabs'])
+    })
+  })
+})
+
+describe('an extension loaded from the application\'s own folder', () => {
+  /** An entry whose loaded folder is outside the profile, as a package's folder is, and read-only to the application. */
+  function bundledSeed (root: string): { userDataPath: string, entry: InstalledExtension, folder: string } {
+    const userDataPath = join(root, 'userData')
+    const folder = join(root, 'app', 'default-profile', 'extensions', 'x')
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, 'manifest.json'), JSON.stringify(BASE))
+    writeFileSync(join(folder, 'content.js'), '1')
+    const entry: InstalledExtension = {
+      id: ID, name: 'x', version: '1.0.0', enabled: true, installedAt: 1, updatedAt: 1,
+      source: { kind: 'bundled', folder: 'x' }, updater: { kind: 'none', reason: 'comes with Orivon' }, path: folder, stripped: { permissions: [], optionalPermissions: [], declarativeNetRequest: undefined }
+    }
+    writeRegistry(userDataPath, [entry])
+    return { userDataPath, entry, folder }
+  }
+
+  it('writes nothing, in its folder or its slot, while the person\'s choices change nothing', async () => {
+    await withTempDir(async (root) => {
+      const { userDataPath, entry, folder } = bundledSeed(root)
+      const fake = loadedSession(entry)
+      const applier = createManifestApplier({ userDataPath, session: fake.session, prefs: createExtensionPrefsStore(null), isOpen: () => false })
+      applier.applyAtBoot()
+      expect(await applier.applyManifest(ID, 'now')).toBe('unchanged')
+      expect(existsSync(join(userDataPath, 'extensions', ID))).toBe(false)
+      expect(readFileSync(join(folder, 'manifest.json'), 'utf8')).toBe(JSON.stringify(BASE))
+      expect(fake.removedIds).toEqual([])
+    })
+  })
+
+  it('gets a copy of its own when a choice must change its manifest, and the folder stays as it was', async () => {
+    await withTempDir(async (root) => {
+      const { userDataPath, entry, folder } = bundledSeed(root)
+      const fake = loadedSession(entry)
+      const prefs = createExtensionPrefsStore(null)
+      const applier = createManifestApplier({ userDataPath, session: fake.session, prefs, isOpen: () => false })
+      prefs.update(ID, { granted: { permissions: ['history'], origins: [] } })
+
+      expect(await applier.applyManifest(ID, 'now')).toBe('applied')
+
+      const [after] = readRegistry(userDataPath)
+      const copy = join(userDataPath, 'extensions', ID, '1.0.0')
+      expect(after).toMatchObject({ id: ID, path: copy, source: { kind: 'file' }, installedAt: 1 })
+      expect(JSON.parse(readFileSync(join(copy, 'manifest.json'), 'utf8')).permissions).toEqual(['storage', 'history'])
+      expect(readFileSync(join(copy, 'content.js'), 'utf8')).toBe('1')
+      expect(JSON.parse(readBaseManifestText(join(userDataPath, 'extensions', ID)) as string).permissions).toEqual(['storage'])
+      expect(readFileSync(join(folder, 'manifest.json'), 'utf8')).toBe(JSON.stringify(BASE))
+      expect([...fake.loaded.values()]).toEqual([copy])
+    })
+  })
+
+  it('gets its copy at the start too, before anything loads', async () => {
+    await withTempDir(async (root) => {
+      const { userDataPath, folder } = bundledSeed(root)
+      const prefs = createExtensionPrefsStore(null)
+      prefs.update(ID, { granted: { permissions: ['tabs'], origins: [] } })
+      createManifestApplier({ userDataPath, session: fakeSession().session, prefs, isOpen: () => false }).applyAtBoot()
+      const [after] = readRegistry(userDataPath)
+      expect(after?.path).toBe(join(userDataPath, 'extensions', ID, '1.0.0'))
+      expect(JSON.parse(readFileSync(join(after?.path ?? '', 'manifest.json'), 'utf8')).permissions).toEqual(['storage', 'tabs'])
+      expect(readFileSync(join(folder, 'manifest.json'), 'utf8')).toBe(JSON.stringify(BASE))
     })
   })
 })

@@ -3,8 +3,7 @@
 // `userDataPath` never reads a registry either one is about to rewrite.
 
 import { rmSync } from 'node:fs'
-import { dirname } from 'node:path'
-import { withRegistryLock, writeRegistry } from './registry-runner.js'
+import { isProfileFolder, slotDirOf, withRegistryLock, writeRegistry } from './registry-runner.js'
 import { clearPersistedRuleState } from './dnr/dnr-runner.js'
 import { deleteExtensionData } from './extension-data.js'
 import { restoreBaseManifest } from './effective-manifest-runner.js'
@@ -27,13 +26,15 @@ export async function uninstall (ctx: InstallContext, id: string): Promise<void>
     }
     await deleteExtensionData(ctx, id)
     ctx.session.extensions.removeExtension(id)
-    rmSync(entry.path, { recursive: true, force: true })
+    // An extension that ships with Orivon is loaded from the application's own folder: removing it is only forgetting it.
+    if (isProfileFolder(ctx.userDataPath, entry.path)) rmSync(entry.path, { recursive: true, force: true })
     // Chrome clears an uninstalled extension's dynamic rules and enabled-
     // ruleset choice too. The slot's key.pub stays: a reinstall into the
     // same slot must resolve to the same id.
-    clearPersistedRuleState(dirname(entry.path))
-    clearOpenOnActionClick(dirname(entry.path))
-    restoreBaseManifest(dirname(entry.path), undefined)
+    const slotDir = slotDirOf(ctx.userDataPath, entry.id, entry.path, entry.source)
+    clearPersistedRuleState(slotDir)
+    clearOpenOnActionClick(slotDir)
+    restoreBaseManifest(slotDir, undefined)
     ctx.prefs?.forget(id)
     writeRegistry(ctx.userDataPath, registry.filter((candidate) => candidate.id !== id))
   })

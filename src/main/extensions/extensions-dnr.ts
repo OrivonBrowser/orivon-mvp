@@ -7,14 +7,14 @@
 // `attachExtensionsDnr` right after `createExtensionHost()`, before
 // `loadEnabledExtensions()`.
 
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { readFileSync } from 'node:fs'
 import type { Session } from 'electron'
 import { createDnrEngine, type DnrEngine } from './dnr/dnr-engine.js'
 import { loadStaticRulesets, parseRuleResources, readBadgeCountMode, readDynamicRules, readEnabledRulesetOverride } from './dnr/dnr-runner.js'
 import { buildActionAccess } from './dnr/host-permissions.js'
 import { readExtensionManifest } from '../../broker/policy/extension-manifest.js'
-import { readRegistry } from './registry-runner.js'
+import { readRegistry, slotDirOf } from './registry-runner.js'
 import type { InstalledExtension } from './registry.js'
 import { clearExtensionMatchLog, setDisplayActionCountAsBadgeText } from './dnr-match-log.js'
 
@@ -54,18 +54,18 @@ function hostAccessPatternsFor(entry: InstalledExtension): readonly string[] {
  * (`<slot>/<version>/`) a registry entry carries -- see `dnr/README.md`'s
  * Design notes on why `dnr-dynamic.json`/`dnr-enabled-rulesets.json` live
  * one level up from `entry.path`. */
-function slotDirFor(entry: InstalledExtension): string {
-  return dirname(entry.path)
+function slotDirFor(userDataPath: string, entry: InstalledExtension): string {
+  return slotDirOf(userDataPath, entry.id, entry.path, entry.source)
 }
 
-function loadExtensionIntoEngine(engine: DnrEngine, entry: InstalledExtension): void {
+function loadExtensionIntoEngine(engine: DnrEngine, entry: InstalledExtension, userDataPath: string): void {
   if (!hasDnrPermission(entry.stripped)) {
     return
   }
 
   engine.setActionAccess(entry.id, buildActionAccess(entry.stripped.permissions, hostAccessPatternsFor(entry)))
 
-  const slotDir = slotDirFor(entry)
+  const slotDir = slotDirFor(userDataPath, entry)
   const badgeCount = readBadgeCountMode(slotDir)
   if (badgeCount !== undefined) setDisplayActionCountAsBadgeText(entry.id, badgeCount)
   const resources = parseRuleResources(entry.stripped.declarativeNetRequest)
@@ -237,17 +237,17 @@ export function endDnrReload(id: string): void {
  */
 export function slotDirForLoadedExtension(userDataPath: string, extensionId: string): string | undefined {
   const entry = readRegistry(userDataPath).find((candidate) => candidate.id === extensionId)
-  return entry === undefined ? undefined : slotDirFor(entry)
+  return entry === undefined ? undefined : slotDirFor(userDataPath, entry)
 }
 
-function trackLoadedEntry(dnrEngine: DnrEngine, entry: InstalledExtension): void {
+function trackLoadedEntry(dnrEngine: DnrEngine, entry: InstalledExtension, userDataPath: string): void {
   strippedPermissionsCache.set(entry.id, entry.stripped.permissions)
   if (entry.stripped.permissions.includes('declarativeNetRequestFeedback')) {
     feedbackCapableExtensions.add(entry.id)
   } else {
     feedbackCapableExtensions.delete(entry.id)
   }
-  loadExtensionIntoEngine(dnrEngine, entry)
+  loadExtensionIntoEngine(dnrEngine, entry, userDataPath)
   if (hasDnrPermission(entry.stripped)) {
     dnrCapableExtensions.add(entry.id)
     notifyDnrActive()
@@ -270,7 +270,7 @@ export function attachExtensionsDnr(defaultSession: Session, userDataPath: strin
     pendingInstallEntries.delete(extension.id)
     const entry = pending ?? readRegistry(userDataPath).find((candidate) => candidate.id === extension.id)
     if (entry !== undefined) {
-      trackLoadedEntry(dnrEngine, entry)
+      trackLoadedEntry(dnrEngine, entry, userDataPath)
     }
   })
   sessionExtensions.on('extension-unloaded', (_event, extension) => {

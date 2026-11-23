@@ -6,14 +6,15 @@
 // its state). Runs under `withRegistryLock` like every other writer of an
 // extension's files.
 import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import type { Session } from 'electron'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 import { effectiveManifest, manifestText, type ExtensionManifest } from './effective-manifest.js'
 import type { ExtensionPrefsStore } from './extension-prefs.js'
 import { beginDnrReload, endDnrReload } from './extensions-dnr.js'
-import { readRegistry, withRegistryLock } from './registry-runner.js'
+import { extensionsDir, readRegistry, slotDirOf, withRegistryLock, writeRegistry } from './registry-runner.js'
 import type { InstalledExtension } from './registry.js'
+import { writeFolderCopy } from './unpack-runner.js'
 
 export const BASE_MANIFEST_FILE = 'manifest.base.json'
 
@@ -72,19 +73,35 @@ function readText (path: string): string | undefined {
   }
 }
 
-/** What `entry` should load now: [base text, effective text], the base made from the loaded copy for an install that predates it. */
-function plan (entry: InstalledExtension, prefs: ExtensionPrefsStore): { current: string, next: string } | undefined {
+/** What `entry` should load now: [base text, effective text], the base made from the loaded copy for an install that predates it.
+ * An extension loaded from the application's own folder has no base file: its folder's manifest is its base, and is never written. */
+function plan (userDataPath: string, entry: InstalledExtension, prefs: ExtensionPrefsStore): { base: string, current: string, next: string } | undefined {
   const loadedPath = join(entry.path, 'manifest.json')
   const current = readText(loadedPath)
   if (current === undefined) return undefined
-  const slotDir = dirname(entry.path)
-  let base = readBaseManifestText(slotDir)
+  let base = entry.source.kind === 'bundled' ? current : readBaseManifestText(slotDirOf(userDataPath, entry.id, entry.path, entry.source))
   if (base === undefined) {
     base = current
-    writeBaseManifest(slotDir, base)
+    writeBaseManifest(slotDirOf(userDataPath, entry.id, entry.path, entry.source), base)
   }
   const next = manifestText(effectiveManifest(JSON.parse(base) as ExtensionManifest, prefs.get(entry.id)))
-  return { current: manifestText(JSON.parse(current) as ExtensionManifest), next }
+  return { base, current: manifestText(JSON.parse(current) as ExtensionManifest), next }
+}
+
+/**
+ * Gives an extension loaded from the application's own folder a copy of its own, the one an ordinary install of the same
+ * file would have made: the folder is read-only (an installed package), so a manifest that must change is written to the
+ * copy. From then on it is the person's, as if installed from its file: a newer one that Orivon brings no longer replaces
+ * it. Synchronous; the caller records the returned entry and loads from it.
+ */
+function detachFromBundle (userDataPath: string, entry: InstalledExtension, base: string, loaded: string): InstalledExtension {
+  const slotDir = slotDirOf(userDataPath, entry.id, entry.path, entry.source)
+  const target = join(extensionsDir(userDataPath), entry.id, entry.version)
+  rmSync(target, { recursive: true, force: true })
+  writeFolderCopy(entry.path, target, loaded)
+  writeBaseManifest(slotDir, base)
+  const fileName = entry.source.kind === 'bundled' ? `${entry.source.folder}.crx` : entry.path
+  return { ...entry, path: target, source: { kind: 'file', fileName }, updater: { kind: 'none', reason: 'installed from a local file' }, updatedAt: Date.now() }
 }
 
 export function createManifestApplier (deps: ManifestApplierDeps): ManifestApplier {
@@ -95,17 +112,28 @@ export function createManifestApplier (deps: ManifestApplierDeps): ManifestAppli
 
   async function applyNow (id: string): Promise<ApplyResult> {
     return await withRegistryLock(deps.userDataPath, async (registry) => {
-      const entry = registry.find((candidate) => candidate.id === id)
-      if (entry === undefined) return 'unknown'
+      const found = registry.find((candidate) => candidate.id === id)
+      if (found === undefined) return 'unknown'
+      let entry = found
       let decided: ReturnType<typeof plan>
       try {
-        decided = plan(entry, deps.prefs)
+        decided = plan(deps.userDataPath, entry, deps.prefs)
       } catch (error) {
         console.error(`[extensions] could not work out the manifest of ${id}:`, error)
         return 'failed'
       }
       if (decided === undefined) return 'failed'
       if (decided.next === decided.current) return 'unchanged'
+      if (entry.source.kind === 'bundled') {
+        try {
+          entry = detachFromBundle(deps.userDataPath, entry, decided.base, decided.next)
+          const detached = entry
+          writeRegistry(deps.userDataPath, registry.map((candidate) => candidate.id === detached.id ? detached : candidate))
+        } catch (error) {
+          console.error(`[extensions] could not give ${id} a copy of its own to change:`, error)
+          return 'failed'
+        }
+      }
       const loadedPath = join(entry.path, 'manifest.json')
       writeFileAtomic(loadedPath, decided.next)
       if (!entry.enabled || deps.session.extensions.getExtension(id) == null) return 'applied'
@@ -152,15 +180,23 @@ export function createManifestApplier (deps: ManifestApplierDeps): ManifestAppli
       return await state.promise
     },
     applyAtBoot: () => {
-      for (const entry of readRegistry(deps.userDataPath)) {
+      const registry = readRegistry(deps.userDataPath)
+      const detached = new Map<string, InstalledExtension>()
+      for (const entry of registry) {
         try {
-          const decided = plan(entry, deps.prefs)
-          if (decided !== undefined && decided.next !== decided.current && existsSync(entry.path)) {
-            writeFileAtomic(join(entry.path, 'manifest.json'), decided.next)
-          }
+          const decided = plan(deps.userDataPath, entry, deps.prefs)
+          if (decided === undefined || decided.next === decided.current || !existsSync(entry.path)) continue
+          if (entry.source.kind === 'bundled') detached.set(entry.id, detachFromBundle(deps.userDataPath, entry, decided.base, decided.next))
+          else writeFileAtomic(join(entry.path, 'manifest.json'), decided.next)
         } catch (error) {
           console.error(`[extensions] could not apply the manifest of ${entry.id} at start:`, error)
         }
+      }
+      if (detached.size === 0) return
+      try {
+        writeRegistry(deps.userDataPath, registry.map((entry) => detached.get(entry.id) ?? entry))
+      } catch (error) {
+        console.error('[extensions] could not record the copies of the bundled extensions at start:', error)
       }
     }
   }

@@ -68,6 +68,7 @@ export function describeSource (source: ExtensionSource): string {
     case 'unpacked': return `Unpacked folder ${source.from}`
     case 'file': return `File ${basename(source.fileName)}`
     case 'store': return 'Chrome Web Store'
+    case 'bundled': return 'Comes with Orivon'
   }
 }
 

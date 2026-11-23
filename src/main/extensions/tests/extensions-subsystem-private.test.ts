@@ -15,8 +15,7 @@ const installApis = vi.fn()
 let published: any
 let startsNew = false
 const seedBundledExtensions = vi.fn(async () => {})
-/** What `firstWindowShown` answers with: settled by a test that looks at the wait. */
-let windowShown: Promise<void> = Promise.resolve()
+const refreshBundledExtensions = vi.fn()
 
 vi.mock('electron', () => ({ session: { defaultSession: { extensions: { loadExtension } } } }))
 vi.mock('../extension-host.js', () => ({ createExtensionHost: () => ({ getRouter: () => ({}) }), extensionPagesAroundReload: {} }))
@@ -33,8 +32,7 @@ vi.mock('../side-panel-runner.js', () => ({ closeSidePanels: vi.fn(async () => {
 vi.mock('../install-extension-commands.js', () => ({ installExtensionCommands: () => ({ whenReady: async () => {}, getAll: () => [] }) }))
 vi.mock('../registry-runner.js', () => ({ readRegistry: () => [{ id: 'a'.repeat(32), name: 'x', enabled: true, path: '/slot/1' }] }))
 vi.mock('../../default-profile/profile-start.js', () => ({ startsFromDefaultProfile: () => startsNew }))
-vi.mock('../seed-bundled.js', () => ({ seedBundledExtensions }))
-vi.mock('../../startup/window-first.js', () => ({ firstWindowShown: () => windowShown }))
+vi.mock('../seed-bundled.js', () => ({ seedBundledExtensions, refreshBundledExtensions }))
 vi.mock('../../default-profile/default-profile-dir.js', () => ({ currentDefaultProfileDir: () => '/default-profile' }))
 vi.mock('../../registry.js', () => ({ publishExtensions: (_ctx: unknown, api: unknown) => { published = api } }))
 
@@ -60,8 +58,8 @@ beforeEach(() => {
   startWebStore.mockClear()
   installApis.mockClear()
   seedBundledExtensions.mockClear()
+  refreshBundledExtensions.mockClear()
   startsNew = false
-  windowShown = Promise.resolve()
   published = undefined
   profile = '/profile'
 })
@@ -127,26 +125,12 @@ describe('extensionsSubsystem', () => {
     expect(seedBundledExtensions).not.toHaveBeenCalled()
   })
 
-  it('unpacks the bundled extensions only once the first window is shown, and loads the rest of the tail before', async () => {
-    startsNew = true
-    let show: () => void = () => {}
-    windowShown = new Promise<void>((resolve) => { show = resolve })
-    const runtime = ctx(false)
-    await extensionsSubsystem.afterReady!(runtime)
-    const tail = extensionsSubsystem.afterWindow!(runtime)
-    await vi.waitFor(() => { expect(loadExtension).toHaveBeenCalledTimes(1) })
-    await new Promise((resolve) => setTimeout(resolve, 10))
-    expect(seedBundledExtensions).not.toHaveBeenCalled()
-    show()
-    await tail
-    expect(seedBundledExtensions).toHaveBeenCalledTimes(1)
-    expect(startWebStore).toHaveBeenCalledTimes(1)
-  })
-
-  it('never waits for the window to show when there is nothing to seed', async () => {
-    windowShown = new Promise<void>(() => {})
+  it('brings the bundled extensions up to date before anything loads, in a private runtime too: a peer of a package that mounts itself anew runs from another folder than the window that copied its registry', async () => {
     await start(false)
-    expect(loadExtension).toHaveBeenCalledTimes(1)
-    expect(startWebStore).toHaveBeenCalledTimes(1)
+    expect(refreshBundledExtensions).toHaveBeenCalledWith('/profile', '/default-profile')
+
+    refreshBundledExtensions.mockClear()
+    await start(true)
+    expect(refreshBundledExtensions).toHaveBeenCalledWith('/profile', '/default-profile')
   })
 })

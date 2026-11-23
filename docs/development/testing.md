@@ -351,7 +351,7 @@ with no bookmarks and no extension, as most specs assume; the welcome screen (`O
 Ethereum light client are off the same way. A spec that proves what a new profile starts with passes
 `env: { ORIVON_DEFAULT_PROFILE: 'on' }` ([`e2e-default-profile`](../../test/window/e2e-default-profile.test.ts)); it also relaunches the profile to prove nothing is added back, including to
 one that has history but no bookmarks or extensions; it needs the
-fetched uBlock Origin file (`node scripts/fetch-bundled-extensions.mjs`, which `npm install` runs).
+fetched and unpacked uBlock Origin (`node scripts/fetch-bundled-extensions.mjs`, which `npm install` runs).
 
 **Failure evidence, for every e2e spec.** [`launch-electron.mjs`](../../test/support/launch-electron.mjs)
 starts recording each launched app ([`qa-evidence.mjs`](../../test/support/qa-evidence.mjs)) and, at close,
