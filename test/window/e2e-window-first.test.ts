@@ -140,8 +140,6 @@ it('has the bundled extension loaded before the first web request of a new profi
 
     const startup = await startupOf(app)
     expect(reached(startup, 'extensionsSeeded')).toBeLessThanOrEqual(reached(startup, 'afterWindowDone'))
-    // The unpacking holds the main thread, which serves the window's page: it waits for the window to show.
-    expect(reached(startup, 'windowShown')).toBeLessThanOrEqual(reached(startup, 'extensionsSeedStart'))
     expectNoTripwire(app)
   } finally {
     await closeElectron(app)

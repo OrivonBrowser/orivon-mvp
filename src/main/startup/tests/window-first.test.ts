@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SubsystemFailure } from '../../registry.js'
-import { endStart, firstWindowShown, SHOWN_WAIT_CAP_MS, startTail } from '../window-first.js'
+import { endStart, startTail } from '../window-first.js'
 import type { TailSteps } from '../window-first.js'
 
 const failure = (critical: boolean): SubsystemFailure => ({ name: 'route', phase: 'afterWindow', error: new Error('no settings'), critical })
@@ -28,70 +28,33 @@ describe('the tail', () => {
     let finish: () => void = () => {}
     const tail = startTail(steps(log, { afterWindow: async () => { log.push('afterWindow'); await new Promise<void>((resolve) => { finish = resolve }); return [] } }))
     expect(log).toEqual(['afterWindow'])
-    expect(await settles(tail.done)).toBe(false)
+    expect(await settles(tail)).toBe(false)
     finish()
-    await tail.done
+    await tail
     expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical', 'openWebContent'])
-  })
-
-  it('has the shown signal made, and pending, before the first step of the tail runs', async () => {
-    let seen: Promise<void> | undefined
-    const tail = startTail(steps([], { afterWindow: async () => { seen = firstWindowShown(); return [] } }))
-    await tail.done
-    expect(seen).toBeDefined()
-    expect(await settles(seen as Promise<void>)).toBe(false)
-    tail.windowShown()
-    expect(await settles(seen as Promise<void>)).toBe(true)
-  })
-
-  it('opens the shown signal once the window is shown, and as often as it is asked', async () => {
-    const tail = startTail(steps([]))
-    const signal = firstWindowShown()
-    expect(await settles(signal)).toBe(false)
-    tail.windowShown()
-    tail.windowShown()
-    expect(await settles(signal)).toBe(true)
-  })
-
-  it('opens the shown signal after a cap, for a window that never says', async () => {
-    vi.useFakeTimers()
-    startTail(steps([]))
-    let open = false
-    void firstWindowShown().then(() => { open = true })
-    await vi.advanceTimersByTimeAsync(SHOWN_WAIT_CAP_MS - 1)
-    expect(open).toBe(false)
-    await vi.advanceTimersByTimeAsync(1)
-    expect(open).toBe(true)
-  })
-
-  it('answers firstWindowShown at once where no start runs the tail', async () => {
-    vi.resetModules()
-    const fresh = await import('../window-first.js')
-    await expect(fresh.firstWindowShown()).resolves.toBeUndefined()
   })
 
   it('opens web content after the tail, in this order, and says the start goes on', async () => {
     const log: string[] = []
-    const outcome = await startTail(steps(log)).done
+    const outcome = await startTail(steps(log))
     expect(outcome).toEqual({ stopped: false })
     expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical', 'openWebContent'])
   })
 
   it('opens web content after a failure that is not critical', async () => {
     const log: string[] = []
-    await startTail(steps(log, { afterWindow: async () => { log.push('afterWindow'); return [failure(false)] } })).done
+    await startTail(steps(log, { afterWindow: async () => { log.push('afterWindow'); return [failure(false)] } }))
     expect(log).toContain('openWebContent')
   })
 
-  it('never opens web content when a failure is critical, and opens the shown signal', async () => {
+  it('never opens web content when a failure is critical', async () => {
     const log: string[] = []
     const tail = startTail(steps(log, {
       afterWindow: async () => { log.push('afterWindow'); return [failure(true)] },
       stopOnCritical: (failures) => { log.push(`stopOnCritical ${String(failures.length)}`); return true }
     }))
-    expect(await tail.done).toEqual({ stopped: true })
+    expect(await tail).toEqual({ stopped: true })
     expect(log).toEqual(['afterWindow', 'mark afterWindowDone', 'report', 'stopOnCritical 1'])
-    expect(await settles(firstWindowShown())).toBe(true)
   })
 
   it('never rejects: a throw no subsystem caught is a critical failure of the start, said and ended like one', async () => {
@@ -107,10 +70,9 @@ describe('the tail', () => {
       }))
       // Awaited a good while after it settled, as the start awaits it, hundreds of milliseconds after it was made.
       await new Promise((resolve) => setTimeout(resolve, 20))
-      expect(await tail.done).toEqual({ stopped: true })
+      expect(await tail).toEqual({ stopped: true })
       expect(reported[0]?.[0]).toMatchObject({ name: 'startup', phase: 'afterWindow', critical: true })
       expect(log).toEqual(['stopOnCritical true'])
-      expect(await settles(firstWindowShown())).toBe(true)
       await new Promise((resolve) => setTimeout(resolve, 10))
       expect(unhandled).not.toHaveBeenCalled()
     } finally {
@@ -121,10 +83,15 @@ describe('the tail', () => {
   it('never rejects even when saying the failure throws, and stops the start', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const tail = startTail(steps([], { afterWindow: async () => { throw new Error('first') }, stopOnCritical: () => { throw new Error('dialog failed') } }))
-    expect(await tail.done).toEqual({ stopped: true })
+    expect(await tail).toEqual({ stopped: true })
     expect(error).toHaveBeenCalled()
     error.mockRestore()
-    expect(await settles(firstWindowShown())).toBe(true)
+  })
+
+  it('never rejects when the gate itself throws', async () => {
+    const log: string[] = []
+    const tail = startTail(steps(log, { openWebContent: async () => { throw new Error('gate broke') }, stopOnCritical: () => { log.push('stopOnCritical'); return true } }))
+    expect(await tail).toEqual({ stopped: true })
   })
 
   it('holds the start for as long as the gate is held shut', async () => {
@@ -176,12 +143,10 @@ describe('the end of a start', () => {
     expect(log.at(-1)).toBe('started')
   })
 
-  it('opens the shown signal and lets a launch in when the window cannot be made', async () => {
+  it('lets a launch in when the window cannot be made', async () => {
     const log: string[] = []
     const tail = startTail(steps(log))
-    const signal = firstWindowShown()
     await expect(endStart(tail, Promise.reject(new Error('no window')), () => { log.push('started') })).rejects.toThrow('no window')
     expect(log.at(-1)).toBe('started')
-    expect(await settles(signal)).toBe(true)
   })
 })
