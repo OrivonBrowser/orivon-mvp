@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { bundledExtensions, DEFAULT_BOOKMARKS, defaultBookmarks, defaultProfileDir, defaultProfileOn, isNewProfile } from '../default-profile.js'
+import { bundledExtensions, parseBundledExtensions, DEFAULT_BOOKMARKS, defaultBookmarks, defaultProfileDir, defaultProfileOn, isNewProfile } from '../default-profile.js'
 import { decideDefaultProfile, startsFromDefaultProfile } from '../profile-start.js'
 import { sanitizeBrowserUrl } from '../../browsing/local-file-input.js'
 
@@ -59,12 +59,13 @@ describe('the default bookmarks', () => {
 describe('bundledExtensions', () => {
   const entry = { file: 'a.crx', name: 'A', version: '1', url: 'https://example.invalid/a.crx', sha256: 'f'.repeat(64), pinned: true }
 
-  it('lists an entry whose file is present, and reports and skips one whose file is missing', async () => {
-    await mkdir(join(dir, 'extensions'))
-    await writeFile(join(dir, 'extensions', 'a.crx'), 'x')
+  it('lists an entry whose unpacked folder is present, and reports and skips one whose folder is missing', async () => {
+    await mkdir(join(dir, 'extensions', 'a'), { recursive: true })
+    await writeFile(join(dir, 'extensions', 'a', 'manifest.json'), '{}')
+    await writeFile(join(dir, 'extensions', 'b.crx'), 'x')
     await writeFile(join(dir, 'bundled-extensions.json'), JSON.stringify([entry, { ...entry, file: 'b.crx', name: 'B' }]))
     const report = vi.fn()
-    expect(await bundledExtensions(dir, report)).toEqual([{ name: 'A', path: join(dir, 'extensions', 'a.crx'), pinned: true }])
+    expect(await bundledExtensions(dir, report)).toEqual([{ name: 'A', folder: 'a', path: join(dir, 'extensions', 'a'), pinned: true }])
     expect(report).toHaveBeenCalledTimes(1)
     expect(report.mock.calls[0]![0]).toContain('B')
   })
@@ -83,6 +84,29 @@ describe('bundledExtensions', () => {
     await writeFile(join(dir, 'bundled-extensions.json'), JSON.stringify([{ ...entry, file: '../a.crx' }, { ...entry, file: 5 }]))
     const report = vi.fn()
     expect(await bundledExtensions(dir, report)).toEqual([])
+    expect(report).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('parseBundledExtensions', () => {
+  it('names the folder each extension is unpacked into after its file, without checking the disk', () => {
+    const report = vi.fn()
+    expect(parseBundledExtensions(JSON.stringify([{ file: 'ublock-origin.crx', name: 'uBlock Origin', pinned: false }]), '/p', report))
+      .toEqual([{ name: 'uBlock Origin', folder: 'ublock-origin', path: join('/p', 'extensions', 'ublock-origin'), pinned: false }])
+    expect(report).not.toHaveBeenCalled()
+  })
+
+  it('leaves out a file whose folder the registry would refuse, so one bad line cannot make the whole registry unreadable', () => {
+    const report = vi.fn()
+    const list = ['.x.crx', 'a..crx', '../b.crx', 'c/d.crx', 'ok.v2.crx'].map((file) => ({ file, name: file, pinned: false }))
+    expect(parseBundledExtensions(JSON.stringify(list), '/p', report).map((extension) => extension.folder)).toEqual(['ok.v2'])
+    expect(report).toHaveBeenCalledTimes(4)
+  })
+
+  it('gives nothing for text that is not a list', () => {
+    const report = vi.fn()
+    expect(parseBundledExtensions('{', '/p', report)).toEqual([])
+    expect(parseBundledExtensions('{}', '/p', report)).toEqual([])
     expect(report).toHaveBeenCalledTimes(2)
   })
 })

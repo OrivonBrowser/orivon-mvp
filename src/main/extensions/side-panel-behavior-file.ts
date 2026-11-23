@@ -1,7 +1,7 @@
 // What `chrome.sidePanel.setPanelBehavior` chose, kept in the extension's slot so it outlives a restart.
 // Everything else an extension sets for its panel is held in memory and set again by the extension at start.
-import { existsSync, readFileSync, rmSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { join } from 'node:path'
 import { writeFileAtomic } from '../../broker/adapters/atomic-write.js'
 
 const FILE = 'side-panel-behavior.json'
@@ -24,6 +24,7 @@ export function readOpenOnActionClick (slotDir: string): boolean {
 
 export function writeOpenOnActionClick (slotDir: string, value: boolean): void {
   try {
+    mkdirSync(slotDir, { recursive: true })
     writeFileAtomic(behaviorPath(slotDir), JSON.stringify({ openPanelOnActionClick: value }))
   } catch (error) {
     console.error('[extensions] could not save the side panel behaviour:', error)
@@ -36,21 +37,21 @@ export function clearOpenOnActionClick (slotDir: string): void {
 }
 
 /**
- * The saved behaviour of loaded extensions, found through the folder each one is loaded from: an install adds its
- * registry entry only after the load resolves, and the extension's worker may set its behaviour during that load.
+ * The saved behaviour of loaded extensions, found through the slot of the folder each one is loaded from: an install adds
+ * its registry entry only after the load resolves, and the extension's worker may set its behaviour during that load.
  */
-export function createBehaviorStore (loadedPath: (extensionId: string) => string | undefined): {
+export function createBehaviorStore (loadedSlotDir: (extensionId: string) => string | undefined): {
   read: (extensionId: string) => boolean
   write: (extensionId: string, value: boolean) => void
 } {
   return {
     read: (extensionId) => {
-      const path = loadedPath(extensionId)
-      return path !== undefined && readOpenOnActionClick(dirname(path))
+      const slotDir = loadedSlotDir(extensionId)
+      return slotDir !== undefined && readOpenOnActionClick(slotDir)
     },
     write: (extensionId, value) => {
-      const path = loadedPath(extensionId)
-      if (path !== undefined) writeOpenOnActionClick(dirname(path), value)
+      const slotDir = loadedSlotDir(extensionId)
+      if (slotDir !== undefined) writeOpenOnActionClick(slotDir, value)
     }
   }
 }

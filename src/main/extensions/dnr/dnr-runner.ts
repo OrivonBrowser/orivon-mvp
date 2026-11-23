@@ -7,7 +7,7 @@
 // `../install-runner.ts`'s `uninstall` calls `clearPersistedRuleState`
 // directly, below.
 
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 import { writeFileAtomic } from '../../../broker/adapters/atomic-write.js'
 import type { DnrRule, DnrStaticRuleset } from './types.js'
@@ -76,8 +76,14 @@ export function readDynamicRules(slotDir: string): DnrRule[] {
   return (readJsonArray(dynamicRulesPath(slotDir)) as DnrRule[] | null) ?? []
 }
 
+/** An extension loaded from the application's own folder has no slot folder until it first saves something. */
+function writeInSlot(slotDir: string, path: string, text: string): void {
+  mkdirSync(slotDir, { recursive: true })
+  writeFileAtomic(path, text)
+}
+
 export function writeDynamicRules(slotDir: string, rules: readonly DnrRule[]): void {
-  writeFileAtomic(dynamicRulesPath(slotDir), JSON.stringify(rules))
+  writeInSlot(slotDir, dynamicRulesPath(slotDir), JSON.stringify(rules))
 }
 
 /**
@@ -94,7 +100,7 @@ export function readEnabledRulesetOverride(slotDir: string): string[] | null {
 }
 
 export function writeEnabledRulesetOverride(slotDir: string, enabledIds: readonly string[]): void {
-  writeFileAtomic(enabledRulesetsPath(slotDir), JSON.stringify(enabledIds))
+  writeInSlot(slotDir, enabledRulesetsPath(slotDir), JSON.stringify(enabledIds))
 }
 
 /** Whether the extension last turned the blocked count on as its badge, `undefined` when it never chose. Chrome keeps
@@ -109,7 +115,7 @@ export function readBadgeCountMode(slotDir: string): boolean | undefined {
 }
 
 export function writeBadgeCountMode(slotDir: string, enabled: boolean): void {
-  writeFileAtomic(badgeCountPath(slotDir), JSON.stringify(enabled))
+  writeInSlot(slotDir, badgeCountPath(slotDir), JSON.stringify(enabled))
 }
 
 /** Forgets the enabled-ruleset choice, so the manifest's own `enabled` flags apply again; returns

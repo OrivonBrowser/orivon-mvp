@@ -93,6 +93,21 @@ describe('the extensions a private session starts with', () => {
     expect(warnings).toEqual([])
   })
 
+  it('lets an extension that came with Orivon run in a private window without copying its files, which are the application\'s', async () => {
+    const bundled: InstalledExtension = { ...entry(ALLOWED, 'allowed'), source: { kind: 'bundled', folder: 'allowed' }, path: join(root, 'app', 'default-profile', 'extensions', 'allowed') }
+    put(join(bundled.path, 'manifest.json'), '{"name":"allowed"}')
+    mkdirSync(join(from, 'extensions'), { recursive: true })
+    writeFileSync(join(from, 'extensions', 'registry.json'), serializeRegistry([bundled]))
+    writeFileSync(join(from, 'extensions', 'prefs.json'), serializePrefs(new Map([[ALLOWED, normalizePrefs({ privateWindows: true })]])))
+
+    expect(hasPrivateExtensions(from)).toBe(true)
+    expect(await copyPrivateExtensions(from, into, { log })).toEqual([ALLOWED])
+
+    expect(parseRegistry(readFileSync(join(into, 'extensions', 'registry.json'), 'utf8')).entries).toEqual([bundled])
+    expect(existsSync(join(into, 'extensions', 'allowed'))).toBe(false)
+    expect(warnings).toEqual([])
+  })
+
   it('leaves out an extension that is not allowed, one that is off, and a choice with no extension behind it', async () => {
     profile({ [OFF.replace(/c/g, 'd')]: normalizePrefs({ privateWindows: true }) })
     await copyPrivateExtensions(from, into, { log })

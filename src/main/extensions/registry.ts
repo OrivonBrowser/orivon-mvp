@@ -12,6 +12,8 @@ export type ExtensionSource =
   | { readonly kind: 'unpacked', readonly from: string }
   | { readonly kind: 'file', readonly fileName: string }
   | { readonly kind: 'store', readonly storeId: string }
+  /** Shipped unpacked with Orivon and loaded from there: `folder` names it under the default profile's `extensions/`. */
+  | { readonly kind: 'bundled', readonly folder: string }
 
 /**
  * Who updates this extension, tracked separately from `source` (a `file`
@@ -75,6 +77,9 @@ export function describeUpdater (entry: InstalledExtension): string {
   if (entry.source.kind === 'unpacked') {
     return `No automatic updates. Reload it from ${entry.source.from} to pick up changes.`
   }
+  if (entry.source.kind === 'bundled') {
+    return 'Comes with Orivon and is updated with it. Installing a newer file of the same extension replaces it.'
+  }
   if (entry.source.kind === 'file' && entry.source.fileName.toLowerCase().endsWith('.zip')) {
     return 'No automatic updates. A newer .zip with the same key updates it in place; ' +
       'a .zip with no key, or a different key, installs as a separate extension.'
@@ -83,6 +88,9 @@ export function describeUpdater (entry: InstalledExtension): string {
 }
 
 // --- serialisation, strict on the way back in ---
+
+/** A bundled extension's folder name as the default profile's list gives it: one plain path segment. The entry's `path` is what loads. */
+export const BUNDLED_FOLDER = /^[\w-][\w.-]*$/
 
 function parseSource (raw: unknown): ExtensionSource | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined
@@ -98,6 +106,10 @@ function parseSource (raw: unknown): ExtensionSource | undefined {
   if (kind === 'store') {
     const storeId = ownProperty(raw, 'storeId', isString)
     return storeId === undefined ? undefined : { kind, storeId }
+  }
+  if (kind === 'bundled') {
+    const folder = ownProperty(raw, 'folder', isString)
+    return folder === undefined || !BUNDLED_FOLDER.test(folder) ? undefined : { kind, folder }
   }
   return undefined
 }

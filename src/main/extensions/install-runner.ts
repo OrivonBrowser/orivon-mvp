@@ -19,8 +19,9 @@ import { isString, ownProperty } from '../../broker/policy/own-property.js'
 import { verifyCrx3 } from './crx.js'
 import { peekManifest, readManifestObject, unpackZip, writeFolderCopy, writeManifestOver } from './unpack-runner.js'
 import {
-  canonicalizeManifestKey, readRegistry, resolveInstallKey, slotOfFileEntry, withRegistryLock, writeRegistry
+  canonicalizeManifestKey, isProfileFolder, readRegistry, resolveInstallKey, slotOfFileEntry, withRegistryLock, writeRegistry
 } from './registry-runner.js'
+import { bundledManifestText, type BundledRecord } from './bundled-folder.js'
 import type { ExtensionSource, ExtensionUpdater, InstalledExtension } from './registry.js'
 import { clearPendingDnrInstall, registerPendingDnrInstall } from './extensions-dnr.js'
 import { clearPendingInstalled, registerPendingInstalled } from './runtime-installed.js'
@@ -116,11 +117,20 @@ export interface PendingInstall {
   readonly preApproved?: boolean
   /** Pins (or not) a fresh install, in place of the `pinInstalled` setting: the choice of the one who bundled it. */
   readonly pin?: boolean
+  /** Loads the extension from this folder, where it is, and writes no copy: one that ships unpacked with Orivon. Its
+   * `manifest.json` must already be the one this install would write, and nothing here ever deletes the folder. */
+  readonly inPlace?: string
   /** Writes the loaded copy at `targetDir`, with `manifestJson` (already
    * carrying its resolved `key`) in place of `manifest.json` -- everything
    * install-runner.ts's caller-specific step (folder copy, or the
    * already-downloaded archive) needed to know. */
   readonly write: (targetDir: string, manifestJson: string) => void
+}
+
+/** Whether `existing` lives in the slot `slot` (folder `slotDir`): a copy under it, or an extension that ships with Orivon,
+ * whose own folder is elsewhere and whose slot is its id. */
+function inSlot (existing: InstalledExtension, slotDir: string, slot: string): boolean {
+  return existing.path.startsWith(`${slotDir}${sep}`) || (existing.source.kind === 'bundled' && existing.id === slot)
 }
 
 /**
@@ -134,8 +144,8 @@ export interface PendingInstall {
 function refuseUnsignedOverSigned (ctx: InstallContext, pending: PendingInstall): InstallOutcome | undefined {
   if (pending.developerPublicKey !== undefined || pending.source.kind !== 'file') return undefined
   const slotDir = join(extensionsRoot(ctx.userDataPath), pending.slot)
-  const signed = readRegistry(ctx.userDataPath).find((existing) =>
-    existing.path.startsWith(`${slotDir}${sep}`) && existing.source.kind === 'file' && existing.source.fileName.toLowerCase().endsWith('.crx'))
+  const signed = readRegistry(ctx.userDataPath).find((existing) => inSlot(existing, slotDir, pending.slot) &&
+    (existing.source.kind === 'bundled' || (existing.source.kind === 'file' && existing.source.fileName.toLowerCase().endsWith('.crx'))))
   if (signed === undefined) return undefined
   return { installed: false, reason: `install refused: this file has no signature and would replace "${signed.name}", which was installed from a signed .crx` }
 }
@@ -149,8 +159,8 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   if (!manifestResult.ok) return { installed: false, reason: `manifest refused: ${manifestResult.reason}` }
   const { facts } = manifestResult
 
-  const description = describeExtensionInstall(facts, pending.source.kind as ExtensionInstallSource)
-  const allowed = pending.preApproved === true || await ctx.prompt(description, where)
+  const promptSource: ExtensionInstallSource = pending.source.kind === 'bundled' ? 'file' : pending.source.kind
+  const allowed = pending.preApproved === true || await ctx.prompt(describeExtensionInstall(facts, promptSource), where)
   if (!allowed) return { installed: false, reason: 'declined by the person' }
 
   const { manifest, stripped } = loadableManifest(pending.rawManifest)
@@ -169,7 +179,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
     return { installed: false, reason: 'install refused: slot resolves outside the extensions directory' }
   }
   const registry = readRegistry(ctx.userDataPath)
-  const previousInSlot = registry.filter((existing) => existing.path.startsWith(`${slotDir}${sep}`))
+  const previousInSlot = registry.filter((existing) => inSlot(existing, slotDir, pending.slot))
 
   // An id belongs to at most one slot. resolveInstallKey above already stops
   // a signed .crx's manifest `key` from smuggling another extension's id
@@ -179,10 +189,10 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   const usedInAnotherSlot = registry.some((existing) => existing.id === id && !previousInSlot.includes(existing))
   if (usedInAnotherSlot) return { installed: false, reason: 'another installed extension already uses this id' }
 
-  const targetDir = join(extensionsRoot(ctx.userDataPath), pending.slot, facts.version)
+  const targetDir = pending.inPlace ?? join(extensionsRoot(ctx.userDataPath), pending.slot, facts.version)
   // Independent of readExtensionManifest's own version grammar
   // (extension-manifest.ts) -- see isStrictlyInsideDirectory's own doc.
-  if (!isStrictlyInsideDirectory(slotDir, targetDir)) {
+  if (pending.inPlace === undefined && !isStrictlyInsideDirectory(slotDir, targetDir)) {
     return { installed: false, reason: 'install refused: version resolves outside its own slot directory' }
   }
 
@@ -212,7 +222,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // Set when the update drops the enabled-ruleset choice below, for a failed load to put back.
   let droppedRulesetChoice: string[] | null = null
 
-  const asideDir = existsSync(targetDir) ? `${targetDir}.old-${randomBytes(6).toString('hex')}` : undefined
+  const asideDir = pending.inPlace === undefined && existsSync(targetDir) ? `${targetDir}.old-${randomBytes(6).toString('hex')}` : undefined
   if (asideDir !== undefined) renameSync(targetDir, asideDir)
 
   /** Undoes the move above: whatever `targetDir` holds now (nothing, or a
@@ -226,10 +236,11 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
    * folder behind for the next boot to find, unregistered and never
    * cleaned up. */
   async function restoreAsideOnFailure (): Promise<void> {
-    restoreBaseManifest(slotDir, previousBase)
+    if (pending.inPlace === undefined) restoreBaseManifest(slotDir, previousBase)
     if (droppedRulesetChoice !== null) writeEnabledRulesetOverride(slotDir, droppedRulesetChoice)
     if (asideDir === undefined) {
-      rmSync(targetDir, { recursive: true, force: true })
+      // The folder of an extension that ships with Orivon is the application's, never this install's to remove.
+      if (pending.inPlace === undefined) rmSync(targetDir, { recursive: true, force: true })
       const previous = previousInSlot[0]
       if (wasLoaded && previous !== undefined) {
         await ctx.session.extensions.loadExtension(previous.path, { allowFileAccess: false })
@@ -242,7 +253,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   }
 
   try {
-    writeBaseManifest(slotDir, baseText)
+    if (pending.inPlace === undefined) writeBaseManifest(slotDir, baseText)
     pending.write(targetDir, loadedText)
   } catch (error) {
     await restoreAsideOnFailure()
@@ -328,7 +339,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // overwrites one that landed on the registry while `pending.write` and
   // `loadExtension` above were running.
   await withRegistryLock(ctx.userDataPath, (freshRegistry) => {
-    const stillPreviousInSlot = freshRegistry.filter((existing) => existing.path.startsWith(`${slotDir}${sep}`))
+    const stillPreviousInSlot = freshRegistry.filter((existing) => inSlot(existing, slotDir, pending.slot))
     const kept = freshRegistry.filter((existing) => !stillPreviousInSlot.includes(existing))
     writeRegistry(ctx.userDataPath, [...kept, entry])
   })
@@ -338,7 +349,7 @@ export async function finishInstall (ctx: InstallContext, pending: PendingInstal
   // folder and returned early, leaving every OLD folder and registry entry
   // untouched.
   for (const previous of previousInSlot) {
-    if (previous.path !== entry.path) rmSync(previous.path, { recursive: true, force: true })
+    if (previous.path !== entry.path && isProfileFolder(ctx.userDataPath, previous.path)) rmSync(previous.path, { recursive: true, force: true })
   }
   if (asideDir !== undefined) rmSync(asideDir, { recursive: true, force: true })
 
@@ -370,10 +381,33 @@ export async function installFromFile (ctx: InstallContext, filePath: string, wh
   return await installPackedFile(ctx, filePath, where, {})
 }
 
-/** Installs a packed extension that ships with Orivon, with no question: the person chose Orivon, not this extension,
- * so there is nobody to ask and the signed file is the whole of what is checked. `pinned` is whether its icon is in the toolbar. */
-export async function installBundled (ctx: InstallContext, filePath: string, options: { readonly pinned: boolean }): Promise<InstallOutcome> {
-  return await installPackedFile(ctx, filePath, undefined, { preApproved: true, pin: options.pinned })
+/**
+ * Installs an extension that ships unpacked with Orivon (bundled-folder.ts), with no question: the person chose Orivon,
+ * not this extension. It is loaded from its folder in the application, where it is, so no file of it is written, and
+ * what is checked is that the folder holds the manifest an install of its record would write. `pinned` is whether its
+ * icon is in the toolbar.
+ */
+export async function installBundled (ctx: InstallContext, bundled: { readonly folder: string, readonly path: string, readonly record: BundledRecord }, options: { readonly pinned: boolean }): Promise<InstallOutcome> {
+  const refused = refusePrivateInstall(ctx)
+  if (refused !== undefined) return refused
+  const manifestKey = ownProperty(bundled.record.manifest, 'key', isString)
+  const canonical = manifestKey === undefined ? undefined : canonicalizeManifestKey(manifestKey)
+  if (canonical === undefined) return { installed: false, reason: 'the bundled extension carries no usable key' }
+  const expected = bundledManifestText(bundled.record)
+  return await finishInstall(ctx, {
+    rawManifest: bundled.record.manifest,
+    source: { kind: 'bundled', folder: bundled.folder },
+    updater: { kind: 'none', reason: 'comes with Orivon' },
+    slot: generateId(canonical),
+    preApproved: true,
+    pin: options.pinned,
+    inPlace: bundled.path,
+    write: (targetDir) => {
+      if (expected === undefined || readFileSync(join(targetDir, 'manifest.json'), 'utf8') !== expected) {
+        throw new Error(`the manifest.json in ${targetDir} is not the one its record gives (node scripts/fetch-bundled-extensions.mjs rebuilds it)`)
+      }
+    }
+  })
 }
 
 async function installPackedFile (ctx: InstallContext, filePath: string, where: InstallWhere | undefined, extra: Pick<PendingInstall, 'preApproved' | 'pin'>): Promise<InstallOutcome> {

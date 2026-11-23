@@ -16,7 +16,7 @@ import { publishExtensions } from '../registry.js'
 import { readRegistry } from './registry-runner.js'
 import { startsFromDefaultProfile } from '../default-profile/profile-start.js'
 import { currentDefaultProfileDir } from '../default-profile/default-profile-dir.js'
-import { seedBundledExtensions } from './seed-bundled.js'
+import { refreshBundledExtensions, seedBundledExtensions } from './seed-bundled.js'
 import { markStartup } from '../startup/startup-marks-runner.js'
 import { installFromFile, installFromFolder, type InstallContext, type InstallOutcome, type InstallWhere } from './install-runner.js'
 import { setEnabled, uninstall } from './install-lifecycle.js'
@@ -183,6 +183,9 @@ export const extensionsSubsystem: Subsystem = {
       ? createExtensionPrefsStore(null, readPrefsFile(prefsFilePath(userDataPath)))
       : createExtensionPrefsStore(prefsFilePath(userDataPath))
     const manifests = createManifestApplier({ userDataPath, session: session.defaultSession, prefs, isOpen: extensionPageOpen, pages: extensionPagesAroundReload })
+    // A private runtime follows too: its registry is its own copy, and a peer that started from a package that mounts
+    // itself (the AppImage) is somewhere else than the window that copied it.
+    refreshBundledExtensions(userDataPath, currentDefaultProfileDir())
     manifests.applyAtBoot()
     const held = installApis({ host: hostExtensions, session: session.defaultSession, userDataPath, ctx, prefs })
     installExtensionMedia({ ctx, prefs, defaultSession: session.defaultSession })

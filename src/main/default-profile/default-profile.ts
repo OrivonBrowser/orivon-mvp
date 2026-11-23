@@ -63,18 +63,19 @@ export async function defaultBookmarks (dir: string): Promise<BookmarkTreeInput[
 
 export interface BundledExtension {
   name: string
-  /** The packed extension, a `.crx` inside the default profile's `extensions/` folder. */
+  /** The folder it is unpacked into, in the default profile's `extensions/` folder, named after its `.crx` without the suffix. */
+  folder: string
+  /** That folder's path: the extension is loaded from it, where it is. */
   path: string
   /** Whether it is installed pinned to the toolbar. */
   pinned: boolean
 }
 
-/** The extensions a new profile installs, from `bundled-extensions.json`. An entry whose file is not there (the fetch
- * did not run, or failed) is passed to `report` and left out; so is a list that cannot be read. Never throws. */
-export async function bundledExtensions (dir: string, report: (problem: string) => void): Promise<BundledExtension[]> {
+/** The listed extensions that name a usable file, with the folder each is unpacked into. The list itself is read by the caller. */
+export function parseBundledExtensions (text: string, dir: string, report: (problem: string) => void): BundledExtension[] {
   let listed: unknown
   try {
-    listed = JSON.parse(await readFile(join(dir, 'bundled-extensions.json'), 'utf8'))
+    listed = JSON.parse(text)
   } catch (error) {
     report(`the bundled extensions list cannot be read: ${error instanceof Error ? error.message : String(error)}`)
     return []
@@ -87,18 +88,34 @@ export async function bundledExtensions (dir: string, report: (problem: string) 
   for (const entry of listed as unknown[]) {
     const item = (typeof entry === 'object' && entry !== null ? entry : {}) as Record<string, unknown>
     const { file, name, pinned } = item
-    if (typeof file !== 'string' || !/^[\w.-]+\.crx$/.test(file) || file.includes('..') || typeof name !== 'string') {
+    if (typeof file !== 'string' || !/^[\w-][\w.-]*\.crx$/.test(file) || file.includes('..') || typeof name !== 'string') {
       report('a bundled extensions entry has no usable file or name')
       continue
     }
-    const path = join(dir, 'extensions', file)
+    const folder = file.slice(0, -'.crx'.length)
+    found.push({ name, folder, path: join(dir, 'extensions', folder), pinned: pinned === true })
+  }
+  return found
+}
+
+/** The extensions a new profile installs, from `bundled-extensions.json`. An entry whose unpacked folder is not there (the
+ * fetch did not run, or failed) is passed to `report` and left out; so is a list that cannot be read. Never throws. */
+export async function bundledExtensions (dir: string, report: (problem: string) => void): Promise<BundledExtension[]> {
+  let text: string
+  try {
+    text = await readFile(join(dir, 'bundled-extensions.json'), 'utf8')
+  } catch (error) {
+    report(`the bundled extensions list cannot be read: ${error instanceof Error ? error.message : String(error)}`)
+    return []
+  }
+  const found: BundledExtension[] = []
+  for (const extension of parseBundledExtensions(text, dir, report)) {
     try {
-      await access(path)
+      await access(join(extension.path, 'manifest.json'))
+      found.push(extension)
     } catch {
-      report(`${name} is not installed: ${path} is missing (node scripts/fetch-bundled-extensions.mjs fetches it)`)
-      continue
+      report(`${extension.name} is not installed: ${extension.path} is missing (node scripts/fetch-bundled-extensions.mjs fetches and unpacks it)`)
     }
-    found.push({ name, path, pinned: pinned === true })
   }
   return found
 }

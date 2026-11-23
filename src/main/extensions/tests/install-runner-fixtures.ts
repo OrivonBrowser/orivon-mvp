@@ -103,13 +103,13 @@ export function makeRsaKeyPair (): KeyPair {
   return { publicKey: Buffer.from(publicKey), privateKey: createPrivateKey({ key: privateKey, format: 'der', type: 'pkcs8' }) }
 }
 
-/** A CRX3 signed by one fresh developer key only. */
-export function buildCrx (manifest: Record<string, unknown>): Buffer {
+/** A CRX3 signed by one developer key only: a fresh one, or `developer` when a test needs a later version of the same extension. */
+export function buildCrx (manifest: Record<string, unknown>, developer: KeyPair = makeRsaKeyPair()): Buffer {
   const archiveZip = new AdmZip()
   archiveZip.addFile('manifest.json', Buffer.from(JSON.stringify(manifest)))
   const archive = archiveZip.toBuffer()
 
-  const dev = makeRsaKeyPair()
+  const dev = developer
   const crxId = createHash('sha256').update(dev.publicKey).digest().subarray(0, 16)
   const signedHeaderData = (() => {
     const pbf = new Pbf()

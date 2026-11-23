@@ -21,6 +21,7 @@ import type { PanelDriver, PanelPage, PanelPageEvents } from './side-panel-drive
 import { createSidePanelApi } from './side-panel-api.js'
 import type { SidePanelDriver } from './side-panel-api.js'
 import { createBehaviorStore } from './side-panel-behavior-file.js'
+import { slotDirOf } from './registry-runner.js'
 import { sidePanelGestures, sidePanelTabGestures } from './side-panel-gesture.js'
 import { sidePanelTabClosing } from './side-panel-tab-closing.js'
 import { createSidePanelOptions } from './side-panel-options.js'
@@ -112,7 +113,10 @@ function makeRunner (ctx: ExtensionApiContext): SidePanelDriver {
     holds: (id) => ctx.held(id, 'sidePanel')
   })
 
-  const behavior = createBehaviorStore((id) => ctx.session.extensions.getExtension(id)?.path)
+  const behavior = createBehaviorStore((id) => {
+    const path = ctx.session.extensions.getExtension(id)?.path
+    return path === undefined ? undefined : slotDirOf(ctx.userDataPath, id, path)
+  })
   const facts = new Map<string, { title: string, icon?: string | undefined }>()
   const driver = createPanelDriver({
     options,

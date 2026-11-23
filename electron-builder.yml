@@ -150,9 +150,12 @@ extraResources:
     filter:
       - "**/*"
       - "!README.md"
-# What a new profile starts with (src/main/default-profile/): the bundled extensions list, its
-# fetched .crx files and the bookmark icons. `package:*` fetches the .crx files first, so a
-# package never lacks them.
+      - "!**/*.crx"
+# What a new profile starts with (src/main/default-profile/): the bundled extensions list, each
+# extension unpacked into a folder with its record, and the bookmark icons. The browser loads an
+# extension from its folder where it is, so the installer writes (and the antivirus scans) its
+# files, and the first start writes none; the .crx it was unpacked from stays out of the package.
+# `package:*` fetches and unpacks them first, so a package never lacks them.
   - from: resources
     to: .
     filter:

@@ -6,7 +6,9 @@ import {
   loadStaticRulesets,
   parseRuleResources,
   readDynamicRules,
+  readBadgeCountMode,
   readEnabledRulesetOverride,
+  writeBadgeCountMode,
   writeDynamicRules,
   writeEnabledRulesetOverride,
 } from '../dnr-runner.js'
@@ -137,6 +139,17 @@ describe('dynamic rules persistence', () => {
       const rules = [{ id: 1, priority: 1, condition: { urlFilter: 'x' }, action: { type: 'block' as const } }]
       writeDynamicRules(dir, rules)
       expect(readDynamicRules(dir)).toEqual(rules)
+    })
+  })
+
+  it('makes the slot folder when there is none yet, as for an extension loaded from the application\'s folder', () => {
+    withTempDir((dir) => {
+      const slot = join(dir, 'not', 'there', 'yet')
+      writeDynamicRules(slot, [])
+      writeEnabledRulesetOverride(slot, ['a'])
+      writeBadgeCountMode(slot, true)
+      expect(readEnabledRulesetOverride(slot)).toEqual(['a'])
+      expect(readBadgeCountMode(slot)).toBe(true)
     })
   })
 

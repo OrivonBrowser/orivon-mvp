@@ -32,6 +32,12 @@ describe('describeUpdater', () => {
     )
   })
 
+  it('says a bundled extension comes with Orivon and is updated with it', () => {
+    const text = describeUpdater({ ...BASE, source: { kind: 'bundled', folder: 'x' }, updater: { kind: 'none', reason: 'comes with Orivon' } })
+    expect(text).toContain('updated with')
+    expect(text).toContain('Orivon')
+  })
+
   it('names the Chrome Web Store and its check cadence for a store-updated extension', () => {
     const entry: InstalledExtension = {
       ...BASE,
@@ -54,6 +60,7 @@ describe('parseRegistry / serializeRegistry round-trip', () => {
     const entries: InstalledExtension[] = [
       BASE,
       { ...BASE, id: 'b', source: { kind: 'file', fileName: 'x.zip' } },
+      { ...BASE, id: 'd', source: { kind: 'bundled', folder: 'ublock-origin' }, updater: { kind: 'none', reason: 'comes with Orivon' } },
       {
         ...BASE,
         id: 'c',
@@ -79,6 +86,10 @@ describe('parseRegistry: corrupt input fails closed to empty, never throws', () 
       label: 'an entry with an unrecognised source kind',
       raw: JSON.stringify({ extensions: [{ ...BASE, source: { kind: 'ftp', from: 'x' } }] })
     },
+    ...['../up', 'a/b', '', '.hidden', 'a\\b'].map((folder) => ({
+      label: `a bundled entry whose folder is ${JSON.stringify(folder)}, which could name a place outside the application's own`,
+      raw: JSON.stringify({ extensions: [{ ...BASE, source: { kind: 'bundled', folder } }] })
+    })),
     {
       label: 'one good entry alongside one malformed entry -- the whole file fails closed',
       raw: JSON.stringify({ extensions: [BASE, { id: 'only-an-id' }] })
