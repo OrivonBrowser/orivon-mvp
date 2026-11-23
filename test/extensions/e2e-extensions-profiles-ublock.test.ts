@@ -1,12 +1,13 @@
-// uBlock Origin, the real one Orivon ships in a new profile, blocks in the two profile sessions as it does in the default one: a
+// uBlock Origin, the real one Orivon ships in a new profile (loaded from the folder the build unpacked it into, as a new profile's first
+// start leaves it), blocks in the two profile sessions as it does in the default one: a
 // page in each loads an ad script from two hosts its lists name and a script from a host they do not, and the lists' two are cancelled
 // before they leave (nothing arrives at the tunnel or at the server) while the other loads, whichever session the page runs in.
 // uBlock Origin blocks only through blocking webRequest listeners, so this is the bridge of ADR-0053 working on each session.
 // CI requires it when the Electron version changes, and a release runs it first (docs/development/testing.md section Electron upgrades);
-// it needs the fetched package (`node scripts/fetch-bundled-extensions.mjs`) and fails, never skips, without it.
+// it needs the fetched and unpacked package (`node scripts/fetch-bundled-extensions.mjs`) and fails, never skips, without it.
 //
 //   node scripts/build-e2e.mjs && node scripts/run-headless.mjs npx vitest run --config test/vitest.e2e.config.ts test/extensions/e2e-extensions-profiles-ublock.test.ts
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:https'
 import type { Server } from 'node:https'
 import type { AddressInfo } from 'node:net'
@@ -18,7 +19,7 @@ import { startSocks5Fixture } from '../../src/broker/route/tests/socks5-fixture.
 import type { Socks5Fixture } from '../../src/broker/route/tests/socks5-fixture.test-helpers.js'
 import { assertNoElectronSurvivors } from '../support/launch-electron.mjs'
 import { clickAddressBarRetrying } from '../support/e2e-helpers.js'
-import { BUNDLED_UBLOCK_ORIGIN, seedPackedExtension } from '../support/extensions-fixtures.js'
+import { seedBundledUblockOrigin } from '../support/extensions-fixtures.js'
 import { selfSigned } from '../support/self-signed.js'
 import { launchShell, QA_TEST_TIMEOUT_MS } from '../support/qa-helpers.js'
 import { findViewShowing, waitFor, waitForTab } from '../support/smoke-helpers.mjs'
@@ -93,8 +94,7 @@ beforeAll(async () => {
     sandbox: true,
     args: [`--host-resolver-rules=${mapping}, MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`, `--ignore-certificate-errors-spki-list=${tls.spki}`],
     seedProfile: async (userDataDir: string) => {
-      mkdirSync(join(userDataDir, 'extensions'), { recursive: true })
-      seedPackedExtension(userDataDir, BUNDLED_UBLOCK_ORIGIN, 'ublock-origin')
+      seedBundledUblockOrigin(userDataDir)
       writeFileSync(join(userDataDir, 'settings.json'), JSON.stringify({ version: 1, values: { 'network.route.proxy': `127.0.0.1:${String(socks.port)}` } }))
       writeFileSync(join(userDataDir, 'routes.json'), JSON.stringify({ version: 1, profiles: 1, origins: [origin('tunnelled')], off: [origin('direct')], apart: [origin('tunnelled')], apartDirect: [origin('direct')] }))
     }

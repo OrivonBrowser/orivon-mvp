@@ -15,6 +15,7 @@ const installApis = vi.fn()
 let published: any
 let startsNew = false
 const seedBundledExtensions = vi.fn(async () => {})
+const refreshBundledExtensions = vi.fn()
 
 vi.mock('electron', () => ({ session: { defaultSession: { extensions: { loadExtension } } } }))
 vi.mock('../extension-host.js', () => ({ createExtensionHost: () => ({ getRouter: () => ({}) }), extensionPagesAroundReload: {} }))
@@ -31,7 +32,7 @@ vi.mock('../side-panel-runner.js', () => ({ closeSidePanels: vi.fn(async () => {
 vi.mock('../install-extension-commands.js', () => ({ installExtensionCommands: () => ({ whenReady: async () => {}, getAll: () => [] }) }))
 vi.mock('../registry-runner.js', () => ({ readRegistry: () => [{ id: 'a'.repeat(32), name: 'x', enabled: true, path: '/slot/1' }] }))
 vi.mock('../../default-profile/profile-start.js', () => ({ startsFromDefaultProfile: () => startsNew }))
-vi.mock('../seed-bundled.js', () => ({ seedBundledExtensions }))
+vi.mock('../seed-bundled.js', () => ({ seedBundledExtensions, refreshBundledExtensions }))
 vi.mock('../../default-profile/default-profile-dir.js', () => ({ currentDefaultProfileDir: () => '/default-profile' }))
 vi.mock('../../registry.js', () => ({ publishExtensions: (_ctx: unknown, api: unknown) => { published = api } }))
 
@@ -57,6 +58,7 @@ beforeEach(() => {
   startWebStore.mockClear()
   installApis.mockClear()
   seedBundledExtensions.mockClear()
+  refreshBundledExtensions.mockClear()
   startsNew = false
   published = undefined
   profile = '/profile'
@@ -121,5 +123,14 @@ describe('extensionsSubsystem', () => {
     startsNew = true
     await start(true)
     expect(seedBundledExtensions).not.toHaveBeenCalled()
+  })
+
+  it('brings the bundled extensions up to date before anything loads in an ordinary runtime, and leaves a private registry as it was given', async () => {
+    await start(false)
+    expect(refreshBundledExtensions).toHaveBeenCalledWith('/profile', '/default-profile')
+
+    refreshBundledExtensions.mockClear()
+    await start(true)
+    expect(refreshBundledExtensions).not.toHaveBeenCalled()
   })
 })

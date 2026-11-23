@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 import { loadableManifest, readExtensionManifest } from '../../src/broker/policy/extension-manifest.js'
 import { parseRegistry, serializeRegistry, type InstalledExtension } from '../../src/main/extensions/registry.js'
 import { resolveSlotKey } from '../../src/main/extensions/install-runner.js'
+import { readBundledRecord } from '../../src/main/extensions/bundled-folder.js'
+import { canonicalizeManifestKey } from '../../src/main/extensions/registry-runner.js'
 import { verifyCrx3 } from '../../src/main/extensions/crx.js'
 import { unpackZip } from '../../src/main/extensions/unpack-runner.js'
 import { generateId } from '../../vendor/electron-chrome-web-store/src/browser/id.js'
@@ -77,6 +79,38 @@ export async function startFixtureServer (): Promise<{ server: Server, origin: s
 
 /** The extension Orivon ships in a new profile, as a package file: uBlock Origin, the real one. */
 export const BUNDLED_UBLOCK_ORIGIN = fileURLToPath(new URL('../../resources/default-profile/extensions/ublock-origin.crx', import.meta.url))
+
+/** Where the build unpacks uBlock Origin, which a new profile loads from where it is (src/main/extensions/bundled-folder.ts). */
+export const BUNDLED_UBLOCK_ORIGIN_FOLDER = fileURLToPath(new URL('../../resources/default-profile/extensions/ublock-origin', import.meta.url))
+
+/**
+ * Registers the unpacked uBlock Origin in the registry of `userDataDir` as a new profile's first start leaves it: loaded from the
+ * folder the build made, with no copy of it in the profile. Added to what the registry already lists. Returns the entry.
+ */
+export function seedBundledUblockOrigin (userDataDir: string): InstalledExtension {
+  const record = readBundledRecord(join(BUNDLED_UBLOCK_ORIGIN_FOLDER, '..'), 'ublock-origin')
+  if (record === undefined) throw new Error('uBlock Origin is not unpacked: run node scripts/fetch-bundled-extensions.mjs')
+  const parsed = readExtensionManifest(record.manifest)
+  if (!parsed.ok) throw new Error(`uBlock Origin's manifest was refused: ${parsed.reason}`)
+  const now = Date.now()
+  const entry: InstalledExtension = {
+    id: generateId(canonicalizeManifestKey(record.manifest['key'] as string) as string),
+    name: parsed.facts.name,
+    version: parsed.facts.version,
+    enabled: true,
+    installedAt: now,
+    updatedAt: now,
+    source: { kind: 'bundled', folder: 'ublock-origin' },
+    updater: { kind: 'none', reason: 'comes with Orivon' },
+    path: BUNDLED_UBLOCK_ORIGIN_FOLDER,
+    stripped: loadableManifest(record.manifest).stripped
+  }
+  mkdirSync(join(userDataDir, 'extensions'), { recursive: true })
+  const registryPath = join(userDataDir, 'extensions', 'registry.json')
+  const earlier = existsSync(registryPath) ? parseRegistry(readFileSync(registryPath, 'utf8')).entries : []
+  writeFileSync(registryPath, serializeRegistry([...earlier, entry]))
+  return entry
+}
 
 /**
  * Installs the package at `crxPath` into the registry of `userDataDir`, the way the installer leaves it (its own key in the

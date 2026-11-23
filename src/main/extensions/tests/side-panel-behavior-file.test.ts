@@ -28,11 +28,11 @@ describe('the saved toolbar behaviour', () => {
 })
 
 describe('the behaviour of a loaded extension', () => {
-  it('is saved in the slot of the folder it is loaded from, with no registry entry for it yet', async () => {
+  it('is saved in the slot it is loaded from, with no registry entry for it yet', async () => {
     await withTempDir(async (dir) => {
-      const loaded = join(dir, 'slot', 'version')
-      mkdirSync(loaded, { recursive: true })
-      const store = createBehaviorStore((id) => id === 'fresh' ? loaded : undefined)
+      const slot = join(dir, 'slot')
+      mkdirSync(slot, { recursive: true })
+      const store = createBehaviorStore((id) => id === 'fresh' ? slot : undefined)
       store.write('fresh', true)
       expect(readOpenOnActionClick(join(dir, 'slot'))).toBe(true)
       expect(store.read('fresh')).toBe(true)

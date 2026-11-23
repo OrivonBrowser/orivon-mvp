@@ -13,7 +13,7 @@ import { readRegistry } from '../../src/main/extensions/registry-runner.js'
 import { serializeRegistry } from '../../src/main/extensions/registry.js'
 
 const TEST_TIMEOUT_MS = 240_000
-const UBLOCK_ORIGIN_CRX = join(import.meta.dirname, '../../resources/default-profile/extensions/ublock-origin.crx')
+const UBLOCK_ORIGIN_FOLDER = join(import.meta.dirname, '../../resources/default-profile/extensions/ublock-origin')
 const UBLOCK_ORIGIN_ID = 'fkgkibajhfbepljeaefdnfnegdcjomkh'
 const BAR = ['Uniswap', 'James Carnley', 'ENS Interviews', 'Web3 Compass', 'Vitalik Buterin']
 const FEATURED = [
@@ -50,7 +50,7 @@ const toolbarIds = async (chrome: Page): Promise<string[]> => await evaluateRetr
 const dashboardOf = (app: ElectronApplication): Page | undefined => app.windows().find((w) => w.url().includes('/newtab/'))
 
 it('starts a new profile with the bookmarks, uBlock Origin pinned, the Extensions button and Orivon Featured', async () => {
-  expect(existsSync(UBLOCK_ORIGIN_CRX), 'run node scripts/fetch-bundled-extensions.mjs').toBe(true)
+  expect(existsSync(join(UBLOCK_ORIGIN_FOLDER, 'manifest.json')), 'run node scripts/fetch-bundled-extensions.mjs').toBe(true)
   const { app, chrome } = await launched()
   const dir = profileDirOf(app) as string
   try {
@@ -60,6 +60,11 @@ it('starts a new profile with the bookmarks, uBlock Origin pinned, the Extension
     for (const item of items) expect(item.image, item.title).toBe('data:image/png;base64,')
 
     expect(await waitFor(() => readRegistry(dir).some((entry) => entry.id === UBLOCK_ORIGIN_ID && entry.enabled))).toBe(true)
+    // It is loaded from the folder the build unpacked it into, where it is: the profile holds its registry entry and nothing of its files.
+    const entry = readRegistry(dir).find((candidate) => candidate.id === UBLOCK_ORIGIN_ID)
+    expect(entry?.source).toEqual({ kind: 'bundled', folder: 'ublock-origin' })
+    expect(entry?.path).toBe(UBLOCK_ORIGIN_FOLDER)
+    expect(existsSync(join(dir, 'extensions', UBLOCK_ORIGIN_ID))).toBe(false)
     const prefsFile = join(dir, 'extensions', 'prefs.json')
     const pinnedOnDisk = async (): Promise<unknown> => { try { return (JSON.parse(await readFile(prefsFile, 'utf8')) as { extensions: Record<string, { pinned: boolean }> }).extensions[UBLOCK_ORIGIN_ID]?.pinned } catch { return undefined } }
     expect(await waitFor(async () => await pinnedOnDisk() === true)).toBe(true)
