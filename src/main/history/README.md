@@ -32,6 +32,12 @@ a change of the engine beneath it. The recorder (`attach-history.ts`, `install-h
 it experimental; the rest of the shell speaks to `HistoryStore`, so replacing the file format is a change to
 one class. Tests load it under Vitest on the host's Node, which is why `engines` starts at 22.13.
 
+**A new file is built in one commit.** `migrate` runs every step a file needs inside one transaction, `user_version`
+included: a file at version 0 reaches `SCHEMA_VERSION` with one commit, where building it statement by statement made
+about eight, each syncing the write-ahead log (opening the history on a first start took about 190 ms on a hosted
+Windows runner that way, and about 105 ms in one transaction). A step that fails leaves the file at the version it
+had. `PRAGMA journal_mode = WAL` is set before it, since that cannot change inside a transaction.
+
 **A visit is a row, and so is a page.** Each time a page is reached adds a row to `visits`, and the page
 keeps a count and its last time. Forgetting a range of time then removes the visits in it and the pages that
 have none left, and a page visited on both sides of the range stays, with a count that is right.
