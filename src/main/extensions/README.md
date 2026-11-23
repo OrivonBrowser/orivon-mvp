@@ -80,7 +80,7 @@ and chrome.tabs' own host-access checks, and `site-reach.ts` uses for a person's
 (durable; `permission-gate.ts`'s own `'media'` carve-out reads the same ledger),
 [`../shell/attach-view.ts`](../shell/attach-view.ts)'s `attachShown` (`extension-popup-host.ts` puts a popup's view in its window the way every other view is),
 [`../settings/`](../settings/) (Developer mode is a setting there),
-[`../default-profile/default-profile.ts`](../default-profile/default-profile.ts) (`seed-bundled.ts` registers the extensions a new profile starts with, with `installBundled`: no prompt, pinned as the list says, loaded from the folder `bundled-folder.ts` unpacked at build time and never copied into the profile; `extensions-subsystem.ts` does it only when the registry file does not exist yet, and `refreshBundledExtensions` makes a `bundled` entry follow that folder on every start),
+[`../default-profile/default-profile.ts`](../default-profile/default-profile.ts) (`seed-bundled.ts` registers a new profile's bundled extensions with `installBundled`, loaded in place from the folder `bundled-folder.ts` unpacks at build; `refreshBundledExtensions` keeps each on it),
 [`../side-panel/`](../side-panel/) (the window's panel and its guest slot, which `side-panel-runner.ts` fills),
 [`../site-settings/tab-interaction.ts`](../site-settings/tab-interaction.ts)'s `DELIBERATE_INPUT` (what counts as the person's input on an extension's page), `TabInteraction` and `InputTab` (`side-panel-gesture.ts` keeps the person's last click or key in a tab with them),
 [`../window-state/placement.ts`](../window-state/placement.ts)'s `Rect`, `clamp` and `displayFor` (`extension-window-geometry.ts` places the window an extension opens or moves by the rules the shell's own windows follow),
