@@ -12,7 +12,7 @@ import type { ElectronApplication } from 'playwright'
 import { afterAll, expect, it } from 'vitest'
 import { originHash, partitionFor } from '../../src/broker/grants/origin-hash.js'
 import { assertNoElectronSurvivors, closeElectron, profileDirOf } from '../support/launch-electron.mjs'
-import { launchShell, QA_TEST_TIMEOUT_MS, visit } from '../support/qa-helpers.js'
+import { launchShell, QA_TEST_TIMEOUT_MS, visit, visitAfterRelaunch } from '../support/qa-helpers.js'
 import { waitFor } from '../support/smoke-helpers.mjs'
 import { serveApp } from '../node-runtime/pinned-app.js'
 import { copyStateOf, offlineCopyFiles, offlineCopyManifest } from './offline-copy-app.js'
@@ -75,7 +75,7 @@ it('[app:app-storage-survives-an-update] an installed app finds its stored data 
 
     const second = await launchShell({ reuseProfile: profile })
     live = second.app
-    const again = await visit(second.app, second.chrome, `${ORIGIN}/`)
+    const again = await visitAfterRelaunch(second.app, second.chrome, `${ORIGIN}/`)
     const read = await again.evaluate(async () => {
       const db = await new Promise<IDBDatabase>((resolve, reject) => {
         const open = indexedDB.open('kept', 1)
