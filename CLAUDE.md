@@ -97,7 +97,7 @@ Nothing an agent does may appear on the owner's screen or play on their speakers
 
 ## Conventions
 
-- Docs are Markdown, `kebab-case.md`, ASCII prose: write "section", never the section sign. Code is TypeScript only.
+- Docs are Markdown, `kebab-case.md`, ASCII prose: write "section", never the section sign. Code stays TypeScript; where another language would be exceptionally beneficial, propose it to the owner first.
 - Ported third-party apps live in `../orivon-ports`, and nothing here may depend on that checkout; the apps this repository's own tests serve live under `test/apps/`.
 
 ## Tooling: what fires when
