@@ -62,7 +62,8 @@ Orivon runs: an app qualifies by running in the Node environment, WebAssembly in
 
 Two more that are less philosophical and more immediate:
 
-**This repository's code is TypeScript only.** No Rust, no C++
+**This repository's code stays TypeScript.** Another language only where it is exceptionally
+beneficial, proposed in an issue before any code is written
 ([`ADR-0002`](docs/decisions/ADR-0002-capability-api-is-the-durable-asset.md)).
 
 **`src/contracts/` references nothing outside itself.** Not `electron`, not `node:*`, not any
