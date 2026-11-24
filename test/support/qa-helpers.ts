@@ -9,7 +9,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { expect } from 'vitest'
 import { clickAddressBarRetrying } from './e2e-helpers.js'
 import { launchElectron } from './launch-electron.mjs'
-import { findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { findChrome, findViewShowing, HERMETIC_RESOLVER, WAIT_TIMEOUT_MS, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 export const QA_TEST_TIMEOUT_MS = 90_000
 
@@ -77,6 +77,30 @@ export async function hoverWithoutPage (app: ElectronApplication, url: string, s
 export async function visit (app: ElectronApplication, chrome: Page, url: string): Promise<Page> {
   await clickAddressBarRetrying(chrome, url)
   expect((await waitForTab(chrome, { address: url })).ok).toBe(true)
+  return await tabPageAt(app, chrome, url)
+}
+
+/**
+ * `visit` for an address whose app keeps an installed service worker, in a profile started again after the one that
+ * installed it. Chromium starts that worker to answer the first navigation, and the start sometimes never finishes: the
+ * tab keeps loading and never commits, on every system (measured without any folder move in the way, on an old build
+ * and on the current one). The same address typed again commits in a fraction of a second. So when the tab has not
+ * reached `url` in `WAIT_TIMEOUT_MS` the address is typed once more, the way a person presses Enter again, and the
+ * spec's output says so. A second stall fails the spec.
+ */
+export async function visitAfterRelaunch (app: ElectronApplication, chrome: Page, url: string): Promise<Page> {
+  await clickAddressBarRetrying(chrome, url)
+  let arrived = await waitForTab(chrome, { address: url })
+  if (!arrived.ok) {
+    console.warn(`[qa] ${url} did not commit within ${String(WAIT_TIMEOUT_MS)} ms after the relaunch (the start of its service worker stalled); typing the address again`)
+    await clickAddressBarRetrying(chrome, url)
+    arrived = await waitForTab(chrome, { address: url })
+  }
+  expect(arrived.ok).toBe(true)
+  return await tabPageAt(app, chrome, url)
+}
+
+async function tabPageAt (app: ElectronApplication, chrome: Page, url: string): Promise<Page> {
   expect(await waitFor(() => findViewShowing(app, chrome, url) !== undefined)).toBe(true)
   const view = findViewShowing(app, chrome, url) as Page
   await view.waitForLoadState('load')
