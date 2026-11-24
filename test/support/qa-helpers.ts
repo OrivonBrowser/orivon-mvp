@@ -86,10 +86,11 @@ const WORKER_START_PATIENCE_MS = 1_500
 /**
  * Lets go every service worker that a DevTools client holds at its first instruction, and answers how many it asked to go on.
  * Playwright has Chromium hold each worker it can see (`Target.setAutoAttach` with `waitForDebuggerOnStart`) and lets it go with
- * `Runtime.runIfWaitingForDebugger`; a worker that reaches a page's own session is detached with no such call, so when the detach
- * loses the race with the worker's start the worker waits for ever and the navigation it answers never commits. Any session may
- * say "go on", so this one asks through a debugger the main process opens for the moment (or lends itself to a contents that
- * already has one) and closes it again: no page is left with a client it did not have.
+ * `Runtime.runIfWaitingForDebugger`. When that release is lost the worker waits for ever and the navigation it answers never
+ * commits; that playwright-core 1.62 detaches a worker target it meets on a page's session with no such call, and loses the race
+ * with the worker's start, is the likely cause and is provisional. Any session may say "go on", so this one asks through a debugger
+ * the main process opens for the moment (or borrows from a contents that already has one) and closes it again: no page is left
+ * with a client it did not have.
  */
 export async function resumePausedWorkers (app: ElectronApplication): Promise<number> {
   return await app.evaluate(async ({ webContents }) => {
