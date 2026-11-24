@@ -124,12 +124,18 @@ Read the failure's `views.json` and window composite before treating it as a pro
 need the page itself drives it from the main process, through `app.evaluate` (`webContents.executeJavaScript`,
 `sendInputEvent`, `debugger`): `visitWithoutPage` and `hoverWithoutPage` in `support/qa-helpers.ts` do that.
 
-In a profile started again after the one that installed an app with a service worker, Chromium's start of that worker
-sometimes never finishes: the first navigation to the app's address keeps loading and never commits, and the same address
-typed again commits in a fraction of a second. It shows on Linux and on the Windows runner, with no folder move in the
-way. A spec that relaunches such a profile and opens the app's address goes through `visitAfterRelaunch` in
-`support/qa-helpers.ts`, which types the address once more when the tab has not reached it in `WAIT_TIMEOUT_MS` and says
-so in the spec's output.
+In a profile started again after the one that installed an app with a service worker, the first navigation to the app's
+address sometimes keeps loading and never commits (about one launch in twelve on Linux, and on the Windows runner too),
+and the same address typed again commits in a fraction of a second. The app is not the cause, the test driver is: Playwright
+has Chromium hold every service worker it learns of at its first instruction (`Target.setAutoAttach` with
+`waitForDebuggerOnStart`) and lets it go with `Runtime.runIfWaitingForDebugger`. When that release does not come, the worker
+stays `starting` and the navigation it answers waits for it; a `Runtime.runIfWaitingForDebugger` from any other session let
+every one of seven held workers go at once. Why the release is lost is *provisional*: playwright-core 1.62 detaches a worker
+target it meets on a page's session with no such call, and a worker whose start loses that race stays held. The same relaunch
+started with no DevTools client on any page (a debugger on the main process only) committed in each of a hundred tries, so a
+person's Orivon is not exposed to it. A spec that relaunches such a profile and opens the app's address goes through
+`visitAfterRelaunch` in `support/qa-helpers.ts`, which lets the held workers go (`resumePausedWorkers`) when the tab has not
+reached the address in 1.5 s and says so in the spec's output.
 
 Reading `webContents.mainFrame` from the main process while a main-frame navigation is pending can crash Electron
 44 under load (a breakpoint in `electron.exe`, traced on a Windows runner). A spec that polls frames from
