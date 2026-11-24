@@ -9,7 +9,7 @@ import type { ElectronApplication, Page } from 'playwright'
 import { expect } from 'vitest'
 import { clickAddressBarRetrying } from './e2e-helpers.js'
 import { launchElectron } from './launch-electron.mjs'
-import { findChrome, findViewShowing, HERMETIC_RESOLVER, WAIT_TIMEOUT_MS, waitFor, waitForTab } from './smoke-helpers.mjs'
+import { findChrome, findViewShowing, HERMETIC_RESOLVER, waitFor, waitForTab } from './smoke-helpers.mjs'
 
 export const QA_TEST_TIMEOUT_MS = 90_000
 
@@ -80,20 +80,55 @@ export async function visit (app: ElectronApplication, chrome: Page, url: string
   return await tabPageAt(app, chrome, url)
 }
 
+/** How long a tab may take to reach an app's address after a relaunch before the service workers a debugger holds are let go: far past the 200 ms a start takes, short of `WAIT_TIMEOUT_MS`. */
+const WORKER_START_PATIENCE_MS = 1_500
+
+/**
+ * Lets go every service worker that a DevTools client holds at its first instruction, and answers how many it asked to go on.
+ * Playwright has Chromium hold each worker it can see (`Target.setAutoAttach` with `waitForDebuggerOnStart`) and lets it go with
+ * `Runtime.runIfWaitingForDebugger`. When that release is lost the worker waits for ever and the navigation it answers never
+ * commits; that playwright-core 1.62 detaches a worker target it meets on a page's session with no such call, and loses the race
+ * with the worker's start, is the likely cause and is provisional. Any session may say "go on", so this one asks through a debugger
+ * the main process opens for the moment (or borrows from a contents that already has one) and closes it again: no page is left
+ * with a client it did not have.
+ */
+export async function resumePausedWorkers (app: ElectronApplication): Promise<number> {
+  return await app.evaluate(async ({ webContents }) => {
+    const live = webContents.getAllWebContents().filter((contents) => !contents.isDestroyed())
+    const host = live.find((contents) => !contents.debugger.isAttached()) ?? live[0]
+    if (host === undefined) return 0
+    const own = !host.debugger.isAttached()
+    if (own) host.debugger.attach('1.3')
+    try {
+      const { targetInfos } = await host.debugger.sendCommand('Target.getTargets') as { targetInfos: Array<{ targetId: string, type: string }> }
+      let resumed = 0
+      for (const target of targetInfos.filter((candidate) => candidate.type === 'service_worker')) {
+        const { sessionId } = await host.debugger.sendCommand('Target.attachToTarget', { targetId: target.targetId, flatten: true }) as { sessionId: string }
+        await host.debugger.sendCommand('Runtime.runIfWaitingForDebugger', {}, sessionId)
+        await host.debugger.sendCommand('Target.detachFromTarget', { sessionId })
+        resumed += 1
+      }
+      return resumed
+    } finally {
+      if (own) host.debugger.detach()
+    }
+  })
+}
+
 /**
  * `visit` for an address whose app keeps an installed service worker, in a profile started again after the one that
- * installed it. Chromium starts that worker to answer the first navigation, and the start sometimes never finishes: the
- * tab keeps loading and never commits, on every system (measured without any folder move in the way, on an old build
- * and on the current one). The same address typed again commits in a fraction of a second. So when the tab has not
- * reached `url` in `WAIT_TIMEOUT_MS` the address is typed once more, the way a person presses Enter again, and the
- * spec's output says so. A second stall fails the spec.
+ * installed it. Chromium starts that worker in a process of its own to answer the first navigation, and under Playwright
+ * the start is sometimes held for ever by the debugger (`resumePausedWorkers` says how): the tab keeps loading and never
+ * commits, and typing the address again moves it on. A person's Orivon has no such client, and nothing in it holds a worker.
+ * So when the tab has not reached `url` in `WORKER_START_PATIENCE_MS` the workers are let go and the spec's output says so; a
+ * tab that still does not arrive fails the spec.
  */
 export async function visitAfterRelaunch (app: ElectronApplication, chrome: Page, url: string): Promise<Page> {
   await clickAddressBarRetrying(chrome, url)
-  let arrived = await waitForTab(chrome, { address: url })
+  let arrived = await waitForTab(chrome, { address: url }, WORKER_START_PATIENCE_MS)
   if (!arrived.ok) {
-    console.warn(`[qa] ${url} did not commit within ${String(WAIT_TIMEOUT_MS)} ms after the relaunch (the start of its service worker stalled); typing the address again`)
-    await clickAddressBarRetrying(chrome, url)
+    const resumed = await resumePausedWorkers(app)
+    console.warn(`[qa] ${url} had not committed ${String(WORKER_START_PATIENCE_MS)} ms after the relaunch: asked ${String(resumed)} service worker(s) to go on that the test driver may hold at their start`)
     arrived = await waitForTab(chrome, { address: url })
   }
   expect(arrived.ok).toBe(true)
