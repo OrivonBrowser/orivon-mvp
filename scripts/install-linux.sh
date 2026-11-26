@@ -12,8 +12,10 @@
 # costs about two seconds on every start, mounted or not). A launcher, a desktop entry that lists Orivon as a
 # browser (http and https) and as the handler of `orivon:` links, and its icon go in your home folder, so it shows in
 # the application menu and in the default-browser choice of your desktop, and a link of that scheme from another
-# program reaches it. Run it again to update; an install that kept the AppImage itself (an earlier version of this
-# script) is converted by that run.
+# program reaches it. The entry names the launcher as a bare word, as the .deb's does, unless its path holds a character
+# the Desktop Entry specification reserves; the generic xdg-open, which a machine with no desktop environment runs,
+# cannot start a quoted program, and every desktop's own opener starts either. Run it again to update (that rewrites the
+# entry); an install that kept the AppImage itself (an earlier version of this script) is converted by that run.
 #
 # Options: an app id (2 to 24 lower-case letters and digits) is handed to the first launch as
 # --orivon-flavour=<id>; --no-launch installs without starting Orivon. Settings come from the environment:
@@ -133,8 +135,8 @@ LAUNCHER
   chmod 755 "$1"
 }
 
-# A path that goes into the desktop entry's Exec line is quoted there; these characters would need escapes
-# this installer does not write.
+# A path that goes into the desktop entry's Exec line is quoted there when it must be; these characters would need
+# escapes this installer does not write.
 plain_path () {
   case "$1" in
     *[\"\\\`\$%]*|*"
@@ -142,14 +144,29 @@ plain_path () {
   esac
 }
 
+# True when a program may stand in an Exec line with no quotes: its path holds none of the characters the Desktop Entry
+# specification reserves (white space and other control characters, " ' \ > < ~ | & ; $ * ? # ( ) and the backtick) and
+# no %, which Exec reads as a field code.
+bare_path () {
+  case "$1" in
+    ""|*[[:space:][:cntrl:]\"\'\`\$\\%\<\>~\|\&\;\*\?\#\(\)]*) return 1 ;;
+  esac
+}
+
+# The program as an Exec line writes it: bare when its path allows it, in double quotes otherwise.
+exec_program () {
+  if bare_path "$1"; then printf '%s' "$1"; else printf '"%s"' "$1"; fi
+}
+
 write_desktop_entry () {
-  local file=$1 exec_path=$2
+  local file=$1 program
+  program=$(exec_program "$2")
   cat >"$file" <<EOF
 [Desktop Entry]
 Name=Orivon Browser
 GenericName=Web Browser
 Comment=A browser that runs applications Chrome cannot
-Exec="$exec_path" %U
+Exec=$program %U
 Terminal=false
 Type=Application
 Icon=orivon
@@ -160,11 +177,11 @@ Actions=new-window;new-private-window;
 
 [Desktop Action new-window]
 Name=New Window
-Exec="$exec_path" --new-window
+Exec=$program --new-window
 
 [Desktop Action new-private-window]
 Name=New Private Window
-Exec="$exec_path" --new-private-window
+Exec=$program --new-private-window
 EOF
 }
 
