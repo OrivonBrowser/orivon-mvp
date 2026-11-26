@@ -186,11 +186,44 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     expect(libEntries()).toEqual(['app', 'orivon'])
     expect(readFileSync(join(home, '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'orivon.png'), 'utf8')).toBe('icon\n')
     const entry = readFileSync(join(home, '.local', 'share', 'applications', 'orivon.desktop'), 'utf8')
-    expect(entry).toContain(`Exec="${join(lib(), 'orivon')}" %U`)
+    expect(entry).toContain(`Exec=${join(lib(), 'orivon')} %U\n`)
     expect(entry).toMatch(/^MimeType=.*x-scheme-handler\/http;x-scheme-handler\/https;x-scheme-handler\/orivon;$/m)
     expect(entry).toContain('Icon=orivon')
     expect(entry).toContain('StartupWMClass=orivon')
     expect(existsSync(started)).toBe(false)
+  })
+
+  describe('the program of the desktop entry\'s Exec lines', () => {
+    const entryPath = (): string => join(home, '.local', 'share', 'applications', 'orivon.desktop')
+    const execLines = (): string[] => readFileSync(entryPath(), 'utf8').split('\n').filter((line) => line.startsWith('Exec='))
+    /** The three Exec lines the installer writes, the launcher shown as `shown` gives it. */
+    const programs = (shown: (launcher: string) => string): string[] => {
+      const program = shown(join(lib(), 'orivon'))
+      return [`Exec=${program} %U`, `Exec=${program} --new-window`, `Exec=${program} --new-private-window`]
+    }
+
+    it('is written with no quotes when its path needs none, in all three Exec lines: the generic xdg-open takes the first word, quotes and all', () => {
+      publish([withImage('v0.0.8')])
+      expect(run(['--no-launch']).status).toBe(0)
+      expect(execLines()).toEqual(programs((launcher) => launcher))
+    })
+
+    it.each([['a space', 'my home'], ['an apostrophe', "it's"], ['an ampersand', 'a&b'], ['a semicolon', 'a;b'], ['a hash sign', 'a#b']])('is written in quotes in all three Exec lines when the home path has %s', (_label, dir) => {
+      home = join(root, dir)
+      mkdirSync(home)
+      publish([withImage('v0.0.8')])
+      expect(run(['--no-launch']).status).toBe(0)
+      expect(execLines()).toEqual(programs((launcher) => `"${launcher}"`))
+    })
+
+    it('replaces the quoted program an earlier install wrote when the install command runs again', () => {
+      publish([withImage('v0.0.8')])
+      expect(run(['--no-launch']).status).toBe(0)
+      writeFileSync(entryPath(), readFileSync(entryPath(), 'utf8').replace(/^Exec="?([^" ]+)"? /gm, 'Exec="$1" '))
+      expect(execLines()).toEqual(programs((launcher) => `"${launcher}"`))
+      expect(run(['--no-launch']).status).toBe(0)
+      expect(execLines()).toEqual(programs((launcher) => launcher))
+    })
   })
 
   it('updates in place when run again, and leaves no temporary file or old tree behind', () => {
@@ -514,11 +547,39 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
       expect(checks.filter((check) => !check.ok), JSON.stringify(checks)).toEqual([])
     })
 
+    it('reaches the installed app when the home path has a space, which the Exec line quotes', async () => {
+      home = join(root, 'my home')
+      mkdirSync(home)
+      expect(run(['--no-launch']).status).toBe(0)
+      const opened = spawnSync('gio', ['open', LINK], { env: desktop(), encoding: 'utf8', timeout: 30_000 })
+      expect(opened.status, opened.stderr).toBe(0)
+      await waitForFile(started)
+      expect(readFileSync(started, 'utf8').trim()).toBe(LINK)
+    })
+
     it('reaches the installed app as its first argument', async () => {
       const opened = spawnSync('gio', ['open', LINK], { env: desktop(), encoding: 'utf8', timeout: 30_000 })
       expect(opened.status, opened.stderr).toBe(0)
       await waitForFile(started)
       expect(readFileSync(started, 'utf8').trim()).toBe(LINK)
+    })
+  })
+
+  // The opener a machine with no desktop environment runs (a bare window manager, a container, a CI runner). It takes the
+  // first word of Exec as the program, so a quoted one fails there. It reads the scheme's handler only when a display is
+  // named, so DISPLAY names one no server answers; no desktop variable and no session bus are given, so it picks its generic opener.
+  describe.skipIf(!hasTool('xdg-open') || !hasTool('update-desktop-database') || !hasTool('xdg-mime'))('a link handed to the generic xdg-open', () => {
+    const bare = (): Record<string, string> => {
+      const share = join(home, '.local', 'share')
+      return { PATH: process.env['PATH'] ?? '', HOME: home, XDG_DATA_HOME: share, XDG_DATA_DIRS: share, XDG_CONFIG_HOME: join(home, '.config'), XDG_CONFIG_DIRS: join(home, '.config'), DISPLAY: ':1999', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/nonexistent/orivon-test-bus', ORIVON_TEST_STARTED: started }
+    }
+
+    it.each([['an orivon: link', LINK], ['an https link', 'https://example.test/page']])('hands %s to the installed launcher as its argument', (_label, link) => {
+      publish([withImage('v0.0.8')])
+      expect(run(['--no-launch']).status).toBe(0)
+      const opened = spawnSync('xdg-open', [link], { env: bare(), encoding: 'utf8', timeout: 30_000 })
+      expect(opened.status, `${opened.stdout}${opened.stderr}`).toBe(0)
+      expect(readFileSync(started, 'utf8').trim()).toBe(link)
     })
   })
 })

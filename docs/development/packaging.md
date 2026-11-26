@@ -796,6 +796,14 @@ swap that was interrupted between its two renames is undone by the next run. An 
 mounted it, is converted by running the command again: its launcher is replaced, its desktop entry and `~/.local/bin`
 link keep working, and the AppImage is removed.
 
+The entry's three `Exec` lines name the launcher as a bare word, as the `.deb`'s do, unless its path holds a character the
+Desktop Entry specification reserves (a space, a quote, `&` and the rest of its list, or `%`), and then in double quotes.
+The bare word is what makes the entry work on a machine with no desktop environment (a bare window manager such as i3 or
+sway, a container, a CI runner): there the generic `xdg-open` takes the first word of `Exec` as the program, quotes
+included, so a quoted program fails with `Permission denied` and no link of any scheme, `http` or `orivon:`, reaches
+Orivon. A desktop's own opener (GNOME's, KDE's, XFCE's) starts either form. Running the install command again rewrites the
+entry, so an entry an earlier version of the script wrote is replaced by the current form.
+
 The desktop entry only lets a desktop list Orivon as a browser. Making it the default is a person's click (the runtime half
 in section Making "set as default browser" possible), which registers that entry as it does for a package.
 
@@ -923,7 +931,9 @@ and macOS' default-app lists (`docs/open-questions.md` A328).
   release workflow reads each registration back from the package it built and hands the installed program a link
   through the system (`scripts/smoke-orivon-link.mjs`): the registry on Windows, LaunchServices on macOS, and on Linux
   the desktop entry the system names for the scheme, which must start the installed program, with `gio open`, the
-  opener a desktop session's `xdg-open` runs, to hand the link over. What an `orivon:` link may name is in
+  opener a desktop session's `xdg-open` runs, and then with the generic `xdg-open` (forced with
+  `XDG_CURRENT_DESKTOP=X-Generic`), the opener of a machine with no desktop environment, to hand the link over. What an
+  `orivon:` link may name is in
   [ADR-0094](../decisions/ADR-0094-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md).
 - **macOS.** `protocols` becomes `CFBundleURLTypes`. No HTML document types are declared, so a file dropped on the
   dock icon is refused and logged. Make default calls `setAsDefaultProtocolClient`, which the system confirms.
