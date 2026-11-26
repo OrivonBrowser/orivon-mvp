@@ -1,6 +1,6 @@
 # ADR-0094: An `orivon:` link from another program opens a `.eth` name or an IPFS address, and nothing else
 
-- **Status:** accepted. A built package took the link on Windows and macOS in the release run of v0.1.0 (2026-11-05), and the Linux packages are read back by the same workflow
+- **Status:** accepted. Built packages took the link on Windows and macOS in the release run of v0.1.0 (2026-11-05), and on Linux, the .deb and the one-line install, in the run that added their check (2026-11-26)
 - **Date:** 2026-10-20
 - **Type:** security
 - **Decided by:** owner
