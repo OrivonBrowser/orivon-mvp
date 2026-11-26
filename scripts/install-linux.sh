@@ -10,9 +10,10 @@
 # SHA-256 against the digest GitHub reports for the file, and unpacks it once into ~/.local/lib/orivon/app, so a
 # start runs the program from disk like the .deb's, with no FUSE and no unpacking at each start (an AppImage
 # costs about two seconds on every start, mounted or not). A launcher, a desktop entry that lists Orivon as a
-# browser (http and https) and its icon go in your home folder, so it shows in the application menu and in the
-# default-browser choice of your desktop. Run it again to update; an install that kept the AppImage itself
-# (an earlier version of this script) is converted by that run.
+# browser (http and https) and as the handler of `orivon:` links, and its icon go in your home folder, so it shows in
+# the application menu and in the default-browser choice of your desktop, and a link of that scheme from another
+# program reaches it. Run it again to update; an install that kept the AppImage itself (an earlier version of this
+# script) is converted by that run.
 #
 # Options: an app id (2 to 24 lower-case letters and digits) is handed to the first launch as
 # --orivon-flavour=<id>; --no-launch installs without starting Orivon. Settings come from the environment:
@@ -154,7 +155,7 @@ Type=Application
 Icon=orivon
 StartupWMClass=orivon
 Categories=Network;WebBrowser;
-MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;
+MimeType=text/html;application/xhtml+xml;image/svg+xml;application/pdf;x-scheme-handler/http;x-scheme-handler/https;x-scheme-handler/orivon;
 Actions=new-window;new-private-window;
 
 [Desktop Action new-window]
