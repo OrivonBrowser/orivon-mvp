@@ -4,11 +4,13 @@ import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync,
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { LINK, linuxChecks } from '../smoke-orivon-link.mjs'
 
 // Runs scripts/install-linux.sh in a scratch HOME against a stand-in `curl` that serves a made-up release list
 // and a made-up AppImage, so nothing is downloaded and nothing starts. Linux and macOS have bash; Windows does not.
 const SCRIPT = join(process.cwd(), 'scripts', 'install-linux.sh')
 const onUnix = process.platform !== 'win32'
+const hasTool = (tool: string): boolean => spawnSync('sh', ['-c', `command -v ${tool}`]).status === 0
 
 /** What a stand-in AppImage does when asked to unpack itself: a whole tree, a failure, or a tree with no AppRun. */
 type Unpacking = 'tree' | 'fails' | 'no-apprun'
@@ -176,7 +178,7 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     expect(status).toBe(0)
   })
 
-  it('unpacks the app once beside a launcher, keeps no AppImage, and writes the icon and a desktop entry that lists http and https', () => {
+  it('unpacks the app once beside a launcher, keeps no AppImage, and writes the icon and a desktop entry that lists http, https and orivon', () => {
     publish([withImage('v0.0.8')])
     expect(run(['--no-launch']).status).toBe(0)
     expect((lstatSync(join(app(), 'AppRun')).mode & 0o111) !== 0).toBe(true)
@@ -185,7 +187,7 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
     expect(readFileSync(join(home, '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'orivon.png'), 'utf8')).toBe('icon\n')
     const entry = readFileSync(join(home, '.local', 'share', 'applications', 'orivon.desktop'), 'utf8')
     expect(entry).toContain(`Exec="${join(lib(), 'orivon')}" %U`)
-    expect(entry).toMatch(/^MimeType=.*x-scheme-handler\/http;x-scheme-handler\/https;$/m)
+    expect(entry).toMatch(/^MimeType=.*x-scheme-handler\/http;x-scheme-handler\/https;x-scheme-handler\/orivon;$/m)
     expect(entry).toContain('Icon=orivon')
     expect(entry).toContain('StartupWMClass=orivon')
     expect(existsSync(started)).toBe(false)
@@ -492,6 +494,31 @@ describe.skipIf(!onUnix)('scripts/install-linux.sh', () => {
       expect(result.status).toBe(1)
       expect(String(result.stderr)).toContain('run the install command again')
       expect(existsSync(started)).toBe(false)
+    })
+  })
+
+  // The desktop is stood in for by the tools a desktop uses, confined to the scratch home: nothing of the real one is read.
+  describe.skipIf(!hasTool('gio') || !hasTool('update-desktop-database') || !hasTool('xdg-mime'))('an orivon: link handed to the desktop', () => {
+    const desktop = (): Record<string, string> => {
+      const share = join(home, '.local', 'share')
+      return { PATH: process.env['PATH'] ?? '', HOME: home, XDG_DATA_HOME: share, XDG_DATA_DIRS: share, XDG_CONFIG_HOME: join(home, '.config'), XDG_CONFIG_DIRS: join(home, '.config'), ORIVON_TEST_STARTED: started }
+    }
+
+    beforeEach(() => {
+      publish([withImage('v0.0.8')])
+      expect(run(['--no-launch']).status).toBe(0)
+    })
+
+    it('is handed to the installed launcher, as the check the release workflow runs reads it', () => {
+      const checks = linuxChecks(join(lib(), 'orivon'), desktop())
+      expect(checks.filter((check) => !check.ok), JSON.stringify(checks)).toEqual([])
+    })
+
+    it('reaches the installed app as its first argument', async () => {
+      const opened = spawnSync('gio', ['open', LINK], { env: desktop(), encoding: 'utf8', timeout: 30_000 })
+      expect(opened.status, opened.stderr).toBe(0)
+      await waitForFile(started)
+      expect(readFileSync(started, 'utf8').trim()).toBe(LINK)
     })
   })
 })

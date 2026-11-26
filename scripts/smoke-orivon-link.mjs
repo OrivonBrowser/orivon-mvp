@@ -1,14 +1,20 @@
 /**
  * Whether an installed package is registered with the system as a browser and as the handler of `orivon:` links,
  * and whether a link handed to the system reaches the running app. The release workflow runs it after it
- * installs the NSIS package on Windows and the dmg's app on macOS.
+ * installs the NSIS package on Windows, the dmg's app on macOS, and the .deb and the one-line install on Linux (a
+ * bare AppImage registers nothing, by design).
  *
  * Usage: node scripts/smoke-orivon-link.mjs <executable> [<app bundle>]
+ *
+ * On Linux the system's answer is read from the desktop entry the system hands `x-scheme-handler/orivon` to, which
+ * must start `<executable>`; the environment (`HOME`, `XDG_DATA_HOME`, `XDG_DATA_DIRS`) says whose entries those are.
  *
  * It prints one line per check and exits 1 when any failed. The app it starts uses the default profile, because a
  * link the system starts carries no profile switch; the runner is throwaway.
  */
 import { spawn, spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { join } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 import { devToolsPort, evaluate, shellTarget, stop, waitForShell } from './smoke-packaged.mjs'
 
@@ -76,9 +82,69 @@ function macRegistration (bundle) {
   }
 }
 
-/** Hands `link` to the system, the way another program does. */
+/** The value of `key` in the `[Desktop Entry]` group of a desktop file's text; undefined when it has none. */
+export function entryValue (text, key) {
+  let inEntry = false
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith('[')) inEntry = line.trim() === '[Desktop Entry]'
+    else if (inEntry && line.startsWith(`${key}=`)) return line.slice(key.length + 1).trim()
+  }
+  return undefined
+}
+
+/** The program an `Exec` value starts: its first word, which a quoted one writes between double quotes with a backslash before a quote or a backslash inside. */
+export function execProgram (exec) {
+  const quoted = /^"((?:[^"\\]|\\.)*)"/.exec(exec)
+  return quoted === null ? (exec.split(/\s+/)[0] ?? '') : quoted[1].replace(/\\(.)/g, '$1')
+}
+
+const sameFile = (a, b) => {
+  try {
+    return realpathSync(a) === realpathSync(b)
+  } catch {
+    return a === b
+  }
+}
+
+/** The folders a desktop reads entries from, the person's first, as `env` names them. */
+const dataDirs = (env) => [env.XDG_DATA_HOME || join(env.HOME ?? '', '.local', 'share'), ...(env.XDG_DATA_DIRS || '/usr/local/share:/usr/share').split(':')].filter((dir) => dir !== '')
+
+/**
+ * The Linux registration, as `checks` of `{ name, ok, detail }`: the desktop entry the system hands `x-scheme-handler/orivon`
+ * to (`xdg-mime query default`, which a desktop's own opener asks too), that it starts `executable`, and that it lists the
+ * two browser schemes beside `orivon`. `env` decides whose folders are read, so a test can read a scratch home alone.
+ */
+export function linuxChecks (executable, env = process.env) {
+  const asked = spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/orivon'], { encoding: 'utf8', env, timeout: 30_000 })
+  const id = asked.status === 0 ? String(asked.stdout).trim() : ''
+  const file = id === '' ? undefined : dataDirs(env).map((dir) => join(dir, 'applications', id)).find((path) => existsSync(path))
+  const text = file === undefined ? '' : readFileSync(file, 'utf8')
+  const program = execProgram(entryValue(text, 'Exec') ?? '')
+  const listed = (entryValue(text, 'MimeType') ?? '').split(';')
+  const schemes = ['http', 'https', 'orivon']
+  return [
+    { name: 'the system hands orivon: links to a desktop entry', ok: file !== undefined, detail: file ?? `xdg-mime answered ${JSON.stringify(id)}` },
+    { name: 'that entry starts the installed program', ok: file !== undefined && program !== '' && sameFile(program, executable), detail: `${id} starts ${program}, expected ${executable}` },
+    { name: 'that entry lists http, https and orivon', ok: schemes.every((scheme) => listed.includes(`x-scheme-handler/${scheme}`)), detail: listed.filter((type) => type.startsWith('x-scheme-handler/')).join(',') }
+  ]
+}
+
+function linuxRegistration (executable) {
+  for (const check of linuxChecks(executable)) record(check.name, check.ok, check.detail)
+}
+
+/**
+ * Hands `link` to the system, the way another program does. On Linux that is the desktop's own opener: `gio open`, which is
+ * what a GNOME session's `xdg-open` runs. The generic `xdg-open` a runner with no desktop environment gets cannot start an
+ * entry whose `Exec` program is in quotes, so it is only the fallback when `gio` is not installed.
+ */
 function openLink (link) {
   if (process.platform === 'win32') return run('powershell', ['-NoProfile', '-Command', 'Start-Process -FilePath $env:ORIVON_LINK'], { ORIVON_LINK: link })
+  if (process.platform === 'linux') {
+    // What the system starts must not inherit this script's own Node mode.
+    const env = { ELECTRON_RUN_AS_NODE: undefined }
+    return spawnSync('gio', ['version']).error === undefined ? run('gio', ['open', link], env) : run('xdg-open', [link], env)
+  }
   return run('open', [link])
 }
 
@@ -146,6 +212,7 @@ if (isInvokedDirectly(import.meta.url)) {
   }
   if (process.platform === 'win32') windowsRegistration()
   else if (process.platform === 'darwin') macRegistration(bundle)
+  else if (process.platform === 'linux') linuxRegistration(executable)
   else record('this system has no registration to read', false)
   await reachesRunningApp(executable)
   await startsFromLink()

@@ -765,8 +765,9 @@ GitHub reports for the asset, and refuses a mismatch or a missing digest before 
 unpacks the AppImage with its own `--appimage-extract` (no FUSE is involved) and writes, under the home folder only:
 the unpacked app as `~/.local/lib/orivon/app/`; a launcher beside it, `orivon`;
 `~/.local/share/applications/orivon.desktop` (the packaged entry's name, categories and the
-`x-scheme-handler/http` and `https` types, plus New Window and New Private Window, its `Exec` the launcher, so
-a desktop's default-browser choice lists Orivon and the entry works wherever the folder is); the icon in
+`x-scheme-handler/http`, `https` and `orivon` types, plus New Window and New Private Window, its `Exec` the launcher, so
+a desktop's default-browser choice lists Orivon, an `orivon:` link from another program reaches it, and the entry
+works wherever the folder is); the icon in
 `~/.local/share/icons/hicolor/512x512/apps/`, from the unpacked app (the repository's copy at the release's
 tag when it has none); and `~/.local/bin/orivon`, a link to the launcher, only when that folder is already on
 `PATH` and holds no other file of that name. The AppImage itself is not kept: nothing reads it, and the download and the
@@ -916,9 +917,13 @@ and macOS' default-app lists (`docs/open-questions.md` A328).
 - **`orivon:` links.** The Windows installer also writes the class `Software\Classes\orivon` (`URL Protocol`, the same
   `-- "%1"` command), which is not a default-app choice and is removed on uninstall. On macOS and in the Store manifest
   the `protocols` entry carries it (`CFBundleURLTypes`; a `windows.protocol` extension), and on Linux the .deb's desktop
-  entry lists `x-scheme-handler/orivon`. A run from source registers none of them, and the Linux "Orivon (source)"
-  entry does not list the scheme, so a checkout never takes the links from an installed Orivon; the AppImage does
-  not integrate with the desktop and takes none either. What an `orivon:` link may name is in
+  entry and the one-line install's (`scripts/install-linux.sh`) list `x-scheme-handler/orivon`. A run from source
+  registers none of them, and the Linux "Orivon (source)" entry does not list the scheme, so a checkout never takes
+  the links from an installed Orivon; a bare AppImage does not integrate with the desktop and takes none either. The
+  release workflow reads each registration back from the package it built and hands the installed program a link
+  through the system (`scripts/smoke-orivon-link.mjs`): the registry on Windows, LaunchServices on macOS, and on Linux
+  the desktop entry the system names for the scheme, which must start the installed program, with `gio open`, the
+  opener a desktop session's `xdg-open` runs, to hand the link over. What an `orivon:` link may name is in
   [ADR-0094](../decisions/ADR-0094-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md).
 - **macOS.** `protocols` becomes `CFBundleURLTypes`. No HTML document types are declared, so a file dropped on the
   dock icon is refused and logged. Make default calls `setAsDefaultProtocolClient`, which the system confirms.

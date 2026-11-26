@@ -1,6 +1,6 @@
 # ADR-0094: An `orivon:` link from another program opens a `.eth` name or an IPFS address, and nothing else
 
-- **Status:** accepted, provisional until a built package has been seen taking the link on Windows and macOS
+- **Status:** accepted. Built packages took the link on Windows and macOS in the release run of v0.1.0 (2026-11-05), and on Linux, the .deb and the one-line install, in the run that added their check (2026-11-26)
 - **Date:** 2026-10-20
 - **Type:** security
 - **Decided by:** owner
@@ -8,8 +8,9 @@
 ## Decision
 
 Orivon registers the link scheme `orivon` with the system: `electron-builder.yml` `protocols` (the macOS
-`CFBundleURLTypes`, the Linux desktop entry's `x-scheme-handler/orivon`, and the Microsoft Store manifest's protocol
-extension), and `build/installer.nsh` for the Windows installer (`Software\Classes\orivon`, whose command is
+`CFBundleURLTypes`, the .deb's desktop entry `x-scheme-handler/orivon`, and the Microsoft Store manifest's protocol
+extension), `scripts/install-linux.sh` for the entry the one-line Linux install writes in the person's home, and
+`build/installer.nsh` for the Windows installer (`Software\Classes\orivon`, whose command is
 `"<install>\Orivon.exe" -- "%1"`, removed on uninstall). The only form it reads is
 `orivon:open?u=<target>[&flavour=<id>]`, also written `orivon://open?u=...` because some programs rewrite it.
 
@@ -83,7 +84,11 @@ the verification of `.eth` and IPFS content, and the loading screen are all the 
 - **A run from source registers nothing** on Windows or macOS, and the Linux "Orivon (source)" entry does not claim
   `x-scheme-handler/orivon`: a checkout must not take the links from an installed Orivon. A link works there only when
   it is given on the command line.
-- **The AppImage does not integrate** with the desktop, so it does not take the scheme either; a .deb install does.
+- **A bare AppImage does not integrate** with the desktop, so it does not take the scheme either; a .deb install does,
+  and so does the one-line Linux install, which unpacks the AppImage and writes its own entry listing the scheme (running
+  the command again repairs an install made before it did).
+- **The release workflow reads each registration back** from the package it built and hands the installed program a link
+  through the system, on Windows, macOS and Linux (the .deb and the one-line install): `scripts/smoke-orivon-link.mjs`.
 - **The scheme is Orivon's from the install on Windows**, not a choice under "Default apps": no other program
   claims it, so there is nothing to choose between.
 - **A different program registered for `orivon` by a later install wins on Linux and macOS**, as for any scheme.
@@ -93,4 +98,4 @@ the verification of `.eth` and IPFS content, and the loading screen are all the 
 - **Cost to reverse:** cheap while no link has been published. Once links in the world use the scheme, removing it
   breaks them, and the accepted form is then a contract.
 - **What would make us revisit:** a second action wanted from outside the process; a built package that does not take
-  the link on Windows or macOS; a link form some program rewrites that this one refuses.
+  the link on Windows, macOS or Linux; a link form some program rewrites that this one refuses.
