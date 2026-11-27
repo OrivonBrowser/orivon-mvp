@@ -81,12 +81,30 @@ describe('serverReads', () => {
     expect(await caught(silent.request(logsRequest))).toMatchObject({ code: -32000, retryAfterMs: undefined })
   })
 
-  it('ends a read inside the 28 seconds a 30 second call lets a scan use, so a server that hangs does not outlast the call that asked it', async () => {
-    const sent: { signal: AbortSignal | undefined }[] = []
-    const reads = serverReads(() => async (_url, init) => { sent.push({ signal: init?.signal as AbortSignal | undefined }); return answer([]) }, URL)
-    await reads.request(logsRequest)
-    expect(SERVER_READ_TIMEOUT_MS).toBeLessThan(28_000)
-    expect(sent[0]?.signal).toBeInstanceOf(AbortSignal)
+  it('aborts a read the server never answers at 25 seconds, and says it as a provider that is disconnected', async () => {
+    vi.useFakeTimers()
+    const limits: number[] = []
+    // The abort `AbortSignal.timeout` makes runs on the runtime's own timer, which the fake clock does not move: the same abort on the fake one.
+    const timeout = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
+      limits.push(ms)
+      const controller = new AbortController()
+      setTimeout(() => { controller.abort(new Error('the read timed out')) }, ms)
+      return controller.signal
+    })
+    try {
+      const hung: WebFetch = async (_url, init) => await new Promise<Response>((_resolve, reject) => { init?.signal?.addEventListener('abort', () => { reject(new Error('the read timed out')) }) })
+      let ended = false
+      const outcome = caught(serverReads(() => hung, URL).request(logsRequest)).finally(() => { ended = true })
+      await vi.advanceTimersByTimeAsync(24_999)
+      expect(ended).toBe(false)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(await outcome).toMatchObject({ code: 4900, message: 'the read timed out' })
+      expect(limits).toEqual([25_000])
+      expect(SERVER_READ_TIMEOUT_MS).toBe(25_000)
+    } finally {
+      timeout.mockRestore()
+      vi.useRealTimers()
+    }
   })
 
   it('says an archive refusal as its status', async () => {

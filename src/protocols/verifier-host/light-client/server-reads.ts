@@ -11,8 +11,9 @@ import type { WebFetch } from '../egress.js'
 export const SERVER_READ_METHODS: ReadonlySet<string> = new Set(['eth_getLogs', 'eth_getTransactionByHash'])
 
 /**
- * How long one read may take, hedging and the second pass included: under the 28 seconds of a call's 30 that a scan may use, so a read
- * that hangs ends inside the call that asked it. A request of the archive part of a server answers in seconds or not at all.
+ * How long one read may take, hedging and the second pass included: a server that hangs holds a read open this long and no longer. The
+ * call that asked it gives its turn back at its own deadline, so a read begun late in a call may end after the call has. A request of the
+ * archive part of a server answers in seconds or not at all.
  */
 export const SERVER_READ_TIMEOUT_MS = 25_000
 
