@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ChainError } from '../chain.js'
-import type { Chain, LogFilter } from '../chain.js'
+import type { Chain, LogFilter, Transaction } from '../chain.js'
 import type { NameEntry } from '../census.js'
 import { inspectOg, resolveOg } from '../lookup.js'
 import { PROXY, TOPICS } from '../pins.js'
@@ -280,6 +280,75 @@ describe('the turns of the windows of one resolver', () => {
   })
 })
 
+describe('a read another call began', () => {
+  /** The servers' log queries: the first `hung` never answer until the test lets them go (rejected, as a node that failed late), the rest answer with no logs. */
+  function hangingServers (hung: number): { chain: Chain, asked: LogFilter[], fail: () => void } {
+    const asked: LogFilter[] = []
+    const failures: (() => void)[] = []
+    const chain = {
+      getLogs: async (filter: LogFilter) => {
+        asked.push(filter)
+        if (asked.length > hung) return []
+        return await new Promise<never>((_resolve, reject) => { failures.push(() => { reject(new ChainError('unavailable', 'gone')) }) })
+      }
+    } as unknown as Chain
+    return { chain, asked, fail: () => { for (const failure of failures) failure() } }
+  }
+  /** A scan to block `to` with the servers' stretches before it: two when `to` is 20,000. */
+  const scanOf = (to: number): Scan => ({ id: `name:${String(to)}`, address: PROXY, topics: [TOPICS.changed], from: 1, to, accept: () => true })
+
+  it('is begun again by a call with time of its own, once the call that began it has run out of time', async () => {
+    const servers = hangingServers(2)
+    const chain = { getLogs: async () => [], servers: servers.chain } as unknown as Chain
+    const session = createSession()
+    const scan = scanOf(20_000)
+    const first = await scanLogs(chain, session, scan, { deadlineAt: Date.now() + FINISH_RESERVE_MS + 100, final: 20_000 }).catch((error: unknown) => error)
+    expect(first).toBeInstanceOf(OgRefusal)
+    expect(servers.asked).toHaveLength(2)
+    expect(await scanLogs(chain, session, scan, { deadlineAt: Date.now() + FINISH_RESERVE_MS + 2_000, final: 20_000 })).toEqual([])
+    expect(servers.asked).toHaveLength(4)
+    // The read that was left behind failing late does not take the newer one's answer away.
+    servers.fail()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(await scanLogs(chain, session, scan, { deadlineAt: Date.now() + FINISH_RESERVE_MS + 2_000, final: 20_000 })).toEqual([])
+    expect(servers.asked).toHaveLength(4)
+  })
+
+  it('is joined without a second ask when it is a read of the light client, which the time of the call that began it does not cut', async () => {
+    const answers: (() => void)[] = []
+    const asked: LogFilter[] = []
+    const chain = { getLogs: async (filter: LogFilter) => { asked.push(filter); return await new Promise<[]>((resolve) => { answers.push(() => { resolve([]) }) }) } } as unknown as Chain
+    const session = createSession()
+    const scan = scanOf(2 * WINDOW)
+    expect(await scanLogs(chain, session, scan, { deadlineAt: Date.now() + FINISH_RESERVE_MS + 100, final: 2 * WINDOW }).catch((error: unknown) => error)).toBeInstanceOf(OgRefusal)
+    const second = scanLogs(chain, session, scan, { deadlineAt: Date.now() + FINISH_RESERVE_MS + 2_000, final: 2 * WINDOW })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    for (const answer of answers) answer()
+    expect(await second).toEqual([])
+    expect(asked).toHaveLength(2)
+  })
+
+  it('is begun again by a call that joined it, when the call that began it runs out of time first', async () => {
+    vi.useFakeTimers()
+    try {
+      let reads = 0
+      const servers = { getLogs: async () => { if (++reads <= 2) throw new ChainError('rateLimited', 'slow down', { retryAfterMs: 1_000 }); return [] } } as unknown as Chain
+      const chain = { getLogs: async () => [], servers } as unknown as Chain
+      const session = createSession()
+      const scan = scanOf(20_000)
+      const first = scanLogs(chain, session, scan, { deadlineAt: Date.now() + FINISH_RESERVE_MS + 1_000, final: 20_000 }).catch((error: unknown) => error)
+      await vi.advanceTimersByTimeAsync(500)
+      const second = scanLogs(chain, session, scan, { deadlineAt: Date.now() + FINISH_RESERVE_MS + 10_000, final: 20_000 }).catch((error: unknown) => error)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(await first).toBeInstanceOf(OgRefusal)
+      expect(await second).toEqual([])
+      expect(reads).toBe(4)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('the windows a resolver keeps', () => {
   const blocks = (asked: ReturnType<typeof fakeChain>['asked']): number[] => asked.logs.map((filter) => filter.toBlock)
 
@@ -326,6 +395,41 @@ describe("readTransactions: the transactions behind a name's registry logs", () 
     await readTransactions(made.chain, session, wanted, { final: 0 })
     expect(made.asked.transactions).toHaveLength(wanted.length * 2)
     expect(session.transactions.size).toBe(0)
+  })
+
+  it("asks the servers again for a transaction the call that began the read left behind, when the call that wants it has time of its own", async () => {
+    const world = slotWorld()
+    const made = fakeChain(world)
+    const wanted = wantedOf(world)
+    let hang = true
+    const asked: string[] = []
+    const servers = { ...made.chain, getTransaction: async (hash: string) => { asked.push(hash); return hang ? await new Promise<never>(() => {}) : await made.chain.getTransaction(hash) } } as Chain
+    const chain = { ...made.chain, servers } as Chain
+    const options = { final: FINAL, head: 26_500_000 }
+    const session = createSession()
+    expect(await readTransactions(chain, session, wanted, { ...options, deadlineAt: Date.now() + FINISH_RESERVE_MS + 100 }).catch((error: unknown) => error)).toBeInstanceOf(OgRefusal)
+    const hungAsks = asked.length
+    hang = false
+    const found = await readTransactions(chain, session, wanted, { ...options, deadlineAt: Date.now() + FINISH_RESERVE_MS + 2_000 })
+    expect(found.map((one) => one.hash)).toEqual(wanted.map((one) => one.hash))
+    expect(asked).toHaveLength(hungAsks + wanted.length)
+    expect(session.serverTransactions.size).toBe(wanted.length)
+  })
+
+  it('waits for a transaction the light client is reading, for the call that began the read has not cut it', async () => {
+    const world = slotWorld()
+    const made = fakeChain(world)
+    const wanted = wantedOf(world)
+    const answers: (() => void)[] = []
+    const asked: string[] = []
+    const chain = { ...made.chain, getTransaction: async (hash: string) => { asked.push(hash); return await new Promise<Transaction | null>((resolve) => { answers.push(() => { void made.chain.getTransaction(hash).then(resolve) }) }) } } as Chain
+    const session = createSession()
+    expect(await readTransactions(chain, session, wanted, { final: FINAL, deadlineAt: Date.now() + FINISH_RESERVE_MS + 100 }).catch((error: unknown) => error)).toBeInstanceOf(OgRefusal)
+    const second = readTransactions(chain, session, wanted, { final: FINAL, deadlineAt: Date.now() + FINISH_RESERVE_MS + 2_000 })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    for (const answer of answers) answer()
+    expect((await second).map((one) => one.hash)).toEqual(wanted.map((one) => one.hash))
+    expect(asked).toHaveLength(wanted.length)
   })
 
   it('refuses, saying the node has no transaction, when it answers null for one; the answer is not kept, so a later try reads it', async () => {
