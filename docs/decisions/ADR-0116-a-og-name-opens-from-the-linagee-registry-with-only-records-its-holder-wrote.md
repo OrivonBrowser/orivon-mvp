@@ -40,7 +40,7 @@ counts with is proven (`ADR-0031`), at the one newest block the light client has
   never make a name yield a value its current record does not store, because a log counts only when it carries the
   proven stored value. The worst case is the rule ENS names have, that the current record counts, and never less; that
   is why `.og` keeps the Delivery level a proven `.eth` name gets. An invented `Upgraded` log makes the guard refuse
-  `.og` names for that call only. *Provisional*: the census and the servers are trusted for their stretches, history
+  `.og` names for the calls waiting on that read. *Provisional*: the census and the servers are trusted for their stretches, history
   the light client proved earlier in a session is asked of the servers again once it ages out of the newest 8,000
   blocks, and what would settle it is a proof of old block hashes (the beacon chain's `historical_summaries`), a census
   refreshed at runtime from a signed source, the agreement of two servers, or a logs-bloom check of the newest blocks.

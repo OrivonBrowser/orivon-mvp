@@ -80,7 +80,8 @@ What a server that hides or invents history in the middle stretch can do, and wh
 - It can never make a name yield a value its current record does not store: every value is read from proven state, and
   a log counts only when it carries that value. The worst case is the rule ENS names have, that the current record
   counts, and never less; that is why a `.og` name keeps the Delivery level a proven `.eth` name gets.
-- An invented `Upgraded` log makes the guard refuse `.og` names for that call only: a window that shows one is not kept.
+- An invented `Upgraded` log makes the guard refuse `.og` names for the calls waiting on that read: a window that shows one is
+  not kept, so the next call asks the servers again.
 - History the light client proved earlier in a session is asked of the servers again once it ages out of the newest
   8,000 blocks. Known, and provisional with the rest.
 

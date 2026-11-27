@@ -27,15 +27,27 @@ describe('an upgrade of the resolver contract that only the servers logged', () 
     expect(pointers(await resolveOg(chain, NAME.label, { session, census: census() }))).toEqual(PASSING)
   })
 
-  it('refuses every name for the call only: another name asked meanwhile is refused too, then asks the servers again', async () => {
+  it('refuses the calls waiting on that read, a second name asked meanwhile among them, and the next call asks the servers again', async () => {
+    const other = VECTORS.find((one) => one.id === 'unwrapped-leftover-rewritten') as (typeof VECTORS)[number]
     const world = old()
+    const more = worldOf(other, { spread: 300, head: HEAD })
+    Object.assign(world.names, more.names)
+    world.logs.push(...more.logs)
     const lying = { ...world, logs: [...world.logs, upgradedLog(CHECKPOINT + 20_000)] }
     const { chain, servers } = twoProviders(world, { serversWorld: lying })
     const session = createSession()
-    expect((await inspectOg(chain, NAME.label, { session, census: census() })).refusal).toBeInstanceOf(OgRefusal)
+    const lookup = { session, census: census() }
+    const [first, second] = await Promise.all([inspectOg(chain, NAME.label, lookup), inspectOg(chain, other.label, lookup)])
+    expect(first.refusal).toBeInstanceOf(OgRefusal)
+    expect(second.refusal).toBeInstanceOf(OgRefusal)
+    // The second name joined the read of the first: each stretch of the servers was asked for upgrades once.
+    const upgrades = servers.asked.logs.filter((filter) => filter.topics?.[0] === TOPICS.upgraded).map((filter) => `${String(filter.fromBlock)}-${String(filter.toBlock)}`)
+    expect(upgrades.length).toBeGreaterThan(0)
+    expect(new Set(upgrades).size).toBe(upgrades.length)
     const asked = servers.asked.logs.length
     lying.logs = world.logs
-    expect((await inspectOg(chain, NAME.label, { session, census: census() })).refusal).toBeNull()
+    expect((await inspectOg(chain, NAME.label, lookup)).refusal).toBeNull()
+    expect((await inspectOg(chain, other.label, lookup)).refusal).toBeNull()
     expect(servers.asked.logs.length).toBeGreaterThan(asked)
   })
 })

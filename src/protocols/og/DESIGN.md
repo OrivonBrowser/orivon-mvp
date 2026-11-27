@@ -97,8 +97,9 @@ a name yield a value its current record does not store: the value of every key, 
 implementation are read at the pinned block through the light client and proven, and a log that does not match the proven
 value does not count (C1 step 3). The worst case is the rule ENS names have, that the current record counts, and never
 less; that is why `.og` keeps the Delivery level a proven `.eth` name gets. An invented `Upgraded` log makes the guard
-refuse `.og` names for that call only, and a window that shows one is not kept. The servers are the ones the light client's
-own requests go to, so a person who named their own servers gets their own word.
+refuse `.og` names for the calls waiting on that read, and a window that shows one is not kept, so the next call asks
+again. The servers are the ones the light client's own requests go to, so a person who named their own servers gets their
+own word.
 
 **Known, and provisional with the rest:** history the light client proved earlier in a session (a window of the newest
 8,000 blocks) is asked of the servers again once it ages out of that stretch.
@@ -124,12 +125,15 @@ fit what each source answers:
   (at least a second, doubling to a cap of eight when it asked for nothing) and asks again, up to five times; a wait
   longer than the call has left refuses at once. While one read waits, every read of the servers waits with it. A
   server read ends within 25 s, and the turn it holds is given back at the call's deadline even while it runs, so a
-  hung server does not hold the next call's turns. A server that refuses the archive part of its service (HTTP 403) is passed over by the
+  hung server does not hold the next call's turns. A read in flight is the time of the call that let it go: a call that
+  comes after that time is up begins the read again, and one that joined it before and saw it cut asks again while it
+  has time of its own. A server that refuses the archive part of its service (HTTP 403) is passed over by the
   failover for another, which is why the provider is given the failover and not one server.
 
 A window at or below `final` (the newest block less 64) cannot be reorganised and is kept in memory for the resolver's
 life, under its source, so a second name, or a reload, scans only what is new. A window above `final` is read again,
-and so is a servers' window that made a scan refuse (an `Upgraded` log), so one invented answer refuses one call only.
+and so is a servers' window that made a scan refuse (an `Upgraded` log), so one invented answer refuses the calls waiting
+on that read and no later one.
 
 - A call has a budget (`budgetMs`, 30 s by default, inside the 45 s a mount waits on a direct route). The scan stops
   starting windows when the rest of the budget cannot cover one more at the pace measured for its source (with a
