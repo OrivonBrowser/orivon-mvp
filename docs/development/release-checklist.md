@@ -238,6 +238,7 @@ forgotten.
       Release workflow refuses a checkpoint over 7 days old, because the app refuses one over 14;
       an install of a release past that fetches a fresh one from two beacon servers when they are
       reachable and agree, and verifies no `.eth` name when they are not.
+- [ ] **The `.og` census is cut again, just before the tag:** `node scripts/og-census/run.mjs --validate` takes about an hour and replaces `src/protocols/og/census.json`; commit it ([`scripts/og-census/README.md`](../../scripts/og-census/README.md)).
 - [ ] `npm run typecheck && npm test && npm run check:natives && npm run check:contracts` green.
 - [ ] CI green on `main`. The Release workflow's `ublock` job runs the uBlock Origin spec before any package is built; a red one means the Electron this release ships does not run the extension ([`testing.md`](testing.md) section Electron upgrades).
 - [ ] After publishing: the Release workflow is green and the release carries the deb, the
