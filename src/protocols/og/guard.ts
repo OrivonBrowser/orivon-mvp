@@ -1,8 +1,9 @@
 import type { Chain } from './chain.js'
 import { sameAddress } from './hex.js'
+import type { Call } from './launcher.js'
 import { IMPLEMENTATION_SLOT, PROXY, TOPICS, UPGRADES } from './pins.js'
 import { OgRefusal, scanLogs } from './tail.js'
-import type { Call, ScanOptions, Scan, Session } from './tail.js'
+import type { ScanOptions, Scan, Session } from './tail.js'
 
 // The guard on the resolver contract. The records live in an upgradeable proxy that a Safe of nine owners (five to act) can
 // point at any code in one transaction, with no delay, so a record is only as good as the implementation behind it. This

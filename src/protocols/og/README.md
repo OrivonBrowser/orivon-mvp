@@ -12,6 +12,7 @@ names, [`resolver.ts`](resolver.ts), and what it is made of:
 | [`freshness.ts`](freshness.ts) | The rule that decides which records count: pure, no network, no clock |
 | [`registry-calls.ts`](registry-calls.ts) | What a transaction did to a name in the registry, read by selector |
 | [`census.ts`](census.ts), [`census.json`](census.json) | What every name with a content record looked like at a checkpoint block, and how an entry stands for the logs behind it |
+| [`launcher.ts`](launcher.ts) | The turns the windows of one resolver take at its node, shared out between the calls that want them |
 | [`tail.ts`](tail.ts) | The log scans between the checkpoint and the pinned block: the newest 8,000 blocks from the light client in windows of 1024, the older stretch from the servers in windows of 9,000, kept in memory, within the time the call has |
 | [`guard.ts`](guard.ts) | Whether the resolver contract still runs the implementation this build was written against |
 | [`lookup.ts`](lookup.ts) | One name, from reads to verdict to records |

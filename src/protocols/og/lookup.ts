@@ -8,13 +8,15 @@ import { evaluateFreshness, holderOf, idTopic, nameLogsOf } from './freshness.js
 import type { NameLogs, NameReads, Verdict } from './freshness.js'
 import { guardResolver } from './guard.js'
 import { sameAddress } from './hex.js'
+import { newCall } from './launcher.js'
+import type { Call } from './launcher.js'
 import { keyOf } from './name.js'
 import { CENSUS_KEYS, PROXY, REGISTRY, REGISTRY_CONTENT, TOPICS, WRAPPER } from './pins.js'
 import { decodeRegistryCall, SETTERS } from './registry-calls.js'
 import type { RegistryCall } from './registry-calls.js'
 import { pinBlocks, readName } from './state.js'
-import { newCall, OgRefusal, readTransactions, scanLogs } from './tail.js'
-import type { Call, Session } from './tail.js'
+import { OgRefusal, readTransactions, scanLogs } from './tail.js'
+import type { Session } from './tail.js'
 
 // Resolves a name under `.og` from the Linagee contracts on chain: `alice.og` is the registry key `alice`, held by whoever the
 // registry (or the wrapper, for a wrapped name) says, with the text records the resolver stores for it. A record counts only
