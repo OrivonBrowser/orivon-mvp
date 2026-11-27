@@ -9,8 +9,8 @@ import type { Chain, Log, LogFilter, Transaction } from './chain.js'
 // final block is kept in memory as the call that reads it, so a scan that ran out of time leaves what it read for the next one, and two
 // lookups that need the same window (the resolver check is every name's) make the one call. A scan never answers in part: out of time
 // it refuses in words and says to ask again. The transactions behind a name's registry logs are read the same way, one call each,
-// kept by hash, through the stretch their block lies in. A read in flight belongs to the time of the call that let it go: a call that
-// has more time than that joins it only until then, and a read left behind by a call that ran out of time is begun again.
+// kept by hash, through the stretch their block lies in. A read of the servers is cut at the time of the call that let it go: a call that
+// comes after that time begins the read again, and one that joined it before and saw it cut asks again while it has time left.
 
 /** The widest stretch one call reads through the light client. */
 export const WINDOW = 1024
