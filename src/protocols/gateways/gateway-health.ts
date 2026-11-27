@@ -102,7 +102,8 @@ export class GatewayHealth {
       case 'rate-limited': {
         this.rateLimitStrikes += 1
         const backoff = Math.min(RATE_LIMIT_BASE_MS * 2 ** (this.rateLimitStrikes - 1), RATE_LIMIT_CAP_MS)
-        const delay = Math.min(outcome.retryAfterMs ?? backoff, RATE_LIMIT_CAP_MS)
+        // A server that says `Retry-After: 0` is still rate limiting: asked again at once it answers 429 again, so it sits out the base wait at least.
+        const delay = Math.min(Math.max(outcome.retryAfterMs ?? backoff, RATE_LIMIT_BASE_MS), RATE_LIMIT_CAP_MS)
         this.cooldownUntil = Math.max(this.cooldownUntil, this.now() + delay)
         return
       }

@@ -27,6 +27,8 @@ import type { SiteRecord } from './serve/sites.js'
 export interface LightClient {
   /** Throws a ResolutionError `not-synced` while the client cannot yet prove anything. */
   readonly provider: Eip1193Provider
+  /** Logs and transactions of history older than `provider` proves, asked of the same servers through the same route and failover, unproven. */
+  readonly serverReads: Eip1193Provider
   status: () => LightClientState
 }
 
@@ -95,7 +97,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const nodes = new NodeLinks(deps.post)
   const consent = new GatewayConsent()
   const controls = { lookupService: config.ipfsNode?.lookupService !== false, consent }
-  const { protocols, lightClient, stores, route, ens } = startProtocols(config, deps, nodes, controls)
+  const { protocols, lightClient, stores, route, names } = startProtocols(config, deps, nodes, controls)
   const registry = new ProtocolRegistry(protocols)
   // The protocols of a tunnel are started at the first request of a website in its profile: a person who uses one tunnel never pays for the other's.
   const tunnelSets = new Map<TunnelRoute, { readonly sites: Sites, readonly route: RoutePace }>()
@@ -108,7 +110,7 @@ export async function startHost (config: HostConfig, deps: HostDeps): Promise<Ru
   const tunnelSet = (tunnel: TunnelRoute): { readonly sites: Sites, readonly route: RoutePace } => {
     let set = tunnelSets.get(tunnel)
     if (set === undefined) {
-      const protocolsOf = startTunnelProtocols(config, deps, stores, nodes, controls, ens, tunnel)
+      const protocolsOf = startTunnelProtocols(config, deps, stores, nodes, controls, names, tunnel)
       set = { sites: sitesOf(new ProtocolRegistry(protocolsOf.protocols), protocolsOf.route), route: protocolsOf.route }
       tunnelSets.set(tunnel, set)
     }

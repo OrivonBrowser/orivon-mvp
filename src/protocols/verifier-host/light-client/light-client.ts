@@ -15,6 +15,7 @@ import { laneNames, publicText } from './lane-names.js'
 import { DIRECT_LIGHT_CLIENT_PACE } from '../pace.js'
 import type { LightClientPace } from '../pace.js'
 import { failoverRpc } from './rpc-failover.js'
+import { serverReads } from './server-reads.js'
 import { BLOCK_ROOT_PATTERN } from '../protocol.js'
 import type { FromHost, LightClientConfig, LightClientState, TunnelRoute } from '../protocol.js'
 import type { LightClient } from '../service.js'
@@ -358,6 +359,8 @@ export function startHeliosLightClient (config: LightClientConfig, fetch: WebFet
 
   return {
     status: () => state,
+    // Through the lane's own failover, as a request of Helios's goes: the servers now in use, which a start that finds one on another chain changes.
+    serverReads: serverReads(() => lane.viaExecution, names.execution, clean),
     provider: {
       request: async (args) => {
         begin()
