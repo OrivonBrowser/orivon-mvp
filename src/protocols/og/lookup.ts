@@ -134,11 +134,11 @@ export async function inspectOg (chain: Chain, label: string, lookup: Lookup, ke
   const holder = holderOf(key, reads)
   const base = { label, key, block, reads, holder }
   if (!holder.found || holder.holder === null) return { ...base, verdict: null, refusal: null }
-  // With nothing to vouch for there is nothing to read: no text record (or a controller that is not the holder, which keeps every record out
-  // whatever the logs say) and no value in the registry's slot (or a wrapped name's, which never counts).
+  // With nothing to vouch for there is nothing to read: no text record (or a controller that is not the holder, or a name the wrapper holds
+  // with no token, which keep every record out whatever the logs say) and no value in the registry's slot (or a wrapped name's, which never counts).
   const empty: NameLogs = { setText: [], newController: [], registryChanged: [], wrapperTransfers: [] }
   const early = evaluateFreshness(key, reads, empty)
-  const texts = !(keys.every((text) => (reads.values[text] ?? '') === '') || !early.controllerOk)
+  const texts = !(keys.every((text) => (reads.values[text] ?? '') === '') || !early.controllerOk || holder.stranded)
   const slot = !holder.wrapped && !holder.stranded && reads.registryContent !== null && reads.registryContent !== ZERO_SLOT
   if (!texts && !slot) return { ...base, verdict: early, refusal: null }
   try {

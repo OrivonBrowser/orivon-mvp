@@ -69,9 +69,11 @@ describe('a name the wrapper holds with no token behind it', () => {
       implementation: IMPLEMENTATION
     }
     const census = { format: CENSUS_FORMAT, block: 26_498_000, blockHash: ZERO_WORD, implementation: IMPLEMENTATION, upgrades: [...UPGRADES], names: {} }
-    const { chain } = fakeChain(world)
+    const { chain, asked } = fakeChain(world)
     const found = await inspectOg(chain, 'strandedname', { session: createSession(), census })
     expect(found.refusal).toBeNull()
     expect(found.verdict?.records).toEqual([])
+    // Whatever the logs say, nothing counts: the history is not read.
+    expect(asked.logs).toEqual([])
   })
 })
