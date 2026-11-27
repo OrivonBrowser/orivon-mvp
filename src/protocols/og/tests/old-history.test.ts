@@ -174,8 +174,18 @@ describe('a range the servers refuse as too wide', () => {
     expect(Math.min(...widths)).toBeGreaterThanOrEqual(MIN_OLD_WINDOW)
   })
 
-  it('does not halve a range into pieces narrower than `MIN_OLD_WINDOW`: servers that take only a little less than 1,125 blocks are not read', async () => {
-    const { chain, servers } = twoProviders(old(), { span: 1_027 })
+  it('opens the name from servers that take only 1,030 blocks: a half that would be narrower than `MIN_OLD_WINDOW` is cut at it, and the rest is read after', async () => {
+    const { chain, servers } = twoProviders(old(), { span: 1_030 })
+    expect(pointers(await resolveOg(chain, NAME.label, { session: createSession(), census: census() }))).toEqual(PASSING)
+    const read = servers.asked.logs.filter((filter) => filter.toBlock - filter.fromBlock + 1 <= 1_030 && (filter.address as readonly string[] | undefined)?.length === 2).sort((a, b) => a.fromBlock - b.fromBlock)
+    expect(read.some((filter) => filter.toBlock - filter.fromBlock + 1 === MIN_OLD_WINDOW)).toBe(true)
+    // The first stretch of the servers is read whole, as ranges that meet.
+    const first = read.filter((filter) => filter.fromBlock <= CHECKPOINT + OLD_WINDOW)
+    first.slice(1).forEach((filter, index) => { expect(filter.fromBlock).toBe((first[index]?.toBlock ?? 0) + 1) })
+  })
+
+  it('does not read servers that take less than `MIN_OLD_WINDOW`, and never asks them for less', async () => {
+    const { chain, servers } = twoProviders(old(), { span: MIN_OLD_WINDOW - 1 })
     await expect(resolveOg(chain, NAME.label, { session: createSession(), census: census() })).rejects.toMatchObject({ reason: 'limit' })
     for (const filter of servers.asked.logs) expect(filter.toBlock - filter.fromBlock + 1).toBeGreaterThanOrEqual(MIN_OLD_WINDOW)
   })

@@ -8,13 +8,15 @@ import { evaluateFreshness, holderOf, idTopic, nameLogsOf } from './freshness.js
 import type { NameLogs, NameReads, Verdict } from './freshness.js'
 import { guardResolver } from './guard.js'
 import { sameAddress } from './hex.js'
+import { newCall } from './launcher.js'
+import type { Call } from './launcher.js'
 import { keyOf } from './name.js'
 import { CENSUS_KEYS, PROXY, REGISTRY, REGISTRY_CONTENT, TOPICS, WRAPPER } from './pins.js'
 import { decodeRegistryCall, SETTERS } from './registry-calls.js'
 import type { RegistryCall } from './registry-calls.js'
 import { pinBlocks, readName } from './state.js'
-import { newCall, OgRefusal, readTransactions, scanLogs } from './tail.js'
-import type { Call, Session } from './tail.js'
+import { OgRefusal, readTransactions, scanLogs } from './tail.js'
+import type { Session } from './tail.js'
 
 // Resolves a name under `.og` from the Linagee contracts on chain: `alice.og` is the registry key `alice`, held by whoever the
 // registry (or the wrapper, for a wrapped name) says, with the text records the resolver stores for it. A record counts only
@@ -134,11 +136,11 @@ export async function inspectOg (chain: Chain, label: string, lookup: Lookup, ke
   const holder = holderOf(key, reads)
   const base = { label, key, block, reads, holder }
   if (!holder.found || holder.holder === null) return { ...base, verdict: null, refusal: null }
-  // With nothing to vouch for there is nothing to read: no text record (or a controller that is not the holder, which keeps every record out
-  // whatever the logs say) and no value in the registry's slot (or a wrapped name's, which never counts).
+  // With nothing to vouch for there is nothing to read: no text record (or a controller that is not the holder, or a name the wrapper holds
+  // with no token, which keep every record out whatever the logs say) and no value in the registry's slot (or a wrapped name's, which never counts).
   const empty: NameLogs = { setText: [], newController: [], registryChanged: [], wrapperTransfers: [] }
   const early = evaluateFreshness(key, reads, empty)
-  const texts = !(keys.every((text) => (reads.values[text] ?? '') === '') || !early.controllerOk)
+  const texts = !(keys.every((text) => (reads.values[text] ?? '') === '') || !early.controllerOk || holder.stranded)
   const slot = !holder.wrapped && !holder.stranded && reads.registryContent !== null && reads.registryContent !== ZERO_SLOT
   if (!texts && !slot) return { ...base, verdict: early, refusal: null }
   try {

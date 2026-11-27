@@ -12,6 +12,7 @@ names, [`resolver.ts`](resolver.ts), and what it is made of:
 | [`freshness.ts`](freshness.ts) | The rule that decides which records count: pure, no network, no clock |
 | [`registry-calls.ts`](registry-calls.ts) | What a transaction did to a name in the registry, read by selector |
 | [`census.ts`](census.ts), [`census.json`](census.json) | What every name with a content record looked like at a checkpoint block, and how an entry stands for the logs behind it |
+| [`launcher.ts`](launcher.ts) | The turns the windows of one resolver take at its node, shared out between the calls that want them |
 | [`tail.ts`](tail.ts) | The log scans between the checkpoint and the pinned block: the newest 8,000 blocks from the light client in windows of 1024, the older stretch from the servers in windows of 9,000, kept in memory, within the time the call has |
 | [`guard.ts`](guard.ts) | Whether the resolver contract still runs the implementation this build was written against |
 | [`lookup.ts`](lookup.ts) | One name, from reads to verdict to records |
@@ -80,7 +81,8 @@ What a server that hides or invents history in the middle stretch can do, and wh
 - It can never make a name yield a value its current record does not store: every value is read from proven state, and
   a log counts only when it carries that value. The worst case is the rule ENS names have, that the current record
   counts, and never less; that is why a `.og` name keeps the Delivery level a proven `.eth` name gets.
-- An invented `Upgraded` log makes the guard refuse `.og` names for that call only: a window that shows one is not kept.
+- An invented `Upgraded` log makes the guard refuse `.og` names for the calls waiting on that read: a window that shows one is
+  not kept, so the next call asks the servers again.
 - History the light client proved earlier in a session is asked of the servers again once it ages out of the newest
   8,000 blocks. Known, and provisional with the rest.
 
