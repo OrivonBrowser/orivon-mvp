@@ -11,6 +11,13 @@ describe('parseOrivonLink: the forms that open something', () => {
     expect(parseOrivonLink('orivon:open?u=vitalik.eth/a?b=c%23d')).toEqual({ target: 'vitalik.eth/a?b=c#d' })
   })
 
+  it('reads a .og name as it reads a .eth one', () => {
+    expect(parseOrivonLink('orivon:open?u=linagee.og')).toEqual({ target: 'linagee.og' })
+    expect(parseOrivonLink('orivon:open?u=Linagee.OG/blog/post.html?a=b')).toEqual({ target: 'linagee.og/blog/post.html?a=b' })
+    expect(parseOrivonLink('orivon:open?u=app.linagee.og&flavour=freetube')).toEqual({ target: 'app.linagee.og', flavour: 'freetube' })
+    expect(parseOrivonLink('orivon:open?u=ipfs://linagee.og/x')).toEqual({ target: 'ipfs://linagee.og/x' })
+  })
+
   it('reads an ipfs:// or ipns:// address', () => {
     expect(parseOrivonLink(`orivon:open?u=ipfs://${CID}`)).toEqual({ target: `ipfs://${CID}` })
     expect(parseOrivonLink(`orivon:open?u=ipfs://${CID}/docs/index.html`)).toEqual({ target: `ipfs://${CID}/docs/index.html` })
@@ -73,7 +80,8 @@ describe('parseOrivonLink: what is refused', () => {
       'https://example.com', 'http://example.com', 'HTTPS://example.com/', 'file:///etc/passwd', 'file://host/share', 'javascript:alert(1)', 'JaVaScRiPt:alert(1)',
       'data:text/html,hi', 'blob:https://a.example/x', 'orivon://settings', 'orivon:open?u=vitalik.eth', 'orivon://open?u=vitalik.eth', 'mailto:a@b.example',
       'ftp://example.com/', 'chrome://settings', 'about:blank', 'bzz://name.eth', 'magnet:?xt=urn:btih:abc', 'example.com', 'localhost', 'example.org/x.eth',
-      '127.0.0.1', '//vitalik.eth', '/vitalik.eth', 'vitalik.eth:8080', 'user@vitalik.eth', 'user:pw@vitalik.eth', 'ipfs:bafy', 'ipfs:/bafy', 'ipfs:///bafy', 'ipfs://', 'ipfs:// /x'
+      '127.0.0.1', '//vitalik.eth', '/vitalik.eth', 'vitalik.eth:8080', 'user@vitalik.eth', 'user:pw@vitalik.eth', 'ipfs:bafy', 'ipfs:/bafy', 'ipfs:///bafy', 'ipfs://', 'ipfs:// /x',
+      'og', '.og', 'linagee.og:8080', 'linagee.og/../x', 'linagee.example.og.com', 'bzz://linagee.og'
     ]) refused(`orivon:open?u=${encodeURIComponent(target)}`)
   })
 

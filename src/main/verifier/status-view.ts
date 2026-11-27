@@ -11,7 +11,7 @@ import type { IpfsNodeState } from '../../protocols/ipfs-node/protocol.js'
 import { displayEndpoint } from '../../protocols/verifier-host/light-client/endpoint-mask.js'
 
 export interface LightClientView {
-  /** One word for the badge: off, waiting, starting, syncing, synced, failed, down. `waiting`: on, with no host running until a .eth address needs it. */
+  /** One word for the badge: off, waiting, starting, syncing, synced, failed, down. `waiting`: on, with no host running until a .eth or .og address needs it. */
   readonly state: LightClientState['state'] | 'down' | 'waiting'
   /** The sentence under it. */
   readonly summary: string
@@ -36,7 +36,7 @@ export interface LightClientView {
 /** A head this old means the light client has stopped following the chain, whatever it last reported. */
 export const STALE_HEAD_MS = 5 * 60_000
 
-const ABOUT = 'It proves what a .eth name points to before the page loads. The servers below are asked while it runs, and learn which names and content you look up. Their answers are checked before use, except a DNSLink record, which is used as given and marked unverified. A name\'s own resolver contract may also have a lookup sent to a server it chooses.'
+const ABOUT = 'It proves what a .eth or .og name points to before the page loads. The servers below are asked while it runs, and learn which names and content you look up. Their answers are checked before use, except a DNSLink record, which is used as given and marked unverified. A name\'s own resolver contract may also have a lookup sent to a server it chooses.'
 
 export interface VerifierFacts {
   readonly lightClient: LightClientState
@@ -105,7 +105,7 @@ function ownWords (own: VerifierFacts['ownServers']): string | undefined {
   return own?.consensus === true ? 'your own beacon server' : undefined
 }
 
-const OWN_FAILED = " Orivon's servers are not asked instead, so .eth names wait. Check the servers you set in Settings > Web3, or choose Orivon's servers there."
+const OWN_FAILED = " Orivon's servers are not asked instead, so .eth and .og names wait. Check the servers you set in Settings > Web3, or choose Orivon's servers there."
 
 function duration (ms: number): string {
   const seconds = Math.round(ms / 1000)
@@ -131,7 +131,7 @@ function utcMinute (seconds: number): string {
 export function checkpointProblem (choice: Extract<CheckpointChoice, { ok: false }>, fetchProblem?: FetchProblem, ownBeacon = false): string {
   if (choice.problem === 'clock-behind') return "this computer's clock is behind the checkpoint shipped with this release, so its age cannot be judged. Setting the clock right lets the light client start"
   const tried = fetchProblem === undefined
-    ? 'Opening a .eth name asks two beacon servers for a fresh one'
+    ? 'Opening a .eth or .og name asks two beacon servers for a fresh one'
     : `A fresh one could not be fetched from the beacon servers: ${fetchFailure(fetchProblem, ownBeacon)}`
   if (choice.problem === 'not-served') return `${beaconServer(ownBeacon)} would not start the light client from the newest checkpoint (${SOURCE_WORDS[choice.source]}). ${tried}. Installing a newer release brings one too`
   if (choice.skippedUnserved === true) return `a newer checkpoint has no bootstrap on ${beaconServer(ownBeacon)}, and the newest one it would start from (${SOURCE_WORDS[choice.source]}) is ${age(choice.ageSeconds)} old, past the ${age(MAX_CHECKPOINT_AGE_SECONDS)} a checkpoint may be. ${tried}. Installing a newer release brings one too`
@@ -142,22 +142,22 @@ function checkpointLine (choice: CheckpointChoice | undefined, fetchProblem: Fet
   if (choice === undefined) return 'No checkpoint chosen.'
   if (!choice.ok) return `No usable checkpoint: ${checkpointProblem(choice, fetchProblem, ownBeacon)}.`
   if (choice.source === 'fetched' && choice.fetchedFrom !== undefined) {
-    return `Checkpoint ${age(choice.ageSeconds)} old, dated ${utcMinute(choice.checkpoint.timestamp)}. It was fetched while a .eth name was opened, because none stored here was recent enough; ${hostsOf(choice.fetchedFrom)} gave the same answer.`
+    return `Checkpoint ${age(choice.ageSeconds)} old, dated ${utcMinute(choice.checkpoint.timestamp)}. It was fetched while a .eth or .og name was opened, because none stored here was recent enough; ${hostsOf(choice.fetchedFrom)} gave the same answer.`
   }
   return `Checkpoint ${age(choice.ageSeconds)} old, ${SOURCE_WORDS[choice.source]}.`
 }
 
 function summaryOf (facts: VerifierFacts, now: number): { state: LightClientView['state'], summary: string } {
-  // A dead verifier outranks everything: with it down, no .eth page loads at all.
+  // A dead verifier outranks everything: with it down, no .eth or .og page loads at all.
   if (facts.hostDown !== undefined) return { state: 'down', summary: `The verifier is not running: ${facts.hostDown}.` }
-  if (facts.switchedOff) return { state: 'off', summary: 'Switched off. No .eth name can be verified, so none loads.' }
+  if (facts.switchedOff) return { state: 'off', summary: 'Switched off. No .eth or .og name can be verified, so none loads.' }
   if (facts.checkpoint !== undefined && !facts.checkpoint.ok) {
     const ownBeacon = facts.ownServers?.consensus === true
     const note = facts.checkpoint.problem !== 'clock-behind' && facts.checkpointFetchProblem !== undefined ? ` A fresh one could not be fetched: ${fetchFailure(facts.checkpointFetchProblem, ownBeacon)}.` : ''
     const refused = facts.checkpoint.problem === 'not-served' || (facts.checkpoint.problem === 'too-old' && facts.checkpoint.skippedUnserved === true)
     return { state: 'failed', summary: refused ? `Not running: ${beaconServer(ownBeacon)} would not start it from the checkpoint it was given, and no other is at hand.${note}` : `Not started: it needs a recent checkpoint to start from.${note}` }
   }
-  if (facts.hostAsleep) return { state: 'waiting', summary: 'On, and waiting. It starts when a .eth address is opened, and stops again after ten minutes without one.' }
+  if (facts.hostAsleep) return { state: 'waiting', summary: 'On, and waiting. It starts when a .eth or .og address is opened, and stops again after ten minutes without one.' }
   const s = facts.lightClient
   const through = ownWords(facts.ownServers)
   switch (s.state) {

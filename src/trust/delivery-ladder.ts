@@ -9,7 +9,7 @@
 // already owns that word, for the unrelated, still-unwired per-app
 // network-log axis -- see this directory's own README):
 //   D1  relies on a trusted, centralised party for the bytes           -- red
-//   D2  a `.eth` name proven trustlessly AND its content addressed by  -- yellow
+//   D2  a `.eth` or `.og` name proven trustlessly AND its content addressed by -- yellow
 //       CID, so every byte is checked against something no single host
 //       can rewrite
 //   D3  trustless for data availability -- nothing in this build fetches
@@ -108,7 +108,7 @@ export interface DeliveryLadderResult {
   readonly evidence: DeliveryEvidence
 }
 
-/** D2 is met only by a `.eth` name proven trustlessly, its content itself
+/** D2 is met only by a `.eth` or `.og` name proven trustlessly, its content itself
  * content-addressed -- the strict canonical reading the owner chose: a
  * TOFU-pinned app and an unproven DNSLink CID both stay D1, since each is
  * trusted from a single source rather than proven. Nothing here can reach

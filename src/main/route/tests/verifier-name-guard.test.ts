@@ -30,7 +30,7 @@ describe('which requests name a host the verifier serves', () => {
   })
 
   it('lists, for a proxy\'s bypass rules, each suffix with and without the root dot, which a rule for the one does not match', () => {
-    expect(routedBypassRules()).toEqual(['*.eth', '*.eth.', '*.orivon', '*.orivon.'])
+    expect(routedBypassRules()).toEqual(['*.eth', '*.eth.', '*.og', '*.og.', '*.orivon', '*.orivon.'])
   })
 
   it('hands Electron every request of a scheme a proxy can carry, whatever its host, and leaves the host to the predicate above, so no number of trailing dots depends on a pattern', () => {

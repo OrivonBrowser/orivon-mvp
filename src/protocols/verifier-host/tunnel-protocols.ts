@@ -8,9 +8,7 @@ import { defineProtocol } from '../protocol.js'
 import type { Protocol } from '../protocol.js'
 import { ResolutionError } from '../resolution/records.js'
 import type { DataGatherer } from '../resolution/providers.js'
-import { ENS } from '../ens/descriptor.js'
-import { createEnsResolver } from '../ens/resolver.js'
-import type { Eip1193Provider } from '../ens/resolver.js'
+import type { CcipRequest, Eip1193Provider } from '../ens/resolver.js'
 import { ipfsProtocol } from '../ipfs/protocol.js'
 import { swarmProtocol } from '../swarm/protocol.js'
 import { createSwarmAddressResolvers } from '../swarm/address-resolver.js'
@@ -18,9 +16,8 @@ import { SWARM } from '../swarm/descriptor.js'
 import { dohTxtResolver } from './doh.js'
 import { allowlisted, DEFAULT_CCIP_LIMITS, guardedCcipRequest } from './egress.js'
 import type { CcipDeps } from './egress.js'
-import { createFixtureResolver } from './fixture-resolver.js'
 import type { HostConfig, TunnelRoute } from './protocol.js'
-import { ipfsFromNode, nodeRouteOf, offResolver } from './protocols.js'
+import { ethereumNames, ipfsFromNode, LIGHT_CLIENT_NOT_RUNNING, nodeRouteOf } from './protocols.js'
 import type { HostControls, SharedStores } from './protocols.js'
 import type { NodeLink, NodeLinks } from './node-link.js'
 import { IPFS_NODE_IDENTITY, IPFS_NODE_WORDS } from '../ipfs-node/protocol.js'
@@ -54,10 +51,14 @@ function refusedSwarm (): Protocol {
   return defineProtocol(SWARM, { resolvers: createSwarmAddressResolvers(), gatherers: [gatherer] })
 }
 
-/** The provider of a light client that starts at its first request, so a host that serves no tunnel-profile `.eth` name never syncs a second one. */
-function lazyProvider (start: () => LightClient): Eip1193Provider {
+/** The proven provider and the server reads of a light client that starts at its first request, so a host that serves no tunnel-profile `.eth` or `.og` name never syncs a second one. */
+function lazyClient (start: () => LightClient): { provider: Eip1193Provider, servers: Eip1193Provider } {
   let client: LightClient | undefined
-  return { request: async (args) => await (client ??= start()).provider.request(args) }
+  const started = (): LightClient => (client ??= start())
+  return {
+    provider: { request: async (args) => await started().provider.request(args) },
+    servers: { request: async (args) => await started().serverReads.request(args) }
+  }
 }
 
 /** A CCIP-Read request of a tunnel-profile website: the same fence as any other, sent through `fetch`, with no name resolved here and no pinned dial. */
@@ -71,24 +72,16 @@ export function tunnelCcipDeps (fetch: HostDeps['fetch']): CcipDeps {
   }
 }
 
-function startEns (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], route: RoutePace, tunnel: TunnelRoute): Protocol {
-  const resolvers = []
-  if (config.fixtures !== undefined && deps.fixturesAllowed) resolvers.push(createFixtureResolver(config.fixtures))
+function startNames (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], route: RoutePace, tunnel: TunnelRoute): readonly Protocol[] {
   const { lightClient } = config
-  if (lightClient === undefined) {
-    resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
-    return defineProtocol(ENS, { resolvers })
-  }
+  if (lightClient === undefined) return ethereumNames(config, deps, { off: config.lightClientOff ?? LIGHT_CLIENT_NOT_RUNNING })
   const reach = lightClientFetch(lightClient, fetch, deps.localFetch, 'the light client')
-  if ('off' in reach) {
-    // The refusal depends on the config alone, so the shared client has already reported it to the shell (protocols.ts).
-    resolvers.push(offResolver(`the Ethereum servers set in Settings cannot be used: ${reach.off}`))
-    return defineProtocol(ENS, { resolvers })
-  }
-  const provider = lazyProvider(() => deps.startLightClient(lightClient, reach.send, () => {}, tunnel, { ...lightClientPace(paceOn(route)), startAfterMs: 0 }))
+  // The refusal depends on the config alone, so the shared client has already reported it to the shell (protocols.ts).
+  if ('off' in reach) return ethereumNames(config, deps, { off: `the Ethereum servers set in Settings cannot be used: ${reach.off}` })
+  const { provider, servers } = lazyClient(() => deps.startLightClient(lightClient, reach.send, () => {}, tunnel, { ...lightClientPace(paceOn(route)), startAfterMs: 0 }))
   const ccip = tunnelCcipDeps(fetch)
-  resolvers.push(createEnsResolver({ provider, ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, ccip, DEFAULT_CCIP_LIMITS, signal) }))
-  return defineProtocol(ENS, { resolvers })
+  const ccipRequest: CcipRequest = async (parameters, signal) => await guardedCcipRequest(parameters, ccip, DEFAULT_CCIP_LIMITS, signal)
+  return ethereumNames(config, deps, { provider, ccipRequest, servers })
 }
 
 function startIpfs (config: HostConfig, deps: HostDeps, fetch: HostDeps['fetch'], stores: SharedStores, node: NodeLink | undefined, controls: HostControls, route: RoutePace, readsNodes: boolean): Protocol {
@@ -134,12 +127,12 @@ function startSwarm (config: HostConfig, deps: HostDeps, node: NodeLink | undefi
   })
 }
 
-/** `ens` is the shared `.eth` protocol, which a website in a tunnel's profile uses when the light client runs outside the tunnel: its name is then proved by the same client every other website's is. `tunnel` is the tunnel these protocols are for. */
-export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores: SharedStores, nodes: NodeLinks, controls: HostControls, ens: Protocol, tunnel: TunnelRoute): TunnelProtocols {
+/** `names` are the shared `.eth` and `.og` protocols, which a website in a tunnel's profile uses when the light client runs outside the tunnel: its name is then proved by the same client every other website's is. `tunnel` is the tunnel these protocols are for. */
+export function startTunnelProtocols (config: HostConfig, deps: HostDeps, stores: SharedStores, nodes: NodeLinks, controls: HostControls, names: readonly Protocol[], tunnel: TunnelRoute): TunnelProtocols {
   const fetch = deps.routedFetch(tunnel)
   const route = routeFor(true)
   const ipfsNode = nodes.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
   const readsNodes = config.tunnelSitesReadNodes?.[tunnel] === true
-  return { protocols: [config.ethereumOutside === true ? ens : startEns(config, deps, fetch, route, tunnel), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route, readsNodes), startSwarm(config, deps, swarmNode, stores, route, readsNodes, tunnel)], route }
+  return { protocols: [...(config.ethereumOutside === true ? names : startNames(config, deps, fetch, route, tunnel)), startIpfs(config, deps, fetch, stores, ipfsNode, controls, route, readsNodes), startSwarm(config, deps, swarmNode, stores, route, readsNodes, tunnel)], route }
 }

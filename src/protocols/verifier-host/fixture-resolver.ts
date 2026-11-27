@@ -1,10 +1,11 @@
-// Test builds only: `.eth` names mapped to content with no light client, so
-// the end-to-end suite loads `fixture.eth` without reaching mainnet. The
-// host installs it only when the dev-grant build flag is compiled in.
+// Test builds only: `.eth` and `.og` names mapped to content with no light
+// client, so the end-to-end suite loads `fixture.eth` and `fixture.og`
+// without reaching mainnet. The host installs it only when the dev-grant
+// build flag is compiled in.
 
 import { ResolutionError } from '../resolution/records.js'
 import type { ContentPointer, NameRecord } from '../resolution/records.js'
-import type { NameResolver } from '../resolution/providers.js'
+import type { NameResolver, Namespace } from '../resolution/providers.js'
 import { parseReference, referenceCid } from '../swarm/reference.js'
 
 /** `ipfs://<cid>`, `ipns://<key>`, `dnslink://<domain>` or `bzz://<reference>`. */
@@ -21,17 +22,24 @@ export function fixturePointer (value: string): ContentPointer | undefined {
   return { kind: 'dnslink', domain: name }
 }
 
-/** Throws on a malformed map: a test that names content it cannot load should fail loudly, not fall through to real resolution. */
-export function createFixtureResolver (names: Readonly<Record<string, string>>): NameResolver {
+/** The top-level domains a fixture name may be under. */
+const FIXTURE_NAMESPACES: readonly Namespace[] = ['.eth', '.og']
+
+/**
+ * The fixture names under `namespace`. Throws on a malformed map, whichever namespace it is read for: a test that names content
+ * it cannot load should fail loudly, not fall through to real resolution.
+ */
+export function createFixtureResolver (names: Readonly<Record<string, string>>, namespace: Namespace): NameResolver {
   const records = new Map<string, NameRecord>()
   for (const [name, value] of Object.entries(names)) {
     const pointer = fixturePointer(value)
-    if (!name.endsWith('.eth') || pointer === undefined) throw new Error(`fixture name ${name} -> ${value} is not a .eth name mapped to ipfs://, ipns://, dnslink:// or bzz://`)
-    records.set(name.toLowerCase(), { type: 'contenthash', pointer, provenance: { via: 'fixture' } })
+    const under = FIXTURE_NAMESPACES.find((candidate) => name.endsWith(candidate))
+    if (under === undefined || pointer === undefined) throw new Error(`fixture name ${name} -> ${value} is not a .eth or .og name mapped to ipfs://, ipns://, dnslink:// or bzz://`)
+    if (under === namespace) records.set(name.toLowerCase(), { type: 'contenthash', pointer, provenance: { via: 'fixture' } })
   }
   return {
     id: 'fixture',
-    namespaces: ['.eth'],
+    namespaces: [namespace],
     async resolve (name) {
       const record = records.get(name)
       // Not holding a name proves nothing about it, so this must not outrank another resolver's answer.

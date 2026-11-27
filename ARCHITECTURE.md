@@ -112,6 +112,12 @@ content it loads is always IPFS content in this build
 typing or linking either `ipfs://<name>` or `ipns://<name>` opens the name's own
 `https://<name>.eth` origin, unchanged.
 
+**A `.og` name is the same kind of origin**, `https://<name>.og`. The same light client proves what the
+Linagee registry and its resolver hold for it (which write of a record came last is read from logs: the bundled census's
+word up to its block, the execution servers' up to the newest 8,000 blocks), and everything after that is the `.eth` path. Its resolver
+(`src/protocols/og/`) is **durable**: it reads the chain through an EIP-1193 provider it is handed and
+imports nothing of Electron's.
+
 **An `ipfs://` or `ipns://` address is shown as itself and served over HTTPS**
 ([`ADR-0038`](docs/decisions/ADR-0038-an-address-scheme-is-shown-as-itself-and-served-over-https.md)).
 The address bar and every consent surface read `ipfs://<cid>/`; the page runs at

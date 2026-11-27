@@ -77,7 +77,7 @@ describe('lightClientView', () => {
   it('says it is on and waiting, not stopped or failed, while the host sleeps', () => {
     const view = lightClientView(facts({ hostAsleep: true, lightClient: { state: 'off' } }), NOW)
     expect(view.state).toBe('waiting')
-    expect(view.summary).toBe('On, and waiting. It starts when a .eth address is opened, and stops again after ten minutes without one.')
+    expect(view.summary).toBe('On, and waiting. It starts when a .eth or .og address is opened, and stops again after ten minutes without one.')
     expect(view.summary).not.toMatch(/Not running|not running|Failed/)
   })
 
@@ -97,7 +97,7 @@ describe('lightClientView', () => {
   it('names a stale checkpoint and what fixes it', () => {
     const view = lightClientView(facts({ checkpoint: { ok: false, problem: 'too-old', source: 'release', ageSeconds: 20 * 86_400 } }), NOW)
     expect(view.state).toBe('failed')
-    expect(view.checkpoint).toMatch(/^No usable checkpoint: the newest checkpoint \(shipped with this release\) is 20 days old, past the 14 days a checkpoint may be\. Opening a \.eth name asks two beacon servers for a fresh one\. Installing a newer release brings one too/)
+    expect(view.checkpoint).toMatch(/^No usable checkpoint: the newest checkpoint \(shipped with this release\) is 20 days old, past the 14 days a checkpoint may be\. Opening a \.eth or \.og name asks two beacon servers for a fresh one\. Installing a newer release brings one too/)
   })
 
   it('says why a fresh checkpoint could not be fetched, in Settings and in the summary the site popover shows', () => {
@@ -125,7 +125,7 @@ describe('lightClientView', () => {
     expect(view.state).toBe('failed')
     expect(view.checkpoint).toBe('No usable checkpoint: the beacon server would not start the light client from the newest checkpoint (shipped with this release). A fresh one could not be fetched from the beacon servers: a beacon server did not answer. Installing a newer release brings one too.')
     expect(view.summary).toBe('Not running: the beacon server would not start it from the checkpoint it was given, and no other is at hand. A fresh one could not be fetched: a beacon server did not answer.')
-    expect(lightClientView(facts({ checkpoint: { ok: false, problem: 'not-served', source: 'release', ageSeconds: 86_400 } }), NOW).checkpoint).toMatch(/\(shipped with this release\)\. Opening a \.eth name asks two beacon servers for a fresh one\./)
+    expect(lightClientView(facts({ checkpoint: { ok: false, problem: 'not-served', source: 'release', ageSeconds: 86_400 } }), NOW).checkpoint).toMatch(/\(shipped with this release\)\. Opening a \.eth or \.og name asks two beacon servers for a fresh one\./)
   })
 
   it('does not call a checkpoint the newest when a newer one was left out for having no bootstrap', () => {
@@ -144,7 +144,7 @@ describe('lightClientView', () => {
     const timestamp = Date.UTC(2026, 9, 20, 14, 3) / 1000
     const view = lightClientView(facts({ checkpoint: { ok: true, checkpoint: { root: ROOT, timestamp }, source: 'fetched', ageSeconds: 2 * 3600, fetchedFrom: ['https://ethereum-beacon-api.publicnode.com', 'https://lodestar-mainnet.chainsafe.io'] } }), NOW)
     expect(view.checkpointFetched).toBe(true)
-    expect(view.checkpoint).toBe('Checkpoint 2 hours old, dated 2026-10-20 14:03 UTC. It was fetched while a .eth name was opened, because none stored here was recent enough; ethereum-beacon-api.publicnode.com and lodestar-mainnet.chainsafe.io gave the same answer.')
+    expect(view.checkpoint).toBe('Checkpoint 2 hours old, dated 2026-10-20 14:03 UTC. It was fetched while a .eth or .og name was opened, because none stored here was recent enough; ethereum-beacon-api.publicnode.com and lodestar-mainnet.chainsafe.io gave the same answer.')
   })
 
   it('says one hour, not 1 hours', () => {
@@ -280,7 +280,7 @@ describe('the servers the person named', () => {
     const failed = { state: 'failed', reason: '127.0.0.1:8545/•••• answered 401', retryAt: NOW + 5_000, ownServersFailed: true } as const
     const view = lightClientView(facts({ lightClient: failed, ownServers: both }), NOW)
     expect(view.state).toBe('failed')
-    expect(view.summary).toBe("Failed: 127.0.0.1:8545/•••• answered 401. Trying again in 5 s. Orivon's servers are not asked instead, so .eth names wait. Check the servers you set in Settings > Web3, or choose Orivon's servers there.")
+    expect(view.summary).toBe("Failed: 127.0.0.1:8545/•••• answered 401. Trying again in 5 s. Orivon's servers are not asked instead, so .eth and .og names wait. Check the servers you set in Settings > Web3, or choose Orivon's servers there.")
     expect(lightClientView(facts({ lightClient: failed }), NOW).summary).toBe('Failed: 127.0.0.1:8545/•••• answered 401. Trying again in 5 s.')
   })
 

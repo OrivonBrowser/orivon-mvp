@@ -3,11 +3,15 @@
 // and its providers here; nothing else in the host changes.
 
 import { defineProtocol } from '../protocol.js'
-import type { Protocol } from '../protocol.js'
+import { namespacesOf } from '../protocol.js'
+import type { Protocol, ProtocolDescriptor } from '../protocol.js'
 import { ResolutionError } from '../resolution/records.js'
 import type { NameResolver } from '../resolution/providers.js'
 import { ENS } from '../ens/descriptor.js'
 import { createEnsResolver } from '../ens/resolver.js'
+import type { CcipRequest, Eip1193Provider } from '../ens/resolver.js'
+import { OG } from '../og/descriptor.js'
+import { createOgResolver } from '../og/resolver.js'
 import type { SequenceStore } from '../ipfs/ipns.js'
 import { createIpfsGatherer, LOCAL_NODE_BLOCK_RETRY } from '../ipfs/gatherer.js'
 import type { IpfsGathererOptions } from '../ipfs/gatherer.js'
@@ -39,8 +43,8 @@ import { keptIn } from './swarm-chunk-memory.js'
 export interface RunningProtocols {
   /** In the order their providers are tried. */
   readonly protocols: readonly Protocol[]
-  /** The `.eth` protocol among them, which a tunnel-profile website shares when the light client runs outside the tunnel. */
-  readonly ens: Protocol
+  /** The `.eth` and `.og` protocols among them, which a tunnel-profile website shares when the light client runs outside the tunnel. */
+  readonly names: readonly Protocol[]
   readonly lightClient: LightClient | undefined
   readonly stores: SharedStores
   /** The route the host's own requests travel: slower than a direct connection when the whole browser is on a tunnel. */
@@ -88,12 +92,38 @@ export function feedIndexStore (initial: Readonly<Record<string, string>>, post:
   }
 }
 
-export function offResolver (reason: string): NameResolver {
+/** What answers a name of `protocol` when the light client that would prove it is off or refused: `unavailable`, with the reason in words. */
+export function offResolver (reason: string, protocol: ProtocolDescriptor = ENS): NameResolver {
   return {
-    id: 'ens',
-    namespaces: ['.eth'],
+    id: protocol.id,
+    namespaces: namespacesOf(protocol),
     resolve: async () => { throw new ResolutionError('unavailable', reason) }
   }
+}
+
+/** What the light client's state gives the protocols that prove a name by it. */
+export type LightClientState =
+  | { readonly off: string }
+  | { readonly provider: Eip1193Provider, readonly ccipRequest: CcipRequest, readonly servers?: Eip1193Provider | undefined }
+
+/** The reason given when the host has no light client and main said nothing more. */
+export const LIGHT_CLIENT_NOT_RUNNING = 'the Ethereum light client is not running, so no .eth or .og name can be verified'
+
+/**
+ * The protocols one Ethereum light client proves names for, `.eth` then `.og`: each with the fixture resolver of its own
+ * names in a test build, then the resolver the client's state allows, or the one that says why it cannot answer.
+ */
+export function ethereumNames (config: HostConfig, deps: HostDeps, state: LightClientState): readonly Protocol[] {
+  const fixtures = config.fixtures !== undefined && deps.fixturesAllowed ? config.fixtures : undefined
+  const resolversOf = (protocol: ProtocolDescriptor, real: NameResolver): NameResolver[] => {
+    const [namespace] = namespacesOf(protocol)
+    return [...(fixtures === undefined || namespace === undefined ? [] : [createFixtureResolver(fixtures, namespace)]), real]
+  }
+  const off = 'off' in state
+  return [
+    defineProtocol(ENS, { resolvers: resolversOf(ENS, off ? offResolver(state.off, ENS) : createEnsResolver({ provider: state.provider, ccipRequest: state.ccipRequest })) }),
+    defineProtocol(OG, { resolvers: resolversOf(OG, off ? offResolver(state.off, OG) : createOgResolver({ provider: state.provider, servers: state.servers })) })
+  ]
 }
 
 /** What the shell can change while the host runs. */
@@ -212,33 +242,24 @@ export function ethereumRoute (config: HostConfig, deps: HostDeps, tunnel: Route
   return { web: deps.fetch, ccip: { directFetch: deps.ccipFetch, fetch: deps.fetch, resolveHost: deps.resolveForCheck ?? deps.resolveHost, direct: config.ccipDirect, farEnd: config.front !== undefined }, pace: tunnel }
 }
 
-function startEns (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { protocol: Protocol, lightClient: LightClient | undefined } {
-  const resolvers: NameResolver[] = []
-  if (config.fixtures !== undefined && deps.fixturesAllowed) resolvers.push(createFixtureResolver(config.fixtures))
-  if (config.lightClient === undefined) {
-    resolvers.push(offResolver(config.lightClientOff ?? 'the Ethereum light client is not running, so no .eth name can be verified'))
-    return { protocol: defineProtocol(ENS, { resolvers }), lightClient: undefined }
-  }
+function startNames (config: HostConfig, deps: HostDeps, tunnel: RoutePace): { protocols: readonly Protocol[], lightClient: LightClient | undefined } {
+  if (config.lightClient === undefined) return { protocols: ethereumNames(config, deps, { off: config.lightClientOff ?? LIGHT_CLIENT_NOT_RUNNING }), lightClient: undefined }
   const route = ethereumRoute(config, deps, tunnel)
   const reach = lightClientFetch(config.lightClient, route.web, deps.localFetch, 'the light client')
   if ('off' in reach) {
     // Main logs a failed status once per reason, and shows it on the status page and in a report; the host prints nothing for this one.
     const reason = `the Ethereum servers set in Settings cannot be used: ${reach.off}`
     deps.post({ type: 'status', status: { state: 'failed', reason, retryAt: undefined } })
-    resolvers.push(offResolver(reason))
-    return { protocol: defineProtocol(ENS, { resolvers }), lightClient: undefined }
+    return { protocols: ethereumNames(config, deps, { off: reason }), lightClient: undefined }
   }
   const lightClient = deps.startLightClient(config.lightClient, reach.send, deps.post, undefined, lightClientPace(paceOn(route.pace)))
-  resolvers.push(createEnsResolver({
-    provider: lightClient.provider,
-    ccipRequest: async (parameters, signal) => await guardedCcipRequest(parameters, route.ccip, DEFAULT_CCIP_LIMITS, signal)
-  }))
-  return { protocol: defineProtocol(ENS, { resolvers }), lightClient }
+  const ccipRequest: CcipRequest = async (parameters, signal) => await guardedCcipRequest(parameters, route.ccip, DEFAULT_CCIP_LIMITS, signal)
+  return { protocols: ethereumNames(config, deps, { provider: lightClient.provider, ccipRequest, servers: lightClient.serverReads }), lightClient }
 }
 
 export function startProtocols (config: HostConfig, deps: HostDeps, nodes?: NodeLinks, controls: HostControls = { lookupService: config.ipfsNode?.lookupService !== false, consent: new GatewayConsent() }): RunningProtocols {
   const route = routeFor(config.front !== undefined)
-  const ens = startEns(config, deps, route)
+  const names = startNames(config, deps, route)
   const ipfsNode = nodes?.to(IPFS_NODE_IDENTITY, IPFS_NODE_WORDS)
   const swarmNode = nodes?.to(SWARM_NODE_IDENTITY, SWARM_NODE_WORDS)
   const stores: SharedStores = {
@@ -247,9 +268,9 @@ export function startProtocols (config: HostConfig, deps: HostDeps, nodes?: Node
     ...(config.swarmChunks !== undefined && { swarmChunks: new SwarmChunkDatabase({ ...config.swarmChunks, log: (line) => { console.error(`[verifier] ${line}`) } }) })
   }
   return {
-    protocols: [ens.protocol, startIpfs(config, deps, ipfsNode, controls, stores, route), startSwarm(config, deps, swarmNode, stores, route)],
-    ens: ens.protocol,
-    lightClient: ens.lightClient,
+    protocols: [...names.protocols, startIpfs(config, deps, ipfsNode, controls, stores, route), startSwarm(config, deps, swarmNode, stores, route)],
+    names: names.protocols,
+    lightClient: names.lightClient,
     stores,
     route
   }

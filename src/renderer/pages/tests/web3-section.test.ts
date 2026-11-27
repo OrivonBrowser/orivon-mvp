@@ -4,7 +4,7 @@ import { SettingsState } from '../settings/state.js'
 import type { OrivonInternal } from '../shared/bridge.js'
 import type { Row } from '../settings/model.js'
 
-const SUMMARY = 'Switched off. No .eth name can be verified, so none loads.'
+const SUMMARY = 'Switched off. No .eth or .og name can be verified, so none loads.'
 
 function stateWith (status: { forcedOff: boolean } | null, chosen = true): SettingsState {
   const bridge = { request: vi.fn(async () => await Promise.resolve(undefined)), onEvent: () => () => {} } as unknown as OrivonInternal

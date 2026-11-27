@@ -30,7 +30,7 @@ describe('labelFor', () => {
 
 describe('ProtocolAddresses', () => {
   it('routes each top-level domain and the one address suffix to the verifier, and nothing else', () => {
-    expect(addresses.routedSuffixes()).toEqual(['eth', 'orivon'])
+    expect(addresses.routedSuffixes()).toEqual(['eth', 'og', 'orivon'])
     for (const host of ['vitalik.eth', 'Vitalik.ETH', `${CID}.ipfs.orivon`, 'ipfs.orivon', 'unknown.scheme.orivon']) expect(addresses.routesToVerifier(host)).toBe(true)
     // `MAP *.eth` does not match a trailing dot, so neither may this: the loader would skip a public-address check for a host DNS resolves.
     for (const host of ['eth', 'orivon', 'example.com', 'eth.example.com', 'orivon.example', 'a..eth', 'vitalik.eth.', `${CID}.ipfs.orivon.`]) expect(addresses.routesToVerifier(host)).toBe(false)

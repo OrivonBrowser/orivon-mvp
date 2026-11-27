@@ -4,6 +4,10 @@
 import { request } from 'node:https'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildDag, fakeGateways } from '../../ipfs/tests/dag.test-helpers.js'
+import { ChainError } from '../../og/chain.js'
+import bundledCensus from '../../og/census.json'
+import { VECTORS } from '../../og/tests/vectors.js'
+import { fakeProvider, worldOf } from '../../og/tests/world.js'
 import { referenceCid } from '../../swarm/reference.js'
 import { buildSite } from '../../../../test/apps/swarm-gateway/encode.mjs'
 import { EgressRefused, guardedCcipRequest } from '../egress.js'
@@ -66,6 +70,12 @@ async function get (port: number, host: string, tunnel: boolean | TunnelRoute, p
       res.on('end', () => { resolve({ status: res.statusCode ?? 0, body }) })
     }).on('error', reject).end()
   })
+}
+
+/** A light client that cannot yet prove anything: its provider and its server reads both say so. */
+function unsynced (message = 'x'): LightClient {
+  const provider = { request: async (): Promise<never> => { throw new ResolutionError('not-synced', message) } }
+  return { status: () => ({ state: 'off' }), provider, serverReads: provider }
 }
 
 describe('the route a request takes', () => {
@@ -181,7 +191,7 @@ describe('two tunnels at once', () => {
   it('proves the names of each tunnel\'s websites with a light client of its own', async () => {
     const CONFIG: LightClientConfig = { executionRpcs: ['https://rpc.example'], consensusRpc: 'https://beacon.example', checkpoint: `0x${'ab'.repeat(32)}` }
     const starts: Array<TunnelRoute | undefined> = []
-    const quiet = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
+    const quiet = (): LightClient => unsynced()
     const host = await startHost(config({ lightClient: CONFIG }), deps({ startLightClient: (_config, _fetch, _report, route) => { starts.push(route); return quiet() } }))
     running.push(host)
     await get(host.port, 'unknown.eth', 'nym')
@@ -301,7 +311,7 @@ describe('the light client of a tunnel-profile website', () => {
 
   it('starts at the first tunnel-profile name that needs it, never before, and fetches through the routed fetch only', async () => {
     const starts: Array<{ route: TunnelRoute | undefined, fetch: HostDeps['fetch'] }> = []
-    const lightClient = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'the light client is still syncing') } } })
+    const lightClient = (): LightClient => unsynced('the light client is still syncing')
     const spied = deps({ startLightClient: (_config, fetch, _report, route) => { starts.push({ route, fetch }); return lightClient() } })
     const host = await startHost(config({ lightClient: CONFIG }), spied)
     running.push(host)
@@ -322,7 +332,7 @@ describe('the light client of a tunnel-profile website', () => {
 
   it('is told to wait the tunnel\'s time for a first sync and for its execution servers, and the shared client is told the same, and to start late, only while the whole browser is on the tunnel', async () => {
     const waits: Array<{ route: TunnelRoute | undefined, wait: number | undefined, startAfter: number | undefined, hedge: number | undefined }> = []
-    const lightClient = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
+    const lightClient = (): LightClient => unsynced()
     const record = (_config: LightClientConfig, _fetch: HostDeps['fetch'], _report: unknown, route?: TunnelRoute, pace?: { syncWaitMs: number, startAfterMs: number, rpcHedgeMs: number }): LightClient => { waits.push({ route, wait: pace?.syncWaitMs, startAfter: pace?.startAfterMs, hedge: pace?.rpcHedgeMs }); return lightClient() }
     const direct = await startHost(config({ lightClient: CONFIG }), deps({ startLightClient: record }))
     running.push(direct)
@@ -336,7 +346,7 @@ describe('the light client of a tunnel-profile website', () => {
 
   describe('when the light client runs outside the tunnel', () => {
     const FRONT = { port: 1, username: 'u', password: 'p' }
-    const quiet = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
+    const quiet = (): LightClient => unsynced()
 
     it('leaves through the outside fetch while the whole browser is on the tunnel, never the front, and syncs at the direct pace', async () => {
       const starts: Array<{ fetch: HostDeps['fetch'], pace: { syncWaitMs: number, startAfterMs: number } | undefined }> = []
@@ -385,7 +395,7 @@ describe('the light client of a tunnel-profile website', () => {
       ownServers: { execution: true, consensus: true }
     }
     const FRONT = { port: 1, username: 'u', password: 'p' }
-    const quiet = (): LightClient => ({ status: () => ({ state: 'off' }), provider: { request: async () => { throw new ResolutionError('not-synced', 'x') } } })
+    const quiet = (): LightClient => unsynced()
     const local: string[] = []
     const localFetch = async (url: string): Promise<Response> => { local.push(url); return new Response('{}') }
     const asked = async (fetch: HostDeps['fetch'] | undefined): Promise<void> => {
@@ -502,4 +512,40 @@ describe('CCIP-Read for a tunnel-profile website', () => {
       await expect(guardedCcipRequest(parameters(url), tunnelCcipDeps(fetch))).rejects.toThrow(/no offchain gateway answered/)
     }
   })
+})
+
+describe('the servers a `.og` name\'s old history is asked of', () => {
+  const CONFIG: LightClientConfig = { executionRpcs: ['https://rpc.example'], consensusRpc: 'https://beacon.example', checkpoint: `0x${'ab'.repeat(32)}` }
+  const NAME = VECTORS.find((one) => one.id === 'unwrapped-passes') as (typeof VECTORS)[number]
+  const HEAD = bundledCensus.block + 60_000
+  const RING = 8_191
+  /** Written after the bundled census and before the newest 8,191 blocks, so only the servers can still read it. */
+  const world = worldOf(NAME, { spread: 300, head: HEAD, first: bundledCensus.block + 2_000 })
+  const outsideRing = (block: number): ChainError | undefined => block < HEAD - RING ? new ChainError('invalid', `block ${String(block)} is outside EIP-2935 ring buffer range`) : undefined
+  const lightClient = (): ReturnType<typeof fakeProvider> => fakeProvider(world, { faults: { logs: (filter) => outsideRing(filter.fromBlock), transactionAt: outsideRing } })
+
+  /** Two light clients, as a host starts them: the shared one (no route) and a tunnel's (`nym`), each with servers of its own. */
+  function started (): { clients: (route?: TunnelRoute) => LightClient, shared: ReturnType<typeof fakeProvider>, tunnel: ReturnType<typeof fakeProvider> } {
+    const shared = fakeProvider(world, { maxSpan: 10_000 })
+    const tunnel = fakeProvider(world, { maxSpan: 10_000 })
+    return { shared, tunnel, clients: (route) => ({ status: () => ({ state: 'off' }), provider: lightClient(), serverReads: route === undefined ? shared : tunnel }) }
+  }
+
+  it('is the shared light client\'s own servers, for a website outside a tunnel', async () => {
+    const { clients, shared, tunnel } = started()
+    const host = await startHost(config({ lightClient: CONFIG }), deps({ startLightClient: (_config, _fetch, _report, route) => clients(route) }))
+    running.push(host)
+    await get(host.port, `${NAME.label}.og`, false, '/', true)
+    expect(shared.asked.logs.length).toBeGreaterThan(0)
+    expect(tunnel.asked.logs).toEqual([])
+  }, 40_000)
+
+  it('is the light client of its own servers, for a website in a tunnel\'s profile, and never the shared client\'s', async () => {
+    const { clients, shared, tunnel } = started()
+    const host = await startHost(config({ lightClient: CONFIG }), deps({ startLightClient: (_config, _fetch, _report, route) => clients(route) }))
+    running.push(host)
+    await get(host.port, `${NAME.label}.og`, true, '/', true)
+    expect(tunnel.asked.logs.length).toBeGreaterThan(0)
+    expect(shared.asked.logs).toEqual([])
+  }, 40_000)
 })

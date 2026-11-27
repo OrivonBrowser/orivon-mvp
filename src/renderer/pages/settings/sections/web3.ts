@@ -14,9 +14,9 @@ export const web3: Section = {
     },
     {
       id: 'web3-light-client',
-      label: 'Verify .eth names on this computer',
-      help: 'A light client proves what a .eth name points to before its page loads, so nobody has to be trusted to say. Turn it off and no .eth name loads. A change applies at once.',
-      keywords: ['ethereum', 'ens', 'eth', 'light client', 'helios', 'verify', 'names', 'ipfs'],
+      label: 'Verify .eth and .og names on this computer',
+      help: 'A light client proves what a .eth or .og name points to before its page loads, so nobody has to be trusted to say. Turn it off and no .eth or .og name loads. A change applies at once.',
+      keywords: ['ethereum', 'ens', 'eth', 'og', 'linagee', 'light client', 'helios', 'verify', 'names', 'ipfs'],
       control: { type: 'toggle', key: 'web3.lightClient', disabled: (state) => state.web3.status?.forcedOff === true }
     },
     {
@@ -37,8 +37,8 @@ export const web3: Section = {
     {
       id: 'web3-eth-servers',
       label: 'Ethereum servers',
-      help: "Orivon's servers are the public Ethereum servers Orivon asks by default. With your own, yours are asked instead of Orivon's, and Orivon's are not tried when yours fail: a .eth name waits until yours answer again, and the light client's state below says which one broke. Every answer is still checked on this computer, so a server can stop a .eth site from loading but never make one show the wrong site. A server learns the names you open; an address with a key in it ties them to your account there, even through a tunnel. A server on this computer or your home network is reached directly, never through a tunnel. In a private window that runs through Nym, Orivon's servers are always used. A change applies at once.",
-      keywords: ['ethereum', 'ens', 'eth', 'rpc', 'node', 'infura', 'alchemy', 'drpc', 'custom', 'own', 'server', 'servers', 'beacon', 'privacy', 'helios', 'light client'],
+      help: "Orivon's servers are the public Ethereum servers Orivon asks by default. With your own, yours are asked instead of Orivon's, and Orivon's are not tried when yours fail: a .eth or .og name waits until yours answer again, and the light client's state below says which one broke. Every answer is still checked on this computer, so a server can stop a .eth site from loading but never make one show the wrong site. A server learns the names you open; an address with a key in it ties them to your account there, even through a tunnel. A server on this computer or your home network is reached directly, never through a tunnel. In a private window that runs through Nym, Orivon's servers are always used. A change applies at once.",
+      keywords: ['ethereum', 'ens', 'eth', 'og', 'rpc', 'node', 'infura', 'alchemy', 'drpc', 'custom', 'own', 'server', 'servers', 'beacon', 'privacy', 'helios', 'light client'],
       control: { type: 'choice', key: 'web3.ethServers', locked: (state) => state.isHeld('web3.ethServers') }
     },
     {

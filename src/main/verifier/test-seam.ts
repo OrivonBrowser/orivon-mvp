@@ -32,7 +32,7 @@ export function parseEthTestSeam (env: Readonly<Record<string, string | undefine
   if (raw === undefined) return undefined
   const parsed: unknown = JSON.parse(raw)
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed) || !Object.values(parsed).every((v) => typeof v === 'string')) {
-    throw new Error('ORIVON_TEST_ETH_FIXTURES must be a JSON object of "name.eth": "ipfs://..." or "bzz://..."')
+    throw new Error('ORIVON_TEST_ETH_FIXTURES must be a JSON object of "name.eth" or "name.og": "ipfs://..." or "bzz://..."')
   }
   const nodeEndpoint = env['ORIVON_TEST_IPFS_NODE']?.trim()
   const retryWait = Number(env['ORIVON_TEST_IPFS_NODE_RETRY_WAIT_MS'])

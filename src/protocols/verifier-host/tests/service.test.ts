@@ -448,12 +448,23 @@ describe('startHost', () => {
     expect(await host.answer({ kind: 'provenance', host: 'fixture.eth', partition: 'https://tracker.example' })).toBeNull()
   })
 
+  it('serves a `.og` fixture name as it serves a `.eth` one, and reports its provenance', async () => {
+    const host = await startHost(config({ fixtures: { 'fixture.og': `ipfs://${dag.root.toString()}` } }), deps())
+    running.push(host)
+    expect(await get(host.port, 'fixture.og')).toEqual({ status: 200, body: '<h1>fixture</h1>' })
+    const provenance = await host.answer({ kind: 'provenance', host: 'fixture.og', partition: 'https://fixture.og' })
+    expect(provenance).toMatchObject({ host: 'fixture.og', resolver: 'fixture', root: { kind: 'ipfs', cid: dag.root.toString() }, ddoc: { status: 'met' } })
+  })
+
   it('refuses fixture names unless the build allows them, failing closed like any unverifiable name', async () => {
     const host = await startHost(config(), deps({ fixturesAllowed: false }))
     running.push(host)
     const reply = await get(host.port, 'fixture.eth')
     expect(reply.status).toBe(502)
     expect(reply.body).toContain('the Ethereum light client is not running')
+    const og = await get(host.port, 'fixture.og')
+    expect(og.status).toBe(502)
+    expect(og.body).toContain('no .eth or .og name can be verified')
   })
 
   it('fails every real name closed while the light client does not run, and says why on the page', async () => {

@@ -45,6 +45,13 @@ describe('a .eth name', () => {
     }
   })
 
+  it('has no link for a .og name, which no gateway serves, whichever way it is written', () => {
+    for (const address of ['https://linagee.og', 'http://linagee.og/x?y=1', 'https://app.linagee.og/', 'ipfs://linagee.og', 'ipns://linagee.og/x']) {
+      expect(webLinkFor(address), address).toBeUndefined()
+      expect(webLinkDiffering(address), address).toBeUndefined()
+    }
+  })
+
   it('does not rewrite a name that merely ends in eth', () => {
     expect(webLinkFor('https://example.com/vitalik.eth')).toBe('https://example.com/vitalik.eth')
     expect(webLinkFor('https://beth.example/')).toBe('https://beth.example/')

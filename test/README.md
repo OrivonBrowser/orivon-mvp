@@ -27,7 +27,7 @@ runs a real upstream app.
 | `capabilities/` | `orivon.*` grants enforced from a real page: net, fs, id, request routing, `web.embed`, web contexts, the permission gate |
 | `node-runtime/` | The Node shim in an app tab: child processes, native addons, WASI, sqlite, threads, `Buffer` |
 | `ported-apps/` | Real upstream apps running unchanged (the ones that need a ports checkout skip without it) |
-| `web3/` | `.eth` names, IPFS, Website level and Web3 Score |
+| `web3/` | `.eth` and `.og` names, IPFS, Website level and Web3 Score |
 | `extensions/` | Chrome extensions: loading, permissions, popups, the store, `webRequest`, uninstall |
 | `tabs/` | The tab strip, groups, moves and drags, sleeping, crashes, split view, opening links |
 | `toolbar/` | The address bar, its dropdown, search engines and toolbar popups |

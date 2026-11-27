@@ -5,7 +5,7 @@ page: `defineProtocol` ([`protocol.ts`](protocol.ts)), the one function every pr
 through; [`address.ts`](address.ts), between the address a person reads (`ipfs://<cid>/x`) and the
 URL a page is served at (`https://<cid>.ipfs.orivon/x`); [`registry.ts`](registry.ts), the
 fallback rule across providers; the provider interfaces ([`resolution/`](resolution/)); each
-protocol ([`ens/`](ens/), [`ipfs/`](ipfs/), [`swarm/`](swarm/)), with the gateway scheduling the
+protocol ([`ens/`](ens/), [`og/`](og/), [`ipfs/`](ipfs/), [`swarm/`](swarm/)), with the gateway scheduling the
 content-addressed ones share ([`gateways/`](gateways/)); [`verifier-host/`](verifier-host/), the process
 that runs every provider and serves their pages; [`local-node/`](local-node/), the process
 that runs a node of Orivon's own on this computer; [`swarm-node/`](swarm-node/) and

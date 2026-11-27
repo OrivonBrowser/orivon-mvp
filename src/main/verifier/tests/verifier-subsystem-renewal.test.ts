@@ -135,7 +135,7 @@ describe('the verifier subsystem', () => {
       expect(beacon.asked.filter((url) => url.endsWith('/headers/finalized')).sort()).toEqual(SERVERS.map((server) => `${server}/eth/v1/beacon/headers/finalized`).sort())
       expect(beacon.asked.filter((url) => url.includes('/bootstrap/'))).toEqual([`${SERVERS[0]!}/eth/v1/beacon/light_client/bootstrap/${ROOT}`])
       expect(starts(0)[0]?.config?.lightClient?.checkpoint).toBe(ROOT)
-      expect(verifierView().checkpoint).toMatch(/^Checkpoint 1 hours? old, dated .* UTC\. It was fetched while a \.eth name was opened.*ethereum-beacon-api\.publicnode\.com and lodestar-mainnet\.chainsafe\.io gave the same answer\.$/)
+      expect(verifierView().checkpoint).toMatch(/^Checkpoint 1 hours? old, dated .* UTC\. It was fetched while a \.eth or \.og name was opened.*ethereum-beacon-api\.publicnode\.com and lodestar-mainnet\.chainsafe\.io gave the same answer\.$/)
       const stored = JSON.parse(readFileSync(join(electron.userData, 'verifier', 'checkpoint.json'), 'utf8')) as { root: string, fetchedFrom: string[] }
       expect(stored).toMatchObject({ root: ROOT, fetchedFrom: SERVERS })
     })
@@ -206,7 +206,7 @@ describe('the verifier subsystem', () => {
       expect(forks()[0]?.killed).toBe(true)
       expect(forks()).toHaveLength(2)
       expect(starts(1)[0]?.config?.lightClient?.checkpoint).toBe(ROOT)
-      expect(verifierView().checkpoint).toMatch(/It was fetched while a \.eth name was opened/)
+      expect(verifierView().checkpoint).toMatch(/It was fetched while a \.eth or \.og name was opened/)
       const stored = JSON.parse(readFileSync(join(electron.userData, 'verifier', 'checkpoint.json'), 'utf8')) as { root: string }
       expect(stored.root).toBe(ROOT)
     })

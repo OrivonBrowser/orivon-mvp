@@ -25,7 +25,7 @@ const MAX_ADDRESS_CHARS = 2048
 const HOME_WAIT_MS = 5_000
 const IPFS_ADDRESS = /^ipfs:\/\/([^/?#\s]+)/i
 const SWARM_ADDRESS = /^bzz:\/\/([^/?#\s]+)/i
-const BARE_ETH_ADDRESS = /^[^:/?#\s]+\.eth(?:[/?#]|$)/i
+const BARE_ADDRESS = /^([^:/?#\s]+)(?:[/?#]|$)/
 
 export interface PageScoreDeps extends ScoreProviderDeps {
   /** The content CID a `.eth` host names, resolved by the verifier in `partition`; undefined or a throw when it does not resolve. */
@@ -43,8 +43,10 @@ export interface PageScoreLookup {
 
 type Named = { readonly kind: 'cid', readonly scheme: 'ipfs' | 'bzz', readonly cid: string } | { readonly kind: 'eth', readonly host: string }
 
-function ethHostOf (address: string): string | undefined {
-  const candidate = /^https:\/\//i.test(address) ? address : BARE_ETH_ADDRESS.test(address) ? `https://${address}` : undefined
+/** The host of `address` when it names a name under a top-level domain a built-in protocol resolves (`.eth`, `.og`), typed bare or over https. */
+function nameHostOf (address: string): string | undefined {
+  const bare = BARE_ADDRESS.exec(address)?.[1]?.toLowerCase()
+  const candidate = /^https:\/\//i.test(address) ? address : bare !== undefined && BUILTIN_ADDRESSES.nameOrigin(bare) !== undefined ? `https://${address}` : undefined
   if (candidate === undefined) return undefined
   let host: string
   try {
@@ -52,8 +54,8 @@ function ethHostOf (address: string): string | undefined {
   } catch {
     return undefined
   }
-  // The verifier host refuses a name that is not in ENS normal form, before it asks anyone.
-  return host.endsWith('.eth') && host.length > '.eth'.length ? host : undefined
+  // The verifier host refuses a name its resolver does not accept (not in normal form), before it asks anyone.
+  return BUILTIN_ADDRESSES.nameOrigin(host) === undefined ? undefined : host
 }
 
 function contentNamedBy (address: string): Named | undefined {
@@ -69,7 +71,7 @@ function contentNamedBy (address: string): Named | undefined {
     const reference = parseReference(swarm[1]!)
     return reference === undefined ? undefined : { kind: 'cid', scheme: 'bzz', cid: referenceCid(reference) }
   }
-  const host = ethHostOf(text)
+  const host = nameHostOf(text)
   return host === undefined ? undefined : { kind: 'eth', host }
 }
 

@@ -106,6 +106,11 @@ describe('parseOmniboxInput', () => {
       expect(parseOmniboxInput('app.ens.eth/path')).toEqual({ kind: 'url', url: 'https://app.ens.eth/path' })
     })
 
+    it('a bare .og name defaults to https, where the verifier serves it', () => {
+      expect(parseOmniboxInput('linagee.og')).toEqual({ kind: 'url', url: 'https://linagee.og/' })
+      expect(parseOmniboxInput('app.linagee.og/path?a=1')).toEqual({ kind: 'url', url: 'https://app.linagee.og/path?a=1' })
+    })
+
     it('a developer-mode .eth name defaults to http, case-insensitively', () => {
       const dev = (host: string): boolean => host === 'freetube.eth'
       expect(parseOmniboxInput('freetube.eth', dev)).toEqual({ kind: 'url', url: 'http://freetube.eth/' })
