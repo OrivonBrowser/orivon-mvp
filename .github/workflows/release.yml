@@ -229,10 +229,18 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: '1'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ./release/*.deb
+          # The desktop-file tools first, so the deb's postinstall refreshes the database of entries the way it does on a desktop.
+          sudo apt-get install -y xvfb desktop-file-utils libglib2.0-bin
+          sudo apt-get install -y ./release/*.deb
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs /opt/Orivon/orivon
           chmod +x release/*.AppImage
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs release/*.AppImage
+
+      # The deb's desktop entry, and an orivon: link handed to the desktop the way another program hands one. The bare AppImage
+      # has no step like this: it registers nothing, by design (ADR-0094).
+      - name: The installed deb takes orivon, links
+        if: matrix.platform == 'linux'
+        run: node scripts/run-headless.mjs node scripts/smoke-orivon-link.mjs /opt/Orivon/orivon
 
       # How long a click takes to show the browser, timed from outside by scripts/first-start-probe.mjs on the package
       # each system installs: three launches on new profiles, then three more on one. Timing is evidence, never a
@@ -281,7 +289,16 @@ jobs:
           test "$(ls -A "$lib" | sort | tr '\n' ' ')" = 'app orivon '
           test -f "$install_home/.local/share/icons/hicolor/512x512/apps/orivon.png"
           grep -q 'x-scheme-handler/https' "$install_home/.local/share/applications/orivon.desktop"
+          grep -q 'x-scheme-handler/orivon' "$install_home/.local/share/applications/orivon.desktop"
           node scripts/run-headless.mjs node scripts/smoke-packaged.mjs "$lib/orivon"
+
+      # The entry that install wrote, found where a desktop finds it: HOME is the scratch home, so the person's entry comes
+      # before the deb's, which is still installed. A link handed to the desktop must reach the app that entry starts.
+      - name: The one-line install takes orivon, links
+        if: matrix.platform == 'linux'
+        run: |
+          install_home="$RUNNER_TEMP/install-home"
+          HOME="$install_home" XDG_DATA_HOME="$install_home/.local/share" XDG_CONFIG_HOME="$install_home/.config" node scripts/run-headless.mjs node scripts/smoke-orivon-link.mjs "$install_home/.local/lib/orivon/orivon"
 
       # What a click runs on Linux through the one-line install: the launcher, which starts the unpacked app straight from
       # disk, as the deb does. Then the plain AppImage for comparison, the cost the install removes: unpacked at every start,

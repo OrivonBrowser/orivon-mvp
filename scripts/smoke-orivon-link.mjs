@@ -1,14 +1,21 @@
 /**
  * Whether an installed package is registered with the system as a browser and as the handler of `orivon:` links,
  * and whether a link handed to the system reaches the running app. The release workflow runs it after it
- * installs the NSIS package on Windows and the dmg's app on macOS.
+ * installs the NSIS package on Windows, the dmg's app on macOS, and the .deb and the one-line install on Linux (a
+ * bare AppImage registers nothing, by design). On Linux a link is handed over twice, with `gio open` and with the generic
+ * `xdg-open` (each when installed), because they read the entry's `Exec` line differently.
  *
  * Usage: node scripts/smoke-orivon-link.mjs <executable> [<app bundle>]
+ *
+ * On Linux the system's answer is read from the desktop entry the system hands `x-scheme-handler/orivon` to, which
+ * must start `<executable>`; the environment (`HOME`, `XDG_DATA_HOME`, `XDG_DATA_DIRS`) says whose entries those are.
  *
  * It prints one line per check and exits 1 when any failed. The app it starts uses the default profile, because a
  * link the system starts carries no profile switch; the runner is throwaway.
  */
 import { spawn, spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, realpathSync } from 'node:fs'
+import { join } from 'node:path'
 import { isInvokedDirectly } from './cli.mjs'
 import { devToolsPort, evaluate, shellTarget, stop, waitForShell } from './smoke-packaged.mjs'
 
@@ -16,6 +23,9 @@ const NAME = 'orivon-link-smoke.eth'
 export const LINK = `orivon:open?u=${NAME}/page`
 export const REFUSED_LINK = 'orivon:open?u=https://example.com/refused'
 const OPENED_ADDRESS = `https://${NAME}/page`
+/** The link `xdg-open` hands over: a name of its own, so the address cannot be left over from `LINK`. */
+const XDG_LINK = 'orivon:open?u=orivon-link-xdg-smoke.eth/page'
+const XDG_OPENED_ADDRESS = 'https://orivon-link-xdg-smoke.eth/page'
 const STARTUP_TIMEOUT_MS = 300_000
 const REACH_TIMEOUT_MS = 60_000
 const REFUSAL_SETTLE_MS = 8_000
@@ -76,9 +86,74 @@ function macRegistration (bundle) {
   }
 }
 
-/** Hands `link` to the system, the way another program does. */
-function openLink (link) {
+/** The value of `key` in the `[Desktop Entry]` group of a desktop file's text; undefined when it has none. */
+export function entryValue (text, key) {
+  let inEntry = false
+  for (const line of text.split(/\r?\n/)) {
+    if (line.startsWith('[')) inEntry = line.trim() === '[Desktop Entry]'
+    else if (inEntry && line.startsWith(`${key}=`)) return line.slice(key.length + 1).trim()
+  }
+  return undefined
+}
+
+/** The program an `Exec` value starts: its first word, which a quoted one writes between double quotes with a backslash before a quote or a backslash inside. */
+export function execProgram (exec) {
+  const quoted = /^"((?:[^"\\]|\\.)*)"/.exec(exec)
+  return quoted === null ? (exec.split(/\s+/)[0] ?? '') : quoted[1].replace(/\\(.)/g, '$1')
+}
+
+const sameFile = (a, b) => {
+  try {
+    return realpathSync(a) === realpathSync(b)
+  } catch {
+    return a === b
+  }
+}
+
+/** The folders a desktop reads entries from, the person's first, as `env` names them. */
+const dataDirs = (env) => [env.XDG_DATA_HOME || join(env.HOME ?? '', '.local', 'share'), ...(env.XDG_DATA_DIRS || '/usr/local/share:/usr/share').split(':')].filter((dir) => dir !== '')
+
+/**
+ * The Linux registration, as `checks` of `{ name, ok, detail }`: the desktop entry the system hands `x-scheme-handler/orivon`
+ * to (`xdg-mime query default`, which a desktop's own opener asks too), that it starts `executable`, and that it lists the
+ * two browser schemes beside `orivon`. `env` decides whose folders are read, so a test can read a scratch home alone.
+ */
+export function linuxChecks (executable, env = process.env) {
+  const asked = spawnSync('xdg-mime', ['query', 'default', 'x-scheme-handler/orivon'], { encoding: 'utf8', env, timeout: 30_000 })
+  const id = asked.status === 0 ? String(asked.stdout).trim() : ''
+  const file = id === '' ? undefined : dataDirs(env).map((dir) => join(dir, 'applications', id)).find((path) => existsSync(path))
+  const text = file === undefined ? '' : readFileSync(file, 'utf8')
+  const program = execProgram(entryValue(text, 'Exec') ?? '')
+  const listed = (entryValue(text, 'MimeType') ?? '').split(';')
+  const schemes = ['http', 'https', 'orivon']
+  return [
+    { name: 'the system hands orivon: links to a desktop entry', ok: file !== undefined, detail: file ?? `xdg-mime answered ${JSON.stringify(id)}` },
+    { name: 'that entry starts the installed program', ok: file !== undefined && program !== '' && sameFile(program, executable), detail: `${id} starts ${program}, expected ${executable}` },
+    { name: 'that entry lists http, https and orivon', ok: schemes.every((scheme) => listed.includes(`x-scheme-handler/${scheme}`)), detail: listed.filter((type) => type.startsWith('x-scheme-handler/')).join(',') }
+  ]
+}
+
+function linuxRegistration (executable) {
+  for (const check of linuxChecks(executable)) record(check.name, check.ok, check.detail)
+}
+
+/** Whether `program` is on the path: starting it with `probe` raises no ENOENT. */
+const installed = (program, probe) => spawnSync(program, [probe], { stdio: 'ignore' }).error === undefined
+
+/**
+ * Hands `link` to the system, the way another program does. On Linux that is the desktop's own opener, `gio open`, which is
+ * what a GNOME session's `xdg-open` runs, or `xdg-open` itself when `gio` is not installed. `opener` names one: the generic
+ * `xdg-open` (what a machine with no desktop environment runs: a bare window manager, a container, a runner) is forced
+ * through `XDG_CURRENT_DESKTOP=X-Generic`, so a desktop session this runs in cannot make it pick another.
+ */
+function openLink (link, opener) {
   if (process.platform === 'win32') return run('powershell', ['-NoProfile', '-Command', 'Start-Process -FilePath $env:ORIVON_LINK'], { ORIVON_LINK: link })
+  if (process.platform === 'linux') {
+    // What the system starts must not inherit this script's own Node mode.
+    const env = { ELECTRON_RUN_AS_NODE: undefined }
+    const program = opener ?? (installed('gio', 'version') ? 'gio' : 'xdg-open')
+    return program === 'gio' ? run('gio', ['open', link], env) : run('xdg-open', [link], { ...env, XDG_CURRENT_DESKTOP: 'X-Generic' })
+  }
   return run('open', [link])
 }
 
@@ -87,6 +162,17 @@ async function addressOf (port) {
   const shell = shellTarget(targets)
   if (shell === undefined) return undefined
   return await evaluate(shell.webSocketDebuggerUrl, "document.querySelector('#address')?.value").catch(() => undefined)
+}
+
+/** The shell's address once it is `expected`, or what it showed when `REACH_TIMEOUT_MS` ran out. */
+async function addressBecomes (port, expected) {
+  let address
+  for (const deadline = Date.now() + REACH_TIMEOUT_MS; Date.now() < deadline;) {
+    address = await addressOf(port)
+    if (address === expected) break
+    await sleep(1000)
+  }
+  return address
 }
 
 async function reachesRunningApp (executable) {
@@ -108,13 +194,16 @@ async function reachesRunningApp (executable) {
     record('a link naming an https address opens nothing', refused.status === 0 && !String(afterRefused).includes('example.com'), String(afterRefused))
 
     const opened = openLink(LINK)
-    let address
-    for (const deadline = Date.now() + REACH_TIMEOUT_MS; Date.now() < deadline;) {
-      address = await addressOf(port)
-      if (address === OPENED_ADDRESS) break
-      await sleep(1000)
-    }
+    const address = await addressBecomes(port, OPENED_ADDRESS)
     record('an orivon: link handed to the system reaches the running app', opened.status === 0 && address === OPENED_ADDRESS, `address ${String(address)}, expected ${OPENED_ADDRESS}`)
+
+    // The first hand-over used `gio` when it is installed. The generic `xdg-open` starts the entry's program from the first
+    // word of its Exec line, quotes and all, so it proves that line in a way `gio` does not.
+    if (process.platform === 'linux' && installed('gio', 'version') && installed('xdg-open', '--version')) {
+      const viaXdgOpen = openLink(XDG_LINK, 'xdg-open')
+      const xdgAddress = await addressBecomes(port, XDG_OPENED_ADDRESS)
+      record('an orivon: link handed to xdg-open reaches the running app', viaXdgOpen.status === 0 && xdgAddress === XDG_OPENED_ADDRESS, `address ${String(xdgAddress)}, expected ${XDG_OPENED_ADDRESS}; xdg-open ${String(viaXdgOpen.stderr ?? '').trim()}`)
+    }
   } catch (error) {
     record('the app started on the default profile', false, `${error.message}\n${log.split('\n').slice(-40).join('\n')}`)
   } finally {
@@ -146,6 +235,7 @@ if (isInvokedDirectly(import.meta.url)) {
   }
   if (process.platform === 'win32') windowsRegistration()
   else if (process.platform === 'darwin') macRegistration(bundle)
+  else if (process.platform === 'linux') linuxRegistration(executable)
   else record('this system has no registration to read', false)
   await reachesRunningApp(executable)
   await startsFromLink()

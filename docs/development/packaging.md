@@ -765,8 +765,9 @@ GitHub reports for the asset, and refuses a mismatch or a missing digest before 
 unpacks the AppImage with its own `--appimage-extract` (no FUSE is involved) and writes, under the home folder only:
 the unpacked app as `~/.local/lib/orivon/app/`; a launcher beside it, `orivon`;
 `~/.local/share/applications/orivon.desktop` (the packaged entry's name, categories and the
-`x-scheme-handler/http` and `https` types, plus New Window and New Private Window, its `Exec` the launcher, so
-a desktop's default-browser choice lists Orivon and the entry works wherever the folder is); the icon in
+`x-scheme-handler/http`, `https` and `orivon` types, plus New Window and New Private Window, its `Exec` the launcher, so
+a desktop's default-browser choice lists Orivon, an `orivon:` link from another program reaches it, and the entry
+works wherever the folder is); the icon in
 `~/.local/share/icons/hicolor/512x512/apps/`, from the unpacked app (the repository's copy at the release's
 tag when it has none); and `~/.local/bin/orivon`, a link to the launcher, only when that folder is already on
 `PATH` and holds no other file of that name. The AppImage itself is not kept: nothing reads it, and the download and the
@@ -794,6 +795,14 @@ Orivon, and the next install removes it once nothing runs from it. Nothing is ch
 swap that was interrupted between its two renames is undone by the next run. An install of the earlier layout, which kept `Orivon.AppImage` and a launcher that
 mounted it, is converted by running the command again: its launcher is replaced, its desktop entry and `~/.local/bin`
 link keep working, and the AppImage is removed.
+
+The entry's three `Exec` lines name the launcher as a bare word, as the `.deb`'s do, unless its path holds a character the
+Desktop Entry specification reserves (a space, a quote, `&` and the rest of its list, or `%`), and then in double quotes.
+The bare word is what makes the entry work on a machine with no desktop environment (a bare window manager such as i3 or
+sway, a container, a CI runner): there the generic `xdg-open` takes the first word of `Exec` as the program, quotes
+included, so a quoted program fails with `Permission denied` and no link of any scheme, `http` or `orivon:`, reaches
+Orivon. A desktop's own opener (GNOME's, KDE's, XFCE's) starts either form. Running the install command again rewrites the
+entry, so an entry an earlier version of the script wrote is replaced by the current form.
 
 The desktop entry only lets a desktop list Orivon as a browser. Making it the default is a person's click (the runtime half
 in section Making "set as default browser" possible), which registers that entry as it does for a package.
@@ -916,9 +925,15 @@ and macOS' default-app lists (`docs/open-questions.md` A328).
 - **`orivon:` links.** The Windows installer also writes the class `Software\Classes\orivon` (`URL Protocol`, the same
   `-- "%1"` command), which is not a default-app choice and is removed on uninstall. On macOS and in the Store manifest
   the `protocols` entry carries it (`CFBundleURLTypes`; a `windows.protocol` extension), and on Linux the .deb's desktop
-  entry lists `x-scheme-handler/orivon`. A run from source registers none of them, and the Linux "Orivon (source)"
-  entry does not list the scheme, so a checkout never takes the links from an installed Orivon; the AppImage does
-  not integrate with the desktop and takes none either. What an `orivon:` link may name is in
+  entry and the one-line install's (`scripts/install-linux.sh`) list `x-scheme-handler/orivon`. A run from source
+  registers none of them, and the Linux "Orivon (source)" entry does not list the scheme, so a checkout never takes
+  the links from an installed Orivon; a bare AppImage does not integrate with the desktop and takes none either. The
+  release workflow reads each registration back from the package it built and hands the installed program a link
+  through the system (`scripts/smoke-orivon-link.mjs`): the registry on Windows, LaunchServices on macOS, and on Linux
+  the desktop entry the system names for the scheme, which must start the installed program, with `gio open`, the
+  opener a desktop session's `xdg-open` runs, and then with the generic `xdg-open` (forced with
+  `XDG_CURRENT_DESKTOP=X-Generic`), the opener of a machine with no desktop environment, to hand the link over. What an
+  `orivon:` link may name is in
   [ADR-0094](../decisions/ADR-0094-an-orivon-link-from-another-program-opens-a-eth-name-or-an-ipfs-address.md).
 - **macOS.** `protocols` becomes `CFBundleURLTypes`. No HTML document types are declared, so a file dropped on the
   dock icon is refused and logged. Make default calls `setAsDefaultProtocolClient`, which the system confirms.
