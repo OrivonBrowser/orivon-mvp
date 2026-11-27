@@ -110,3 +110,10 @@ when its upgrade list is not the pinned one.
 
 **The block is the newest the light client has verified**, as the ENS resolver reads, not a finalised one: the
 execution servers prove state only for recent blocks. Windows of logs are kept only up to 64 blocks behind it.
+
+## Checking it against mainnet
+
+The unit tests read recorded chain data. `test/web3/e2e-og-domains-live.test.ts` is the one check against the real chain: with
+`ORIVON_OG_LIVE=1` it opens names that hold IPFS records, a contract record, nothing, and names that are not one label under
+`.og`, in a headless shell on the light client and the default Ethereum servers, and prints what each tab showed and how long
+it took. It is not part of any suite CI runs; [`docs/development/setup.md`](../../../docs/development/setup.md) says how to run it.
