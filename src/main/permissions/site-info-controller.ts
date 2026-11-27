@@ -73,7 +73,7 @@ export interface SiteTrustSources {
   /** Whether the origin is an app that runs in a partition of its own, which the person's extensions do not reach: an app the shell serves in the shared session is reached as any website is. Defaults to `isOriginServedFromCacheSync`. */
   readonly hasOwnPartition?: (origin: string) => boolean
   readonly pinCoverageFor: (origin: string) => PinCoverageEvidence | undefined
-  /** How a `.eth` name led to this origin's content; undefined for any other origin. */
+  /** How a `.eth` or `.og` name led to this origin's content; undefined for any other origin. */
   readonly nameEvidenceFor: (origin: string, pin: PinRecord | null, servedFromCache: boolean) => Promise<NameEvidence | undefined>
   /** A developer-only Website level override for this origin, or `undefined` (`../dev/score-levels.ts`). */
   readonly levelOverrideFor: (origin: string) => ScoreLevel | undefined

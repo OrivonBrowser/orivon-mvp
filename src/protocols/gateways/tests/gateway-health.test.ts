@@ -67,6 +67,14 @@ describe('GatewayHealth', () => {
     expect(health.cooling()).toBe(false)
   })
 
+  it('cools for at least a second whatever Retry-After says: a rate limit that names no wait is still a rate limit', () => {
+    const c = clock()
+    const health = new GatewayHealth(c.now)
+    health.note({ kind: 'rate-limited', retryAfterMs: 0 })
+    expect(health.cooling()).toBe(true)
+    expect(health.readyAt()).toBe(1_000)
+  })
+
   it('caps an oversized Retry-After', () => {
     const c = clock()
     const health = new GatewayHealth(c.now)

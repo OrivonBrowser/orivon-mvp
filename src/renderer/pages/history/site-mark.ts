@@ -10,6 +10,18 @@ const PROTOCOL_BADGES: Readonly<Record<string, { readonly text: string, readonly
   'ipns:': { text: 'IPNS', color: 'ipns' }
 }
 
+/** The mark of a name under a top-level domain a built-in protocol resolves, by the domain: the same address shows the same mark whichever network its content is on. */
+const NAME_BADGES: ReadonlyMap<string, { readonly text: string, readonly color: string, readonly title: string }> = new Map([
+  ['eth', { text: 'ENS', color: 'ens', title: 'A .eth name' }],
+  ['og', { text: 'OG', color: 'og', title: 'A .og name' }]
+])
+
+/** The mark for a name under a built-in resolver's top-level domain, or undefined for any other host. */
+export function nameBadgeOf (host: string): { readonly text: string, readonly color: string, readonly title: string } | undefined {
+  const dot = host.lastIndexOf('.')
+  return dot === -1 ? undefined : NAME_BADGES.get(host.slice(dot + 1))
+}
+
 const HOST_COLORS = ['blue', 'green', 'orange', 'red', 'purple', 'pink', 'teal', 'gray'] as const
 
 /** A short, stable colour for a host: the same address always gets the same one. */
@@ -44,7 +56,8 @@ export function siteMark (url: string, icon?: string | null): HTMLElement {
   if (badge !== undefined) return withColor(h('span', { className: 'mark site-mark protocol', textContent: badge.text, title: badge.text }), badge.color)
 
   const host = hostOf(url)
-  if (host.endsWith('.eth')) return withColor(h('span', { className: 'mark site-mark protocol', textContent: 'ENS', title: 'A .eth name' }), 'ens')
+  const name = nameBadgeOf(host)
+  if (name !== undefined) return withColor(h('span', { className: 'mark site-mark protocol', textContent: name.text, title: name.title }), name.color)
 
   const letter = (host.replace(/^www\./, '')[0] ?? '?').toUpperCase()
   return withColor(h('span', { className: 'mark site-mark letter', textContent: letter }), hostColor(host))

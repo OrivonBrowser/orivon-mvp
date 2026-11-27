@@ -17,7 +17,7 @@ export interface LightClientConfigDeps {
 }
 
 export async function lightClientConfig (deps: LightClientConfigDeps): Promise<Pick<HostConfig, 'lightClient' | 'lightClientOff'>> {
-  if (deps.switchedOff) return { lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off, so no .eth name can be verified' }
+  if (deps.switchedOff) return { lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off, so no .eth or .og name can be verified' }
   const { servers } = deps
   // The one line the log gets about the person's servers each time the host starts; the address is masked.
   const line = ethServersLine(servers)

@@ -120,6 +120,13 @@ describe('createPageScoreLookup', () => {
     expect(h.resolved).toEqual([{ host: 'scored.eth', partition: CALLER_A }, { host: 'scored.eth', partition: CALLER_B }])
   })
 
+  it('resolves a .og name as it resolves a .eth one, and no other top-level domain', async () => {
+    const h = harness(provided(`cid:${ETH_CID}`, 4), { resolveEthContent: async (host) => host === 'scored.og' ? ETH_CID : undefined })
+    expect(await h.lookup.websiteScore(CALLER_A, 'https://scored.og/page')).toEqual({ provider: 'Test provider', level: 4 })
+    expect(await h.lookup.websiteScore(CALLER_B, 'SCORED.og')).toEqual({ provider: 'Test provider', level: 4 })
+    expect(await h.lookup.websiteScore(CALLER_A, 'scored.example')).toEqual({ provider: 'Test provider', level: null })
+  })
+
   describe('a judged level counts only where the content\'s manifest names the host asked about', () => {
     const resolvesBoth = async (host: string): Promise<string | undefined> => host === 'app.eth' || host === 'evil.eth' ? ETH_CID : undefined
 

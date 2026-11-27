@@ -90,7 +90,7 @@ it('fetches a checkpoint from two beacon servers that agree, uses it, and says w
       check(`both servers are asked for the finalized header and for the block at the epoch's first slot, and only the first for its bootstrap (${a.seen.join(',')} ${b.seen.join(',')})`, asked && a.seen[0] === HEADER_PATH && b.seen[0] === HEADER_PATH && /^\/eth\/v1\/beacon\/blocks\/\d+\/root$/.test(a.seen[1] ?? '') && a.seen[1] === b.seen[1] && a.seen[2] === `/eth/v1/beacon/light_client/bootstrap/${ROOT_A}`)
       const settings = await openWeb3Settings(app)
       let row = ''
-      const said = await waitFor(async () => { row = await checkpointRow(settings); return /fetched while a \.eth name was opened/.test(row) }, 20_000)
+      const said = await waitFor(async () => { row = await checkpointRow(settings); return /fetched while a \.eth or \.og name was opened/.test(row) }, 20_000)
       check(`Settings says the checkpoint was fetched, with its date and the servers that agreed (${row})`, said && /dated \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC/.test(row) && row.includes('127.0.0.1 and 127.0.0.1 gave the same answer'))
       const servers = (await settings.locator('#row-web3-servers .value').textContent()) ?? ''
       check('Settings lists the servers asked for a fresh checkpoint', servers.includes(`Beacon servers for a fresh checkpoint, asked only when none is recent enough: ${a.origin}, ${b.origin}`))

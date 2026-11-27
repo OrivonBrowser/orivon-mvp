@@ -8,14 +8,14 @@ import { answerNamesHere, composeResolverRules } from '../resolver-rules.js'
 describe('composeResolverRules', () => {
   const suffixes = BUILTIN_ADDRESSES.routedSuffixes()
   const ONION = 'MAP *.onion ~NOTFOUND,MAP *.onion. ~NOTFOUND,MAP onion ~NOTFOUND'
-  const ROOT_DOT = 'MAP *.eth. ~NOTFOUND,MAP *.eth..* ~NOTFOUND,MAP *.orivon. ~NOTFOUND,MAP *.orivon..* ~NOTFOUND'
+  const ROOT_DOT = 'MAP *.eth. ~NOTFOUND,MAP *.eth..* ~NOTFOUND,MAP *.og. ~NOTFOUND,MAP *.og..* ~NOTFOUND,MAP *.orivon. ~NOTFOUND,MAP *.orivon..* ~NOTFOUND'
   /** Chromium's `MatchPattern` over a host: `*` is any run of characters, `?` one, everything else itself. */
   const matches = (host: string, pattern: string): boolean => new RegExp(`^${pattern.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`).test(host)
   const patternOf = (clause: string): string => clause.split(' ')[1] ?? ''
 
   it('puts developer names first, then every protocol host, then the rules already given', () => {
     expect(composeResolverRules({ devClauses: 'MAP freetube.eth 127.0.0.1:8875', port: 40001, suffixes, existing: 'MAP * ~NOTFOUND, EXCLUDE 127.0.0.1' }))
-      .toBe('MAP freetube.eth 127.0.0.1:8875,MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1,MAP * ~NOTFOUND, EXCLUDE 127.0.0.1,' + ONION + ',' + ROOT_DOT)
+      .toBe('MAP freetube.eth 127.0.0.1:8875,MAP *.eth 127.0.0.1:40001,MAP *.og 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1,MAP * ~NOTFOUND, EXCLUDE 127.0.0.1,' + ONION + ',' + ROOT_DOT)
   })
 
   it('maps every .localhost name to the IPv4 loopback address, ahead of any rule already given, so a page under one never reaches an IPv6 server', () => {
@@ -26,7 +26,7 @@ describe('composeResolverRules', () => {
 
   it('is the protocol clauses and the localhost clause when nothing else is given, and the localhost clause even with no suffix', () => {
     expect(composeResolverRules({ devClauses: '', port: 40001, suffixes, existing: '' }))
-      .toBe('MAP *.eth 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1,' + ONION + ',' + ROOT_DOT)
+      .toBe('MAP *.eth 127.0.0.1:40001,MAP *.og 127.0.0.1:40001,MAP *.orivon 127.0.0.1:40001,MAP *.localhost 127.0.0.1,' + ONION + ',' + ROOT_DOT)
     expect(composeResolverRules({ devClauses: '', port: 40001, suffixes: [], existing: '' })).toBe('MAP *.localhost 127.0.0.1,' + ONION)
   })
 
@@ -74,8 +74,8 @@ describe('answerNamesHere', () => {
     answerNamesHere({ getSwitchValue: (name) => switches.get(name) ?? '', appendSwitch: (name, value) => { switches.set(name, value) } }, env, { devClauses: '', port: 40001, suffixes })
     expect(switches.get('host-resolver-rules')).toContain('MAP *.eth 127.0.0.1:40001')
     expect(switches.get('host-resolver-rules')).toContain('MAP test.example 127.0.0.1')
-    expect(env.no_proxy).toBe('localhost,.eth,.orivon')
-    expect(env.NO_PROXY).toBe('localhost,.eth,.orivon')
+    expect(env.no_proxy).toBe('localhost,.eth,.og,.orivon')
+    expect(env.NO_PROXY).toBe('localhost,.eth,.og,.orivon')
     expect(env.http_proxy).toBe('http://127.0.0.1:3128')
   })
 })

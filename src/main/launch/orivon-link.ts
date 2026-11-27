@@ -3,7 +3,7 @@
 import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 
 export interface OrivonLink {
-  /** What would be typed in the address bar: `name.eth/path`, `ipfs://<name>/path` or `ipns://<name>/path`. */
+  /** What would be typed in the address bar: `name.eth/path` or `name.og/path`, `ipfs://<name>/path` or `ipns://<name>/path`. */
   readonly target: string
   /** An id of the shape `FLAVOUR_ID`; absent when the link carries none, or one that is malformed or repeated. */
   readonly flavour?: string
@@ -23,7 +23,7 @@ const FORBIDDEN_IN_TARGET = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Z}\\"<>]/u
 const SCHEME = /^([A-Za-z][A-Za-z0-9+.-]*):/
 const ADDRESS_SCHEMES: ReadonlySet<string> = new Set(['ipfs', 'ipns'])
 const NAME_SHAPE = /^[A-Za-z0-9._~-]{1,253}$/
-const ETH_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
+const NAME_LABEL = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/
 /** A path segment that climbs or stays, as the URL parser reads it, and an escape of a separator or a dot that survived the one decoding. */
 const DOT_SEGMENT = /^(?:\.|\.\.|%2e|\.%2e|%2e\.|%2e%2e)$/i
 const ESCAPED_SEPARATOR = /%(?:2f|5c)/i
@@ -50,7 +50,7 @@ function pathIsSafe (rest: string): boolean {
   return !path.split('/').some((segment) => DOT_SEGMENT.test(segment))
 }
 
-/** The target, in its one spelling, when it is a `.eth` name or an ipfs:// or ipns:// address. */
+/** The target, in its one spelling, when it is a name under a built-in resolver's top-level domain (`.eth`, `.og`) or an ipfs:// or ipns:// address. */
 function canonicalTarget (target: string): string | undefined {
   if (target === '' || FORBIDDEN_IN_TARGET.test(target)) return undefined
   const scheme = SCHEME.exec(target)?.[1]?.toLowerCase()
@@ -66,12 +66,12 @@ function canonicalTarget (target: string): string | undefined {
   const match = /^([^/?#]+)([/?#][^]*)?$/.exec(target)
   const host = match?.[1]?.toLowerCase()
   const rest = match?.[2] ?? ''
-  if (host === undefined || !host.endsWith('.eth') || !pathIsSafe(rest)) return undefined
+  if (host === undefined || BUILTIN_ADDRESSES.nameOrigin(host) === undefined || !pathIsSafe(rest)) return undefined
   const labels = host.split('.')
-  return labels.length >= 2 && labels.every((label) => ETH_LABEL.test(label)) ? `${host}${rest}` : undefined
+  return labels.length >= 2 && labels.every((label) => NAME_LABEL.test(label)) ? `${host}${rest}` : undefined
 }
 
-/** What the link names, or undefined when it is not an `orivon:open` link or names anything but a `.eth` name, an ipfs:// address or an ipns:// address. */
+/** What the link names, or undefined when it is not an `orivon:open` link or names anything but a `.eth` or `.og` name, an ipfs:// address or an ipns:// address. */
 export function parseOrivonLink (text: string): OrivonLink | undefined {
   if (typeof text !== 'string' || text.length > MAX_ORIVON_LINK || !LINK_ALPHABET.test(text)) return undefined
   // The scheme is read in any case, as every scheme is; the action after it is `open` and nothing else.

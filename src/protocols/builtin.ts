@@ -5,9 +5,10 @@
 import { ProtocolAddresses } from './address.js'
 import { ENS } from './ens/descriptor.js'
 import { IPFS } from './ipfs/descriptor.js'
+import { OG } from './og/descriptor.js'
 import { SWARM } from './swarm/descriptor.js'
 import type { ProtocolDescriptor } from './protocol.js'
 
-export const BUILTIN_PROTOCOLS: readonly ProtocolDescriptor[] = [ENS, IPFS, SWARM]
+export const BUILTIN_PROTOCOLS: readonly ProtocolDescriptor[] = [ENS, OG, IPFS, SWARM]
 
 export const BUILTIN_ADDRESSES = new ProtocolAddresses(BUILTIN_PROTOCOLS)

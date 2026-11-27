@@ -99,7 +99,7 @@ export interface ShellServes {
 
 export interface HostConfig {
   readonly port: number
-  /** Undefined when the light client does not run: every `.eth` name then fails closed. */
+  /** Undefined when the light client does not run: every `.eth` and `.og` name then fails closed. */
   readonly lightClient: LightClientConfig | undefined
   /** Why it does not run, in words for the error page. */
   readonly lightClientOff?: string
@@ -175,7 +175,7 @@ export interface HostConfig {
    * (`front`) the shared client's requests leave through `HostDeps.outside`. Absent: they follow the tunnel as before.
    */
   readonly ethereumOutside?: boolean
-  /** Test builds only: `.eth` names mapped to content with no light client. */
+  /** Test builds only: `.eth` and `.og` names mapped to content with no light client. */
   readonly fixtures?: Readonly<Record<string, string>>
   /**
    * The hosts the shell answers for from a copy it keeps, and the secret by which a read of the shell's own is told from a page's

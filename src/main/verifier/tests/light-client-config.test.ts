@@ -37,7 +37,7 @@ describe('lightClientConfig', () => {
 
   it('starts nothing, and says why, while the person has the light client off', async () => {
     const config = await lightClientConfig({ switchedOff: true, renewing: undefined, renewal: renewal(ok), servers: orivon })
-    expect(config).toEqual({ lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off, so no .eth name can be verified' })
+    expect(config).toEqual({ lightClient: undefined, lightClientOff: 'the Ethereum light client is switched off, so no .eth or .og name can be verified' })
   })
 
   it('waits for a checkpoint being renewed before it chooses one', async () => {

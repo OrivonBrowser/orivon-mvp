@@ -1,6 +1,7 @@
 // The https address any browser opens for what the address bar shows: `ipfs://name.eth/x` is not a link another
 // browser follows, `https://name.eth.limo/x` is. Pure string work; an address with no such form has none, and the
 // caller offers no item for it rather than a link that goes somewhere else.
+import { BUILTIN_ADDRESSES } from '../../protocols/builtin.js'
 import { canonicalCid, canonicalKey } from '../../protocols/ipfs/names.js'
 import { ADDRESS_SUFFIX } from '../../protocols/protocol.js'
 import { dnsName } from '../../protocols/resolution/dns-name.js'
@@ -68,7 +69,8 @@ export function webLinkFor (address: string): string | undefined {
     const labels = parsed.hostname.split('.')
     const last = labels[labels.length - 1]
     if (last === ADDRESS_SUFFIX) return undefined
-    if (last !== 'eth') return text
+    // A name under another top-level domain a built-in protocol resolves (`.og`) has no gateway, so no link another browser follows.
+    if (last !== 'eth') return BUILTIN_ADDRESSES.nameOrigin(parsed.hostname) === undefined ? text : undefined
     if (parsed.port !== '' || parsed.username !== '' || parsed.password !== '') return undefined
     const name = ethName(parsed.hostname)
     return name === undefined ? undefined : httpsUrl(`${name}.${ETH_GATEWAY}`, parsed.pathname, parsed.search, parsed.hash)

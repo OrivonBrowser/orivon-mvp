@@ -1,0 +1,7 @@
+# `src/protocols/verifier-host/`: design notes
+
+Why parts of the host are shaped as they are. What lives here and what it may import is in [`README.md`](README.md).
+
+**One light client proves every top-level-domain name a built-in resolver answers, and each domain is a protocol of its own.** `ethereumNames` ([`protocols.ts`](protocols.ts)) builds `.eth` and `.og` from one provider, each with its own fixture resolver in a test build and, when the light client is off or refused, its own resolver that fails closed with the reason; a website in a tunnel's profile gets both from the same function.
+
+**The routed fetch speaks to the profile's front, not to the tunnel's SOCKS5 address.** [`routed-fetch.ts`](routed-fetch.ts) sends a `CONNECT` with the front's sign-in and then runs TLS over the stream, with Node's own sockets, because `net.fetch` in a utility process cannot sign in to a front (it ends at the `407`). The front is the one place that already waits for Nym to start, follows a changed tunnel and fails closed with nothing direct, and Nym's port changes at every start, so the host would otherwise have to ask main for an address at each connection. Connections are kept alive and pooled per destination, since a Nym stream is slow to open. It follows no redirect (a 3xx comes back as a response and `allowlisted` refuses it), carries no cookie and no cache, and takes plain HTTP only in a test build's fixture.
