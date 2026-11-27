@@ -120,7 +120,7 @@ fit what each source answers:
 - **Servers**: windows of 9,000 blocks, under the 10,000 the widest of them answers, two in flight (the servers
   that serve archive logs rate limit bursts: HTTP 429, Cloudflare's "error code: 1015"). A server that refuses a range as too wide (a limit
   on the range, a "too many" message, code 35) is read as the two halves of the range while each half keeps at least
-  1024 blocks; a narrower refusal fails the window. A 429, or a 503 that names a wait, waits for what the server asked
+  1024 blocks, then as its first 1024 blocks and the rest; the refusal of a range of 1024 blocks fails the window. A 429, or a 503 that names a wait, waits for what the server asked
   (at least a second, doubling to a cap of eight when it asked for nothing) and asks again, up to five times; a wait
   longer than the call has left refuses at once. While one read waits, every read of the servers waits with it. A
   server read ends within 25 s, and the turn it holds is given back at the call's deadline even while it runs, so a

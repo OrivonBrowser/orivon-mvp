@@ -24,7 +24,10 @@ export const OLD_WINDOW = 9_000
 /** Windows of old history in flight at once: the servers that answer them rate limit bursts. */
 export const OLD_IN_FLIGHT = 2
 
-/** The narrowest stretch a refused range is halved to; a server that refuses less than this is not read. */
+/**
+ * The narrowest range a server is asked to answer: a refused range is halved while each half keeps this many blocks, then cut at it.
+ * A server that refuses a range this narrow is not read.
+ */
 export const MIN_OLD_WINDOW = WINDOW
 
 /** The wait before a rate-limited read is asked again: doubling to its cap, or what the server asked when it said (never less than the first). */
@@ -282,16 +285,17 @@ async function backedOff<T> (session: Session, until: number, ask: () => Promise
 }
 
 /**
- * The logs of `filter` from the servers: a range they refuse as too wide is read as its two halves, down to `MIN_OLD_WINDOW`. A range
- * whose half would be narrower is not halved, and its refusal is the failure of the window. No half is begun once `until` has passed.
+ * The logs of `filter` from the servers: a range they refuse as too wide is read as its two halves, down to `MIN_OLD_WINDOW`; a range whose
+ * half would be narrower is read as its first `MIN_OLD_WINDOW` blocks and the rest. A range no wider than that is not split, and its refusal
+ * is the failure of the window. No half is begun once `until` has passed.
  */
 async function readOldLogs (servers: Chain, session: Session, filter: LogFilter, until: number): Promise<Log[]> {
   try {
     return await backedOff(session, until, async () => await servers.getLogs(filter))
   } catch (error) {
     const span = filter.toBlock - filter.fromBlock + 1
-    if (!(error instanceof ChainError) || error.reason !== 'limit' || Math.floor(span / 2) < MIN_OLD_WINDOW) throw error
-    const second = filter.fromBlock + Math.ceil(span / 2)
+    if (!(error instanceof ChainError) || error.reason !== 'limit' || span <= MIN_OLD_WINDOW) throw error
+    const second = filter.fromBlock + (Math.floor(span / 2) < MIN_OLD_WINDOW ? MIN_OLD_WINDOW : Math.ceil(span / 2))
     const before = await readOldLogs(servers, session, { ...filter, toBlock: second - 1 }, until)
     return [...before, ...await readOldLogs(servers, session, { ...filter, fromBlock: second }, until)]
   }
