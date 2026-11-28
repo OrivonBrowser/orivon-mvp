@@ -7,7 +7,8 @@ Eight rules:
 
 1. **Comments earn their place**, and rationale goes in a `DESIGN.md` beside the directory's README, not the file header.
 2. **No source file over 500 lines**, or 800 for tests.
-3. **One implementation per idea**: search before writing a helper.
+3. **One implementation per idea**: everything that does a task calls the same code, and
+   everything that shows a thing loads the same asset. Search before writing a helper.
 4. **One home per fact**: a fact lives in one page and is linked from the others.
 5. **Cost follows change and use**: work per event is in proportion to what changed, and a
    feature costs nothing before it is used.
@@ -222,6 +223,21 @@ passes CI. Filed with the other unenforced layout rules as `A85`.
 ---
 
 ## Rule 3: One implementation per idea
+
+**Everything that does a task calls the same code, and everything that shows a thing loads the
+same asset.** A task done two ways has two sets of bugs: a fix reaches one and the other stays
+broken, and the two behave a little differently for the person using them.
+
+- **A task has one code path.** Where the tree already checks a path, resolves a name, reads a
+  setting or formats a size, the new place calls that code. If that code sits inline in its
+  first caller, move it out and have both call it.
+- **A thing has one asset, loaded one way.** An icon, a logo, a font or a label that stands for
+  one thing is one file or one definition, loaded by the same code wherever it appears: never a
+  second copy of the file, and never a second loader for it.
+- **It holds for everything written here**: constants, types, styles, UI components, test
+  helpers, scripts and build steps, as for functions.
+- **A second way found in the tree is a defect.** Move its callers to the first one, in the same
+  change when that is small and in its own PR when it is not.
 
 **Do not rewrite a function that already exists. Find it and reuse it.**
 
