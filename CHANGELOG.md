@@ -17,6 +17,12 @@ What an app that runs on Orivon must now do differently. One line per behaviour,
 now do and which ports to recheck. CI requires a line here for a row of that page that is rewritten or removed, and for a change to the
 public surface of `src/contracts/` (named `contracts/<file>`).
 
+## [0.1.1] - 2026-11-28
+
+Release, published 2026-11-28. [Release page](https://github.com/OrivonBrowser/orivon-mvp/releases/tag/v0.1.1).
+
+### Changed for apps
+
 - **`allowed-app-worker-keeps-grants`**, **`allowed-app-unchecked-worker-never-installs`**: new rows. A page an allowed Web3 site's own service worker answers (an offline-first app's reload, a start, the gateway gone) keeps `window.orivon` and the site's grants, which it had lost; a worker script Orivon did not serve is refused at registration, and a worker's answer counts only after Orivon has loaded the site's open website pages again and removed what they left. No app needs to change. Recheck: ports that register a service worker.
 - **`app-storage-survives-an-update`**: new row. An installed app's session folder has a shorter name, and the folders of the old names are renamed at the first start, so an app finds what it stored; nothing to change in an app, recheck any that keeps an offline copy.
 - **`service-worker-keeps-an-offline-copy`**: new row. A service worker in an installed app can fill Cache Storage on Windows when the profile folder's path is up to 80 characters; it could not past 48. Ports with an offline copy need no change.
